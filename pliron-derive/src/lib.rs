@@ -14,6 +14,10 @@ use derive_format::DeriveIRObject;
 
 /// `#[def_attribute(...)]`: Annotate a Rust struct as a new IR attribute.
 ///
+/// *Note*: It is suggested to use the [pliron_attr] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_attr]'s `name` field expands
+///         to this macro.
+///
 /// The argument to the macro is the fully qualified name of the attribute in the form of
 /// `"dialect.attribute_name"`.
 ///
@@ -43,6 +47,10 @@ pub fn def_attribute(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// `#[def_type(...)]`: Annotate a Rust struct as a new IR type.
 ///
+/// *Note*: It is suggested to use the [pliron_type] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_type]'s `name` field expands
+///         to this macro.
+///
 /// The argument to the macro is the fully qualified name of the type in the form of
 /// `"dialect.type_name"`.
 ///
@@ -69,6 +77,10 @@ pub fn def_type(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 /// Derive get methods for types that retrieve interned types.
+///
+/// *Note*: It is suggested to use the [pliron_type] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_type]'s `generate_get` field
+///         expands to this macro.
 ///
 /// This macro generates appropriate get methods based on the struct's fields:
 /// - For unit structs: generates a singleton `get(ctx: &Context)` method
@@ -162,6 +174,10 @@ pub fn verify_succ(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// `#[def_op(...)]`: Create a new IR operation.
 ///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `name` field expands
+///         to this macro.
+///
 /// The argument to the macro is the fully qualified name of the operation in the form of
 /// `"dialect.op_name"`.
 ///
@@ -198,6 +214,11 @@ pub fn def_op(args: TokenStream, input: TokenStream) -> TokenStream {
 }
 
 /// Derive getter and setters for operation attributes listed as arguments.
+///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `attributes` field
+///         expands to this macro.
+///
 /// The arguments are a comma separated list of attribute names
 /// (which must be an [Identifier](../pliron/identifier/struct.Identifier.html)),
 /// each of which may have an optional concrete Rust type specified,
@@ -336,6 +357,11 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Derive [Printable](../pliron/printable/trait.Printable.html) and
 /// [Parsable](../pliron/parsable/trait.Parsable.html) for [Op](../pliron/op/trait.Op.html)s
+///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `format` field
+///         expands to this macro.
+///
 /// This derive only supports a syntax in which results appear before the opid:
 ///   `res1, ... = opid ...`
 /// The format string specifies what comes after the opid.
@@ -426,6 +452,8 @@ pub fn format_op(args: TokenStream, input: TokenStream) -> TokenStream {
 /// [Parsable](../pliron/parsable/trait.Parsable.html) for
 /// [Attribute](../pliron/attribute/trait.Attribute.html)s
 ///
+/// *Note*: It is suggested to use the [pliron_attr] macro instead of using this macro directly.
+///
 /// Refer to [macro@format] for the syntax specification and examples.
 #[proc_macro_attribute]
 pub fn format_attribute(args: TokenStream, input: TokenStream) -> TokenStream {
@@ -435,9 +463,12 @@ pub fn format_attribute(args: TokenStream, input: TokenStream) -> TokenStream {
         DeriveIRObject::Attribute,
     ))
 }
+
 /// Derive [Printable](../pliron/printable/trait.Printable.html) and
 /// [Parsable](../pliron/parsable/trait.Parsable.html) for
 /// [Type](../pliron/type/trait.Type.html)s
+///
+/// *Note*: It is suggested to use the [pliron_type] macro instead of using this macro directly.
 ///
 /// Refer to [macro@format] for the syntax specification and examples.
 #[proc_macro_attribute]
@@ -549,7 +580,7 @@ pub fn op_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
 /// - `format = "format_string"`: Custom format string for printing/parsing (optional).\
 ///   Expands to [format_type].
 /// - `verifier = "succ"`: Verifier implementation, currently only "succ" is supported (optional).\
-///   Expands to [verify_succ].
+///   Expands to [macro@verify_succ].
 /// - `generate_get = true/false`: Whether to generate a get method for the type (optional, default: false).\
 ///   Expands to [derive_type_get].
 ///
@@ -610,7 +641,7 @@ pub fn pliron_type(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `format = "format_string"`: Custom format string for printing/parsing (optional).\
 ///   Expands to [format_attribute].
 /// - `verifier = "succ"`: Verifier implementation, currently only "succ" is supported (optional).\
-///   Expands to [verify_succ].
+///   Expands to [macro@verify_succ].
 ///
 /// ## Examples
 ///
@@ -658,7 +689,7 @@ pub fn pliron_attr(args: TokenStream, input: TokenStream) -> TokenStream {
 /// - `attributes = (attr_name: AttrType, ...)`: List of attributes with their types (optional).\
 ///   Expands to [derive_attr_get_set], generating getter and setter methods.
 /// - `verifier = "succ"`: Verifier implementation, currently only "succ" is supported (optional).\
-///   Expands to [verify_succ].
+///   Expands to [macro@verify_succ].
 ///
 /// ## Examples
 ///
@@ -708,6 +739,10 @@ pub fn pliron_op(args: TokenStream, input: TokenStream) -> TokenStream {
 /// Derive implementation of an [Op](../pliron/op/trait.Op.html) Interface for an Op.
 /// Note that an impl can be derived only for those interfaces that do not require any
 /// methods to be defined during the impl.
+///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `interfaces` field
+///         expands to this macro.
 ///
 /// Usage:
 /// ```
