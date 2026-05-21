@@ -77,7 +77,7 @@ cargo-manifest = "0"
 which = "8"
 hi_sparse_bitset = "0"
 
-[target.'cfg(not(target_family = "wasm"))'.example]
+[target.'cfg(not(target_family = "wasm"))']
 [[example]]
 name = "kaleidoscope"
 path = "examples/kaleidoscope/main.rs"

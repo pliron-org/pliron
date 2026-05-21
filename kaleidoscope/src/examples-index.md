@@ -6,8 +6,8 @@ This index maps tutorial chapters to runnable examples.
 
 | Chapter | Focus | Tests |
 |---|---|---|
-| Chapter 1 | Parser | `ast::test_ast_fibonacci`<br>`ast::test_ast_factorial` |
-| Chapter 2 | Dialect definitions and manual IR construction | `dialect::build_fib_example` |
+| Chapter 1 | Parser | `ast::tests::test_ast_fibonacci`<br>`ast::tests::test_ast_factorial` |
+| Chapter 2 | Dialect definitions and manual IR construction | `dialect::tests::build_fib_example` |
 | Chapter 3 | AST to Kaleidoscope dialect lowering | `from_ast::tests::fibonacci_from_ast`<br>`from_ast::tests::factorial_from_ast`<br>`from_ast::tests::inline_fibonacci_from_ast` |
 | Chapter 4 | Kaleidoscope dialect to LLVM dialect lowering | `to_llvm::tests::fibonacci_to_llvm`<br>`to_llvm::tests::factorial_to_llvm`<br>`to_llvm::tests::if_else_to_llvm` |
 | Chapter 5 | JIT execution | `jit::tests::fibonacci_jit`<br>`jit::tests::factorial_jit`<br>`jit::tests::if_else_jit` |

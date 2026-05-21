@@ -444,185 +444,190 @@ impl CallOp {
 // }
 // ANCHOR_END: fib_build_pseudocode
 
-// ANCHOR: fib_build_function
-#[test]
-fn build_fib_example() {
-    use pliron::basic_block::BasicBlock;
-    use pliron::builtin::{
-        op_interfaces::OneResultInterface,
-        ops::{FuncOp, ModuleOp},
-        types::FunctionType,
-    };
-    use pliron::debug_info::set_operation_result_name;
-    use pliron::irbuild::inserter::{IRInserter, Inserter};
-    use pliron::irbuild::listener::DummyListener;
-    use pliron::op::verify_op;
-    use pliron::printable::Printable;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    type OpInserter = IRInserter<DummyListener>;
+    // ANCHOR: fib_build_function
+    #[test]
+    fn build_fib_example() {
+        use pliron::basic_block::BasicBlock;
+        use pliron::builtin::{
+            op_interfaces::OneResultInterface,
+            ops::{FuncOp, ModuleOp},
+            types::FunctionType,
+        };
+        use pliron::debug_info::set_operation_result_name;
+        use pliron::irbuild::inserter::{IRInserter, Inserter};
+        use pliron::irbuild::listener::DummyListener;
+        use pliron::op::verify_op;
+        use pliron::printable::Printable;
 
-    // ANCHOR: fib_build_setup
-    let ctx = &mut Context::new();
-    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signless);
+        type OpInserter = IRInserter<DummyListener>;
 
-    let module = ModuleOp::new(ctx, "fib_test".try_into().expect("valid module name"));
-    let main_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let main_fn = FuncOp::new(
-        ctx,
-        "main".try_into().expect("valid function name"),
-        main_ty,
-    );
-    module.append_operation(ctx, main_fn.get_operation(), 0);
+        // ANCHOR: fib_build_setup
+        let ctx = &mut Context::new();
+        let i64_ty = IntegerType::get(ctx, 64, Signedness::Signless);
 
-    let entry = main_fn.get_entry_block(ctx);
-    let mut ins = OpInserter::new_at_block_end(entry);
-    // ANCHOR_END: fib_build_setup
+        let module = ModuleOp::new(ctx, "fib_test".try_into().expect("valid module name"));
+        let main_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
+        let main_fn = FuncOp::new(
+            ctx,
+            "main".try_into().expect("valid function name"),
+            main_ty,
+        );
+        module.append_operation(ctx, main_fn.get_operation(), 0);
 
-    // Mutable slots: a, b, tmp, i, and the iteration limit n.
-    // ANCHOR: fib_build_slots
-    let slot_a = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(ctx, slot_a.get_operation(), 0, "a".try_into().ok());
-    ins.append_op(ctx, slot_a);
-    let slot_b = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(ctx, slot_b.get_operation(), 0, "b".try_into().ok());
-    ins.append_op(ctx, slot_b);
-    let slot_tmp = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(ctx, slot_tmp.get_operation(), 0, "tmp".try_into().ok());
-    ins.append_op(ctx, slot_tmp);
-    let slot_i = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(ctx, slot_i.get_operation(), 0, "i".try_into().ok());
-    ins.append_op(ctx, slot_i);
-    let slot_n = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(ctx, slot_n.get_operation(), 0, "n".try_into().ok());
-    ins.append_op(ctx, slot_n);
-    // A mutable slot for the loop condition (while cond_ptr do ...).
-    let slot_cond_ptr = DeclOp::new(ctx, i64_ty.into());
-    set_operation_result_name(
-        ctx,
-        slot_cond_ptr.get_operation(),
-        0,
-        "cond_ptr".try_into().ok(),
-    );
-    ins.append_op(ctx, slot_cond_ptr);
-    // ANCHOR_END: fib_build_slots
+        let entry = main_fn.get_entry_block(ctx);
+        let mut ins = OpInserter::new_at_block_end(entry);
+        // ANCHOR_END: fib_build_setup
 
-    // Initialize: a=0, b=1, i=0, n=10.
-    // ANCHOR: fib_build_init_and_cond
-    let c0 = ConstantOp::new_i64(ctx, 0);
-    ins.append_op(ctx, c0);
-    let c1 = ConstantOp::new_i64(ctx, 1);
-    ins.append_op(ctx, c1);
-    let c10 = ConstantOp::new_i64(ctx, 10);
-    ins.append_op(ctx, c10);
+        // ANCHOR: fib_build_slots
+        // Mutable slots: a, b, tmp, i, and the iteration limit n.
+        let slot_a = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(ctx, slot_a.get_operation(), 0, "a".try_into().ok());
+        ins.append_op(ctx, slot_a);
+        let slot_b = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(ctx, slot_b.get_operation(), 0, "b".try_into().ok());
+        ins.append_op(ctx, slot_b);
+        let slot_tmp = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(ctx, slot_tmp.get_operation(), 0, "tmp".try_into().ok());
+        ins.append_op(ctx, slot_tmp);
+        let slot_i = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(ctx, slot_i.get_operation(), 0, "i".try_into().ok());
+        ins.append_op(ctx, slot_i);
+        let slot_n = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(ctx, slot_n.get_operation(), 0, "n".try_into().ok());
+        ins.append_op(ctx, slot_n);
+        // A mutable slot for the loop condition (while cond_ptr do ...).
+        let slot_cond_ptr = DeclOp::new(ctx, i64_ty.into());
+        set_operation_result_name(
+            ctx,
+            slot_cond_ptr.get_operation(),
+            0,
+            "cond_ptr".try_into().ok(),
+        );
+        ins.append_op(ctx, slot_cond_ptr);
+        // ANCHOR_END: fib_build_slots
 
-    let store_a0 = StoreOp::new(ctx, slot_a.get_result(ctx), c0.get_result(ctx));
-    ins.append_op(ctx, store_a0);
-    let store_b1 = StoreOp::new(ctx, slot_b.get_result(ctx), c1.get_result(ctx));
-    ins.append_op(ctx, store_b1);
-    let store_i0 = StoreOp::new(ctx, slot_i.get_result(ctx), c0.get_result(ctx));
-    ins.append_op(ctx, store_i0);
-    let store_n10 = StoreOp::new(ctx, slot_n.get_result(ctx), c10.get_result(ctx));
-    ins.append_op(ctx, store_n10);
+        // ANCHOR: fib_build_init_and_cond
+        // Initialize: a=0, b=1, i=0, n=10.
+        let c0 = ConstantOp::new_i64(ctx, 0);
+        ins.append_op(ctx, c0);
+        let c1 = ConstantOp::new_i64(ctx, 1);
+        ins.append_op(ctx, c1);
+        let c10 = ConstantOp::new_i64(ctx, 10);
+        ins.append_op(ctx, c10);
 
-    // Loop condition i < n.
-    let i_before = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
-    ins.append_op(ctx, i_before);
-    let n_before = LoadOp::new(ctx, slot_n.get_result(ctx), i64_ty.into());
-    ins.append_op(ctx, n_before);
-    let cond = BinOp::new(
-        ctx,
-        BinOpKind::Lt,
-        i_before.get_result(ctx),
-        n_before.get_result(ctx),
-    );
-    ins.append_op(ctx, cond);
-    let store_cond_ptr = StoreOp::new(ctx, slot_cond_ptr.get_result(ctx), cond.get_result(ctx));
-    ins.append_op(ctx, store_cond_ptr);
+        let store_a0 = StoreOp::new(ctx, slot_a.get_result(ctx), c0.get_result(ctx));
+        ins.append_op(ctx, store_a0);
+        let store_b1 = StoreOp::new(ctx, slot_b.get_result(ctx), c1.get_result(ctx));
+        ins.append_op(ctx, store_b1);
+        let store_i0 = StoreOp::new(ctx, slot_i.get_result(ctx), c0.get_result(ctx));
+        ins.append_op(ctx, store_i0);
+        let store_n10 = StoreOp::new(ctx, slot_n.get_result(ctx), c10.get_result(ctx));
+        ins.append_op(ctx, store_n10);
 
-    let while_op = WhileOp::new(ctx, slot_cond_ptr.get_result(ctx));
-    ins.append_op(ctx, while_op);
-    // ANCHOR_END: fib_build_init_and_cond
+        // Loop condition i < n.
+        let i_before = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
+        ins.append_op(ctx, i_before);
+        let n_before = LoadOp::new(ctx, slot_n.get_result(ctx), i64_ty.into());
+        ins.append_op(ctx, n_before);
+        let cond = BinOp::new(
+            ctx,
+            BinOpKind::Lt,
+            i_before.get_result(ctx),
+            n_before.get_result(ctx),
+        );
+        ins.append_op(ctx, cond);
+        let store_cond_ptr = StoreOp::new(ctx, slot_cond_ptr.get_result(ctx), cond.get_result(ctx));
+        ins.append_op(ctx, store_cond_ptr);
 
-    // ANCHOR: fib_build_while_body
-    let while_region = while_op.body_region(ctx);
-    let while_block = BasicBlock::new(
-        ctx,
-        Some("while_body".try_into().expect("valid block name")),
-        vec![],
-    );
-    while_block.insert_at_front(while_region, ctx);
-    let mut while_ins = OpInserter::new_at_block_end(while_block);
+        let while_op = WhileOp::new(ctx, slot_cond_ptr.get_result(ctx));
+        ins.append_op(ctx, while_op);
+        // ANCHOR_END: fib_build_init_and_cond
 
-    // tmp = a + b; a = b; b = tmp; i = i + 1
-    let a_val = LoadOp::new(ctx, slot_a.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, a_val);
-    let b_val = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, b_val);
-    let sum = BinOp::new(
-        ctx,
-        BinOpKind::Add,
-        a_val.get_result(ctx),
-        b_val.get_result(ctx),
-    );
-    while_ins.append_op(ctx, sum);
-    let store_tmp = StoreOp::new(ctx, slot_tmp.get_result(ctx), sum.get_result(ctx));
-    while_ins.append_op(ctx, store_tmp);
+        // ANCHOR: fib_build_while_body
+        let while_region = while_op.body_region(ctx);
+        let while_block = BasicBlock::new(
+            ctx,
+            Some("while_body".try_into().expect("valid block name")),
+            vec![],
+        );
+        while_block.insert_at_front(while_region, ctx);
+        let mut while_ins = OpInserter::new_at_block_end(while_block);
 
-    let b_for_a = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, b_for_a);
-    let store_a = StoreOp::new(ctx, slot_a.get_result(ctx), b_for_a.get_result(ctx));
-    while_ins.append_op(ctx, store_a);
+        // tmp = a + b; a = b; b = tmp; i = i + 1
+        let a_val = LoadOp::new(ctx, slot_a.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, a_val);
+        let b_val = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, b_val);
+        let sum = BinOp::new(
+            ctx,
+            BinOpKind::Add,
+            a_val.get_result(ctx),
+            b_val.get_result(ctx),
+        );
+        while_ins.append_op(ctx, sum);
+        let store_tmp = StoreOp::new(ctx, slot_tmp.get_result(ctx), sum.get_result(ctx));
+        while_ins.append_op(ctx, store_tmp);
 
-    let tmp_for_b = LoadOp::new(ctx, slot_tmp.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, tmp_for_b);
-    let store_b = StoreOp::new(ctx, slot_b.get_result(ctx), tmp_for_b.get_result(ctx));
-    while_ins.append_op(ctx, store_b);
+        let b_for_a = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, b_for_a);
+        let store_a = StoreOp::new(ctx, slot_a.get_result(ctx), b_for_a.get_result(ctx));
+        while_ins.append_op(ctx, store_a);
 
-    let i_val = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, i_val);
-    let one_step = ConstantOp::new_i64(ctx, 1);
-    while_ins.append_op(ctx, one_step);
-    let i_next = BinOp::new(
-        ctx,
-        BinOpKind::Add,
-        i_val.get_result(ctx),
-        one_step.get_result(ctx),
-    );
-    while_ins.append_op(ctx, i_next);
-    let store_i = StoreOp::new(ctx, slot_i.get_result(ctx), i_next.get_result(ctx));
-    while_ins.append_op(ctx, store_i);
+        let tmp_for_b = LoadOp::new(ctx, slot_tmp.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, tmp_for_b);
+        let store_b = StoreOp::new(ctx, slot_b.get_result(ctx), tmp_for_b.get_result(ctx));
+        while_ins.append_op(ctx, store_b);
 
-    // i is updated, now do the comparison again
-    let i_inc = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, i_inc);
-    let n_for_cond = LoadOp::new(ctx, slot_n.get_result(ctx), i64_ty.into());
-    while_ins.append_op(ctx, n_for_cond);
-    let cond_next = BinOp::new(
-        ctx,
-        BinOpKind::Lt,
-        i_inc.get_result(ctx),
-        n_for_cond.get_result(ctx),
-    );
-    while_ins.append_op(ctx, cond_next);
-    let store_cond = StoreOp::new(
-        ctx,
-        slot_cond_ptr.get_result(ctx),
-        cond_next.get_result(ctx),
-    );
-    while_ins.append_op(ctx, store_cond);
+        let i_val = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, i_val);
+        let one_step = ConstantOp::new_i64(ctx, 1);
+        while_ins.append_op(ctx, one_step);
+        let i_next = BinOp::new(
+            ctx,
+            BinOpKind::Add,
+            i_val.get_result(ctx),
+            one_step.get_result(ctx),
+        );
+        while_ins.append_op(ctx, i_next);
+        let store_i = StoreOp::new(ctx, slot_i.get_result(ctx), i_next.get_result(ctx));
+        while_ins.append_op(ctx, store_i);
 
-    let while_yield = YieldOp::new(ctx);
-    while_ins.append_op(ctx, while_yield);
-    // ANCHOR_END: fib_build_while_body
+        // i is updated, now do the comparison again
+        let i_inc = LoadOp::new(ctx, slot_i.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, i_inc);
+        let n_for_cond = LoadOp::new(ctx, slot_n.get_result(ctx), i64_ty.into());
+        while_ins.append_op(ctx, n_for_cond);
+        let cond_next = BinOp::new(
+            ctx,
+            BinOpKind::Lt,
+            i_inc.get_result(ctx),
+            n_for_cond.get_result(ctx),
+        );
+        while_ins.append_op(ctx, cond_next);
+        let store_cond = StoreOp::new(
+            ctx,
+            slot_cond_ptr.get_result(ctx),
+            cond_next.get_result(ctx),
+        );
+        while_ins.append_op(ctx, store_cond);
 
-    // ANCHOR: fib_build_return
-    let fib_result = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
-    ins.append_op(ctx, fib_result);
-    let ret = ReturnOp::new(ctx, fib_result.get_result(ctx));
-    ins.append_op(ctx, ret);
+        let while_yield = YieldOp::new(ctx);
+        while_ins.append_op(ctx, while_yield);
+        // ANCHOR_END: fib_build_while_body
 
-    verify_op(&module, ctx).expect("constructed fibonacci IR should verify");
-    println!("{}", module.get_operation().disp(ctx));
-    // ANCHOR_END: fib_build_return
+        // ANCHOR: fib_build_return
+        let fib_result = LoadOp::new(ctx, slot_b.get_result(ctx), i64_ty.into());
+        ins.append_op(ctx, fib_result);
+        let ret = ReturnOp::new(ctx, fib_result.get_result(ctx));
+        ins.append_op(ctx, ret);
+
+        verify_op(&module, ctx).expect("constructed fibonacci IR should verify");
+        println!("{}", module.get_operation().disp(ctx));
+        // ANCHOR_END: fib_build_return
+    }
+    // ANCHOR_END: fib_build_function
 }
-// ANCHOR_END: fib_build_function

@@ -565,38 +565,43 @@ pub fn parse_program(src: &str) -> Result<Vec<Function>, String> {
 }
 // ANCHOR_END: parse_program
 
-#[test]
-fn test_ast_fibonacci() {
-    let file_name = "examples/kaleidoscope/fibonacci.kal";
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    let src = std::fs::read_to_string(file_name).expect("failed to read source file");
-    match parse_program(&src) {
-        Ok(funcs) => {
-            for f in funcs {
-                print_function(&f);
+    #[test]
+    fn test_ast_fibonacci() {
+        let file_name = "examples/kaleidoscope/fibonacci.kal";
+
+        let src = std::fs::read_to_string(file_name).expect("failed to read source file");
+        match parse_program(&src) {
+            Ok(funcs) => {
+                for f in funcs {
+                    print_function(&f);
+                }
             }
-        }
-        Err(err) => {
-            eprintln!("parse error: {err}");
-            std::process::exit(1);
+            Err(err) => {
+                eprintln!("parse error: {err}");
+                std::process::exit(1);
+            }
         }
     }
-}
 
-#[test]
-fn test_ast_factorial() {
-    let file_name = "examples/kaleidoscope/factorial.kal";
+    #[test]
+    fn test_ast_factorial() {
+        let file_name = "examples/kaleidoscope/factorial.kal";
 
-    let src = std::fs::read_to_string(file_name).expect("failed to read source file");
-    match parse_program(&src) {
-        Ok(funcs) => {
-            for f in funcs {
-                print_function(&f);
+        let src = std::fs::read_to_string(file_name).expect("failed to read source file");
+        match parse_program(&src) {
+            Ok(funcs) => {
+                for f in funcs {
+                    print_function(&f);
+                }
             }
-        }
-        Err(err) => {
-            eprintln!("parse error: {err}");
-            std::process::exit(1);
+            Err(err) => {
+                eprintln!("parse error: {err}");
+                std::process::exit(1);
+            }
         }
     }
 }
