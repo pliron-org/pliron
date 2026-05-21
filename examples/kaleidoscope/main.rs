@@ -1,5 +1,8 @@
 //! Entry-point for the kaleidoscope example compiler
 
+// We use pliron-llvm in this test, which is not supported in wasm.
+#![cfg(not(target_family = "wasm"))]
+
 mod ast;
 mod dialect;
 mod from_ast;
