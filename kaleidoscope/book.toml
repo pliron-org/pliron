@@ -12,5 +12,5 @@ create-missing = false
 default-theme = "light"
 preferred-dark-theme = "navy"
 no-section-label = true
-git-repository-url = "https://github.com/vaivaswatha/pliron"
-edit-url-template = "https://github.com/vaivaswatha/pliron/edit/master/kaleidoscope/{path}"
+git-repository-url = "https://github.com/pliron-org/pliron"
+edit-url-template = "https://github.com/pliron-org/pliron/edit/master/kaleidoscope/{path}"

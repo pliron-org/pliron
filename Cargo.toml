@@ -18,7 +18,7 @@ version = "0.15.0"
 edition = "2024"
 license = "Apache-2.0"
 readme = "README.md"
-repository = "https://github.com/vaivaswatha/pliron"
+repository = "https://github.com/pliron-org/pliron"
 categories = ["compilers"]
 keywords = ["pliron", "llvm", "mlir", "compiler"]
 
