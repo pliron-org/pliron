@@ -1,12 +1,12 @@
 //! Implementation of various op interfaces for LLVM IR instructions.
 
 use pliron::{
-    attribute::AttrObj,
+    attribute::{AttrObj, Attribute},
     basic_block::BasicBlock,
     builtin::attributes::IntegerAttr,
     context::{Context, Ptr},
     derive::op_interface_impl,
-    irbuild::{IRStatus, inserter::OpInsertionPoint, rewriter::Rewriter},
+    irbuild::{IRStatus, rewriter::Rewriter},
     op::Op,
     opts::{
         constants::ConstFoldInterface,
@@ -118,45 +118,76 @@ impl ConstFoldInterface for ConstantOp {
     }
 }
 
-/// If all elements of `operand_attrs` are `Some(x)` where x is an IntegerAttr,
-/// sum the operands and return the result. Otherwise return None.
-fn add_op_fold_sum(operand_attrs: &[Option<AttrObj>]) -> Option<IntegerAttr> {
+/// If all elements of `operand_attrs` are `Some(x)`, combine the operands
+/// and return the result. Otherwise, return None. Assumes that for every element
+/// of `operand_attrs` of the form `Some(x)`, `x` has type `T`.
+fn fold_bin_operands<T: Attribute>(
+    operand_attrs: &[Option<AttrObj>],
+    combine: &impl Fn(&T, &T) -> T,
+) -> Option<T> {
     let [Some(lhs), Some(rhs)] = operand_attrs else {
         return None;
     };
-    let lhs = lhs.downcast_ref::<IntegerAttr>()?;
-    let rhs = rhs.downcast_ref::<IntegerAttr>()?;
-    Some(IntegerAttr::new(
-        lhs.get_type(),
-        lhs.value().add(&rhs.value()),
-    ))
+    let lhs_int = lhs
+        .downcast_ref::<T>()
+        .expect("invalid operand type: typecheck before optimizing");
+    let rhs_int = rhs
+        .downcast_ref::<T>()
+        .expect("invalid operand type: typecheck before optimizing");
+    Some(combine(lhs_int, rhs_int))
 }
 
-#[op_interface_impl]
-impl ConstFoldInterface for AddOp {
-    fn check_fold(
-        &self,
-        _ctx: &Context,
-        operand_attrs: &[Option<AttrObj>],
-    ) -> Vec<Option<AttrObj>> {
-        vec![add_op_fold_sum(operand_attrs).map(|attr| Box::new(attr) as AttrObj)]
-    }
+/// Implement [ConstFoldInterface] for a binary op that folds to a [ConstantOp]
+/// when both operands are compile-time constants of attribute type `$attr_ty`.
+/// `$combine` is a closure `Fn(&$attr_ty, &$attr_ty) -> $attr_ty` that computes
+/// the folded value.
+macro_rules! impl_const_fold_bin_op {
+    ($op:ty, $attr_ty:ty, $combine:expr) => {
+        #[op_interface_impl]
+        impl ConstFoldInterface for $op {
+            fn check_fold(
+                &self,
+                _ctx: &Context,
+                operand_attrs: &[Option<AttrObj>],
+            ) -> Vec<Option<AttrObj>> {
+                vec![
+                    fold_bin_operands::<$attr_ty>(operand_attrs, &$combine)
+                        .map(|attr| Box::new(attr) as AttrObj),
+                ]
+            }
 
-    fn fold_in_place(
-        &self,
-        ctx: &mut Context,
-        operand_attrs: &[Option<AttrObj>],
-        rewriter: &mut dyn Rewriter,
-    ) -> IRStatus {
-        let Some(sum) = add_op_fold_sum(operand_attrs) else {
-            return IRStatus::Unchanged;
-        };
-        let new_const = ConstantOp::new(ctx, Box::new(sum));
-        let old_op = self.get_operation();
-        let new_op = new_const.get_operation();
-        rewriter.set_insertion_point(OpInsertionPoint::BeforeOperation(old_op));
-        rewriter.insert_operation(ctx, new_op);
-        rewriter.replace_operation(ctx, old_op, new_op);
-        IRStatus::Changed
-    }
+            fn fold_in_place(
+                &self,
+                ctx: &mut Context,
+                operand_attrs: &[Option<AttrObj>],
+                rewriter: &mut dyn Rewriter,
+            ) -> IRStatus {
+                let Some(folded) = fold_bin_operands::<$attr_ty>(operand_attrs, &$combine) else {
+                    return IRStatus::Unchanged;
+                };
+                let new_const = ConstantOp::new(ctx, Box::new(folded));
+                let old_op = self.get_operation();
+                let new_op = new_const.get_operation();
+                rewriter.insert_operation(ctx, new_op);
+                rewriter.replace_operation(ctx, old_op, new_op);
+                IRStatus::Changed
+            }
+        }
+    };
 }
+
+impl_const_fold_bin_op!(
+    AddOp,
+    IntegerAttr,
+    |lhs: &IntegerAttr, rhs: &IntegerAttr| {
+        IntegerAttr::new(lhs.get_type(), lhs.value().add(&rhs.value()))
+    }
+);
+
+impl_const_fold_bin_op!(
+    SubOp,
+    IntegerAttr,
+    |lhs: &IntegerAttr, rhs: &IntegerAttr| {
+        IntegerAttr::new(lhs.get_type(), lhs.value().sub(&rhs.value()))
+    }
+);

@@ -52,6 +52,22 @@ impl APInt {
         APInt { value }
     }
 
+    /// Subtract `rhs` from `self`. They must have the same bitwidth.
+    pub fn sub(&self, rhs: &APInt) -> APInt {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::sub: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let mut value = self.value.clone();
+        value
+            .sub_(&rhs.value)
+            .expect("APInt::sub: bitwidth mismatch");
+        APInt { value }
+    }
+
     /// Get unsigned max value
     pub fn umax(width: NonZero<usize>) -> APInt {
         APInt {

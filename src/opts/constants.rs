@@ -18,9 +18,9 @@ pub trait ConstFoldInterface {
 
     /// Takes a slice `operand_attrs` containing `Some(attr)` at position `i` if operand `i` is a compile-time
     /// constant (where `attr` contains the constant value) and `None` at position `i` otherwise.
-    /// Uses this knowledge to rewrite this operation into a cheaper form.
-    /// (E.g., perform compile-time arithmetic on compile-time constants,
-    /// rewriting the add op to a constant op).
+    /// Uses this knowledge to rewrite this operation into a cheaper form
+    /// (e.g., perform compile-time arithmetic on compile-time constants,
+    /// rewriting an add op to a constant op). Assumes `rewriter`'s insertion point starts before the operation.
     fn fold_in_place(
         &self,
         ctx: &mut Context,
