@@ -80,9 +80,9 @@ pub fn lower_function(ctx: &mut Context, func: &Function) -> Result<FuncOp> {
         let param_val = entry.deref(ctx).get_argument(idx);
         let slot = DeclOp::new(ctx, i64_ty.into());
         let slot_val = slot.get_result(ctx);
-        ins.append_op(ctx, slot);
+        ins.append_op(ctx, &slot);
         let store = StoreOp::new(ctx, slot_val, param_val);
-        ins.append_op(ctx, store);
+        ins.append_op(ctx, &store);
         var_map.insert(param_name.clone(), slot_val);
     }
     // ANCHOR_END: lower_function_params
@@ -95,9 +95,9 @@ pub fn lower_function(ctx: &mut Context, func: &Function) -> Result<FuncOp> {
     if entry.deref(ctx).get_terminator(ctx).is_none() {
         let zero = ConstantOp::new_i64(ctx, 0);
         let zero_val = zero.get_result(ctx);
-        ins.append_op(ctx, zero);
+        ins.append_op(ctx, &zero);
         let ret = ReturnOp::new(ctx, zero_val);
-        ins.append_op(ctx, ret);
+        ins.append_op(ctx, &ret);
     }
     // ANCHOR_END: lower_function_fallback
     Ok(func_op)
@@ -138,13 +138,13 @@ fn lower_stmt(
         Stmt::VarDecl { name, init } => {
             let slot = DeclOp::new(ctx, i64_ty.into());
             let slot_val = slot.get_result(ctx);
-            ins.append_op(ctx, slot);
+            ins.append_op(ctx, &slot);
             var_map.insert(name.clone(), slot_val);
 
             if let Some(init_expr) = init {
                 let val = lower_expr(ctx, ins, var_map, init_expr)?;
                 let store = StoreOp::new(ctx, slot_val, val);
-                ins.append_op(ctx, store);
+                ins.append_op(ctx, &store);
             }
             Ok(false)
         }
@@ -161,7 +161,7 @@ fn lower_stmt(
                 )
             })?;
             let store = StoreOp::new(ctx, slot, val);
-            ins.append_op(ctx, store);
+            ins.append_op(ctx, &store);
             Ok(false)
         }
         // ANCHOR_END: lower_stmt_assign
@@ -171,7 +171,7 @@ fn lower_stmt(
         Stmt::Return(expr) => {
             let val = lower_expr(ctx, ins, var_map, expr)?;
             let ret = ReturnOp::new(ctx, val);
-            ins.append_op(ctx, ret);
+            ins.append_op(ctx, &ret);
             Ok(true) // ReturnOp is a block terminator
         }
         // ANCHOR_END: lower_stmt_return
@@ -185,7 +185,7 @@ fn lower_stmt(
         } => {
             let cond_val = lower_expr(ctx, ins, var_map, cond)?;
             let if_op = IfOp::new(ctx, cond_val);
-            ins.append_op(ctx, if_op);
+            ins.append_op(ctx, &if_op);
 
             // Then region: add YieldOp only if the branch didn't terminate.
             let then_block = BasicBlock::new(ctx, None, vec![]);
@@ -195,7 +195,7 @@ fn lower_stmt(
             let then_terminated = lower_stmts(ctx, &mut then_ins, &mut then_vars, then_body)?;
             if !then_terminated {
                 let then_yield = YieldOp::new(ctx);
-                then_ins.append_op(ctx, then_yield);
+                then_ins.append_op(ctx, &then_yield);
             }
 
             // Else region: add YieldOp only if the branch didn't terminate.
@@ -206,7 +206,7 @@ fn lower_stmt(
             let else_terminated = lower_stmts(ctx, &mut else_ins, &mut else_vars, else_body)?;
             if !else_terminated {
                 let else_yield = YieldOp::new(ctx);
-                else_ins.append_op(ctx, else_yield);
+                else_ins.append_op(ctx, &else_yield);
             }
 
             Ok(false) // IfOp itself is not a terminator in the outer block
@@ -223,15 +223,15 @@ fn lower_stmt(
             // Allocate the condition slot in the outer block.
             let cond_slot = DeclOp::new(ctx, i64_ty.into());
             let cond_slot_val = cond_slot.get_result(ctx);
-            ins.append_op(ctx, cond_slot);
+            ins.append_op(ctx, &cond_slot);
 
             // Compute the initial condition and store it.
             let init_cond = lower_expr(ctx, ins, var_map, cond)?;
             let init_store = StoreOp::new(ctx, cond_slot_val, init_cond);
-            ins.append_op(ctx, init_store);
+            ins.append_op(ctx, &init_store);
 
             let while_op = WhileOp::new(ctx, cond_slot_val);
-            ins.append_op(ctx, while_op);
+            ins.append_op(ctx, &while_op);
 
             // Build the loop body.
             let body_block = BasicBlock::new(ctx, None, vec![]);
@@ -244,9 +244,9 @@ fn lower_stmt(
                 // Re-evaluate the condition at the end of the body and update the slot.
                 let next_cond = lower_expr(ctx, &mut body_ins, &body_vars, cond)?;
                 let next_store = StoreOp::new(ctx, cond_slot_val, next_cond);
-                body_ins.append_op(ctx, next_store);
+                body_ins.append_op(ctx, &next_store);
                 let body_yield = YieldOp::new(ctx);
-                body_ins.append_op(ctx, body_yield);
+                body_ins.append_op(ctx, &body_yield);
             }
 
             Ok(false) // WhileOp itself is not a terminator in the outer block
@@ -280,7 +280,7 @@ fn lower_expr(
         Expr::Integer(n) => {
             let op = ConstantOp::new_i64(ctx, *n);
             let val = op.get_result(ctx);
-            ins.append_op(ctx, op);
+            ins.append_op(ctx, &op);
             Ok(val)
         }
         // ANCHOR_END: lower_expr_integer
@@ -296,7 +296,7 @@ fn lower_expr(
             })?;
             let load = LoadOp::new(ctx, slot, i64_ty.into());
             let val = load.get_result(ctx);
-            ins.append_op(ctx, load);
+            ins.append_op(ctx, &load);
             Ok(val)
         }
         // ANCHOR_END: lower_expr_variable
@@ -309,7 +309,7 @@ fn lower_expr(
             let kind = ast_binop_to_kind(op);
             let bin_op = BinOp::new(ctx, kind, lhs_val, rhs_val);
             let val = bin_op.get_result(ctx);
-            ins.append_op(ctx, bin_op);
+            ins.append_op(ctx, &bin_op);
             Ok(val)
         }
         // ANCHOR_END: lower_expr_binop
@@ -325,7 +325,7 @@ fn lower_expr(
             let call_op = CallOp::new(ctx, IdentifierAttr::new(callee_id), arg_vals, i64_ty.into());
             let val = call_op.get_operation().deref(ctx).get_result(0);
             let val = { val }; // reborrow to release ctx ref before append
-            ins.append_op(ctx, call_op);
+            ins.append_op(ctx, &call_op);
             Ok(val)
         } // ANCHOR_END: lower_expr_call
     }

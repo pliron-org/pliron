@@ -6,7 +6,7 @@ use pliron::{
     context::Context,
     derive::pliron_op,
     init_env_logger_for_tests,
-    irbuild::IRStatus,
+    irbuild::{IRStatus, rewriter::Rewriter},
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
     opts::mem2reg::{AllocInfo, PromotableOpInterface, PromotableOpKind, mem2reg},
@@ -60,7 +60,7 @@ impl PromotableOpInterface for NonPromotableUseOp {
         &self,
         _ctx: &mut Context,
         _alloc_info_reaching_defs: &[(AllocInfo, pliron::value::Value)],
-        _rewriter: &mut pliron::irbuild::rewriter::IRRewriter<pliron::irbuild::listener::Recorder>,
+        _rewriter: &mut dyn Rewriter,
     ) -> Result<()> {
         unreachable!("NonPromotableUseOp::promote must never be called")
     }

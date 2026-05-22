@@ -125,7 +125,7 @@ impl ToLLVMDialect for KalConstantOp {
         let val_attr = self.value_attr(ctx);
         let llvm_const = LlvmConstantOp::new(ctx, Box::new(val_attr));
         let new_result = llvm_const.get_result(ctx);
-        rewriter.insert_op(ctx, llvm_const);
+        rewriter.insert_op(ctx, &llvm_const);
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![new_result]);
         Ok(())
     }
@@ -147,10 +147,10 @@ impl ToLLVMDialect for KalDeclOp {
         let size_attr = IntegerAttr::new(i32_ty, APInt::from_i32(1, bw(32)));
         let size_const = LlvmConstantOp::new(ctx, Box::new(size_attr));
         let size_val = size_const.get_result(ctx);
-        rewriter.insert_op(ctx, size_const);
+        rewriter.insert_op(ctx, &size_const);
         let alloca = AllocaOp::new(ctx, elem_ty, size_val);
         let alloca_ptr = alloca.get_result(ctx);
-        rewriter.insert_op(ctx, alloca);
+        rewriter.insert_op(ctx, &alloca);
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![alloca_ptr]);
         Ok(())
     }
@@ -175,7 +175,7 @@ impl ToLLVMDialect for KalLoadOp {
         // Operand was already updated in-place by the framework.
         let load = LlvmLoadOp::new(ctx, slot, i64_ty.into());
         let result = load.get_result(ctx);
-        rewriter.insert_op(ctx, load);
+        rewriter.insert_op(ctx, &load);
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![result]);
         Ok(())
     }
@@ -195,7 +195,7 @@ impl ToLLVMDialect for KalStoreOp {
         let slot = self.slot(ctx);
         let value = self.stored_value(ctx);
         let store = LlvmStoreOp::new(ctx, value, slot);
-        rewriter.insert_op(ctx, store);
+        rewriter.insert_op(ctx, &store);
         rewriter.erase_operation(ctx, self.get_operation());
         Ok(())
     }
@@ -226,7 +226,7 @@ impl ToLLVMDialect for BinOp {
                     IntegerOverflowFlagsAttr::default(),
                 );
                 let r = op.get_result(ctx);
-                rewriter.insert_op(ctx, op);
+                rewriter.insert_op(ctx, &op);
                 r
             }
             BinOpKind::Sub => {
@@ -237,7 +237,7 @@ impl ToLLVMDialect for BinOp {
                     IntegerOverflowFlagsAttr::default(),
                 );
                 let r = op.get_result(ctx);
-                rewriter.insert_op(ctx, op);
+                rewriter.insert_op(ctx, &op);
                 r
             }
             BinOpKind::Mul => {
@@ -248,7 +248,7 @@ impl ToLLVMDialect for BinOp {
                     IntegerOverflowFlagsAttr::default(),
                 );
                 let r = op.get_result(ctx);
-                rewriter.insert_op(ctx, op);
+                rewriter.insert_op(ctx, &op);
                 r
             }
             _ => {
@@ -256,10 +256,10 @@ impl ToLLVMDialect for BinOp {
                 let pred = binop_kind_to_icmp_pred(kind);
                 let icmp = ICmpOp::new(ctx, pred, lhs, rhs);
                 let cmp_i1 = icmp.get_result(ctx);
-                rewriter.insert_op(ctx, icmp);
+                rewriter.insert_op(ctx, &icmp);
                 let sext = SExtOp::new(ctx, cmp_i1, i64_ty.into());
                 let r = sext.get_result(ctx);
-                rewriter.insert_op(ctx, sext);
+                rewriter.insert_op(ctx, &sext);
                 r
             }
         };
@@ -298,7 +298,7 @@ impl ToLLVMDialect for KalCallOp {
             args,
         );
         let result = llvm_call.get_result(ctx);
-        rewriter.insert_op(ctx, llvm_call);
+        rewriter.insert_op(ctx, &llvm_call);
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![result]);
         Ok(())
     }
@@ -317,7 +317,7 @@ impl ToLLVMDialect for KalReturnOp {
     ) -> Result<()> {
         let val = self.value(ctx);
         let ret = LlvmReturnOp::new(ctx, Some(val));
-        rewriter.insert_op(ctx, ret);
+        rewriter.insert_op(ctx, &ret);
         rewriter.erase_operation(ctx, self.get_operation());
         Ok(())
     }
@@ -379,10 +379,10 @@ impl ToLLVMDialect for KalIfOp {
         let zero_attr = IntegerAttr::new(i64_ty, APInt::from_i64(0, bw(64)));
         let zero_const = LlvmConstantOp::new(ctx, Box::new(zero_attr));
         let zero_val = zero_const.get_result(ctx);
-        rewriter.insert_op(ctx, zero_const);
+        rewriter.insert_op(ctx, &zero_const);
         let cmp = ICmpOp::new(ctx, ICmpPredicateAttr::NE, cond, zero_val);
         let cmp_i1 = cmp.get_result(ctx);
-        rewriter.insert_op(ctx, cmp);
+        rewriter.insert_op(ctx, &cmp);
 
         // Split the current block at the IfOp position to create the merge block.
         let pre_if_block = self
@@ -400,13 +400,13 @@ impl ToLLVMDialect for KalIfOp {
         // Emit conditional branch in pre_if_block.
         rewriter.set_insertion_point(OpInsertionPoint::AtBlockEnd(pre_if_block));
         let cond_br = CondBrOp::new(ctx, cmp_i1, then_entry, vec![], else_entry, vec![]);
-        rewriter.insert_op(ctx, cond_br);
+        rewriter.insert_op(ctx, &cond_br);
 
         // Replace YieldOp in then-branch with branch to merge.
         if Operation::is_op::<KalYieldOp>(then_term, ctx) {
             rewriter.set_insertion_point(OpInsertionPoint::BeforeOperation(then_term));
             let then_br = BrOp::new(ctx, merge_block, vec![]);
-            rewriter.insert_op(ctx, then_br);
+            rewriter.insert_op(ctx, &then_br);
             rewriter.erase_operation(ctx, then_term);
         }
 
@@ -414,7 +414,7 @@ impl ToLLVMDialect for KalIfOp {
         if Operation::is_op::<KalYieldOp>(else_term, ctx) {
             rewriter.set_insertion_point(OpInsertionPoint::BeforeOperation(else_term));
             let else_br = BrOp::new(ctx, merge_block, vec![]);
-            rewriter.insert_op(ctx, else_br);
+            rewriter.insert_op(ctx, &else_br);
             rewriter.erase_operation(ctx, else_term);
         }
 
@@ -485,28 +485,28 @@ impl ToLLVMDialect for KalWhileOp {
         // Emit an unconditional branch into the header from pre_while_block.
         rewriter.set_insertion_point(OpInsertionPoint::AtBlockEnd(pre_while_block));
         let br_to_header = BrOp::new(ctx, header_block, vec![]);
-        rewriter.insert_op(ctx, br_to_header);
+        rewriter.insert_op(ctx, &br_to_header);
 
         // Header: load condition, compare to zero, cond_br to body or exit.
         rewriter.set_insertion_point(OpInsertionPoint::AtBlockEnd(header_block));
         let cond_load = LlvmLoadOp::new(ctx, cond_ptr, i64_ty.into());
         let cond_i64 = cond_load.get_result(ctx);
-        rewriter.insert_op(ctx, cond_load);
+        rewriter.insert_op(ctx, &cond_load);
         let zero_attr = IntegerAttr::new(i64_ty, APInt::from_i64(0, bw(64)));
         let zero_const = LlvmConstantOp::new(ctx, Box::new(zero_attr));
         let zero_val = zero_const.get_result(ctx);
-        rewriter.insert_op(ctx, zero_const);
+        rewriter.insert_op(ctx, &zero_const);
         let cmp = ICmpOp::new(ctx, ICmpPredicateAttr::NE, cond_i64, zero_val);
         let cmp_i1 = cmp.get_result(ctx);
-        rewriter.insert_op(ctx, cmp);
+        rewriter.insert_op(ctx, &cmp);
         let cond_br = CondBrOp::new(ctx, cmp_i1, body_entry, vec![], exit_block, vec![]);
-        rewriter.insert_op(ctx, cond_br);
+        rewriter.insert_op(ctx, &cond_br);
 
         // Replace YieldOp at end of body with back-edge to header.
         if Operation::is_op::<KalYieldOp>(while_term, ctx) {
             rewriter.set_insertion_point(OpInsertionPoint::BeforeOperation(while_term));
             let back_edge = BrOp::new(ctx, header_block, vec![]);
-            rewriter.insert_op(ctx, back_edge);
+            rewriter.insert_op(ctx, &back_edge);
             rewriter.erase_operation(ctx, while_term);
         }
 
@@ -541,7 +541,7 @@ fn lower_func_op_to_llvm(
     let llvm_func_op = pliron_llvm::ops::FuncOp::new(ctx, func_name, llvm_func_ty);
     let llvm_func_op_ptr = llvm_func_op.get_operation();
     let llvm_entry = llvm_func_op.get_or_create_entry_block(ctx);
-    rewriter.insert_op(ctx, llvm_func_op);
+    rewriter.insert_op(ctx, &llvm_func_op);
 
     // Move the region from the original func_op to the new llvm.func op.
     rewriter.inline_region(
@@ -555,7 +555,7 @@ fn lower_func_op_to_llvm(
     let args: Vec<_> = llvm_entry.deref(ctx).arguments().collect();
     let br = BrOp::new(ctx, func_entry, args);
     rewriter.set_insertion_point(OpInsertionPoint::AtBlockEnd(llvm_entry));
-    rewriter.insert_op(ctx, br);
+    rewriter.insert_op(ctx, &br);
 
     // Replace the original FuncOp with the new llvm.func op.
     rewriter.replace_operation(ctx, func_op.get_operation(), llvm_func_op_ptr);
