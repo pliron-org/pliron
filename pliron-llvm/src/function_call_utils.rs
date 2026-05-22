@@ -8,7 +8,7 @@ use pliron::{
     },
     context::{Context, Ptr},
     identifier::Identifier,
-    irbuild::{inserter::Inserter, listener::InsertionListener},
+    irbuild::inserter::Inserter,
     result::Result,
     symbol_table::SymbolTableCollection,
     r#type::TypeObj,
@@ -105,9 +105,9 @@ pub fn lookup_or_create_free_fn(
 }
 
 /// Compute size of a type in bytes
-pub fn compute_type_size_in_bytes<L: InsertionListener, I: Inserter<L>>(
+pub fn compute_type_size_in_bytes(
     ctx: &mut Context,
-    inserter: &mut I,
+    inserter: &mut dyn Inserter,
     ty: Ptr<TypeObj>,
 ) -> Value {
     // This is LLVM's expansion for sizeof
@@ -117,16 +117,16 @@ pub fn compute_type_size_in_bytes<L: InsertionListener, I: Inserter<L>>(
     let size_ty = get_size_type(ctx);
     let pointer_ty = PointerType::get(ctx).into();
     let zero_op = ZeroOp::new(ctx, pointer_ty);
-    inserter.append_op(ctx, zero_op);
+    inserter.append_op(ctx, &zero_op);
     let gep_op = GetElementPtrOp::new(
         ctx,
         zero_op.get_result(ctx),
         vec![GepIndex::Constant(1)],
         ty,
     );
-    inserter.append_op(ctx, gep_op);
+    inserter.append_op(ctx, &gep_op);
     let ptr_to_int_op = PtrToIntOp::new(ctx, gep_op.get_result(ctx), size_ty);
-    inserter.append_op(ctx, ptr_to_int_op);
+    inserter.append_op(ctx, &ptr_to_int_op);
     ptr_to_int_op.get_result(ctx)
 }
 
@@ -218,17 +218,17 @@ mod tests {
         let callee_ty = malloc_fn.get_type(&ctx);
         let args = vec![fp_ty_size];
         let malloc_call = CallOp::new(&mut ctx, callee, callee_ty, args);
-        inserter.append_op(&ctx, malloc_call);
+        inserter.append_op(&ctx, &malloc_call);
 
         let ptr_result = malloc_call.get_result(&ctx);
         let free_callee = CallOpCallable::Direct(free_fn.get_symbol_name(&ctx));
         let free_callee_ty = free_fn.get_type(&ctx);
         let free_args = vec![ptr_result];
         let free_call = CallOp::new(&mut ctx, free_callee, free_callee_ty, free_args);
-        inserter.append_op(&ctx, free_call);
+        inserter.append_op(&ctx, &free_call);
 
         let ret_op = ReturnOp::new(&mut ctx, Some(fp_ty_size));
-        inserter.append_op(&ctx, ret_op);
+        inserter.append_op(&ctx, &ret_op);
 
         verify_op(&module, &ctx).expect_ok(&ctx);
 

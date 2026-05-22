@@ -16,11 +16,11 @@ use crate::{
         dominance::{DomFrontierMap, DomTree, compute_dominator_tree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     },
-    irbuild::IRStatus,
     irbuild::{
+        IRStatus,
         inserter::{IRInserter, Inserter},
         listener::{Recorder, RecorderEvent},
-        rewriter::IRRewriter,
+        rewriter::{IRRewriter, Rewriter},
     },
     linked_list::ContainsLinkedList,
     op::{Op, op_cast, op_impls},
@@ -54,7 +54,7 @@ pub trait PromotableAllocationInterface {
     fn default_value(
         &self,
         ctx: &mut Context,
-        inserter: &mut IRInserter<Recorder>,
+        inserter: &mut dyn Inserter,
         alloc_info: &AllocInfo,
     ) -> Result<Value>;
 
@@ -65,7 +65,7 @@ pub trait PromotableAllocationInterface {
     fn promote(
         &self,
         ctx: &mut Context,
-        rewriter: &mut IRRewriter<Recorder>,
+        rewriter: &mut dyn Rewriter,
         alloc_infos: &[AllocInfo],
     ) -> Result<()>;
 
@@ -116,7 +116,7 @@ pub trait PromotableOpInterface {
         &self,
         ctx: &mut Context,
         alloc_info_reaching_defs: &[(AllocInfo, Value)],
-        rewriter: &mut IRRewriter<Recorder>,
+        rewriter: &mut dyn Rewriter,
     ) -> Result<()>;
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
@@ -339,7 +339,7 @@ fn get_or_create_default_def(
                 .expect("Alloc op must implement PromotableAllocationInterface");
             let default_val = alloc_iface.default_value(
                 ctx,
-                &mut IRInserter::new_before_operation(alloc_op),
+                &mut IRInserter::<Recorder>::new_before_operation(alloc_op),
                 &alloc_cand.alloc_info,
             )?;
             entry.insert(default_val);

@@ -25,11 +25,7 @@ use pliron::{
     context::{Context, Ptr},
     identifier::Identifier,
     indented_block, input_err,
-    irbuild::{
-        inserter::{IRInserter, Inserter},
-        listener::Recorder,
-        rewriter::{IRRewriter, Rewriter},
-    },
+    irbuild::{inserter::Inserter, rewriter::Rewriter},
     irfmt::{
         self,
         parsers::{
@@ -484,7 +480,7 @@ impl PromotableAllocationInterface for AllocaOp {
     fn default_value(
         &self,
         ctx: &mut Context,
-        inserter: &mut IRInserter<Recorder>,
+        inserter: &mut dyn Inserter,
         alloc_info: &AllocInfo,
     ) -> Result<Value> {
         if alloc_info.ptr != self.get_result(ctx) {
@@ -492,14 +488,14 @@ impl PromotableAllocationInterface for AllocaOp {
         }
         let poison = PoisonOp::new(ctx, alloc_info.ty);
         let poison_val = poison.get_result(ctx);
-        inserter.insert_op(ctx, poison);
+        inserter.insert_op(ctx, &poison);
         Ok(poison_val)
     }
 
     fn promote(
         &self,
         ctx: &mut Context,
-        rewriter: &mut IRRewriter<Recorder>,
+        rewriter: &mut dyn Rewriter,
         alloc_infos: &[AllocInfo],
     ) -> Result<()> {
         if alloc_infos.len() != 1 || alloc_infos[0].ptr != self.get_result(ctx) {
@@ -1439,7 +1435,7 @@ impl PromotableOpInterface for LoadOp {
         &self,
         ctx: &mut Context,
         alloc_info_reaching_defs: &[(AllocInfo, Value)],
-        rewriter: &mut IRRewriter<Recorder>,
+        rewriter: &mut dyn Rewriter,
     ) -> Result<()> {
         if alloc_info_reaching_defs.len() != 1 {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);
@@ -1519,7 +1515,7 @@ impl PromotableOpInterface for StoreOp {
         &self,
         ctx: &mut Context,
         alloc_info_reaching_defs: &[(AllocInfo, Value)],
-        rewriter: &mut IRRewriter<Recorder>,
+        rewriter: &mut dyn Rewriter,
     ) -> Result<()> {
         if alloc_info_reaching_defs.len() != 1 {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);

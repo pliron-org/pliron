@@ -64,4 +64,4 @@ We also plan to start work on supporting a cranelift dialect/backend soon.
 - [Discord channel](https://discord.com/channels/1481908978978918523/) ([Invitation link](https://discord.gg/5M3K4Ujv7v))
 - [GitHub Discussions](https://github.com/pliron-org/pliron/discussions)
 
-![pliron-logo](https://github.com/user-attachments/assets/adfaaeed-775f-4290-92fd-93d7c9b4fd12)
+![pliron-logo](.github/workflows/pliron-logo.png)

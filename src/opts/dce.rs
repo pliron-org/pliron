@@ -27,7 +27,6 @@ use crate::{
     },
     irbuild::IRStatus,
     irbuild::{
-        inserter::Inserter,
         listener::{Recorder, RecorderEvent},
         rewriter::{IRRewriter, Rewriter},
     },

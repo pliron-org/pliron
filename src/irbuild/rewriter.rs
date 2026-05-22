@@ -22,10 +22,7 @@ use crate::{
 };
 
 /// Rewriter interface for transformations.
-/// Use [DummyListener](super::listener::DummyListener) if no listener is needed.
-pub trait Rewriter<L: RewriteListener>: Inserter<L> {
-    type RewriterConfig: Clone;
-
+pub trait Rewriter: Inserter {
     /// Replace an [Operation] (and delete it) with another operation.
     /// Results of the new operation must match the results of the old operation.
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>);
@@ -75,7 +72,6 @@ pub trait Rewriter<L: RewriteListener>: Inserter<L> {
     /// Inline a [Region] into another [Region] at the given insertion point.
     /// The source region will be empty after this operation. The caller must
     /// take care of transferring control flow and arguments as necessary.
-    ///
     fn inline_region(
         &mut self,
         ctx: &Context,
@@ -89,48 +85,64 @@ pub trait Rewriter<L: RewriteListener>: Inserter<L> {
     /// Has the IR been modified via this rewriter?
     fn is_modified(&self) -> bool;
 
-    /// Set that the IR has been modified via this rewriter.
-    fn set_modified(&mut self);
-
-    /// Clear the modified flag.
-    fn clear_modified(&mut self);
-
-    /// Get the configuration for this rewriter.
-    fn get_config(&self) -> &Self::RewriterConfig;
-
-    /// Get a mutable reference to the configuration for this rewriter.
-    fn get_config_mut(&mut self) -> &mut Self::RewriterConfig;
+    /// Mark that the IR has been modified via this rewriter.
+    fn mark_modified(&mut self);
 }
 
 /// An implementation of the rewriter trait.
 /// Use [DummyListener](super::listener::DummyListener) if no listener is needed.
-pub struct IRRewriter<L: RewriteListener, I: Inserter<L> = IRInserter<L>> {
-    inserter: I,
-    modified: bool,
+pub struct IRRewriter<L: RewriteListener> {
+    inserter: IRInserter<L>,
     config: IRRewriterConfig,
     _phantom: std::marker::PhantomData<L>,
 }
 
-impl<L: RewriteListener, I: Inserter<L>> Default for IRRewriter<L, I>
+impl<L: RewriteListener> Default for IRRewriter<L>
 where
-    I: Default,
+    L: Default,
 {
     fn default() -> Self {
         Self {
-            inserter: I::default(),
-            modified: false,
+            inserter: IRInserter::default(),
             config: IRRewriterConfig::default(),
             _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<L: RewriteListener, I: Inserter<L>> Inserter<L> for IRRewriter<L, I> {
+impl<L: RewriteListener> IRRewriter<L> {
+    /// Get the configuration for this rewriter.
+    pub fn get_config(&self) -> &IRRewriterConfig {
+        &self.config
+    }
+
+    /// Get a mutable reference to the configuration for this rewriter.
+    pub fn get_config_mut(&mut self) -> &mut IRRewriterConfig {
+        &mut self.config
+    }
+
+    /// Sets the listener for insertion events.
+    pub fn set_listener(&mut self, listener: L) {
+        self.inserter.set_listener(listener);
+    }
+
+    /// Gets a reference to the listener for insertion events.
+    pub fn get_listener(&self) -> &L {
+        self.inserter.get_listener()
+    }
+
+    /// Gets a mutable reference to the listener for insertion events.
+    pub fn get_listener_mut(&mut self) -> &mut L {
+        self.inserter.get_listener_mut()
+    }
+}
+
+impl<L: RewriteListener> Inserter for IRRewriter<L> {
     fn append_operation(&mut self, ctx: &Context, operation: Ptr<Operation>) {
         self.inserter.append_operation(ctx, operation)
     }
 
-    fn append_op(&mut self, ctx: &Context, op: impl Op) {
+    fn append_op(&mut self, ctx: &Context, op: &dyn Op) {
         self.inserter.append_op(ctx, op)
     }
 
@@ -138,7 +150,7 @@ impl<L: RewriteListener, I: Inserter<L>> Inserter<L> for IRRewriter<L, I> {
         self.inserter.insert_operation(ctx, operation)
     }
 
-    fn insert_op(&mut self, ctx: &Context, op: impl Op) {
+    fn insert_op(&mut self, ctx: &Context, op: &dyn Op) {
         self.inserter.insert_op(ctx, op)
     }
 
@@ -173,18 +185,6 @@ impl<L: RewriteListener, I: Inserter<L>> Inserter<L> for IRRewriter<L, I> {
     fn set_insertion_point(&mut self, point: OpInsertionPoint) {
         self.inserter.set_insertion_point(point)
     }
-
-    fn set_listener(&mut self, listener: L) {
-        self.inserter.set_listener(listener);
-    }
-
-    fn get_listener(&self) -> &L {
-        self.inserter.get_listener()
-    }
-
-    fn get_listener_mut(&mut self) -> &mut L {
-        self.inserter.get_listener_mut()
-    }
 }
 
 /// Configuration for [IRRewriter].
@@ -203,9 +203,7 @@ impl Default for IRRewriterConfig {
     }
 }
 
-impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
-    type RewriterConfig = IRRewriterConfig;
-
+impl<L: RewriteListener> Rewriter for IRRewriter<L> {
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>) {
         if op != new_op && self.config.set_loc_on_operation_replacement {
             new_op.deref_mut(ctx).set_loc(op.deref(ctx).loc());
@@ -233,7 +231,7 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
             res.replace_all_uses_with(ctx, &new_res);
         }
         self.erase_operation(ctx, op);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn replace_value_uses_with(&mut self, ctx: &Context, old_value: Value, new_value: Value) {
@@ -243,7 +241,7 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
         self.get_listener_mut()
             .notify_value_use_replacement(ctx, old_value, new_value);
         old_value.replace_all_uses_with(ctx, &new_value);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn erase_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) {
@@ -257,7 +255,7 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
         self.get_listener_mut().notify_operation_erasure(ctx, op);
 
         Operation::erase(op, ctx);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>) {
@@ -272,7 +270,7 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
         self.get_listener_mut().notify_block_erasure(ctx, block);
 
         BasicBlock::erase(block, ctx);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn erase_region(&mut self, ctx: &mut Context, region: Ptr<Region>) {
@@ -301,19 +299,19 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
         let index_in_parent = region.deref(ctx).find_index_in_parent(ctx);
         let parent_op = region.deref(ctx).get_parent_op();
         Operation::erase_region(parent_op, ctx, index_in_parent);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn unlink_operation(&mut self, ctx: &Context, op: Ptr<Operation>) {
         self.get_listener_mut().notify_operation_unlinking(ctx, op);
         op.unlink(ctx);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn unlink_block(&mut self, ctx: &Context, block: Ptr<BasicBlock>) {
         self.get_listener_mut().notify_block_unlinking(ctx, block);
         block.unlink(ctx);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn move_operation(&mut self, ctx: &Context, op: Ptr<Operation>, new_point: OpInsertionPoint) {
@@ -396,27 +394,15 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
         self.get_listener_mut()
             .notify_value_type_change(ctx, value, old_type, new_type);
         value.set_type(ctx, new_type);
-        self.set_modified();
+        self.mark_modified();
     }
 
     fn is_modified(&self) -> bool {
-        self.modified
+        self.inserter.is_modified()
     }
 
-    fn set_modified(&mut self) {
-        self.modified = true;
-    }
-
-    fn clear_modified(&mut self) {
-        self.modified = false;
-    }
-
-    fn get_config(&self) -> &Self::RewriterConfig {
-        &self.config
-    }
-
-    fn get_config_mut(&mut self) -> &mut Self::RewriterConfig {
-        &mut self.config
+    fn mark_modified(&mut self) {
+        self.inserter.mark_modified();
     }
 }
 
@@ -441,40 +427,34 @@ impl<L: RewriteListener, I: Inserter<L>> Rewriter<L> for IRRewriter<L, I> {
 /// }
 /// assert!(rewriter.get_insertion_point().is_set());
 /// ```
-pub struct ScopedRewriter<'a, L: RewriteListener, R: Rewriter<L>> {
-    rewriter: &'a mut R,
+pub struct ScopedRewriter<'a> {
+    rewriter: &'a mut dyn Rewriter,
     prev_insertion_point: OpInsertionPoint,
-    prev_config: R::RewriterConfig,
-    _phantom: std::marker::PhantomData<L>,
 }
 
-impl<'a, L: RewriteListener, R: Rewriter<L>> ScopedRewriter<'a, L, R> {
-    pub fn new(rewriter: &'a mut R, insertion_point: OpInsertionPoint) -> Self {
+impl<'a> ScopedRewriter<'a> {
+    pub fn new(rewriter: &'a mut dyn Rewriter, insertion_point: OpInsertionPoint) -> Self {
         let prev_insertion_point = rewriter.get_insertion_point();
-        let prev_config = rewriter.get_config().clone();
         rewriter.set_insertion_point(insertion_point);
         Self {
             rewriter,
             prev_insertion_point,
-            prev_config,
-            _phantom: std::marker::PhantomData,
         }
     }
 }
 
-impl<'a, L: RewriteListener, R: Rewriter<L>> Drop for ScopedRewriter<'a, L, R> {
+impl<'a> Drop for ScopedRewriter<'a> {
     fn drop(&mut self) {
         self.rewriter.set_insertion_point(self.prev_insertion_point);
-        *self.rewriter.get_config_mut() = self.prev_config.clone();
     }
 }
 
-impl<'a, L: RewriteListener, R: Rewriter<L>> Inserter<L> for ScopedRewriter<'a, L, R> {
+impl<'a> Inserter for ScopedRewriter<'a> {
     fn append_operation(&mut self, ctx: &Context, operation: Ptr<Operation>) {
         self.rewriter.append_operation(ctx, operation)
     }
 
-    fn append_op(&mut self, ctx: &Context, op: impl Op) {
+    fn append_op(&mut self, ctx: &Context, op: &dyn Op) {
         self.rewriter.append_op(ctx, op)
     }
 
@@ -482,7 +462,7 @@ impl<'a, L: RewriteListener, R: Rewriter<L>> Inserter<L> for ScopedRewriter<'a, 
         self.rewriter.insert_operation(ctx, operation)
     }
 
-    fn insert_op(&mut self, ctx: &Context, op: impl Op) {
+    fn insert_op(&mut self, ctx: &Context, op: &dyn Op) {
         self.rewriter.insert_op(ctx, op)
     }
 
@@ -517,23 +497,9 @@ impl<'a, L: RewriteListener, R: Rewriter<L>> Inserter<L> for ScopedRewriter<'a, 
     fn set_insertion_point(&mut self, point: OpInsertionPoint) {
         self.rewriter.set_insertion_point(point)
     }
-
-    fn set_listener(&mut self, listener: L) {
-        self.rewriter.set_listener(listener)
-    }
-
-    fn get_listener(&self) -> &L {
-        self.rewriter.get_listener()
-    }
-
-    fn get_listener_mut(&mut self) -> &mut L {
-        self.rewriter.get_listener_mut()
-    }
 }
 
-impl<'a, L: RewriteListener, R: Rewriter<L>> Rewriter<L> for ScopedRewriter<'a, L, R> {
-    type RewriterConfig = R::RewriterConfig;
-
+impl<'a> Rewriter for ScopedRewriter<'a> {
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>) {
         self.rewriter.replace_operation(ctx, op, new_op)
     }
@@ -615,19 +581,7 @@ impl<'a, L: RewriteListener, R: Rewriter<L>> Rewriter<L> for ScopedRewriter<'a, 
         self.rewriter.is_modified()
     }
 
-    fn set_modified(&mut self) {
-        self.rewriter.set_modified()
-    }
-
-    fn clear_modified(&mut self) {
-        self.rewriter.clear_modified()
-    }
-
-    fn get_config(&self) -> &Self::RewriterConfig {
-        self.rewriter.get_config()
-    }
-
-    fn get_config_mut(&mut self) -> &mut Self::RewriterConfig {
-        self.rewriter.get_config_mut()
+    fn mark_modified(&mut self) {
+        self.rewriter.mark_modified()
     }
 }

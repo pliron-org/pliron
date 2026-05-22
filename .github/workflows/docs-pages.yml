@@ -52,6 +52,7 @@ jobs:
         run: |
           cp .github/workflows/docs-pages-index.html target/doc/index.html
           cp .github/workflows/pliron-192x192.png target/doc/pliron-192x192.png
+          cp .github/workflows/pliron-logo.png target/doc/pliron-logo.png
           touch target/doc/.nojekyll
 
       - name: Configure GitHub Pages
