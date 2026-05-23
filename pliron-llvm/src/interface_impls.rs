@@ -124,7 +124,7 @@ impl ConstFoldInterface for ConstantOp {
 fn fold_bin_operands<T: Attribute>(
     operand_attrs: &[Option<AttrObj>],
     combine: &impl Fn(&T, &T) -> T,
-) -> Option<T> {
+) -> Option<AttrObj> {
     let [Some(lhs), Some(rhs)] = operand_attrs else {
         return None;
     };
@@ -134,60 +134,71 @@ fn fold_bin_operands<T: Attribute>(
     let rhs_int = rhs
         .downcast_ref::<T>()
         .expect("invalid operand type: typecheck before optimizing");
-    Some(combine(lhs_int, rhs_int))
+    Some(Box::new(combine(lhs_int, rhs_int)) as AttrObj)
 }
 
-/// Implement [ConstFoldInterface] for a binary op that folds to a [ConstantOp]
-/// when both operands are compile-time constants of attribute type `$attr_ty`.
-/// `$combine` is a closure `Fn(&$attr_ty, &$attr_ty) -> $attr_ty` that computes
-/// the folded value.
-macro_rules! impl_const_fold_bin_op {
-    ($op:ty, $attr_ty:ty, $combine:expr) => {
-        #[op_interface_impl]
-        impl ConstFoldInterface for $op {
-            fn check_fold(
-                &self,
-                _ctx: &Context,
-                operand_attrs: &[Option<AttrObj>],
-            ) -> Vec<Option<AttrObj>> {
-                vec![
-                    fold_bin_operands::<$attr_ty>(operand_attrs, &$combine)
-                        .map(|attr| Box::new(attr) as AttrObj),
-                ]
-            }
+/// Constant fold this binary operation into a singleton vector containing
+/// its result type if folding is successful, or None otherwise.
+fn check_fold_bin_op<T: Attribute>(
+    operand_attrs: &[Option<AttrObj>],
+    combine: &impl Fn(&T, &T) -> T,
+) -> Vec<Option<AttrObj>> {
+    vec![fold_bin_operands(operand_attrs, combine)]
+}
 
-            fn fold_in_place(
-                &self,
-                ctx: &mut Context,
-                operand_attrs: &[Option<AttrObj>],
-                rewriter: &mut dyn Rewriter,
-            ) -> IRStatus {
-                let Some(folded) = fold_bin_operands::<$attr_ty>(operand_attrs, &$combine) else {
-                    return IRStatus::Unchanged;
-                };
-                let new_const = ConstantOp::new(ctx, Box::new(folded));
-                let old_op = self.get_operation();
-                let new_op = new_const.get_operation();
-                rewriter.insert_operation(ctx, new_op);
-                rewriter.replace_operation(ctx, old_op, new_op);
-                IRStatus::Changed
-            }
-        }
+/// Attempt to perform constant folding the given operation
+fn fold_in_place_bin_op<T: Attribute>(
+    op: &impl Op,
+    ctx: &mut Context,
+    operand_attrs: &[Option<AttrObj>],
+    rewriter: &mut dyn Rewriter,
+    combine: &impl Fn(&T, &T) -> T,
+) -> IRStatus {
+    let Some(folded) = fold_bin_operands::<T>(operand_attrs, combine) else {
+        return IRStatus::Unchanged;
     };
+    let new_const = ConstantOp::new(ctx, folded);
+    let old_op = op.get_operation();
+    let new_op = new_const.get_operation();
+    rewriter.insert_operation(ctx, new_op);
+    rewriter.replace_operation(ctx, old_op, new_op);
+    IRStatus::Changed
 }
 
-impl_const_fold_bin_op!(
-    AddOp,
-    IntegerAttr,
-    |lhs: &IntegerAttr, rhs: &IntegerAttr| {
-        IntegerAttr::new(lhs.get_type(), lhs.value().add(&rhs.value()))
-    }
-);
+fn add_int(lhs: &IntegerAttr, rhs: &IntegerAttr) -> IntegerAttr {
+    IntegerAttr::new(lhs.get_type(), lhs.value().add(&rhs.value()))
+}
 
-impl_const_fold_bin_op!(
-    SubOp,
-    IntegerAttr,
-    |lhs: &IntegerAttr, rhs: &IntegerAttr| {
-        IntegerAttr::new(lhs.get_type(), lhs.value().sub(&rhs.value()))
+#[op_interface_impl]
+impl ConstFoldInterface for AddOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_bin_op(ops, &add_int)
     }
-);
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        fold_in_place_bin_op(self, ctx, ops, rw, &add_int)
+    }
+}
+
+fn sub_int(lhs: &IntegerAttr, rhs: &IntegerAttr) -> IntegerAttr {
+    IntegerAttr::new(lhs.get_type(), lhs.value().sub(&rhs.value()))
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SubOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_bin_op(ops, &sub_int)
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        fold_in_place_bin_op(self, ctx, ops, rw, &sub_int)
+    }
+}
