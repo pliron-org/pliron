@@ -4,9 +4,7 @@ Chapter 4 lowered Kaleidoscope IR into the LLVM dialect. In this chapter we
 take the final step: convert that module to LLVM IR, JIT compile it, and invoke
 the generated machine code directly from Rust.
 
-The implementation for this chapter is in:
-
-- `examples/kaleidoscope/jit.rs`
+The implementation for this chapter lives in `examples/kaleidoscope/jit.rs`.
 
 ## Design
 

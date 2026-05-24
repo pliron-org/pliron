@@ -72,6 +72,7 @@ use crate::dialect::{
 
 /// Conversion driver: matches any Kaleidoscope op that implements
 /// [`ToLLVMDialect`] and delegates the rewrite to the op itself.
+// ANCHOR: kal_to_llvm_driver
 pub struct KalToLLVM;
 
 impl DialectConversion for KalToLLVM {
@@ -97,6 +98,7 @@ impl DialectConversion for KalToLLVM {
         to_llvm_op.rewrite(ctx, rewriter, operands_info)
     }
 }
+// ANCHOR_END: kal_to_llvm_driver
 
 // ─── Public API ─────────────────────────────────────────────────────────────
 
@@ -584,7 +586,6 @@ mod tests {
     use pliron::{
         builtin::{op_interfaces::SingleBlockRegionInterface, ops::ModuleOp},
         context::Context,
-        init_env_logger_for_tests,
         op::Op,
         operation::verify_operation,
         printable::Printable,
@@ -597,7 +598,6 @@ mod tests {
 
     // ANCHOR: lower_to_llvm_test_helper
     fn lower_to_llvm(src: &str) -> String {
-        init_env_logger_for_tests!();
         let funcs = parse_program(src).expect("parse error");
         let ctx = &mut Context::new();
         let module = ModuleOp::new(ctx, "test".try_into().expect("valid module name"));

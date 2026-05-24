@@ -3,9 +3,11 @@
 This chapter implements a complete `combine`-based parser for the Kaleidoscope
 language used throughout the tutorial.
 
-You may skip this chapter if you already have an AST and want to use `pliron`
-to build a compiler pipeline on top of it. The important contract for the rest of
-the tutorial is the AST shape, not the parser implementation.
+You may skip this chapter if you already have an AST (or know how to build one)
+and want to use `pliron` to build a compiler pipeline on top of it. The rest of
+the tutorial only requires the AST and not the parser implementation.
+
+The implementation for this chapter lives in `examples/kaleidoscope/ast.rs`
 
 ## What is combine?
 
@@ -19,14 +21,13 @@ As an example, a parser for an integer literal can be combined with a parser for
 
 ## Why `combine`?
 
-We use `combine` in this tutorial because pliron itself already uses `combine`
+We use `combine` in this tutorial because `pliron` itself already uses `combine`
 for most IR parsing tasks. Learning it here makes it easier to read and extend
-parser-related code in the pliron codebase.
+parser-related code in the `pliron` codebase.
 
 At the same time, `combine` is not a requirement for your own compiler front
 end. If you are already productive with another parser library or approach,
-you can use that instead. The important contract for the rest of this tutorial
-is the AST shape, not the parser implementation.
+you can use that instead. The rest of the tutorial only requires an AST.
 
 This flexibility is especially useful because `combine` may have a steeper learning
 curve than some alternatives.
@@ -139,14 +140,17 @@ fn my_parser<Input>() -> impl Parser<Input, Output = T> where Input: Stream<Toke
 
 Here, `Input` is the input stream type (here, a stream of `char`s), `Output = T`
 is the AST/token value the parser produces, and `impl Parser<...>` means
-"some concrete parser type" chosen by combine and inferred by Rust. The long
+"some concrete parser type" chosen by `combine` and inferred by Rust. The long
 `where` clause is mostly plumbing so the parser works with any compatible
-character stream; for learning, the key part is just: Calling `my_parser` returns
-a parser that parses characters and returns a `T` on success.
+character stream; for learning, the key part is just:
+
+  > Calling `my_parser` returns a parser that parses characters and returns a `T` on success.
 
 ### Skipping Whitespaces
 
-`combine` provides the `spaces()` parser, which matches zero or more whitespace characters.  We wrap it once so every token parser can end with `.skip(ws())` and consume trailing spaces and newlines automatically.
+`combine` provides the `spaces()` parser, which matches zero or more whitespace characters.
+We wrap it once so that every token parser can end with `.skip(ws())` and consume trailing
+spaces and newlines automatically.
 
 ```rust
 {{#include ../../examples/kaleidoscope/ast.rs:ws_helper}}
@@ -227,8 +231,14 @@ function pointer breaks the type cycle:
 {{#include ../../examples/kaleidoscope/ast.rs:expr_fn}}
 ```
 
+`expr_fn` calls `cmp_expr_()` specifically because `cmp_expr` is the top
+expression layer in the grammar (`expr := cmp_expr`).  That makes
+`expr_fn` the single "parse any expression" entry point while still preserving
+the full precedence stack (`cmp` on top of `add` on top of `mul` on top of
+`primary`).
+
 Because `fn(&mut Input) -> StdParseResult<O, Input>` implements `Parser<Input>`
-in combine 4, `expr_fn::<Input>` can be used directly wherever a parser is
+in `combine`, `expr_fn::<Input>` can be used directly wherever a parser is
 expected.  The concrete function-pointer type is what breaks the infinite type
 recursion that chained `impl Parser` returns would otherwise cause.
 

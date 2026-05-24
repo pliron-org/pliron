@@ -1,21 +1,23 @@
 # Chapter 2: The Kaleidoscope Dialect
 
-In this chapter, we'll learn some of pliron's core IR concepts
+In this chapter, we'll learn some of `pliron`'s core IR concepts
 by defining a dialect for the Kaleidoscope language. As new IR
 concepts are introduced, you may find it useful to refer to the
-pliron [documentation](https://docs.rs/pliron/latest/pliron/)
+`pliron` [documentation](https://docs.rs/pliron/latest/pliron/)
 for details and examples.
+
+The implementation for this chapter lives in `examples/kaleidoscope/dialect.rs`.
 
 ## What is a Dialect?
 
-Pliron is an extensible compiler IR framework. This means that it does not
+`pliron` is an extensible compiler IR framework. This means that it does not
 restrict you to a fixed set of operations (or instructions) or types.
 Instead, you can define your own operations and types that capture the
 semantics of your source language.
 
 A dialect is merely a grouping of operations, types, and attributes that define
-the IR for a particular domain or language. It serves as the foundation for
-representing and manipulating programs in that domain.
+the IR for a particular domain, language or purpose. It serves as the foundation
+for representing and manipulating programs in that domain.
 
 ## IR Entities / Structure
 
@@ -23,20 +25,26 @@ Every IR entity (such as an operation or type) is owned by a `Context`.
 Almost every method in the framework requires a `Context` argument to
 either look up existing entities or create new ones.
 
-An `Operation` is the fundamental unit of IR. It has operands (or input values),
+An `Operation` is a basic unit of execution. It has operands (or input values),
 results (or output values), attributes (or metadata), and may own regions.
 
 A sequential list of operations forms a `BasicBlock`. At the end of a block,
 a terminator operation (like `ReturnOp` or `BranchOp`) indicates the end
-of the sequence and a possible transfer of control.
+of the sequence and a possible transfer of control. Basic-blocks can have
+one or more arguments.
 
-The control-flow-graph (i.e., a directed graph of basic blocks) is contained
+`Operation` results and `BasicBlock` arguments are
+[SSA](https://en.wikipedia.org/wiki/Static_single_assignment_form) values.
+`BasicBlock` arguments are an alternative (but equivalent and more convenient)
+form of SSA ϕ-nodes.
+
+The control-flow-graph (i.e., a directed graph of `BasicBlock`s) is contained
 within a `Region`. The `Region` itself is owned by a parent operation.
 For example, an `IfOp` owns two regions: one for the "then" block and one for
 the "else" block.
 
-These three entities (Operation, BasicBlock, Region) form the core structural IR
-elements. They are the building blocks for representing programs in pliron.
+These three entities (`Operation`, `BasicBlock`, `Region`) form the core structural IR
+elements. They are the building blocks for representing programs in `pliron`.
 
 All of these entities are owned by a `Context`, and are handled in the IR
 through a `Ptr` (e.g., `Ptr<Operation>`, `Ptr<Region>`, etc.). A `Ptr`
@@ -46,7 +54,7 @@ of the entity. See [interior mutability](https://doc.rust-lang.org/book/ch15-05-
 
 ## Types and Attributes
 
-Every value (basic-block operand or operation result) has a type.
+Every value (`BasicBlock` operand or `Operation` result) has a type.
 Types are first-class IR entities that can be defined by the user.
 For example, `IntegerType` in the builtin dialect represents integers.
 Dialects can define new types as needed.
@@ -74,7 +82,7 @@ impl MyOp {
 
 ## Defining The Kaleidoscope Dialect
 
-Let's dive right in and see how we can define a `ConstantOp`.
+Let's dive in now and see how we can define a `ConstantOp`.
 
 ### `ConstantOp`: A Simple Example
 

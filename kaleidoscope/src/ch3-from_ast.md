@@ -4,8 +4,7 @@ In Chapter 2 we hand-built IR for a specific Fibonacci function. This chapter
 shows how to do that systematically for *any* Kaleidoscope program by lowering
 the AST produced in Chapter 1 into the dialect ops defined in Chapter 2.
 
-The entire implementation lives in
-[`examples/kaleidoscope/from_ast.rs`](../../examples/kaleidoscope/from_ast.rs).
+The implementation for this chapter lives in `examples/kaleidoscope/from_ast.rs`
 
 ## Design
 
@@ -15,7 +14,7 @@ design decisions are:
 - **All variables are memory-backed.** Every local variable and every function
   parameter is backed by a `DeclOp` slot (analogous to LLVM's `alloca`).
   Reads become `LoadOp`s; writes become `StoreOp`s. This avoids having to
-  track which variables are in SSA form and which are not.
+  worry about SSA form.
 - **Control flow uses regions.** `IfOp` owns two regions (then / else) and
   `WhileOp` owns one region (the loop body). Each region gets its own new
   `BasicBlock`.
@@ -137,7 +136,7 @@ Note that `IfOp` itself is *not* a block terminator in the outer block, so
 the design section above. Before entering the loop, the condition is evaluated
 and stored in a fresh `DeclOp` slot. At the end of each iteration, the
 condition is re-evaluated and the slot is updated. A `YieldOp` closes the
-body region:
+body region (if it doesn't already end with a `return`):
 
 ```rust
 {{#include ../../examples/kaleidoscope/from_ast.rs:lower_stmt_while}}
@@ -200,6 +199,10 @@ created with the callee name as an `IdentifierAttr`:
 Note the reborrow trick: `call_op.get_operation().deref(ctx)` borrows `ctx`
 immutably, so the result `val` must be captured before passing `call_op` to
 `append_op`, which borrows `ctx` mutably.
+
+**Note**: The general guideline around calling `deref` or `deref_mut` on `Ptr<T>` is to
+keep the borrowed value (`Ref<T>` or `RefMut<T>`) around for as little time as possible,
+and to avoid passing it to any function that might call back into the context.
 
 ## Error handling
 
