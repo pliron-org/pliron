@@ -6,8 +6,7 @@ carry high-level, structured semantics.  This chapter converts that IR into
 the LLVM dialect, where all control flow is flat (basic blocks + branches) and
 every op corresponds closely to an LLVM instruction.
 
-The entire implementation lives in
-[`examples/kaleidoscope/to_llvm.rs`](../../examples/kaleidoscope/to_llvm.rs).
+The implementation for this chapter lives in `examples/kaleidoscope/to_llvm.rs`.
 
 ## Design: Dialect Conversion
 
@@ -20,7 +19,7 @@ MLIR's equivalent:
 - **Definitions before uses.** The framework guarantees that when an op's
   `rewrite` callback fires, all operands have already been converted.
 - **Each op rewrites itself.** Rather than a monolithic pattern-match switch,
-  each op implements the `ToLLVMDialect` interface from `pliron_llvm`.
+  each op implements (in this case) the `ToLLVMDialect` interface from `pliron_llvm`.
 
 The three moving parts are:
 
@@ -66,38 +65,30 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
 ) -> Result<()>
 ```
 
-The algorithm walks the IR tree rooted at `op` in pre-order, collecting
-convertible ops into a worklist.  It then repeatedly pops from the worklist,
-ensuring operand-defining ops are processed first.  After each `rewrite`,
-recorded mutations are inspected: erased ops are dropped from the worklist,
-newly inserted ops are added, and block-argument types are updated if any
-successor references changed.
+The algorithm walks the IR tree rooted at `op`, collecting convertible ops into a worklist.
+It then repeatedly pops from the worklist, and ensures to process operand-defining ops first.
+ After each `rewrite`, recorded mutations are inspected: erased ops are dropped from the worklist,
+newly inserted ops are added (if required), and block-argument types are updated if any successor
+references changed.
 
 ## The conversion driver: `KalToLLVM`
 
 Our driver is a zero-field struct that implements `DialectConversion`:
 
 ```rust
-pub struct KalToLLVM;
-
-impl DialectConversion for KalToLLVM {
-    fn can_convert_op(&self, ctx: &Context, op: Ptr<Operation>) -> bool {
-        op_impls::<dyn ToLLVMDialect>(&*Operation::get_op_dyn(op, ctx))
-    }
-
-    fn rewrite(...) -> Result<()> {
-        let op_dyn = Operation::get_op_dyn(op, ctx);
-        let to_llvm_op = op_cast::<dyn ToLLVMDialect>(&*op_dyn).unwrap();
-        to_llvm_op.rewrite(ctx, rewriter, operands_info)
-    }
-}
+{{#include ../../examples/kaleidoscope/to_llvm.rs:kal_to_llvm_driver}}
 ```
 
 `op_impls::<dyn ToLLVMDialect>` checks whether the runtime type of the op
-object implements the `ToLLVMDialect` interface.  `op_cast` then downcasts the
-`dyn Op` to `dyn ToLLVMDialect` so we can call its `rewrite` method.  This
-keeps `KalToLLVM` completely generic — every lowering rule lives in the op
-itself.
+object implements the `ToLLVMDialect` interface.  Most conversions go through
+that path: `op_cast` downcasts `dyn Op` to `dyn ToLLVMDialect` and dispatches
+to the op's own `rewrite` method.
+
+There is one explicit special case: `builtin.func` is matched and rewritten to
+`llvm.func` in the driver itself.  We do this because `builtin.func` is not a
+Kaleidoscope op and does not implement `ToLLVMDialect`, but we still need to
+convert function signatures and block-argument types before lowering function
+bodies.
 
 ## Entry point
 

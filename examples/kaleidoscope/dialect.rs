@@ -7,7 +7,7 @@ use pliron::{
         op_interfaces::{
             AtLeastNOpdsInterface, AtLeastNResultsInterface, IsTerminatorInterface, NOpdsInterface,
             NRegionsInterface, NResultsInterface, OneResultInterface, OperandNOfType,
-            SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            ResultNOfType, SameOperandsAndResultType, SameOperandsType, SameResultsType,
             SingleBlockRegionInterface,
         },
         types::{IntegerType, Signedness},
@@ -89,7 +89,12 @@ pub enum BinOpKind {
 #[pliron_op(
     name = "kaleidoscope.decl",
     format = "attr($var_type, $TypeAttr) ` : ` type($0)",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [
+        NOpdsInterface<0>,
+        OneResultInterface,
+        NResultsInterface<1>,
+        ResultNOfType<0, PointerType>
+    ],
     attributes = (var_type: TypeAttr),
     verifier = "succ",
 )]
@@ -312,7 +317,6 @@ impl IfOp {
     name = "kaleidoscope.while",
     format = "`*`$0 ` do ` region($0)",
     interfaces = [
-        NOpdsInterface<1>,
         OperandNOfType<0, PointerType>,
         NResultsInterface<0>,
         NRegionsInterface<1>,

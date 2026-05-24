@@ -37,6 +37,6 @@ As examples become implementation-heavy, mirror key behaviors in integration tes
 
 ## Suggested learning paths
 
-- Parser-focused: start at Chapter 1, then Chapter 3.
-- IR design-focused: start at Chapter 2, then Chapter 3 and Chapter 4.
-- Execution-focused: skim Chapters 1-2, then Chapter 5.
+- Parser-focused: Start at Chapter 1.
+- IR design-focused: Start at Chapter 2, then Chapter 3 and Chapter 4.
+- End-to-end pipeline: All chapters, in order.
