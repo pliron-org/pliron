@@ -8,19 +8,18 @@ use crate::{
     result::Result,
 };
 
+/// Interface for constant folding of operations.
 #[op_interface]
 pub trait ConstFoldInterface {
-    /// Takes a slice `operand_attrs` containing `Some(attr)`` at position `i` if operand `i` is a compile-time
-    /// constant (where `attr` contains the constant value) and `None` at position `i` otherwise.
-    /// Produces a similar vector whose elements convey whether each of this operations's results
-    /// are known compile-time constants.
+    /// Given a slice `operand_attrs` corresponding to each operand, indicating a known
+    /// compile time constant value for that operand (if any), returns a vector corresponding
+    /// to each result, indicating the folded (inferred constant) value, if any.
     fn check_fold(&self, ctx: &Context, operand_attrs: &[Option<AttrObj>]) -> Vec<Option<AttrObj>>;
 
-    /// Takes a slice `operand_attrs` containing `Some(attr)` at position `i` if operand `i` is a compile-time
-    /// constant (where `attr` contains the constant value) and `None` at position `i` otherwise.
-    /// Uses this knowledge to rewrite this operation into a cheaper form
-    /// (e.g., perform compile-time arithmetic on compile-time constants,
-    /// rewriting an add op to a constant op). Assumes `rewriter`'s insertion point starts before the operation.
+    /// Given a slice `operand_attrs` corresponding to each operand, indicating a known
+    /// compile time constant value for that operand (if any), attempts to fold the op in
+    /// place using the provided `rewriter`. Assumes that `rewriter` is positioned just
+    /// before the op to be folded.
     fn fold_in_place(
         &self,
         ctx: &mut Context,
