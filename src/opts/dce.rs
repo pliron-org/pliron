@@ -124,10 +124,10 @@ fn is_safe_to_erase(cand: DCECandidate, ctx: &Context) -> bool {
                 return false;
             }
             // Get the parent operation of the block
-            let Some(parent_op) = block.deref(ctx).get_parent_op(ctx) else {
-                // If the block doesn't have a parent operation, we can't safely remove the block argument.
-                return false;
-            };
+            let parent_op = block
+                .deref(ctx)
+                .get_parent_op(ctx)
+                .expect("Expected block to have a parent operation");
             let parent_op_dyn = Operation::get_op_dyn(parent_op, ctx);
             // Check if the parent operation allows block argument removal
             let Some(block_arg_removal_op) = op_cast::<dyn BlockArgRemoval>(&*parent_op_dyn) else {
@@ -139,10 +139,10 @@ fn is_safe_to_erase(cand: DCECandidate, ctx: &Context) -> bool {
             // Every predecessor must have a `BranchOpInterface` impl
             // that allows removal of the corresponding successor operand
             block.preds(ctx).iter().all(|pred| {
-                let Some(pred_terminator) = pred.deref(ctx).get_terminator(ctx) else {
-                    // If the predecessor block doesn't have a terminator, we can't safely remove the block argument.
-                    return false;
-                };
+                let pred_terminator = pred
+                    .deref(ctx)
+                    .get_terminator(ctx)
+                    .expect("Expected predecessor block to have a terminator");
                 let pred_terminator_dyn = Operation::get_op_dyn(pred_terminator, ctx);
                 op_impls::<dyn crate::builtin::op_interfaces::BranchOpInterface>(
                     &*pred_terminator_dyn,
