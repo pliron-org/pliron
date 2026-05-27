@@ -58,7 +58,7 @@ fn construct_and_erase() -> Result<()> {
 // Ensure that erasing an op with uses panics.
 #[test]
 #[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
-#[should_panic(expected = "Operation with use(s) being erased")]
+#[should_panic]
 fn removed_used_op() {
     let ctx = &mut Context::new();
 

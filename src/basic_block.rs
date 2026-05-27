@@ -23,7 +23,7 @@ use crate::{
     linked_list::{ContainsLinkedList, LinkedList, private},
     location::{Located, Location},
     op::op_impls,
-    operation::{DefUseVerifyErr, Operation, OperationParserConfig},
+    operation::{DefUseVerifyErr, OpDbg, Operation, OperationParserConfig},
     parsable::{self, IntoParseResult, Parsable, ParseResult},
     printable::{self, ListSeparator, Printable, indented_nl},
     region::Region,
@@ -192,7 +192,11 @@ impl BasicBlock {
     /// Any [Value] referring to the removed argument is invalidated.
     pub fn pop_argument(block: Ptr<BasicBlock>, ctx: &Context) {
         let len = block.deref(ctx).args.len();
-        assert!(len > 0, "Can't pop argument from block with no arguments");
+        assert!(
+            len > 0,
+            "Can't pop argument from block {} with no arguments",
+            block.deref(ctx).unique_name(ctx)
+        );
         Self::remove_argument(block, ctx, len - 1);
     }
 
@@ -214,7 +218,12 @@ impl BasicBlock {
     /// Any [Value] referring to the removed argument is invalidated.
     pub fn remove_argument(block: Ptr<BasicBlock>, ctx: &Context, arg_idx: usize) {
         let value = block.deref(ctx).get_argument(arg_idx);
-        assert!(!value.is_used(ctx), "Can't remove argument with uses");
+        assert!(
+            !value.is_used(ctx),
+            "Can't remove argument {} from block {} with uses",
+            arg_idx,
+            block.deref(ctx).unique_name(ctx)
+        );
         debug_info::remove_block_arg_name(ctx, block, arg_idx);
         block.deref_mut(ctx).args.remove(arg_idx);
     }
@@ -252,16 +261,21 @@ impl BasicBlock {
     }
 
     /// Unlink and deallocate this block and everything that it contains.
-    /// There must not be any uses outside the block.
+    /// Panics if there are any uses outside the block.
     pub fn erase(ptr: Ptr<Self>, ctx: &mut Context) {
         Self::drop_all_uses(ptr, ctx);
         assert!(
             !ptr.has_pred(ctx),
-            "BasicBlock with predecessor(s) being erased"
+            "BasicBlock {} with predecessor {} being erased",
+            ptr.deref(ctx).unique_name(ctx),
+            *ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
         );
-
-        if ptr.deref(ctx).iter(ctx).any(|op| op.deref(ctx).has_use()) {
-            panic!("Attemping to erase block which has a use outside the block")
+        if let Some(op) = ptr.deref(ctx).iter(ctx).find(|op| op.deref(ctx).has_use()) {
+            panic!(
+                "Attemping to erase block {} which contains {} with use outside the block",
+                ptr.deref(ctx).unique_name(ctx),
+                OpDbg { op, ctx }
+            );
         }
         if ptr.is_linked(ctx) {
             ptr.unlink(ctx);
