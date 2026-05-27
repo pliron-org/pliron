@@ -246,7 +246,11 @@ impl Operation {
     /// Any [Value] referring to the removed result is invalidated.
     pub fn pop_result(this: Ptr<Self>, ctx: &Context) {
         let len = this.deref(ctx).results.len();
-        assert!(len > 0, "Can't pop result from operation with no results");
+        assert!(
+            len > 0,
+            "Can't pop result from operation {} with no results",
+            OpDbg { op: this, ctx }
+        );
         Self::remove_result(this, ctx, len - 1);
     }
 
@@ -263,7 +267,12 @@ impl Operation {
     /// Any [Value] referring to the removed result is invalidated.
     pub fn remove_result(this: Ptr<Self>, ctx: &Context, res_idx: usize) {
         let value = this.deref(ctx).get_result(res_idx);
-        assert!(!value.is_used(ctx), "Can't remove result with uses");
+        assert!(
+            !value.is_used(ctx),
+            "Can't remove result {} from op {} with uses",
+            res_idx,
+            OpDbg { op: this, ctx }
+        );
         debug_info::remove_operation_result_name(ctx, this, res_idx);
         this.deref_mut(ctx).results.remove(res_idx);
     }
@@ -333,7 +342,11 @@ impl Operation {
     /// The removed [Value] is returned for convenience.
     pub fn pop_operand(this: Ptr<Operation>, ctx: &Context) -> Value {
         let len = this.deref(ctx).operands.len();
-        assert!(len > 0, "Can't pop operand from operation with no operands");
+        assert!(
+            len > 0,
+            "Can't pop operand from operation {} with no operands",
+            OpDbg { op: this, ctx }
+        );
         Self::remove_operand(this, ctx, len - 1)
     }
 
@@ -404,7 +417,8 @@ impl Operation {
         let len = this.deref(ctx).successors.len();
         assert!(
             len > 0,
-            "Can't pop successor from operation with no successors"
+            "Can't pop successor from operation {} with no successors",
+            OpDbg { op: this, ctx }
         );
         Self::remove_successor(this, ctx, len - 1)
     }
@@ -520,12 +534,17 @@ impl Operation {
     }
 
     /// Unlink and deallocate this operation and everything that it contains.
-    /// There must not be any uses.
+    /// Panics if there are any uses of this operation.
     pub fn erase(ptr: Ptr<Self>, ctx: &mut Context) {
         Self::drop_all_uses(ptr, ctx);
         assert!(
             !ptr.deref(ctx).has_use(),
-            "Operation with use(s) being erased"
+            "Operation {} with use in {} being erased",
+            OpDbg { op: ptr, ctx },
+            OpDbg {
+                op: ptr.deref(ctx).uses().next().unwrap().user_op,
+                ctx
+            }
         );
         if ptr.is_linked(ctx) {
             ptr.unlink(ctx);
@@ -917,6 +936,10 @@ pub fn print_dbg(
             sep,
         );
         write!(f, " [{}]", successors.disp(ctx))?;
+    }
+
+    if !op.loc(ctx).is_unknown() {
+        write!(f, " [@{}]", op.loc(ctx).disp(ctx))?;
     }
 
     Ok(())
