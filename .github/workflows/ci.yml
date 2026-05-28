@@ -70,3 +70,5 @@ jobs:
     - name: Documentation
       run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace
 
+    - name: Build (Debug, -p pliron-llvm --no-default-features)
+      run: RUSTFLAGS="-D warnings" cargo build -p pliron-llvm --no-default-features --verbose

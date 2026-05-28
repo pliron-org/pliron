@@ -6,8 +6,6 @@ use std::{
     ptr,
 };
 
-use bitflags::bitflags;
-
 use llvm_sys::{
     LLVMFastMathAllowContract, LLVMFastMathAllowReassoc, LLVMFastMathAllowReciprocal,
     LLVMFastMathApproxFunc, LLVMFastMathFlags, LLVMFastMathNoInfs, LLVMFastMathNoNaNs,
@@ -74,6 +72,8 @@ use llvm_sys::{
 use crate::llvm_sys::{
     ToBool, c_array_to_vec, cstr_to_string, sized_cstr_to_string, to_c_str, uninitialized_vec,
 };
+
+use crate::attributes::FastmathFlags;
 
 /// Opaque wrapper around LLVMValueRef to hide the raw pointer
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,21 +208,6 @@ mod llvm_builder {
 }
 
 pub use llvm_builder::LLVMBuilder;
-
-bitflags! {
-    /// Fast math flags for floating point operations.
-    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-    pub struct FastmathFlags: u8 {
-        const NNAN = 1;
-        const NINF = 2;
-        const NSZ = 4;
-        const ARCP = 8;
-        const CONTRACT = 16;
-        const AFN = 32;
-        const REASSOC = 64;
-        const FAST = 127;
-    }
-}
 
 impl From<LLVMFastMathFlags> for FastmathFlags {
     fn from(flags: LLVMFastMathFlags) -> Self {

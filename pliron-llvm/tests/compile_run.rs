@@ -1,5 +1,7 @@
 //! Tests that compile code and run it.
 
+#![cfg(feature = "llvm-sys")]
+
 use std::{env, path::PathBuf, sync::LazyLock};
 use which::which;
 

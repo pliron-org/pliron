@@ -1,7 +1,5 @@
 //! [Op]s defined in the LLVM dialect
 
-use std::{sync::LazyLock, vec};
-
 use pliron::{
     arg_err, arg_err_noloc,
     attribute::{AttrObj, AttributeDict, attr_cast},
@@ -57,7 +55,6 @@ use crate::{
         AlignmentAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr,
         InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr,
     },
-    llvm_sys::core::{llvm_get_undef_mask_elem, llvm_lookup_intrinsic_id},
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
@@ -69,6 +66,9 @@ use crate::{
     },
     types::{ArrayType, FuncType, StructType, VectorType},
 };
+
+#[cfg(feature = "llvm-sys")]
+use crate::llvm_sys::core::{llvm_get_undef_mask_elem, llvm_lookup_intrinsic_id};
 
 use pliron::combine::{
     self, between, optional,
@@ -3149,7 +3149,11 @@ impl Verify for ShuffleVectorOp {
 }
 
 /// The undef mask element used in ShuffleVectorOp masks.
-pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: LazyLock<i32> = LazyLock::new(llvm_get_undef_mask_elem);
+#[cfg(feature = "llvm-sys")]
+pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: std::sync::LazyLock<i32> =
+    std::sync::LazyLock::new(llvm_get_undef_mask_elem);
+#[cfg(not(feature = "llvm-sys"))]
+pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: i32 = -1;
 
 impl ShuffleVectorOp {
     /// Create a new [ShuffleVectorOp].
@@ -3674,7 +3678,14 @@ impl Verify for CallIntrinsicOp {
             return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::ResultsMismatch);
         }
 
-        if llvm_lookup_intrinsic_id(&<StringAttr as Into<String>>::into(name.clone())).is_none() {
+        let name: String = name.clone().into();
+        #[cfg(feature = "llvm-sys")]
+        if llvm_lookup_intrinsic_id(&name).is_none() {
+            return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::UnknownIntrinsicName);
+        }
+        #[cfg(not(feature = "llvm-sys"))]
+        // We can't verify the intrinsic name without llvm-sys, so just check that it's not empty.
+        if name.is_empty() {
             return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::UnknownIntrinsicName);
         }
 

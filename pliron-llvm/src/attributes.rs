@@ -15,7 +15,7 @@ use pliron::printable::Printable;
 use pliron::result::Result;
 use pliron::{impl_printable_for_display, input_error, verify_err_noloc};
 
-use crate::llvm_sys::core::FastmathFlags;
+use bitflags::bitflags;
 
 /// Integer overflow flags for arithmetic operations.
 /// The description below is from LLVM's
@@ -29,6 +29,21 @@ use crate::llvm_sys::core::FastmathFlags;
 pub struct IntegerOverflowFlagsAttr {
     pub nsw: bool,
     pub nuw: bool,
+}
+
+bitflags! {
+    /// Fast math flags for floating point operations.
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+    pub struct FastmathFlags: u8 {
+        const NNAN = 1;
+        const NINF = 2;
+        const NSZ = 4;
+        const ARCP = 8;
+        const CONTRACT = 16;
+        const AFN = 32;
+        const REASSOC = 64;
+        const FAST = 127;
+    }
 }
 
 #[pliron_attr(name = "llvm.fast_math_flags", verifier = "succ")]
