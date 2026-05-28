@@ -40,7 +40,7 @@ use super::{
     ops::ConstantOp,
     types::{IntegerType, Signedness},
 };
-use crate::{irbuild::rewriter::Rewriter, op::Op, operation::Operation};
+use crate::{op::Op, operation::Operation};
 
 #[pliron_attr(name = "builtin.identifier", format = "$0", verifier = "succ")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]

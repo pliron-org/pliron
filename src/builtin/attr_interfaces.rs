@@ -2,13 +2,11 @@ use std::cmp::Ordering;
 
 use crate::attribute::Attribute;
 use crate::context::{Context, Ptr};
-use crate::irbuild::rewriter::Rewriter;
 use crate::operation::Operation;
 use crate::result::Result;
 use crate::storage_uniquer::TypeValueHash;
 use crate::r#type::TypeObj;
 use crate::utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd};
-use crate::value::Value;
 use pliron::derive::attr_interface;
 
 /// [Attribute]s that have an associated [Type](crate::type::Type).

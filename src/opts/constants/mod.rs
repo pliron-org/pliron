@@ -104,7 +104,7 @@ fn process_fold_op(fold_op: &dyn ConstFoldInterface, ctx: &Context, state: &mut 
     let attrs = operand_attrs(op, ctx, state);
     let results: Vec<Value> = op.deref(ctx).results().collect();
     let folded_results = fold_op.check_fold(ctx, &attrs);
-    for (res, attr) in results.iter().zip(folded_results.into_iter()) {
+    for (res, attr) in results.iter().zip(folded_results) {
         let new_state = match attr {
             Some(val) => ValState::Constant { val },
             None => ValState::Unknown,
@@ -128,7 +128,7 @@ fn process_branch_op(branch_op: &dyn BranchOpFoldInterface, ctx: &Context, state
         }
         let forwarded = branch_op.successor_operands(ctx, succ_idx);
         let target_args: Vec<Value> = succ_block.deref(ctx).arguments().collect();
-        for (fwd_val, target_arg) in forwarded.into_iter().zip(target_args.into_iter()) {
+        for (fwd_val, target_arg) in forwarded.into_iter().zip(target_args) {
             let incoming = state.get_val_state(fwd_val);
             state.merge_val_state(ctx, target_arg, incoming);
         }
@@ -157,7 +157,7 @@ fn process_op(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
          interfaces) to be mutually exclusive on any given op"
     );
     seed_nested_regions(op, ctx, state);
-    if let Some(_) = opt_branch {
+    if opt_branch.is_some() {
         let opt_op_foldable = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref());
         match opt_op_foldable {
             Some(op_foldable) => {

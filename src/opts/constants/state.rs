@@ -36,12 +36,12 @@ impl Printable for BlockState {
 
 impl BlockState {
     fn leq(a: &BlockState, b: &BlockState) -> bool {
-        match (a, b) {
+        matches!(
+            (a, b),
             (BlockState::Unreachable, BlockState::Reachable)
-            | (BlockState::Unreachable, BlockState::Unreachable)
-            | (BlockState::Reachable, BlockState::Reachable) => true,
-            _ => false,
-        }
+                | (BlockState::Unreachable, BlockState::Unreachable)
+                | (BlockState::Reachable, BlockState::Reachable)
+        )
     }
 
     fn join(a: &BlockState, b: &BlockState) -> BlockState {
