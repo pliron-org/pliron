@@ -3,7 +3,6 @@ use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
-    attribute::AttrObj,
     basic_block::BasicBlock,
     builtin::{
         attributes::{OperandSegmentSizesAttr, TypeAttr},
@@ -60,12 +59,6 @@ pub enum BranchOpInterfaceVerifyErr {
 /// (2) Type of the value passed is expected to be the same as the target block argument.
 #[op_interface]
 pub trait BranchOpInterface: IsTerminatorInterface {
-    /// Return the list of possible successor blocks given that `operands`
-    /// contains `Some(attr)` for each operand known to be constant, where `attr` contains
-    /// the known constant value.
-    fn successor_blocks(&self, ctx: &Context, operands: &[Option<AttrObj>])
-    -> Vec<Ptr<BasicBlock>>;
-
     /// Get a list of [Value]s that are forwarded to the target block.
     fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value>;
 

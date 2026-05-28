@@ -38,9 +38,9 @@ use pliron::{
     location::{Located, Location},
     op::{Op, OpObj},
     operation::Operation,
-    opts::mem2reg::{
+    opts::{mem2reg::{
         AllocInfo, PromotableAllocationInterface, PromotableOpInterface, PromotableOpKind,
-    },
+    }, constants::BranchOpFoldInterface},
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable, indented_nl},
     region::Region,
@@ -622,14 +622,6 @@ pub struct BrOp;
 
 #[op_interface_impl]
 impl BranchOpInterface for BrOp {
-    fn successor_blocks(
-        &self,
-        ctx: &Context,
-        _operands: &[Option<AttrObj>],
-    ) -> Vec<Ptr<BasicBlock>> {
-        self.get_operation().deref(ctx).successors().collect()
-    }
-
     fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
         self.get_operation().deref(ctx).operands().collect()
@@ -648,6 +640,16 @@ impl BranchOpInterface for BrOp {
     ) -> Value {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
         Operation::remove_operand(self.get_operation(), ctx, opd_idx)
+    }
+}
+
+impl BranchOpFoldInterface for BrOp {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        _operands: &[Option<AttrObj>],
+    ) -> Vec<Ptr<BasicBlock>> {
+        self.get_operation().deref(ctx).successors().collect()
     }
 }
 
@@ -838,23 +840,6 @@ impl Parsable for CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
-    fn successor_blocks(
-        &self,
-        ctx: &Context,
-        operands: &[Option<AttrObj>],
-    ) -> Vec<Ptr<BasicBlock>> {
-        let successors: Vec<Ptr<BasicBlock>> =
-            self.get_operation().deref(ctx).successors().collect();
-        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
-            return successors;
-        };
-        let cond_int = cond_attr
-            .downcast_ref::<IntegerAttr>()
-            .expect("CondBrOp condition operand must be an IntegerAttr");
-        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
-        vec![successors[taken]]
-    }
-
     fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
         assert!(
             succ_idx == 0 || succ_idx == 1,
@@ -878,6 +863,25 @@ impl BranchOpInterface for CondBrOp {
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
         self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+    }
+}
+
+impl BranchOpFoldInterface for CondBrOp {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        operands: &[Option<AttrObj>],
+    ) -> Vec<Ptr<BasicBlock>> {
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return successors;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("CondBrOp condition operand must be an IntegerAttr");
+        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
+        vec![successors[taken]]
     }
 }
 
@@ -1150,7 +1154,29 @@ impl SwitchOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
-    fn successor_blocks(
+    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+        // Skip the first segment, which is the condition.
+        self.get_segment(ctx, succ_idx + 1)
+    }
+
+    fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
+        // The successor operands start at segment 1, since segment 0 is the condition operand.
+        self.push_to_segment(ctx, succ_idx + 1, operand)
+    }
+
+    fn remove_successor_operand(
+        &self,
+        ctx: &mut Context,
+        succ_idx: usize,
+        opd_idx: usize,
+    ) -> Value {
+        // The successor operands start at segment 1, since segment 0 is the condition operand.
+        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+    }
+}
+
+impl BranchOpFoldInterface for SwitchOp {
+    fn check_fold(
         &self,
         ctx: &Context,
         operands: &[Option<AttrObj>],
@@ -1175,26 +1201,6 @@ impl BranchOpInterface for SwitchOp {
             .map(|i| i + 1)
             .unwrap_or(0);
         vec![successors[taken]]
-    }
-
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
-        // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
-    }
-
-    fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
-        // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.push_to_segment(ctx, succ_idx + 1, operand)
-    }
-
-    fn remove_successor_operand(
-        &self,
-        ctx: &mut Context,
-        succ_idx: usize,
-        opd_idx: usize,
-    ) -> Value {
-        // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
     }
 }
 

@@ -1,23 +1,12 @@
 use pliron_derive::op_interface;
 use rustc_hash::FxHashSet;
-
 use crate::{
-    attribute::AttrObj,
-    basic_block::BasicBlock,
-    builtin::op_interfaces::BranchOpInterface,
-    context::{Context, Ptr},
-    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
-    irbuild::{
+    attribute::AttrObj, basic_block::BasicBlock, builtin::op_interfaces::BranchOpInterface, context::{Context, Ptr}, graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op}, irbuild::{
         IRStatus,
         inserter::Inserter,
         listener::Recorder,
         rewriter::{IRRewriter, Rewriter},
-    },
-    linked_list::ContainsLinkedList,
-    op::{Op, op_cast},
-    operation::Operation,
-    result::Result,
-    value::Value,
+    }, linked_list::ContainsLinkedList, op::{Op, op_cast}, operation::Operation, result::Result, value::Value
 };
 
 mod state;
@@ -41,6 +30,23 @@ pub trait ConstFoldInterface {
         operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus;
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+/// Interface for ruling out branch destinations based on static information about branch conditions.
+#[op_interface]
+pub trait BranchOpFoldInterface : BranchOpInterface {
+    /// Return the list of possible successor blocks given that `operands`
+    /// contains `Some(attr)` for each operand known to be constant, where `attr` contains
+    /// the known constant value.
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>])
+    -> Vec<Ptr<BasicBlock>>;
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where
@@ -86,8 +92,6 @@ fn operand_attrs(op: Ptr<Operation>, ctx: &Context, state: &SccpState) -> Vec<Op
 /// into the state.
 fn process_fold_op(fold_op: &dyn ConstFoldInterface, ctx: &Context, state: &mut SccpState) {
     let op = fold_op.get_operation();
-    seed_nested_regions(op, ctx, state);
-
     let attrs = operand_attrs(op, ctx, state);
     let results: Vec<Value> = op.deref(ctx).results().collect();
     let folded_results = fold_op.check_fold(ctx, &attrs);
@@ -103,11 +107,11 @@ fn process_fold_op(fold_op: &dyn ConstFoldInterface, ctx: &Context, state: &mut 
 /// Compute which successor edges are traversable given the current [ValState]s of
 /// `branch_op`'s operands, forward operand [ValState]s into the successor blocks' arguments, and mark
 /// newly-reachable successor blocks for processing.
-fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &mut SccpState) {
+fn process_branch_op(branch_op: &dyn BranchOpFoldInterface, ctx: &Context, state: &mut SccpState) {
     let op = branch_op.get_operation();
     let attrs = operand_attrs(op, ctx, state);
     let live_successors: FxHashSet<Ptr<BasicBlock>> = branch_op
-        .successor_blocks(ctx, &attrs)
+        .check_fold(ctx, &attrs)
         .into_iter()
         .collect();
     let static_successors: Vec<Ptr<BasicBlock>> = op.deref(ctx).successors().collect();
@@ -146,8 +150,12 @@ fn process_op(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
          interfaces) to be mutually exclusive on any given op"
     );
     seed_nested_regions(op, ctx, state);
-    if let Some(op) = opt_branch {
-        process_branch_op(op, ctx, state);
+    if let Some(_) = opt_branch {
+        let opt_op_foldable = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref());
+        match opt_op_foldable {
+            Some(op_foldable) => { process_branch_op(op_foldable, ctx, state); }
+            None => panic!("the `constants` optimizer requires all branch ops to implement BranchOpFoldableInterface")
+        }
     } else if let Some(op) = opt_fold {
         process_fold_op(op, ctx, state);
     } else {

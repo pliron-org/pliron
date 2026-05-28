@@ -10,7 +10,7 @@ use pliron::{
     op::Op,
     opts::{
         dce::{BlockArgRemoval, SideEffects},
-        sccp::ConstFoldInterface,
+        constants::ConstFoldInterface,
     },
     utils::apint::APInt,
 };

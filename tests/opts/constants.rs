@@ -7,7 +7,7 @@ use pliron::{
     irbuild::IRStatus,
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
-    opts::sccp::sccp,
+    opts::constants::sccp,
     parsable::{self, state_stream_from_iterator},
     printable::Printable,
     result::Result,
@@ -65,8 +65,8 @@ fn sccp_folds_add_of_two_constants() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
-      a = llvm.constant <builtin.integer <3: i64>> : builtin.integer i64;
-      b = llvm.constant <builtin.integer <4: i64>> : builtin.integer i64;
+      a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+      b = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
       sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i64;
       llvm.return sum
     }
@@ -84,8 +84,8 @@ fn sccp_is_path_sensitive() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
       ^entry(x: builtin.integer i64):
-      y = llvm.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      one = llvm.constant <builtin.integer <1: i1>> : builtin.integer i1;
+      y = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      one = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
       llvm.cond_br if one ^bb0(x, y) else ^bb1(x, y)
 
       ^bb0(x0: builtin.integer i64,y0: builtin.integer i64):
@@ -111,9 +111,9 @@ fn sccp_folded_condition_makes_branch_dead() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
       ^entry(x: builtin.integer i64):
-      y = llvm.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      zero_i1 = llvm.constant <builtin.integer <0: i1>> : builtin.integer i1;
-      one_i1 = llvm.constant <builtin.integer <1: i1>> : builtin.integer i1;
+      y = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      zero_i1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      one_i1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
       one = llvm.add zero_i1, one_i1 <{nsw=false,nuw=false}> : builtin.integer i1;
       llvm.cond_br if one ^bb0(x, y) else ^bb1(x, y)
 
@@ -143,13 +143,13 @@ fn sccp_meets_distinct_constants_from_live_predecessors_as_unknown() -> Result<(
       llvm.cond_br if cond ^bb0() else ^bb1()
 
       ^bb0():
-      a0 = llvm.constant <builtin.integer <3: i64>> : builtin.integer i64;
-      b0 = llvm.constant <builtin.integer <5: i64>> : builtin.integer i64;
+      a0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+      b0 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64;
       llvm.br ^bb2(a0, b0)
 
       ^bb1():
-      a1 = llvm.constant <builtin.integer <7: i64>> : builtin.integer i64;
-      b1 = llvm.constant <builtin.integer <5: i64>> : builtin.integer i64;
+      a1 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
+      b1 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64;
       llvm.br ^bb2(a1, b1)
 
       ^bb2(x: builtin.integer i64, y: builtin.integer i64):
@@ -174,8 +174,8 @@ fn sccp_is_path_sensitive_2() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
       ^entry(x: builtin.integer i64):
-      y = llvm.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      one = llvm.constant <builtin.integer <1: i1>> : builtin.integer i1;
+      y = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      one = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
       llvm.cond_br if one ^bb1(x, y) else ^bb0(x, y)
 
       ^bb0(x0: builtin.integer i64,y0: builtin.integer i64):
@@ -206,7 +206,7 @@ fn sccp_does_not_fold_when_operands_are_nested_region_entry_args() -> Result<()>
         sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i64;
         llvm.return sum
       };
-      done = llvm.constant <builtin.integer <99: i64>> : builtin.integer i64;
+      done = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
       llvm.return done
     }
   "#;
@@ -222,14 +222,14 @@ fn sccp_folds_inside_nested_region_using_outer_constant() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
-      outer_a = llvm.constant <builtin.integer <3: i64>> : builtin.integer i64;
-      outer_b = llvm.constant <builtin.integer <4: i64>> : builtin.integer i64;
+      outer_a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+      outer_b = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
       test.test_region {
         ^region_entry():
         inner_sum = llvm.add outer_a, outer_b <{nsw=false,nuw=false}> : builtin.integer i64;
         llvm.return inner_sum
       };
-      done = llvm.constant <builtin.integer <99: i64>> : builtin.integer i64;
+      done = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
       llvm.return done
     }
   "#;
@@ -248,18 +248,18 @@ fn sccp_folds_inside_two_nested_regions() -> Result<()> {
       ^entry():
       test.test_two_regions {
         ^r0_entry():
-        a0 = llvm.constant <builtin.integer <3: i64>> : builtin.integer i64;
-        b0 = llvm.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        a0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        b0 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
         sum0 = llvm.add a0, b0 <{nsw=false,nuw=false}> : builtin.integer i64;
         llvm.return sum0
       } {
         ^r1_entry():
-        a1 = llvm.constant <builtin.integer <10: i64>> : builtin.integer i64;
-        b1 = llvm.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        a1 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b1 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
         sum1 = llvm.add a1, b1 <{nsw=false,nuw=false}> : builtin.integer i64;
         llvm.return sum1
       };
-      done = llvm.constant <builtin.integer <99: i64>> : builtin.integer i64;
+      done = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
       llvm.return done
     }
   "#;
@@ -280,12 +280,12 @@ fn sccp_folds_inside_nested_region() -> Result<()> {
       ^entry():
       test.test_region {
         ^region_entry():
-        a = llvm.constant <builtin.integer <3: i64>> : builtin.integer i64;
-        b = llvm.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
         inner_sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i64;
         llvm.return inner_sum
       };
-      outer = llvm.constant <builtin.integer <99: i64>> : builtin.integer i64;
+      outer = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
       llvm.return outer
     }
   "#;
