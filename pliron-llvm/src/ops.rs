@@ -38,8 +38,11 @@ use pliron::{
     location::{Located, Location},
     op::{Op, OpObj},
     operation::Operation,
-    opts::mem2reg::{
-        AllocInfo, PromotableAllocationInterface, PromotableOpInterface, PromotableOpKind,
+    opts::{
+        constants::BranchOpFoldInterface,
+        mem2reg::{
+            AllocInfo, PromotableAllocationInterface, PromotableOpInterface, PromotableOpKind,
+        },
     },
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable, indented_nl},
@@ -643,6 +646,13 @@ impl BranchOpInterface for BrOp {
     }
 }
 
+#[op_interface_impl]
+impl BranchOpFoldInterface for BrOp {
+    fn check_fold(&self, ctx: &Context, _operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        self.get_operation().deref(ctx).successors().collect()
+    }
+}
+
 impl BrOp {
     /// Create anew [BrOp].
     pub fn new(ctx: &mut Context, dest: Ptr<BasicBlock>, dest_opds: Vec<Value>) -> Self {
@@ -856,12 +866,28 @@ impl BranchOpInterface for CondBrOp {
     }
 }
 
+#[op_interface_impl]
+impl BranchOpFoldInterface for CondBrOp {
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return successors;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("CondBrOp condition operand must be an IntegerAttr");
+        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
+        vec![successors[taken]]
+    }
+}
+
 /// Equivalent to LLVM's Switch opcode.
 ///
 /// ### Operands
 /// | operand | description |
 /// |-----|-------|
-/// | `condition` | 1-bit signless integer |
+/// | `condition` | integer (width matches the case values) |
 /// | `default_dest_opds` | variadic of any type |
 /// | `case_dest_opds` | variadic of any type |
 ///
@@ -1143,6 +1169,32 @@ impl BranchOpInterface for SwitchOp {
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
         self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+    }
+}
+
+#[op_interface_impl]
+impl BranchOpFoldInterface for SwitchOp {
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return successors;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("Switch condition operand must be an IntegerAttr")
+            .value();
+        // Successor 0 is the default destination; successors 1..N correspond to case_values[0..N-1].
+        let case_values = self
+            .get_attr_switch_case_values(ctx)
+            .expect("SwitchOp missing case values attribute");
+        let taken = case_values
+            .0
+            .iter()
+            .position(|case| case.value() == cond_int)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        vec![successors[taken]]
     }
 }
 

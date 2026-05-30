@@ -2,11 +2,16 @@ use pliron_derive::op_interface;
 
 use crate::{
     attribute::AttrObj,
-    context::Context,
+    basic_block::BasicBlock,
+    builtin::op_interfaces::BranchOpInterface,
+    context::{Context, Ptr},
     irbuild::{IRStatus, rewriter::Rewriter},
     op::Op,
     result::Result,
 };
+
+pub mod sccp;
+mod state;
 
 /// Interface for constant folding of operations.
 #[op_interface]
@@ -26,6 +31,22 @@ pub trait ConstFoldInterface {
         operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus;
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+/// Interface for ruling out branch destinations based on static information about branch conditions.
+#[op_interface]
+pub trait BranchOpFoldInterface: BranchOpInterface {
+    /// Return the list of possible successor blocks given that `operands`
+    /// contains `Some(attr)` for each operand known to be constant, where `attr` contains
+    /// the known constant value.
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>>;
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where

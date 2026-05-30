@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 
 use crate::attribute::Attribute;
 use crate::context::{Context, Ptr};
+use crate::operation::Operation;
 use crate::result::Result;
 use crate::storage_uniquer::TypeValueHash;
 use crate::r#type::TypeObj;
@@ -456,6 +457,21 @@ pub trait FloatAttr: TypedAttrInterface {
         let frexp_r = df.frexp(exp);
         self.build_from(frexp_r)
     }
+
+    fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+/// [Attribute]s for which we can generate pliron code to store the attribute value
+/// into an pliron value
+#[attr_interface]
+pub trait MaterializableAttr: TypedAttrInterface {
+    /// Returns an operation that assigns a materialization of `self` to some result
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation>;
 
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where
