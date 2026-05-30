@@ -7,7 +7,7 @@ use pliron::{
     irbuild::IRStatus,
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
-    opts::constants::sccp,
+    opts::constants::sccp::sccp,
     parsable::{self, state_stream_from_iterator},
     printable::Printable,
     result::Result,

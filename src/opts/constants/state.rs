@@ -13,10 +13,12 @@ use crate::{
 
 /// Information about whether a block is reachable or not.
 #[derive(Clone, Debug)]
-pub(super) enum BlockState {
+pub enum BlockState {
     /// Block is reachable.
+    /// Lattice bottom
     Reachable,
     /// Block is unreachable.
+    /// Lattice top.
     Unreachable,
 }
 
@@ -38,13 +40,13 @@ impl BlockState {
     fn leq(a: &BlockState, b: &BlockState) -> bool {
         matches!(
             (a, b),
-            (BlockState::Unreachable, BlockState::Reachable)
+            (BlockState::Reachable, BlockState::Unreachable)
                 | (BlockState::Unreachable, BlockState::Unreachable)
                 | (BlockState::Reachable, BlockState::Reachable)
         )
     }
 
-    fn join(a: &BlockState, b: &BlockState) -> BlockState {
+    fn meet(a: &BlockState, b: &BlockState) -> BlockState {
         match (a, b) {
             (BlockState::Reachable, _) | (_, BlockState::Reachable) => BlockState::Reachable,
             (BlockState::Unreachable, BlockState::Unreachable) => BlockState::Unreachable,
@@ -52,18 +54,21 @@ impl BlockState {
     }
 }
 
-/// Information about the possible runtime values a static value may be bound to.
+/// Represents compile-time knowledge about the "constantness" of a
+/// of a variable (SSA value)  during execution of the algorithm.
 #[derive(Clone, Debug)]
-pub(super) enum ValState {
-    /// No definition or use of this variable is reachable.
-    Undefinable,
-    /// Value can only be defined as constant `val`.
+pub enum Constness {
+    /// The analysis has not determined whether this is a constant or not.
+    /// The lattice ⊤.
+    Undetermined,
+    /// The analysis has determined this variable (SSA value) to be a constant `val`
     Constant { val: AttrObj },
-    /// Value definition is reachable, but nothing is known about the dynamic value.
-    Unknown,
+    /// The analysis cannot prove that this variable (SSA value) is a constant.
+    /// The lattice ⊥.
+    NotAConstant,
 }
 
-impl Printable for ValState {
+impl Printable for Constness {
     fn fmt(
         &self,
         ctx: &Context,
@@ -71,9 +76,9 @@ impl Printable for ValState {
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
-            ValState::Undefinable => write!(f, "Unassignable"),
-            ValState::Unknown => write!(f, "Unknown"),
-            ValState::Constant { val } => {
+            Constness::Undetermined => write!(f, "Undetermined"),
+            Constness::NotAConstant => write!(f, "NotAConstant"),
+            Constness::Constant { val } => {
                 write!(f, "Constant(")?;
                 Printable::fmt(val, ctx, state, f)?;
                 write!(f, ")")
@@ -82,51 +87,52 @@ impl Printable for ValState {
     }
 }
 
-impl ValState {
-    fn leq(a: &ValState, b: &ValState) -> bool {
+impl Constness {
+    fn leq(a: &Constness, b: &Constness) -> bool {
         match (a, b) {
-            (ValState::Undefinable, _) | (_, ValState::Unknown) => true,
-            (ValState::Constant { val: va }, ValState::Constant { val: vb }) => va == vb,
+            (Constness::NotAConstant, _) | (_, Constness::Undetermined) => true,
+            (Constness::Constant { val: va }, Constness::Constant { val: vb }) => va == vb,
             _ => false,
         }
     }
 
-    fn join(a: &ValState, b: &ValState) -> ValState {
+    fn meet(a: &Constness, b: &Constness) -> Constness {
         match (a, b) {
-            (ValState::Undefinable, x) | (x, ValState::Undefinable) => x.clone(),
-            (ValState::Unknown, _) | (_, ValState::Unknown) => ValState::Unknown,
-            (ValState::Constant { val: va }, ValState::Constant { val: vb }) => {
+            (Constness::NotAConstant, _) | (_, Constness::NotAConstant) => Constness::NotAConstant,
+            (Constness::Undetermined, x) | (x, Constness::Undetermined) => x.clone(),
+            (Constness::Constant { val: va }, Constness::Constant { val: vb }) => {
                 if va == vb {
-                    ValState::Constant { val: va.clone() }
+                    Constness::Constant { val: va.clone() }
                 } else {
-                    ValState::Unknown
+                    Constness::NotAConstant
                 }
             }
         }
     }
 }
 
-pub(super) struct SccpState {
+pub struct SccpState {
     /// Maps each block to information about whether the block is reachable
-    /// Blocks not present as a keys are assumed to be unreachable.
+    /// Blocks not present as keys are assumed to be unreachable.
     block_states: FxHashMap<Ptr<BasicBlock>, BlockState>,
-    /// Maps each value to information about whether the value is defined and
-    /// what dynamic value it is defined as.
-    val_states: FxHashMap<Value, ValState>,
+    /// Maps each [Value] to information about whether the [Value] is known to be const
+    /// [Value]s not present are assumed to be undetermined.
+    val_states: FxHashMap<Value, Constness>,
     /// After a [BasicBlock] has been marked as reachable, we must traverse
     /// each of its operations and process them to draw inferences.
     /// This set contains all blocks marked as reachable but not yet traversed.
     block_worklist: FxHashSet<Ptr<BasicBlock>>,
-    /// When we infer information about the dynamic value of a [Value], we must
-    /// process all its uses to try to infer more information about its uses'
-    /// results. This set contains such [Value]s that we have not yet processed.
+    /// When we infer information about the constness of a [Value], we must
+    /// process all its uses to try to infer more information about the constness
+    /// of its uses' results. This set contains such [Value]s that we have not yet
+    /// processed.
     val_worklist: FxHashSet<Value>,
 }
 
 impl SccpState {
     /// Creates an initial state for analyzing `root_op`. Marks all of `root_op`'s
-    /// regions' entry blocks as reachable and their entry-block arguments as Unknown.
-    pub(super) fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
+    /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.
+    pub fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
         let mut state = SccpState {
             block_states: FxHashMap::default(),
             val_states: FxHashMap::default(),
@@ -137,49 +143,49 @@ impl SccpState {
             let entry = region.deref(ctx).get_head().unwrap();
             state.merge_block_state(ctx, entry, BlockState::Reachable);
             for arg in entry.deref(ctx).arguments() {
-                state.merge_val_state(ctx, arg, ValState::Unknown);
+                state.merge_val_state(ctx, arg, Constness::NotAConstant);
             }
         }
         state
     }
 
-    /// Join `incoming` into whatever [ValState] is currently stored at `val`,
-    /// storing the result. If the join is strictly greater than the previous stored value,
+    /// Meet `incoming` with whatever [Constness] is currently stored at `val`,
+    /// storing the result. If the meet is strictly less than the previous stored value,
     /// insert `val` into the value worklist so its users get re-processed.
-    pub(super) fn merge_val_state(&mut self, ctx: &Context, val: Value, incoming: ValState) {
+    pub fn merge_val_state(&mut self, ctx: &Context, val: Value, incoming: Constness) {
         let old = self.get_val_state(val);
-        let new = ValState::join(&old, &incoming);
+        let new = Constness::meet(&old, &incoming);
         log::trace!(
             "Merging val state {} into value {}",
             incoming.disp(ctx),
             val.disp(ctx)
         );
-        if !ValState::leq(&new, &old) {
-            log::trace!("Inflated state of {} to {}", val.disp(ctx), new.disp(ctx));
+        if !Constness::leq(&old, &new) {
+            log::trace!("Deflated state of {} to {}", val.disp(ctx), new.disp(ctx));
             self.val_states.insert(val, new);
             self.val_worklist.insert(val);
         }
     }
 
-    /// Join `incoming` into whatever [BlockState] is currently stored at `block`,
-    /// storing the result. If the join is strictly greater than the previous stored value,
+    /// Meet `incoming` into whatever [BlockState] is currently stored at `block`,
+    /// storing the result. If the meet is strictly less than the previous stored value,
     /// insert `block` into the block worklist.
-    pub(super) fn merge_block_state(
+    pub fn merge_block_state(
         &mut self,
         ctx: &Context,
         block: Ptr<BasicBlock>,
         incoming: BlockState,
     ) {
         let old = self.get_block_state(block);
-        let new = BlockState::join(&old, &incoming);
+        let new = BlockState::meet(&old, &incoming);
         log::trace!(
             "Merging block state {} into block {}",
             incoming.disp(ctx),
             block.given_name(ctx).unwrap()
         );
-        if !BlockState::leq(&new, &old) {
+        if !BlockState::leq(&old, &new) {
             log::trace!(
-                "Inflated state of {} to {}",
+                "Deflated state of {} to {}",
                 block.given_name(ctx).unwrap(),
                 new.disp(ctx)
             );
@@ -188,16 +194,16 @@ impl SccpState {
         }
     }
 
-    /// Get the [ValState] of `val`.
-    pub(super) fn get_val_state(&self, val: Value) -> ValState {
+    /// Get the [Constness] of `val`.
+    pub fn get_val_state(&self, val: Value) -> Constness {
         self.val_states
             .get(&val)
             .cloned()
-            .unwrap_or(ValState::Undefinable)
+            .unwrap_or(Constness::Undetermined)
     }
 
     /// Get the [BlockState] of `block`.
-    pub(super) fn get_block_state(&self, block: Ptr<BasicBlock>) -> BlockState {
+    pub fn get_block_state(&self, block: Ptr<BasicBlock>) -> BlockState {
         self.block_states
             .get(&block)
             .cloned()
@@ -205,21 +211,21 @@ impl SccpState {
     }
 
     /// Pop an arbitrary block from the block worklist, if any.
-    pub(super) fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
+    pub fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
         let block = self.block_worklist.iter().next().copied()?;
         self.block_worklist.remove(&block);
         Some(block)
     }
 
     /// Pop an arbitrary value from the value worklist, if any.
-    pub(super) fn pop_val(&mut self) -> Option<Value> {
+    pub fn pop_val(&mut self) -> Option<Value> {
         let val = self.val_worklist.iter().next().copied()?;
         self.val_worklist.remove(&val);
         Some(val)
     }
 
     /// Are both block and value worklists empty?
-    pub(super) fn are_worklists_empty(&self) -> bool {
+    pub fn are_worklists_empty(&self) -> bool {
         self.block_worklist.is_empty() && self.val_worklist.is_empty()
     }
 }
