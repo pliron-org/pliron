@@ -9,7 +9,7 @@
 //! 4. [`Analysis`] and [`AnalysisManager`]: cached analyses with preservation
 //!    and invalidation support.
 //!
-//! # Mental model
+//! # Usage
 //!
 //! A pass receives three inputs:
 //! * The operation it should process,
@@ -25,7 +25,7 @@
 //!
 //! **NOTE**: A pass must not modify the IR outside of the operation it is applied to.
 //!
-//! # Example: Define and run a simple pass
+//! ## Example: Define and run a simple pass
 //!
 //! ```rust
 //! use pliron::{
@@ -65,7 +65,7 @@
 //! }
 //! ```
 //!
-//! # Example: Restrict a pass to a specific op kind.
+//! ## Example: Restrict a pass to a specific op kind.
 //! [OpPassManager] is a convenient wrapper around [GuardedPass] that allows
 //! you to run a pass only on operations of a specific [Op]. Similarly, [OpPass]
 //! allows you to run any pass on operations of a specific [Op].
@@ -105,7 +105,7 @@
 //! module_pm.add_pass(OpPass::<MyFuncPass, FuncOp>::default());
 //! ```
 //!
-//! # Example: Analysis caching and preservation
+//! ## Example: Analysis caching and preservation
 //!
 //! ```rust
 //! use pliron::{
@@ -149,10 +149,7 @@
 //! }
 //! ```
 
-use std::{
-    cell::{Ref, RefCell, RefMut},
-    rc::Rc,
-};
+use std::cell::{Ref, RefCell, RefMut};
 
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -372,7 +369,7 @@ type AnalysisManagerKey = (std::any::TypeId, Ptr<Operation>);
 #[derive(Default)]
 /// A manager for analyses, responsible for caching and invalidating them.
 pub struct AnalysisManager {
-    analyses: FxHashMap<AnalysisManagerKey, Rc<RefCell<dyn Analysis>>>,
+    analyses: FxHashMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
 }
 
 impl AnalysisManager {
@@ -385,7 +382,7 @@ impl AnalysisManager {
         let key = (std::any::TypeId::of::<A>(), op);
         if !self.analyses.contains_key(&key) {
             let analysis = A::compute(op, ctx, self)?;
-            self.analyses.insert(key, Rc::new(RefCell::new(analysis)));
+            self.analyses.insert(key, Box::new(RefCell::new(analysis)));
         }
         Ok(())
     }
