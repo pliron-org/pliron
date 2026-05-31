@@ -1,3 +1,5 @@
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 //! LLVM Dialect for [pliron]
 
 use pliron::{
