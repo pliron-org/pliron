@@ -78,8 +78,7 @@
 //!     pass_manager::{AnalysisManager, PassGroup, OpPass, OpPassManager, Pass, PassResult},
 //!     result::Result,
 //! };
-//! use pliron::builtin::ops::ModuleOp;
-//! use pliron_llvm::ops::FuncOp;
+//! use pliron::builtin::ops::{FuncOp, ModuleOp};
 //!
 //! #[derive(Default)]
 //! struct MyFuncPass;
