@@ -7,7 +7,7 @@ use pliron::{
     context::{Context, Ptr},
     op::{Op, verify_op},
     operation::Operation,
-    opts::{dce, mem2reg::Mem2RegPass},
+    opts::{dce::DCEPass, mem2reg::Mem2RegPass},
     pass_manager::{self, OpPass, OpPassManager, Pass, PassGroup},
     printable::Printable,
     result::Result,
@@ -37,7 +37,7 @@ struct Cli {
 
     /// Optimization passes to run in order (comma-separated)
     ///
-    /// Example: --opts mem2reg
+    /// Example: --opts mem2reg,dce
     #[arg(long = "opts", value_name = "PASS1,PASS2", value_delimiter = ',')]
     opts: Option<Vec<OptPass>>,
 }
@@ -71,7 +71,7 @@ fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -
                 pass_manager.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
             }
             OptPass::Dce => {
-                pass_manager.add_pass(OpPass::<dce::DCEPass, FuncOp>::default());
+                pass_manager.add_pass(OpPass::<DCEPass, FuncOp>::default());
             }
         }
     }

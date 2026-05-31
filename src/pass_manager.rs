@@ -352,17 +352,17 @@ pub type OpInterfacePassManager<T> = OpInterfacePass<PassManager, T>;
 /// An analysis is any code that computes information
 /// about an [Operation] without modifying the IR.
 pub trait Analysis: Downcast {
-    /// Name of the analysis.
+    /// Name of this analysis.
     fn name(&self) -> &str;
-    /// Compute the analysis for a given [Operation].
+    /// Compute this analysis for a given [Operation].
     fn compute(op: Ptr<Operation>, ctx: &Context, analyses: &mut AnalysisManager) -> Result<Self>
     where
         Self: Sized;
 }
 impl_downcast!(Analysis);
 
-/// An [Analysis] together with the [Operation] it is computed for
-/// is used as a key in the [AnalysisManager] cache.
+/// An [Analysis] together with the [Operation] it is computed for.
+/// Used as a key in the [AnalysisManager] cache.
 type AnalysisManagerKey = (std::any::TypeId, Ptr<Operation>);
 
 #[derive(Default)]
