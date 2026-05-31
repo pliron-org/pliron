@@ -3,10 +3,12 @@ use std::{path::PathBuf, process::ExitCode, str::FromStr};
 use clap::Parser;
 use pliron::{
     arg_error_noloc,
+    builtin::ops::ModuleOp,
     context::{Context, Ptr},
     op::{Op, verify_op},
     operation::Operation,
-    opts::{dce, mem2reg},
+    opts::{dce, mem2reg::Mem2RegPass},
+    pass_manager::{self, OpPass, OpPassManager, Pass, PassGroup},
     printable::Printable,
     result::Result,
     verify_error_noloc,
@@ -14,6 +16,7 @@ use pliron::{
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMModule},
+    ops::FuncOp,
     to_llvm_ir,
 };
 
@@ -60,16 +63,21 @@ impl FromStr for OptPass {
 }
 
 fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -> Result<()> {
+    let mut pass_manager = OpPassManager::<ModuleOp>::default();
+
     for opt in opts {
         match opt {
             OptPass::Mem2Reg => {
-                let _status = mem2reg::mem2reg(module, ctx)?;
+                pass_manager.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
             }
             OptPass::Dce => {
-                let _status = dce::dce(module, ctx)?;
+                pass_manager.add_pass(OpPass::<dce::DCEPass, FuncOp>::default());
             }
         }
     }
+
+    pass_manager.run(module, ctx, &mut pass_manager::AnalysisManager::default())?;
+
     Ok(())
 }
 

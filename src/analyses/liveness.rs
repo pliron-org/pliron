@@ -19,7 +19,9 @@ use crate::{
     },
     irbuild::inserter::OpInsertionPoint,
     linked_list::{ContainsLinkedList, LinkedList},
+    pass_manager::{Analysis, AnalysisManager},
     region::Region,
+    result::Result,
     value::{DefiningEntity, Value},
 };
 
@@ -469,21 +471,47 @@ pub trait RegionLiveness {
 /// Fast answers liveness queries, caching liveness pre-computation for regions.
 pub struct Liveness<T: RegionLiveness> {
     regions: FxHashMap<Ptr<Region>, T>,
-    dom_info: DomInfo,
 }
 
 impl<T: RegionLiveness> Default for Liveness<T> {
     fn default() -> Self {
         Self {
             regions: FxHashMap::default(),
-            dom_info: DomInfo::default(),
         }
     }
 }
 
+impl<T: RegionLiveness + 'static> Analysis for Liveness<T> {
+    fn name(&self) -> &str {
+        "liveness"
+    }
+
+    fn compute(
+        op: Ptr<crate::operation::Operation>,
+        ctx: &Context,
+        analyses: &mut AnalysisManager,
+    ) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut liveness = Self::default();
+        let mut dom_info = analyses.get_analysis_mut::<DomInfo>(op, ctx)?;
+        // Precompute liveness for the top-level regions of the operation.
+        for region in op.deref(ctx).regions() {
+            liveness.get_region_info(ctx, &mut dom_info, region);
+        }
+        Ok(liveness)
+    }
+}
+
 impl<T: RegionLiveness> Liveness<T> {
-    fn get_region_info(&mut self, ctx: &Context, region: Ptr<Region>) -> &T {
-        let dom_tree = self.dom_info.get_dom_tree(ctx, region);
+    fn get_region_info(
+        &mut self,
+        ctx: &Context,
+        dom_info: &mut DomInfo,
+        region: Ptr<Region>,
+    ) -> &T {
+        let dom_tree = dom_info.get_dom_tree(ctx, region);
         self.regions
             .entry(region)
             .or_insert_with(|| T::precompute(ctx, region, dom_tree))
@@ -525,6 +553,7 @@ impl<T: RegionLiveness> Liveness<T> {
     pub fn is_live_at_point(
         &mut self,
         ctx: &Context,
+        dom_info: &mut DomInfo,
         value: Value,
         point: OpInsertionPoint,
     ) -> bool {
@@ -600,15 +629,15 @@ impl<T: RegionLiveness> Liveness<T> {
         match point_in_def_region {
             OpInsertionPoint::Unset => panic!("Insertion point must be set for liveness query"),
             OpInsertionPoint::AtBlockStart(query_block) => {
-                let info = self.get_region_info(ctx, def_region);
+                let info = self.get_region_info(ctx, dom_info, def_region);
                 info.is_live_in_at_block(ctx, value, query_block)
             }
             OpInsertionPoint::AtBlockEnd(query_block) => {
-                let info = self.get_region_info(ctx, def_region);
+                let info = self.get_region_info(ctx, dom_info, def_region);
                 info.is_live_out_of_block(ctx, value, query_block)
             }
             OpInsertionPoint::BeforeOperation(op) => {
-                if !self.dom_info.value_strictly_dominates_op(ctx, value, op) {
+                if !dom_info.value_strictly_dominates_op(ctx, value, op) {
                     // If the value doesn't dominate the operation, it can't be live before it
                     return false;
                 }
@@ -616,7 +645,7 @@ impl<T: RegionLiveness> Liveness<T> {
                     return true;
                 }
                 // It isn't used locally in this block, check for after the block.
-                let info = self.get_region_info(ctx, def_region);
+                let info = self.get_region_info(ctx, dom_info, def_region);
                 let query_block = op.deref(ctx).get_parent_block().expect(
                     "Operations in the definition region must be in blocks for liveness queries",
                 );
@@ -630,7 +659,7 @@ impl<T: RegionLiveness> Liveness<T> {
                 // and we would end up incorrectly reporting that the value is not live after.
                 if let DefiningEntity::Op(value_def_op) = value.defining_entity()
                     && value_def_op != op
-                    && !self.dom_info.value_strictly_dominates_op(ctx, value, op)
+                    && !dom_info.value_strictly_dominates_op(ctx, value, op)
                 {
                     // If the value doesn't dominate the operation, it can't be live after it
                     return false;
@@ -639,7 +668,7 @@ impl<T: RegionLiveness> Liveness<T> {
                     return true;
                 }
                 // It isn't used locally in this block, check for after the block.
-                let info = self.get_region_info(ctx, def_region);
+                let info = self.get_region_info(ctx, dom_info, def_region);
                 let query_block = op.deref(ctx).get_parent_block().expect(
                     "Operations in the definition region must be in blocks for liveness queries",
                 );
@@ -664,9 +693,11 @@ mod tests {
         },
         context::{Context, Ptr},
         derive::pliron_op,
+        graph::dominance::DomInfo,
         irbuild::inserter::OpInsertionPoint,
         op::Op,
         operation::Operation,
+        pass_manager::AnalysisManager,
         region::Region,
         value::Value,
     };
@@ -767,32 +798,94 @@ mod tests {
         insert_br(ctx, header, vec![body, exit]);
         insert_br(ctx, body, vec![header]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(header)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(header)));
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(exit)));
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(header)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(header)
+        ));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(exit)
+        ));
     }
 
     #[test]
     fn liveness_insertion_points_and_def_block_live_out() {
         // Single block with local use only.
         let ctx = &mut Context::new();
-        let (_func, entry) = new_test_func(ctx, "single_block_local_use");
+        let (func, entry) = new_test_func(ctx, "single_block_local_use");
 
         let (def_op, val) = insert_def(ctx, entry);
         let use_op = insert_use(ctx, entry, val);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // Special-case in Algorithm 2: live-out at def block only if used outside def block.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(entry)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(entry)
+        ));
 
         // Before defining op is never live; after defining op it is live because of local use.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(def_op),));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(def_op),));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(def_op),
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(def_op),
+        ));
 
         // Before use in same block, the value should be live.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(use_op),));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(use_op),
+        ));
     }
 
     #[test]
@@ -817,14 +910,42 @@ mod tests {
         insert_br(ctx, b, vec![c]);
         insert_br(ctx, c, vec![a, exit]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // Dominated by entry and reaches use through irreducible SCC.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(b)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(b)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(b)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(b)
+        ));
 
         // Use is not reachable from exit.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(exit)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(exit)
+        ));
     }
 
     #[test]
@@ -844,16 +965,39 @@ mod tests {
         insert_br(ctx, entry, vec![header]);
         insert_br(ctx, header, vec![header, exit]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // val is defined in entry and used in header, so it is live-in at header.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(header)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(header)
+        ));
         // Not live past header (no use in exit).
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(exit)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(exit)
+        ));
 
         // Verify the CFG was treated as reducible (fast path exercised).
         let def_region = entry.deref(ctx).get_parent_region().unwrap();
-        let info = liveness.get_region_info(ctx, def_region);
+        let info = liveness.get_region_info(ctx, &mut dom_info, def_region);
         assert!(
             info.is_reducible,
             "Self-loop CFG must be classified as reducible"
@@ -874,11 +1018,35 @@ mod tests {
 
         insert_br(ctx, entry, vec![successor]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+
         // query block is dominated by def block — exercises use_blocks.is_empty() path.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(successor)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(successor)
+        ));
         // def == query block, no uses anywhere.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(entry)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(entry)
+        ));
     }
 
     #[test]
@@ -901,14 +1069,48 @@ mod tests {
         insert_br(ctx, left, vec![merge]);
         insert_br(ctx, right, vec![merge]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+
         // `left` does not dominate `right` — early exit fires, must be false.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(right)));
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(right)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(right)
+        ));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(right)
+        ));
         // `left` does not dominate `entry` — early exit fires, must be false.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(entry)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(entry)
+        ));
         // Local use only in `left`, not live-out past `left`.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(left)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(left)
+        ));
     }
 
     #[test]
@@ -928,12 +1130,41 @@ mod tests {
         insert_br(ctx, entry, vec![a]);
         insert_br(ctx, a, vec![exit]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(a)));
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(a)
+        ));
         // Only use is in `a` itself — not live-out past the end of `a`.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(a)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(a)
+        ));
         // Also live-out at entry since `a` (a different block) uses it.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(entry)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(entry)
+        ));
     }
 
     #[test]
@@ -957,20 +1188,54 @@ mod tests {
         insert_br(ctx, header, vec![body, exit]);
         insert_br(ctx, body, vec![header]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(header)));
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(header)
+        ));
         // val is live-in at body because body -> header and header uses val.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(body)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(body)
+        ));
         // header is a back-edge target: live-out because the loop can re-execute header.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(header)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(header)
+        ));
         // val is NOT live-in at exit since there's no use reachable from exit.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(exit)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(exit)
+        ));
     }
 
     #[test]
     fn liveness_nested_region_use_is_live_throughout_that_region() {
         let ctx = &mut Context::new();
-        let (_func, entry) = new_test_func(ctx, "nested_region_use_live_throughout");
+        let (func, entry) = new_test_func(ctx, "nested_region_use_live_throughout");
 
         let (_def_op, val) = insert_def(ctx, entry);
 
@@ -979,16 +1244,54 @@ mod tests {
 
         let inner_use = insert_use(ctx, inner_1, val);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // Querying inside the nested region that contains a use should report live throughout.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(inner_1)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(inner_1)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(inner_use)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(inner_1)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(inner_1)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(inner_use)
+        ));
 
         // A sibling nested region with no uses should not be forced live.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(inner_2)));
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(inner_2)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(inner_2)
+        ));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(inner_2)
+        ));
     }
 
     #[test]
@@ -1007,18 +1310,56 @@ mod tests {
         let later_op = insert_use(ctx, entry, val); // a second use after the holder, so there's something to query against
         insert_br(ctx, entry, vec![exit]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // Before the holder: val is live because the nested use is in the suffix.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(holder_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(holder_op)
+        ));
         // After def_op: val is live (nested use ahead).
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(def_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(def_op)
+        ));
         // Before def_op: val is not yet defined, never live.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(def_op)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(def_op)
+        ));
         // After holder_op: nested use has been consumed, but later_op still uses val directly.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(holder_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(holder_op)
+        ));
         // After later_op (the last use): val is dead.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(later_op)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(later_op)
+        ));
     }
 
     #[test]
@@ -1040,23 +1381,57 @@ mod tests {
         insert_br(ctx, entry, vec![a]);
         insert_br(ctx, a, vec![exit]);
 
-        let mut liveness = Liveness::<LivenessTq>::default();
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
 
         // Live at start of `a` (uses exist in `a`'s subtree).
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(a)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(a)
+        ));
         // Before holder: nested use is still in the suffix, so val is live.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(holder_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(holder_op)
+        ));
         // After op_before_holder: nested use (inside holder) is still ahead.
         assert!(liveness.is_live_at_point(
             ctx,
+            &mut dom_info,
             val,
             OpInsertionPoint::AfterOperation(op_before_holder)
         ));
         // After holder: the nested use (and the direct use in op_before_holder) are both
         // consumed; no further uses in `a`. val is dead.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(holder_op)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(holder_op)
+        ));
         // val is not live at start of exit (no reachable use from exit).
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(exit)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(exit)
+        ));
     }
 
     #[test]
@@ -1073,13 +1448,29 @@ mod tests {
         insert_use(ctx, inner_block, val);
 
         let mut liveness = Liveness::<LivenessTq>::default();
+        let mut dom_info = DomInfo::default();
 
         // After def_op: holder_op (with its nested use) is still ahead.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(def_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(def_op)
+        ));
         // Before holder_op: nested use is in the suffix.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::BeforeOperation(holder_op)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::BeforeOperation(holder_op)
+        ));
         // After holder_op: the only use has been consumed; val is dead.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(holder_op)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(holder_op)
+        ));
     }
 
     #[test]
@@ -1098,17 +1489,43 @@ mod tests {
         insert_use(ctx, inner_2, val);
 
         let mut liveness = Liveness::<LivenessTq>::default();
+        let mut dom_info = DomInfo::default();
 
         // Query inside inner_1: val is live because holder_2's nested use comes after holder_1
         // in the orphan block, so `has_local_use_after_point(BeforeOperation(holder_1))` fires.
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(inner_1)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(inner_1)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(inner_1)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(inner_1)
+        ));
 
         // Query inside inner_2: val is live (use is inside this very nested region).
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockStart(inner_2)));
-        assert!(liveness.is_live_at_point(ctx, val, OpInsertionPoint::AtBlockEnd(inner_2)));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockStart(inner_2)
+        ));
+        assert!(liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AtBlockEnd(inner_2)
+        ));
 
         // Sibling check: after holder_2 in the orphan block, val is dead.
-        assert!(!liveness.is_live_at_point(ctx, val, OpInsertionPoint::AfterOperation(_holder_2)));
+        assert!(!liveness.is_live_at_point(
+            ctx,
+            &mut dom_info,
+            val,
+            OpInsertionPoint::AfterOperation(_holder_2)
+        ));
     }
 }

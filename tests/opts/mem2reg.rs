@@ -11,6 +11,7 @@ use pliron::{
     operation::{Operation, verify_operation},
     opts::mem2reg::{AllocInfo, PromotableOpInterface, PromotableOpKind, mem2reg},
     parsable::{self, state_stream_from_iterator},
+    pass_manager::AnalysisManager,
     printable::Printable,
     result::Result,
 };
@@ -82,7 +83,8 @@ fn run_mem2reg(input: &str) -> Result<(IRStatus, String, String)> {
     log::trace!("Before mem2reg:\n{}", before);
     verify_operation(op, ctx)?;
 
-    let status = mem2reg(op, ctx)?;
+    let mut analyses = AnalysisManager::default();
+    let status = mem2reg(op, ctx, &mut analyses)?;
 
     let after = op.disp(ctx).to_string();
     log::trace!("After mem2reg:\n{}", after);

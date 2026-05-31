@@ -13,7 +13,7 @@ use crate::{
     context::{Context, Ptr},
     debug_info::set_block_arg_name,
     graph::{
-        dominance::{DomFrontierMap, DomTree, compute_dominator_tree},
+        dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     },
     irbuild::{
@@ -25,6 +25,7 @@ use crate::{
     linked_list::ContainsLinkedList,
     op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
+    pass_manager::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
     r#type::TypeObj,
@@ -494,7 +495,11 @@ fn rename_block(
 }
 
 /// Perform memory to register promotion on regions (recursively) within root.
-pub fn mem2reg(root: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
+pub fn mem2reg(
+    root: Ptr<Operation>,
+    ctx: &mut Context,
+    analyses: &mut AnalysisManager,
+) -> Result<IRStatus> {
     // Collect allocations that implement the promotable allocation interface.
     let mut candidates = collect_alloc_candidates(root, ctx);
     // Prune candidates that we cannot promote based on their uses.
@@ -517,11 +522,13 @@ pub fn mem2reg(root: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         by_region.entry(region).or_default().push(cand);
     }
 
+    let dom_info = &mut *analyses.get_analysis_mut::<DomInfo>(root, ctx)?;
+
     let mut opt_status = IRStatus::Unchanged;
     for (region, mut alloc_candidates) in by_region {
         // Dominator tree and dominance frontier, once per region.
-        let dom_tree: DomTree<Ptr<Region>, Context> = compute_dominator_tree(ctx, &region);
-        let df_map = DomFrontierMap::new(ctx, &region, &dom_tree);
+        let dom_tree = dom_info.get_dom_tree(ctx, region);
+        let df_map = DomFrontierMap::new(ctx, &region, dom_tree);
 
         // Compute liveness and phi-placement per candidate.
         let mut phi_blocks: FxHashMap<Value, FxHashSet<Ptr<BasicBlock>>> = FxHashMap::default();
@@ -574,7 +581,7 @@ pub fn mem2reg(root: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         rename_block(
             ctx,
             entry_block,
-            &dom_tree,
+            dom_tree,
             &new_phis_in_block,
             &reaching_def_map,
             &mut default_def_map,
@@ -615,4 +622,28 @@ pub fn mem2reg(root: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     }
 
     Ok(opt_status)
+}
+
+#[derive(Default)]
+/// The mem2reg pass, which promotes memory allocations to SSA registers where possible.
+pub struct Mem2RegPass;
+
+impl Pass for Mem2RegPass {
+    fn name(&self) -> &str {
+        "mem2reg"
+    }
+
+    fn run(
+        &self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_res = PassResult::default();
+        // Run mem2reg on the entire operation tree rooted at `op`
+        pass_res.ir_changed |= mem2reg(op, ctx, analyses)?;
+        // mem2reg does not touch the CFG structure, so we can preserve dominator info if it exists.
+        pass_res.set_preserved::<DomInfo>();
+        Ok(pass_res)
+    }
 }

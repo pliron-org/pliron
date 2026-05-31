@@ -23,15 +23,17 @@ use crate::{
     context::{Context, Ptr},
     graph::{
         HasLabel,
+        dominance::DomInfo,
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::mutable::walk_op},
     },
-    irbuild::IRStatus,
     irbuild::{
+        IRStatus,
         listener::{Recorder, RecorderEvent},
         rewriter::{IRRewriter, Rewriter},
     },
     op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
+    pass_manager::{AnalysisManager, Pass, PassResult},
     printable::Printable,
     result::Result,
     value::{DefiningEntity, Value},
@@ -284,4 +286,28 @@ pub fn dce(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     }
 
     Ok(modified)
+}
+
+#[derive(Default)]
+/// A [Pass] that performs dead code elimination as described in the module-level documentation.
+pub struct DCEPass;
+
+impl Pass for DCEPass {
+    fn run(
+        &self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        _analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_res = PassResult::default();
+        // Run DCE on the entire operation tree rooted at `op`
+        pass_res.ir_changed |= dce(op, ctx)?;
+        // DCE does not touch the CFG structure, so we can preserve dominator info if it exists.
+        pass_res.set_preserved::<DomInfo>();
+        Ok(pass_res)
+    }
+
+    fn name(&self) -> &str {
+        "dce"
+    }
 }

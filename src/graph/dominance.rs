@@ -8,7 +8,9 @@ use crate::{
         strictly_precedes_in_block, traversals,
     },
     operation::Operation,
+    pass_manager::{Analysis, AnalysisManager},
     region::Region,
+    result::Result,
     value::{DefiningEntity, Value},
 };
 
@@ -477,6 +479,23 @@ impl DomInfo {
             .expect("A block must be in a region");
         let dom_tree = self.get_dom_tree(ctx, region);
         Some(dom_tree.nearest_common_dominator(&a, &b))
+    }
+}
+
+impl Analysis for DomInfo {
+    fn name(&self) -> &'static str {
+        "dom_info"
+    }
+
+    fn compute(op: Ptr<Operation>, ctx: &Context, _analyses: &mut AnalysisManager) -> Result<Self>
+    where
+        Self: Sized,
+    {
+        let mut dom_info = DomInfo::default();
+        for region in op.deref(ctx).regions() {
+            dom_info.get_dom_tree(ctx, region);
+        }
+        Ok(dom_info)
     }
 }
 
