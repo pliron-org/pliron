@@ -1159,7 +1159,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                             if let Some(#attr_ident) = #attr_ident {
                                 op.deref_mut(state_stream.state.ctx).attributes.0.insert(
                                     ::pliron::identifier::Identifier::try_from(#attr_name).unwrap(),
-                                    Box::new(#attr_ident),
+                                    ::pliron::alloc::boxed::Box::new(#attr_ident),
                                 );
                             }
                         }
@@ -1406,7 +1406,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 Ok(quote! {
                     let parsed = #delimited_labelled_parser
                         .parse_stream(state_stream).into_result()?.0;
-                    let #attr_name_ident = Box::new(parsed);
+                    let #attr_name_ident = ::pliron::alloc::boxed::Box::new(parsed);
                 })
             }
         } else if d.name == "succ" {
