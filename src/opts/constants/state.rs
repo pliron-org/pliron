@@ -56,12 +56,24 @@ impl BlockState {
 
 /// Represents compile-time knowledge about the "constantness" of a
 /// of a variable (SSA value)  during execution of the algorithm.
+///
+/// Partial ordering relation:
+/// ```text
+///                         Undetermined  (⊤)
+///                      /       |       \
+///                     /        |        \
+///         ... Constant{c₀} Constant{c₁} Constant{c₂} ...
+///                     \        |        /
+///                      \       |       /
+///                         NotAConstant  (⊥)
+/// ```
 #[derive(Clone, Debug)]
 pub enum Constness {
     /// The analysis has not determined whether this is a constant or not.
     /// The lattice ⊤.
     Undetermined,
-    /// The analysis has determined this variable (SSA value) to be a constant `val`
+    /// The analysis has (as yet) seen only one definition of the variable (SSA Value),
+    /// which assigns `val` to it.
     Constant { val: AttrObj },
     /// The analysis cannot prove that this variable (SSA value) is a constant.
     /// The lattice ⊥.
@@ -129,6 +141,20 @@ pub struct SccpState {
     val_worklist: FxHashSet<Value>,
 }
 
+// fn seed_nested_regions(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
+//     let regions: Vec<_> = op.deref(ctx).regions().collect();
+//     for region in regions {
+//         let Some(entry) = region.deref(ctx).get_head() else {
+//             continue;
+//         };
+//         state.merge_block_state(ctx, entry, BlockState::Reachable);
+//         let entry_args: Vec<Value> = entry.deref(ctx).arguments().collect();
+//         for arg in entry_args {
+//             state.merge_val_state(ctx, arg, Constness::NotAConstant);
+//         }
+//     }
+// }
+
 impl SccpState {
     /// Creates an initial state for analyzing `root_op`. Marks all of `root_op`'s
     /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.
@@ -139,14 +165,26 @@ impl SccpState {
             block_worklist: FxHashSet::default(),
             val_worklist: FxHashSet::default(),
         };
-        for region in root_op.deref(ctx).regions() {
-            let entry = region.deref(ctx).get_head().unwrap();
-            state.merge_block_state(ctx, entry, BlockState::Reachable);
-            for arg in entry.deref(ctx).arguments() {
-                state.merge_val_state(ctx, arg, Constness::NotAConstant);
+        state.seed_nested_regions(root_op, ctx);
+        state
+    }
+
+    /// For ops that do not implement a `RegionBranchOpInterface` analog,
+    /// propagate information from the op to its nested regions conservatively
+    /// by marking each of their entry blocks as Reachable and each of their
+    /// entry blocks' arguments as NotAConstant.
+    pub fn seed_nested_regions(&mut self, op: Ptr<Operation>, ctx: &Context) {
+        let regions: Vec<_> = op.deref(ctx).regions().collect();
+        for region in regions {
+            let Some(entry) = region.deref(ctx).get_head() else {
+                continue;
+            };
+            self.merge_block_state(ctx, entry, BlockState::Reachable);
+            let entry_args: Vec<Value> = entry.deref(ctx).arguments().collect();
+            for arg in entry_args {
+                self.merge_val_state(ctx, arg, Constness::NotAConstant);
             }
         }
-        state
     }
 
     /// Meet `incoming` with whatever [Constness] is currently stored at `val`,

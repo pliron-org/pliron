@@ -21,24 +21,6 @@ use rustc_hash::FxHashSet;
 
 use super::state::{BlockState, Constness, SccpState};
 
-/// For ops that do not implement a `RegionBranchOpInterface` analog,
-/// propagate information from the op to its nested regions conservatively
-/// by marking each of their entry blocks as Reachable and each of their
-/// entry blocks' arguments as NotAConstant.
-fn seed_nested_regions(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
-    let regions: Vec<_> = op.deref(ctx).regions().collect();
-    for region in regions {
-        let Some(entry) = region.deref(ctx).get_head() else {
-            continue;
-        };
-        state.merge_block_state(ctx, entry, BlockState::Reachable);
-        let entry_args: Vec<Value> = entry.deref(ctx).arguments().collect();
-        for arg in entry_args {
-            state.merge_val_state(ctx, arg, Constness::NotAConstant);
-        }
-    }
-}
-
 /// Get the [Constness] of `op`'s operands as a vector of optional attributes.
 fn operand_attrs(op: Ptr<Operation>, ctx: &Context, state: &SccpState) -> Vec<Option<AttrObj>> {
     op.deref(ctx)
@@ -123,7 +105,7 @@ fn process_op(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
         "SCCP requires BranchOpInterface, ConstFoldInterface (and future region-branch \
          interfaces) to be mutually exclusive on any given op"
     );
-    seed_nested_regions(op, ctx, state);
+    state.seed_nested_regions(op, ctx);
     if let Some(op) = opt_branch {
         process_branch_op(op, ctx, state);
     } else if let Some(op) = opt_fold {
