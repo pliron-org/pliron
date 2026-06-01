@@ -141,20 +141,6 @@ pub struct SccpState {
     val_worklist: FxHashSet<Value>,
 }
 
-// fn seed_nested_regions(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
-//     let regions: Vec<_> = op.deref(ctx).regions().collect();
-//     for region in regions {
-//         let Some(entry) = region.deref(ctx).get_head() else {
-//             continue;
-//         };
-//         state.merge_block_state(ctx, entry, BlockState::Reachable);
-//         let entry_args: Vec<Value> = entry.deref(ctx).arguments().collect();
-//         for arg in entry_args {
-//             state.merge_val_state(ctx, arg, Constness::NotAConstant);
-//         }
-//     }
-// }
-
 impl SccpState {
     /// Creates an initial state for analyzing `root_op`. Marks all of `root_op`'s
     /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.

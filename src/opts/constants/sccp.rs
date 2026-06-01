@@ -29,7 +29,10 @@ fn operand_attrs(op: Ptr<Operation>, ctx: &Context, state: &SccpState) -> Vec<Op
             Constness::Constant { val } => Some(val.clone()),
             Constness::NotAConstant => None,
             Constness::Undetermined => {
-                panic!("SCCP algorithm won't process op until operands have been assigned")
+                // This means `v` was defined in a scope outside of the root operation
+                // we're applying sccp to. These variables aren't really Undetermined;
+                // we just never added them to the state.
+                None
             }
         })
         .collect()
@@ -138,7 +141,6 @@ fn process_val(val: Value, ctx: &Context, state: &mut SccpState) {
 }
 
 /// Perform sparse conditional constant propagation on `op` and its nested operations.
-/// Assumes that `op` contains no free variables.
 pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     let mut state = SccpState::new(root_op, ctx);
 
