@@ -1,7 +1,10 @@
 //! Source location for different IR entities
 
-use std::{fmt::Debug, path::PathBuf};
+use core::fmt::Debug;
+#[cfg(feature = "std")]
+use std::path::PathBuf;
 
+use alloc::{boxed::Box, string::String, vec::Vec};
 use combine::{
     Parser, between, optional,
     parser::char::{spaces, string},
@@ -20,12 +23,15 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
-    uniqued_any::{self, UniquedKey},
 };
+
+#[cfg(feature = "std")]
+use crate::uniqued_any::{self, UniquedKey};
 
 /// Where is the source program?
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub enum Source {
+    #[cfg(feature = "std")]
     /// Program being read from a file.
     File(UniquedKey<PathBuf>),
     /// Program is in memory.
@@ -33,6 +39,7 @@ pub enum Source {
     InMemory,
 }
 
+#[cfg(feature = "std")]
 impl Source {
     /// Get a [Source] handle to the source specified by `path`.
     pub fn new_from_file(ctx: &mut Context, path: PathBuf) -> Self {
@@ -45,9 +52,11 @@ impl Printable for Source {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let _ = ctx;
         match self {
+            #[cfg(feature = "std")]
             Source::File(path_key) => {
                 write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
             }
@@ -66,17 +75,22 @@ impl Parsable for Source {
         _arg: Self::Arg,
     ) -> crate::parsable::ParseResult<'a, Self::Parsed> {
         enum Source {
+            #[cfg(feature = "std")]
             Filename(String),
             InMemory,
         }
 
+        #[cfg(feature = "std")]
         let mut parser = quoted_string_parser()
             .map(Source::Filename)
             .or(string("<in-memory>").map(|_| Source::InMemory));
+        #[cfg(not(feature = "std"))]
+        let mut parser = string("<in-memory>").map(|_| Source::InMemory);
 
         parser
             .parse_stream(state_stream)
             .map(|source| match source {
+                #[cfg(feature = "std")]
                 Source::Filename(s) => {
                     Self::new_from_file(state_stream.state.ctx, PathBuf::from(s))
                 }
@@ -170,8 +184,8 @@ impl Printable for Location {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             Self::SrcPos { src, pos } => {
                 write!(f, "{}: {}", src.disp(ctx), pos)
@@ -296,6 +310,7 @@ pub trait Located {
 #[cfg(test)]
 mod tests {
 
+    use alloc::format;
     use combine::ParseError;
 
     use expect_test::expect;

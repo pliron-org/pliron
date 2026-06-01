@@ -1,5 +1,9 @@
 //! Utilities to work with [SymbolTableInterface] Ops.
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 

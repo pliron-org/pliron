@@ -1,3 +1,8 @@
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use combine::{Parser, optional, token};
 use pliron::derive::pliron_op;
 use pliron_derive::op_interface_impl;
@@ -362,8 +367,8 @@ impl Printable for ForwardRefOp {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "{} = {}",

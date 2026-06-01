@@ -1,6 +1,6 @@
 //! Attributes belonging to the LLVM dialect.
 
-use std::fmt::Display;
+use core::fmt::Display;
 
 use pliron::combine::{self, Parser, choice, parser::char::spaces};
 use thiserror::Error;
@@ -69,7 +69,7 @@ impl From<FastmathFlagsAttr> for FastmathFlags {
 }
 
 impl Display for FastmathFlagsAttr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "<")?;
         bitflags::parser::to_writer(&self.0, &mut *f)?;
         write!(f, ">")

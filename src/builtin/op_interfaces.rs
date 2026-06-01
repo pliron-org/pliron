@@ -1,3 +1,8 @@
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use pliron::derive::op_interface;
 use rustc_hash::FxHashMap;
 use thiserror::Error;

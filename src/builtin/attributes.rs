@@ -1,5 +1,6 @@
-use std::hash::{Hash, Hasher};
+use core::hash::{Hash, Hasher};
 
+use alloc::{boxed::Box, string::String, vec::Vec};
 use combine::{
     Parser, between, many1,
     parser::char::{char, digit, spaces},

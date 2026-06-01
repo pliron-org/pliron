@@ -2,8 +2,9 @@
 //! Outlined attributes are printed in a separate section of the
 //! IR, after the top level operation is printed.
 
-use std::{borrow::Borrow, hash::Hash};
+use core::{borrow::Borrow, hash::Hash};
 
+use alloc::{boxed::Box, vec::Vec};
 use combine::{Parser, between, optional, parser::char::spaces, token};
 use rustc_hash::FxHashMap;
 
@@ -35,8 +36,8 @@ enum OutlinedItem {
 // so that we can use it as a key in `print_once_attrs map`.
 struct PrintOnceAttrWrapper(Box<dyn PrintOnceAttr>);
 
-impl std::hash::Hash for PrintOnceAttrWrapper {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+impl core::hash::Hash for PrintOnceAttrWrapper {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.0.hash_attr().hash(state);
     }
 }
@@ -58,7 +59,7 @@ impl Borrow<dyn PrintOnceAttr> for PrintOnceAttrWrapper {
 
 // To enable looking up `PrintOnceAttrWrapper` in the map using a `&dyn PrintOnceAttr`.
 impl Hash for dyn PrintOnceAttr {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.hash_attr().hash(state);
     }
 }
@@ -89,7 +90,7 @@ pub(crate) fn preprint_outline_operation(
     opr: Ptr<Operation>,
     print_state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
-) -> std::fmt::Result {
+) -> core::fmt::Result {
     let mut aux_print_data = print_state.aux_data_mut();
     let print_state = aux_print_data
         .entry(OUTLINED_STATE.clone())
@@ -126,7 +127,7 @@ pub(crate) fn preprint_outline_block(
     block: Ptr<BasicBlock>,
     print_state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
-) -> std::fmt::Result {
+) -> core::fmt::Result {
     let mut aux_print_data = print_state.aux_data_mut();
     let print_state = aux_print_data
         .entry(OUTLINED_STATE.clone())
@@ -166,7 +167,7 @@ pub(crate) fn print_outlines(
     ctx: &Context,
     print_state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
-) -> std::fmt::Result {
+) -> core::fmt::Result {
     let Some(print_state) = print_state.aux_data_mut().remove(&*OUTLINED_STATE) else {
         return Ok(());
     };
@@ -190,7 +191,7 @@ pub(crate) fn print_outlines(
         print_once_attr_indices: &mut usize,
         attributes: &AttributeDict,
         loc: Location,
-    ) -> std::fmt::Result {
+    ) -> core::fmt::Result {
         if !loc.is_unknown() {
             write!(f, "@[{}], ", loc.disp(ctx))?;
         }

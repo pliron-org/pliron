@@ -1,6 +1,6 @@
 //! [Rewriter] extends [Inserter] with more capabilities, such as replace and erase operations.
 
-use std::vec;
+use alloc::{vec, vec::Vec};
 
 use crate::{
     basic_block::BasicBlock,
@@ -94,7 +94,7 @@ pub trait Rewriter: Inserter {
 pub struct IRRewriter<L: RewriteListener> {
     inserter: IRInserter<L>,
     config: IRRewriterConfig,
-    _phantom: std::marker::PhantomData<L>,
+    _phantom: core::marker::PhantomData<L>,
 }
 
 impl<L: RewriteListener> Default for IRRewriter<L>
@@ -105,7 +105,7 @@ where
         Self {
             inserter: IRInserter::default(),
             config: IRRewriterConfig::default(),
-            _phantom: std::marker::PhantomData,
+            _phantom: core::marker::PhantomData,
         }
     }
 }

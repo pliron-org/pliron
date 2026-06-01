@@ -1,8 +1,9 @@
 //! IR objects that can be parsed from their text representation.
 
-use std::{any::Any, collections::hash_map::Entry};
+use core::any::Any;
 
 use crate::{
+    FxHashMap,
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{IsolatedFromAboveInterface, OneResultInterface},
@@ -18,6 +19,7 @@ use crate::{
     result::{self, Result},
     value::{DefiningEntity, Value},
 };
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use combine::{
     Parser, Positioned, StreamOnce, choice,
     easy::{self, Errors, ParseError},
@@ -29,8 +31,9 @@ use combine::{
         state::Stream,
     },
 };
-use rustc_hash::FxHashMap;
+use hashbrown::hash_map::Entry;
 use thiserror::Error;
+#[cfg(feature = "std")]
 use utf8_chars::BufReadCharsExt;
 
 /// State during parsing of any [Parsable] object.
@@ -179,6 +182,7 @@ pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
     }
 }
 
+#[cfg(feature = "std")]
 /// Build a [StateStream] from a file, for use with [Parsable].
 pub fn state_stream_from_file<'a>(
     file_reader: &'a mut std::io::BufReader<std::fs::File>,
@@ -186,7 +190,7 @@ pub fn state_stream_from_file<'a>(
 ) -> StateStream<'a> {
     state_stream_from_iterator(
         file_reader.chars().map(|c| {
-            c.map_err(|e| eprintln!("Error reading chars from file: {e}"))
+            c.map_err(|e| std::eprintln!("Error reading chars from file: {e}"))
                 .unwrap()
         }),
         state,

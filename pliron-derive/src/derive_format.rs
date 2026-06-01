@@ -135,8 +135,8 @@ trait PrintableBuilder<State: Default> {
                     &self,
                     ctx: & ::pliron::context::Context,
                     state: & ::pliron::printable::State,
-                    fmt: &mut ::std::fmt::Formatter<'_>,
-                ) -> ::std::fmt::Result {
+                    fmt: &mut ::core::fmt::Formatter<'_>,
+                ) -> ::core::fmt::Result {
                     #body
                     Ok(())
                 }
@@ -950,7 +950,7 @@ trait ParsableBuilder<State: Default> {
 
             let inner_ty = get_inner_type_option_vec(ty)?;
             Ok(quote! {
-                let parsed_vec: Vec<_> = ::pliron::irfmt::parsers::list_parser(#sep, <#inner_ty>::parser(()))
+                let parsed_vec: ::pliron::alloc::vec::Vec<_> = ::pliron::irfmt::parsers::list_parser(#sep, <#inner_ty>::parser(()))
                     .parse_stream(state_stream).into_result()?.0;
                 let #name: #ty = parsed_vec.try_into().map_err(|_vec| {
                     ::pliron::input_error!(
@@ -1035,9 +1035,9 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 let #regions_temp_parent_op = Operation::new(
                     state_stream.state.ctx,
                     Self::get_concrete_op_info(),
-                    vec![],
-                    vec![],
-                    vec![],
+                    ::pliron::alloc::vec![],
+                    ::pliron::alloc::vec![],
+                    ::pliron::alloc::vec![],
                     0,
                 );
             });
@@ -1063,7 +1063,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 }
                 let operand_indices = (0..num_operands).map(|i| operands[&i].clone());
                 quote! {
-                    vec![#( #operand_indices ),*]
+                    ::pliron::alloc::vec![#( #operand_indices ),*]
                 }
             }
             ElementSpec::All(ref all) => {
@@ -1090,7 +1090,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 }
                 let successor_indices = (0..num_successors).map(|i| successors[&i].clone());
                 quote! {
-                    vec![#( #successor_indices ),*]
+                    ::pliron::alloc::vec![#( #successor_indices ),*]
                 }
             }
             ElementSpec::All(ref all) => {
@@ -1113,7 +1113,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 }
                 let region_indices = (0..num_regions).map(|i| regions[&i].clone());
                 quote! {
-                    vec![#( #region_indices ),*]
+                    ::pliron::alloc::vec![#( #region_indices ),*]
                 }
             }
             ElementSpec::All(ref all) => {
@@ -1132,7 +1132,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                     .unwrap_or_default();
                 let result_type_indices = (0..num_result_types).map(|i| result_types[&i].clone());
                 quote! {
-                    vec![#( #result_type_indices ),*]
+                    ::pliron::alloc::vec![#( #result_type_indices ),*]
                 }
             }
             ElementSpec::All(ref all) => {
@@ -1569,7 +1569,9 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
 
     /// Default implementation for building the parser's associated type for `Arg`.
     fn build_assoc_type_arg(_input: &FmtInput, _state: &mut OpParserState) -> Result<TokenStream> {
-        Ok(quote! { Vec<(::pliron::identifier::Identifier, ::pliron::location::Location)> })
+        Ok(
+            quote! { ::pliron::alloc::vec::Vec<(::pliron::identifier::Identifier, ::pliron::location::Location)> },
+        )
     }
 
     /// Default implementation for building the parser's associated type for `Parsed`.

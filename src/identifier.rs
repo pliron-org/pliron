@@ -1,10 +1,14 @@
 //! [Identifier]s are strings used to name entities in programming languages.
 
-use std::{
+use core::{
     fmt::Display,
     ops::{Add, Deref},
 };
 
+use alloc::{
+    format,
+    string::{String, ToString},
+};
 use combine::{Parser, token};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
@@ -60,7 +64,7 @@ impl Add for Identifier {
 impl_printable_for_display!(Identifier);
 
 impl Display for Identifier {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -68,7 +72,7 @@ impl Display for Identifier {
 impl TryFrom<String> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: String) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: String) -> core::result::Result<Self, Self::Error> {
         Self::try_new(value)
     }
 }
@@ -76,7 +80,7 @@ impl TryFrom<String> for Identifier {
 impl TryFrom<&str> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: &str) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: &str) -> core::result::Result<Self, Self::Error> {
         Self::try_new(value.to_string())
     }
 }
@@ -84,7 +88,7 @@ impl TryFrom<&str> for Identifier {
 impl TryFrom<StringAttr> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: StringAttr) -> std::result::Result<Self, Self::Error> {
+    fn try_from(value: StringAttr) -> core::result::Result<Self, Self::Error> {
         Self::try_new(value.into())
     }
 }

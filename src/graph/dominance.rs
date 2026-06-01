@@ -1,3 +1,4 @@
+use alloc::{vec, vec::Vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
@@ -194,7 +195,7 @@ where
     /// Return an iterator over the dominators of `node`, starting with `node` itself,
     /// then its immediate dominator, and so on up to the root.
     pub fn dominators(&self, node: &G::Node) -> impl Iterator<Item = G::Node> + Clone + '_ {
-        std::iter::successors(Some(node.clone()), |n| {
+        core::iter::successors(Some(node.clone()), |n| {
             self.dominators_map[n].parent.clone()
         })
     }

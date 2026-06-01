@@ -1,6 +1,8 @@
 //! Store, in [Context], a single unique copy of any object.
 
-use std::{any::Any, cell::Ref, hash::Hash, marker::PhantomData};
+use core::{any::Any, cell::Ref, hash::Hash, marker::PhantomData};
+
+use alloc::boxed::Box;
 
 use crate::{
     context::{ArenaIndex, Context},
@@ -25,9 +27,9 @@ impl<T> Clone for UniquedKey<T> {
 impl<T> Copy for UniquedKey<T> {}
 
 impl<T: 'static> Hash for UniquedKey<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.index.hash(state);
-        std::any::TypeId::of::<T>().hash(state);
+        core::any::TypeId::of::<T>().hash(state);
     }
 }
 

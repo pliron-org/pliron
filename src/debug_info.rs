@@ -1,8 +1,8 @@
 //! Utilities for attaching / retrieving debug info to / from the IR.
 
-use std::collections::hash_map::Entry;
-
+use alloc::{string::ToString, vec::Vec};
 use combine::{Parser, attempt, between, parser::char::spaces, sep_by, token};
+use hashbrown::hash_map::Entry;
 use pliron::derive::pliron_attr;
 use pliron_derive::attr_interface_impl;
 
@@ -54,8 +54,8 @@ impl Printable for DebugInfoAttr {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "[{}]",

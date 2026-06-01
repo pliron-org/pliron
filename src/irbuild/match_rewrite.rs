@@ -1,7 +1,7 @@
 //! Utilites for matching operations and rewriting them.
 //! Similar in spirit to MLIR's pattern matching rewrites.
 
-use std::collections::VecDeque;
+use alloc::collections::VecDeque;
 
 use rustc_hash::FxHashSet;
 

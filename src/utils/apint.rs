@@ -2,8 +2,9 @@
 //! This is similar in functionality to LLVM's APInt class.
 
 use crate::{arg_error_noloc, result::Result};
+use alloc::string::String;
 use awint::{Awi, SerdeError};
-use std::num::NonZero;
+use core::num::NonZero;
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct APInt {

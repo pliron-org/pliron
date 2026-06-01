@@ -1,12 +1,13 @@
 //! Memory to register promotion optimization pass.
 
 use core::panic;
-use std::collections::hash_map;
 
+use alloc::vec::Vec;
+use hashbrown::hash_map::Entry;
 use pliron_derive::op_interface;
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
+    FxHashMap, FxHashSet,
     basic_block::BasicBlock,
     builtin::op_interfaces::BranchOpInterface,
     common_traits::Named,
@@ -332,8 +333,8 @@ fn get_or_create_default_def(
     default_defs: &mut FxHashMap<Value, Value>,
 ) -> Result<Value> {
     match default_defs.entry(alloc_cand.alloc_info.ptr) {
-        hash_map::Entry::Occupied(entry) => Ok(*entry.get()),
-        hash_map::Entry::Vacant(entry) => {
+        Entry::Occupied(entry) => Ok(*entry.get()),
+        Entry::Vacant(entry) => {
             let alloc_op = alloc_cand.alloc_op;
             let alloc_obj = Operation::get_op_dyn(alloc_op, ctx);
             let alloc_iface = op_cast::<dyn PromotableAllocationInterface>(alloc_obj.as_ref())

@@ -6,7 +6,7 @@ pub mod listener;
 pub mod match_rewrite;
 pub mod rewriter;
 
-use std::ops::{BitOr, BitOrAssign};
+use core::ops::{BitOr, BitOrAssign};
 
 /// Indicates whether a pass changed the IR or not.
 /// Implements `|` and `|=` for convenience.

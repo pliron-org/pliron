@@ -1,7 +1,8 @@
 //! [Dialect]s are a mechanism to group related [Op](crate::op::Op)s, [Type](crate::type::Type)s
 //! and [Attribute](crate::attribute::Attribute)s.
-use std::{fmt::Display, ops::Deref};
+use core::{fmt::Display, ops::Deref};
 
+use alloc::string::String;
 use combine::Parser;
 use rustc_hash::FxHashMap;
 
@@ -37,7 +38,7 @@ impl From<&str> for DialectName {
 impl_printable_for_display!(DialectName);
 
 impl Display for DialectName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }

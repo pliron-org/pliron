@@ -545,7 +545,7 @@ trait TestAttrEnumGenericInterface<T: Clone> {
     {
         *TEST_ATTR_ENUM_GENERIC_VERIFIERS_OUTPUT.lock().unwrap() += &format!(
             "TestAttrEnumGenericInterface<{}> verified\n",
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         );
         Ok(())
     }
@@ -658,7 +658,7 @@ trait TestTypeInterfaceGeneric<T: Clone> {
     {
         *TEST_TYPE_VERIFIERS_OUTPUT_GENERIC.lock().unwrap() += &format!(
             "TestTypeInterfaceGeneric<{}> verified\n",
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         );
         Ok(())
     }
@@ -672,7 +672,7 @@ trait TestTypeInterfaceGeneric2<T: Clone>: TestTypeInterfaceGeneric<T> {
     {
         *TEST_TYPE_VERIFIERS_OUTPUT_GENERIC.lock().unwrap() += &format!(
             "TestTypeInterfaceGeneric2<{}> verified\n",
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         );
         Ok(())
     }
@@ -688,7 +688,7 @@ trait TestTypeInterfaceGeneric3<T: Clone>:
     {
         *TEST_TYPE_VERIFIERS_OUTPUT_GENERIC.lock().unwrap() += &format!(
             "TestTypeInterfaceGeneric3<{}> verified\n",
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         );
         Ok(())
     }
@@ -780,7 +780,7 @@ trait TestTypeEnumGenericInterface<T: Clone> {
     {
         *TEST_TYPE_ENUM_GENERIC_VERIFIERS_OUTPUT.lock().unwrap() += &format!(
             "TestTypeEnumGenericInterface<{}> verified\n",
-            std::any::type_name::<T>()
+            core::any::type_name::<T>()
         );
         Ok(())
     }

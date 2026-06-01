@@ -1258,10 +1258,10 @@ fn walker_print() {
     fn print_op(
         ctx: &Context,
         root: Ptr<Operation>,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         struct State<'a, 'b> {
-            f: &'a mut std::fmt::Formatter<'b>,
+            f: &'a mut core::fmt::Formatter<'b>,
         }
         let mut state = State { f };
         match walkers::interruptible::immutable::walk_op(
@@ -1292,8 +1292,8 @@ fn walker_print() {
             &self,
             ctx: &Context,
             _state: &pliron::printable::State,
-            f: &mut std::fmt::Formatter<'_>,
-        ) -> std::fmt::Result {
+            f: &mut core::fmt::Formatter<'_>,
+        ) -> core::fmt::Result {
             print_op(ctx, self.root, f)
         }
     }

@@ -5,9 +5,10 @@
 //! - [LivenessTq]: An implementation of the Tq-sets based liveness checking algorithm
 //!   from "Fast Liveness Checking for SSA-Form Programs".
 
-use rustc_hash::{FxHashMap, FxHashSet};
+use alloc::{vec, vec::Vec};
 
 use crate::{
+    FxHashMap, FxHashSet,
     basic_block::BasicBlock,
     context::{Context, Ptr},
     graph::{
@@ -251,7 +252,7 @@ impl LivenessTq {
         {
             let ts = bitset_reduce(
                 bitset_ops::Or,
-                std::iter::once(&tq_sets[s])
+                core::iter::once(&tq_sets[s])
                     .chain(back_edges_by_source[s].iter().map(|t| &tq_sets[*t])),
             )
             .map(Into::<BitSet>::into)
@@ -545,7 +546,7 @@ impl<T: RegionLiveness> Liveness<T> {
             OpInsertionPoint::Unset => panic!("Insertion point must be set for local use check"),
         };
 
-        std::iter::successors(op_iter, |op| op.deref(ctx).get_next())
+        core::iter::successors(op_iter, |op| op.deref(ctx).get_next())
             .any(|op| user_ops_in_point_block.contains(&op))
     }
 

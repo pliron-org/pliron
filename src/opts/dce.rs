@@ -14,6 +14,7 @@
 //! 1. Implements the [BlockArgRemoval] interface, and
 //! 2. Returns `true` for the `can_remove_block_args` method.
 
+use alloc::vec::Vec;
 use pliron_derive::op_interface;
 use rustc_hash::FxHashSet;
 
@@ -84,8 +85,8 @@ impl Printable for DCECandidate {
         &self,
         ctx: &Context,
         _state: &crate::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             DCECandidate::Op(op) => write!(f, "Operation {}", OpDbg { op: *op, ctx }),
             DCECandidate::BlockArg(arg) => {

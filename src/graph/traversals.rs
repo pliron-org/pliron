@@ -5,6 +5,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Region traversal utilities
 pub mod region {
+    use alloc::{vec, vec::Vec};
+
     use crate::graph::HasLabel;
 
     use super::*;

@@ -18,10 +18,14 @@
 //!    [Parsable] implementation requires knowing the concrete type, and the
 //!    concrete types already implement [Parsable].
 
-use std::cmp::Ordering;
-use std::fmt::Display;
-use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
+use core::cmp::Ordering;
+use core::fmt::Display;
+use core::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use combine::{Parser, parser::char};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_apfloat::ieee::{
@@ -745,7 +749,7 @@ impl Display for dyn DynFloat {
 
 impl_printable_for_display!(dyn DynFloat);
 
-impl<T: Float + GetSemantics + std::fmt::Debug + 'static> From<T> for Box<dyn DynFloat> {
+impl<T: Float + GetSemantics + core::fmt::Debug + 'static> From<T> for Box<dyn DynFloat> {
     fn from(value: T) -> Self {
         Box::new(value)
     }

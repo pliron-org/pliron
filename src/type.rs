@@ -35,6 +35,8 @@
 //! [TypeObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
+use crate::__private::sync::LazyLock;
+use crate::FxHashMap;
 use crate::common_traits::Verify;
 use crate::context::{Arena, Context, Ptr, collect_deduped_interface_verifiers, private::ArenaObj};
 use crate::dialect::{Dialect, DialectName};
@@ -47,16 +49,19 @@ use crate::result::Result;
 use crate::storage_uniquer::TypeValueHash;
 use crate::{arg_err_noloc, impl_printable_for_display, input_err};
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use combine::{Parser, parser};
+use core::cell::Ref;
+use core::fmt::Debug;
+use core::fmt::Display;
+use core::hash::{Hash, Hasher};
+use core::marker::PhantomData;
+use core::ops::Deref;
 use downcast_rs::{Downcast, impl_downcast};
-use rustc_hash::FxHashMap;
-use std::cell::Ref;
-use std::fmt::Debug;
-use std::fmt::Display;
-use std::hash::{Hash, Hasher};
-use std::marker::PhantomData;
-use std::ops::Deref;
-use std::sync::LazyLock;
 use thiserror::Error;
 
 /// Basic functionality that every type in the IR must implement.
@@ -78,7 +83,7 @@ use thiserror::Error;
 ///     }
 /// ```
 /// the uniquing will include
-///   - [`std::any::TypeId::of::<IntType>()`](std::any::TypeId)
+///   - [`core::any::TypeId::of::<IntType>()`](core::any::TypeId)
 ///   - `width`
 ///
 /// Types *can* have mutable contents that can be modified *after*
@@ -146,7 +151,7 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
 
     /// Get a Type's static name. This is *not* per instantiation of the type.
     /// It is mostly useful for printing and parsing the type.
-    /// Uniquing does *not* use this, but instead uses [std::any::TypeId].
+    /// Uniquing does *not* use this, but instead uses [core::any::TypeId].
     fn get_type_id(&self) -> TypeId;
 
     /// Same as [get_type_id](Self::get_type_id), but without the self reference.
@@ -243,7 +248,7 @@ impl Deref for TypeName {
 impl_printable_for_display!(TypeName);
 
 impl Display for TypeName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -296,7 +301,7 @@ impl Parsable for TypeId {
 impl_printable_for_display!(TypeId);
 
 impl Display for TypeId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}.{}", self.dialect, self.name)
     }
 }
@@ -342,8 +347,8 @@ impl Printable for TypeObj {
         &self,
         ctx: &Context,
         state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(f, "{} ", self.get_type_id())?;
         Printable::fmt(self.deref(), ctx, state, f)
     }
@@ -461,7 +466,7 @@ impl<T: Type> PartialEq for TypePtr<T> {
 impl<T: Type> Eq for TypePtr<T> {}
 
 impl<T: Type> Hash for TypePtr<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.0.hash(state);
     }
 }
@@ -583,7 +588,7 @@ pub type TypeInterfaceAllVerifiers = fn() -> Vec<TypeInterfaceVerifier>;
 #[doc(hidden)]
 /// A [Type] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type TypeInterfaceVerifierInfo = (std::any::TypeId, TypeInterfaceAllVerifiers);
+type TypeInterfaceVerifierInfo = (core::any::TypeId, TypeInterfaceAllVerifiers);
 
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
@@ -617,5 +622,5 @@ pub use statics::*;
 /// A map from every [Type] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static TYPE_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<std::any::TypeId, Vec<TypeInterfaceVerifier>>,
+    FxHashMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(get_type_interface_verifiers()));

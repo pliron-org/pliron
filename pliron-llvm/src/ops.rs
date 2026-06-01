@@ -816,8 +816,8 @@ impl Printable for CondBrOp {
         &self,
         ctx: &Context,
         _state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         let op = self.get_operation().deref(ctx);
         let condition = op.get_operand(0);
         let true_dest_opds = self.successor_operands(ctx, 0);
@@ -966,8 +966,8 @@ impl Printable for SwitchCase {
         &self,
         ctx: &Context,
         _state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "{{ {}: ^{}({}) }}",
@@ -1019,8 +1019,8 @@ impl Printable for SwitchOp {
         &self,
         ctx: &Context,
         state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         let op = self.get_operation().deref(ctx);
         let condition = op.get_operand(0);
 
@@ -1276,8 +1276,8 @@ impl Printable for GepIndex {
         &self,
         ctx: &Context,
         _state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             GepIndex::Constant(c) => write!(f, "{c}"),
             GepIndex::Value(v) => write!(f, "{}", v.disp(ctx)),
@@ -2079,8 +2079,8 @@ impl Printable for CallOp {
         &self,
         ctx: &Context,
         _state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         let callee = self.callee(ctx);
         write!(
             f,
@@ -2461,8 +2461,8 @@ impl Printable for GlobalOp {
         &self,
         ctx: &Context,
         state: &pliron::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "{} @{} : {}",

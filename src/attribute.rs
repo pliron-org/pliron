@@ -36,19 +36,23 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use std::{
+use core::{
     fmt::{Debug, Display},
-    hash::Hash,
     ops::Deref,
-    sync::LazyLock,
 };
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use combine::{Parser, parser, token};
 use downcast_rs::{Downcast, impl_downcast};
 use dyn_clone::DynClone;
-use rustc_hash::FxHashMap;
 
 use crate::{
+    __private::sync::LazyLock,
+    FxHashMap,
     builtin::attr_interfaces::OutlinedAttr,
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
@@ -77,8 +81,8 @@ impl<'a> Printable for AttributeDictKeyVal<'a> {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(f, "{}: {}", self.key, self.val.disp(ctx))
     }
 }
@@ -104,8 +108,8 @@ impl Printable for AttributeDict {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "[{}]",
@@ -387,7 +391,7 @@ impl AttrName {
 impl_printable_for_display!(AttrName);
 
 impl Display for AttrName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -427,7 +431,7 @@ pub struct AttrId {
 impl_printable_for_display!(AttrId);
 
 impl Display for AttrId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}.{}", self.dialect, self.name)
     }
 }
@@ -460,11 +464,12 @@ pub type AttrInterfaceAllVerifiers = fn() -> Vec<AttrInterfaceVerifier>;
 #[doc(hidden)]
 /// An [Attribute] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type AttrInterfaceVerifierInfo = (std::any::TypeId, AttrInterfaceAllVerifiers);
+type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
 
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
+    use crate::__private::sync::LazyLock;
 
     #[::pliron::linkme::distributed_slice]
     pub static ATTR_INTERFACE_VERIFIERS: [LazyLock<AttrInterfaceVerifierInfo>] = [..];
@@ -494,5 +499,5 @@ pub use statics::*;
 /// A map from every [Attribute] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static ATTR_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<std::any::TypeId, Vec<AttrInterfaceVerifier>>,
+    FxHashMap<core::any::TypeId, Vec<AttrInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(get_attr_interface_verifiers()));
