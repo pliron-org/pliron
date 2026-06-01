@@ -38,11 +38,8 @@ use pliron::{
     location::{Located, Location},
     op::{Op, OpObj},
     operation::Operation,
-    opts::{
-        constants::BranchOpFoldInterface,
-        mem2reg::{
-            AllocInfo, PromotableAllocationInterface, PromotableOpInterface, PromotableOpKind,
-        },
+    opts::mem2reg::{
+        AllocInfo, PromotableAllocationInterface, PromotableOpInterface, PromotableOpKind,
     },
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable, indented_nl},
