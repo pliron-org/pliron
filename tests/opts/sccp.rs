@@ -136,7 +136,7 @@ fn sccp_folded_condition_makes_branch_dead() -> Result<()> {
 }
 
 #[test]
-fn sccp_meets_distinct_constants_from_live_predecessors_as_unknown() -> Result<()> {
+fn sccp_meets_distinct_constants_from_live_predecessors_as_not_a_constant() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
@@ -361,7 +361,7 @@ fn sccp_materializes_constant_carried_through_loop_back_edge() -> Result<()> {
 }
 
 #[test]
-fn sccp_loop_back_edge_with_different_constant_joins_to_unknown() -> Result<()> {
+fn sccp_loop_back_edge_with_different_constant_meets_to_not_a_constant() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
@@ -412,7 +412,7 @@ fn sccp_materialization_replaces_uses_of_block_arg() -> Result<()> {
 }
 
 #[test]
-fn sccp_does_not_materialize_unknown_block_arg() -> Result<()> {
+fn sccp_does_not_materialize_not_a_constant_block_arg() -> Result<()> {
     let input = r#"
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
@@ -428,5 +428,62 @@ fn sccp_does_not_materialize_unknown_block_arg() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     assert_eq!(after.matches("constant").count(), 2);
+    Ok(())
+}
+
+#[test]
+fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+      ^entry():
+      outer_three = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+      outer_four = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+      test.test_region {
+        ^region_entry():
+        inner_sum = llvm.add outer_three, outer_four <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return inner_sum
+      };
+      done = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
+      llvm.return done
+    }
+  "#;
+
+    init_env_logger_for_tests!();
+    let ctx = &mut Context::new();
+    let state_stream = state_stream_from_iterator(
+        input.chars(),
+        parsable::State::new(ctx, pliron::location::Source::InMemory),
+    );
+    let func_op = spaced(Operation::top_level_parser())
+        .parse(state_stream)
+        .expect("textual LLVM IR should parse")
+        .0;
+    verify_operation(func_op, ctx)?;
+
+    use pliron::linked_list::ContainsLinkedList;
+    let entry_block = func_op
+        .deref(ctx)
+        .regions()
+        .next()
+        .unwrap()
+        .deref(ctx)
+        .get_head()
+        .unwrap();
+    let region_op = entry_block
+        .deref(ctx)
+        .iter(ctx)
+        .find(|op| Operation::get_opid(*op, ctx).to_string() == "test.test_region")
+        .expect("test.test_region op should be in the entry block");
+
+    let status = sccp(region_op, ctx)?;
+    verify_operation(func_op, ctx)?;
+    let after = func_op.disp(ctx).to_string();
+
+    // Even though `outer_three` and `outer_four` are syntactically
+    // `builtin.constant` ops, the analysis must treat them as NotAConstant when
+    // they appear free inside the analysis root, so the inner `llvm.add` must
+    // *not* fold.
+    assert_eq!(status, IRStatus::Unchanged);
+    assert!(after.contains("llvm.add"));
     Ok(())
 }
