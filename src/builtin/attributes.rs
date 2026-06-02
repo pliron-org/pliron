@@ -36,9 +36,11 @@ use crate::{
 };
 
 use super::{
-    attr_interfaces::TypedAttrInterface,
+    attr_interfaces::{MaterializableAttr, TypedAttrInterface},
+    ops::ConstantOp,
     types::{IntegerType, Signedness},
 };
+use crate::{op::Op, operation::Operation};
 
 #[pliron_attr(name = "builtin.identifier", format = "$0", verifier = "succ")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -236,6 +238,14 @@ impl Typed for IntegerAttr {
 impl TypedAttrInterface for IntegerAttr {
     fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
         self.ty.into()
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for IntegerAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
+        const_op.get_operation()
     }
 }
 

@@ -5,3 +5,4 @@
 
 mod dce;
 mod mem2reg;
+mod sccp;

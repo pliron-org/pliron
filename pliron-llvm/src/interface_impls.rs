@@ -9,18 +9,19 @@ use pliron::{
     irbuild::{IRStatus, rewriter::Rewriter},
     op::Op,
     opts::{
-        constants::ConstFoldInterface,
+        constants::{BranchOpFoldInterface, ConstFoldInterface},
         dce::{BlockArgRemoval, SideEffects},
     },
     utils::apint::APInt,
 };
 
 use crate::ops::{
-    AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, ExtractElementOp, ExtractValueOp,
-    FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp,
-    FreezeOp, FuncOp, GetElementPtrOp, ICmpOp, InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp,
-    MulOp, OrOp, PoisonOp, PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp,
-    ShuffleVectorOp, SubOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
+    AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ExtractElementOp,
+    ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp,
+    FRemOp, FSubOp, FreezeOp, FuncOp, GetElementPtrOp, ICmpOp, InsertElementOp, InsertValueOp,
+    IntToPtrOp, LShrOp, MulOp, OrOp, PoisonOp, PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp,
+    SelectOp, ShlOp, ShuffleVectorOp, SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp,
+    XorOp, ZExtOp, ZeroOp,
 };
 
 // Implement [SideEffects] with `has_side_effects` returning `false`
@@ -174,5 +175,54 @@ impl ConstFoldInterface for SubOp {
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
         fold_in_place_int_bin_op(self, ctx, ops, rw, APInt::sub)
+    }
+}
+
+#[op_interface_impl]
+impl BranchOpFoldInterface for BrOp {
+    fn check_fold(&self, ctx: &Context, _operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        self.get_operation().deref(ctx).successors().collect()
+    }
+}
+
+#[op_interface_impl]
+impl BranchOpFoldInterface for CondBrOp {
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return successors;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("CondBrOp condition operand must be an IntegerAttr");
+        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
+        vec![successors[taken]]
+    }
+}
+
+#[op_interface_impl]
+impl BranchOpFoldInterface for SwitchOp {
+    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return successors;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("Switch condition operand must be an IntegerAttr")
+            .value();
+        // Successor 0 is the default destination; successors 1..N correspond to case_values[0..N-1].
+        let case_values = self
+            .get_attr_switch_case_values(ctx)
+            .expect("SwitchOp missing case values attribute");
+        let taken = case_values
+            .0
+            .iter()
+            .position(|case| case.value() == cond_int)
+            .map(|i| i + 1)
+            .unwrap_or(0);
+        vec![successors[taken]]
     }
 }
