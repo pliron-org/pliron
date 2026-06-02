@@ -861,7 +861,7 @@ impl BranchOpInterface for CondBrOp {
 /// ### Operands
 /// | operand | description |
 /// |-----|-------|
-/// | `condition` | 1-bit signless integer |
+/// | `condition` | integer (width matches the case values) |
 /// | `default_dest_opds` | variadic of any type |
 /// | `case_dest_opds` | variadic of any type |
 ///
