@@ -444,4 +444,15 @@ mod tests {
             assert_attr_roundtrips(ctx, AddressSpaceAttr(n));
         }
     }
+
+    #[test]
+    fn test_fp_half_attr_roundtrip() {
+        use pliron::builtin::attributes::FPHalfAttr;
+        use pliron::utils::apfloat::Half;
+        let ctx = &mut Context::default();
+        for s in ["0.0", "1.5", "-2.25"] {
+            let value: Half = s.parse().expect("valid half literal");
+            assert_attr_roundtrips(ctx, FPHalfAttr(value));
+        }
+    }
 }

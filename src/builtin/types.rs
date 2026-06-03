@@ -172,6 +172,16 @@ impl FloatTypeInterface for FP64Type {
     }
 }
 
+#[pliron_type(name = "builtin.fp16", format, generate_get = true, verifier = "succ")]
+#[derive(Hash, PartialEq, Eq, Debug)]
+pub struct FP16Type;
+#[type_interface_impl]
+impl FloatTypeInterface for FP16Type {
+    fn get_semantics(&self) -> Semantics {
+        apfloat::Half::get_semantics()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use combine::{Parser, eof};

@@ -668,6 +668,22 @@ mod tests {
     }
 
     #[test]
+    fn test_fp16_type_roundtrip() {
+        let mut ctx = Context::new();
+        let state_stream = state_stream_from_iterator(
+            "builtin.fp16".chars(),
+            parsable::State::new(&mut ctx, location::Source::InMemory),
+        );
+        let res = type_parser().parse(state_stream).unwrap().0;
+        assert_eq!(res.disp(&ctx).to_string().trim(), "builtin.fp16");
+        assert!(
+            res.deref(&ctx)
+                .downcast_ref::<pliron::builtin::types::FP16Type>()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn test_struct_type_parsing() {
         let mut ctx = Context::new();
 

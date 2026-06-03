@@ -15,7 +15,7 @@ use pliron::{
         },
         ops::{ConstantOp, ModuleOp},
         type_interfaces::FunctionTypeInterface,
-        types::{FP32Type, FP64Type, IntegerType},
+        types::{FP16Type, FP32Type, FP64Type, IntegerType},
     },
     common_traits::Named,
     context::{Context, Ptr},
@@ -59,12 +59,12 @@ use crate::{
         llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position, llvm_const_int,
         llvm_const_null, llvm_const_real, llvm_const_vector, llvm_double_type_in_context,
         llvm_float_type_in_context, llvm_function_type, llvm_get_named_function, llvm_get_param,
-        llvm_get_poison, llvm_get_undef, llvm_int_type_in_context, llvm_is_a,
-        llvm_lookup_intrinsic_id, llvm_pointer_type_in_context, llvm_position_builder_at_end,
-        llvm_scalable_vector_type, llvm_set_alignment, llvm_set_fast_math_flags,
-        llvm_set_initializer, llvm_set_linkage, llvm_set_nneg, llvm_struct_create_named,
-        llvm_struct_set_body, llvm_struct_type_in_context, llvm_vector_type,
-        llvm_void_type_in_context,
+        llvm_get_poison, llvm_get_undef, llvm_half_type_in_context, llvm_int_type_in_context,
+        llvm_is_a, llvm_lookup_intrinsic_id, llvm_pointer_type_in_context,
+        llvm_position_builder_at_end, llvm_scalable_vector_type, llvm_set_alignment,
+        llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
+        llvm_struct_create_named, llvm_struct_set_body, llvm_struct_type_in_context,
+        llvm_vector_type, llvm_void_type_in_context,
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
@@ -415,6 +415,18 @@ impl ToLLVMType for FP64Type {
         _cctx: &mut ConversionContext,
     ) -> Result<LLVMType> {
         Ok(llvm_double_type_in_context(llvm_ctx))
+    }
+}
+
+#[type_interface_impl]
+impl ToLLVMType for FP16Type {
+    fn convert(
+        &self,
+        _ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        _cctx: &mut ConversionContext,
+    ) -> Result<LLVMType> {
+        Ok(llvm_half_type_in_context(llvm_ctx))
     }
 }
 

@@ -52,15 +52,16 @@ use llvm_sys::{
         LLVMGetPreviousInstruction, LLVMGetPreviousParam, LLVMGetReturnType,
         LLVMGetStructElementTypes, LLVMGetStructName, LLVMGetSwitchCaseValue, LLVMGetTypeKind,
         LLVMGetUndef, LLVMGetUndefMaskElem, LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize,
-        LLVMGlobalGetValueType, LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction,
-        LLVMIsATerminatorInst, LLVMIsAUser, LLVMIsDeclaration, LLVMIsFunctionVarArg,
-        LLVMIsOpaqueStruct, LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext,
-        LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
-        LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
-        LLVMPrintValueToString, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetFastMathFlags,
-        LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
-        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
-        LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
+        LLVMGlobalGetValueType, LLVMHalfTypeInContext, LLVMIntTypeInContext,
+        LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
+        LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct, LLVMLookupIntrinsicID,
+        LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
+        LLVMPositionBuilderBefore, LLVMPrintModuleToFile, LLVMPrintModuleToString,
+        LLVMPrintTypeToString, LLVMPrintValueToString, LLVMScalableVectorType, LLVMSetAlignment,
+        LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg,
+        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
+        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType,
+        LLVMVoidTypeInContext,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
@@ -1254,6 +1255,11 @@ pub fn llvm_float_type_in_context(context: &LLVMContext) -> LLVMType {
 /// LLVMDoubleTypeInContext
 pub fn llvm_double_type_in_context(context: &LLVMContext) -> LLVMType {
     unsafe { LLVMDoubleTypeInContext(context.inner_ref()).into() }
+}
+
+/// LLVMHalfTypeInContext
+pub fn llvm_half_type_in_context(context: &LLVMContext) -> LLVMType {
+    unsafe { LLVMHalfTypeInContext(context.inner_ref()).into() }
 }
 
 /// ArrayType::isValidElementType

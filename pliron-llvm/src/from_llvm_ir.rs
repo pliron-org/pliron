@@ -16,7 +16,7 @@ use pliron::{
         },
         ops::{ConstantOp, ModuleOp},
         type_interfaces::FloatTypeInterface,
-        types::{FP32Type, FP64Type, IntegerType, Signedness},
+        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     debug_info,
@@ -175,7 +175,7 @@ fn convert_type(
             };
             Ok(VectorType::get(ctx, elem_ty, num_elements, kind).into())
         }
-        LLVMTypeKind::LLVMHalfTypeKind => todo!(),
+        LLVMTypeKind::LLVMHalfTypeKind => Ok(FP16Type::get(ctx).into()),
         LLVMTypeKind::LLVMX86_FP80TypeKind => todo!(),
         LLVMTypeKind::LLVMFP128TypeKind => todo!(),
         LLVMTypeKind::LLVMPPC_FP128TypeKind => todo!(),
