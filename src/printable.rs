@@ -7,7 +7,9 @@ use core::{
     fmt::{self, Display},
 };
 
-use crate::{common_traits::RcShare, context::Context, deps::FxHashMap, identifier::Identifier};
+use crate::{
+    common_traits::RcShare, context::Context, deps::hash::FxHashMap, identifier::Identifier,
+};
 
 struct StateInner {
     // Number of spaces per indentation

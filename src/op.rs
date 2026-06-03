@@ -55,7 +55,7 @@ use crate::{
     builtin::{type_interfaces::FunctionTypeInterface, types::FunctionType},
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
-    deps::FxHashMap,
+    deps::hash::FxHashMap,
     deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,

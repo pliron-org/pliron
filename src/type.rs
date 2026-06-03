@@ -37,7 +37,7 @@
 
 use crate::common_traits::Verify;
 use crate::context::{Arena, Context, Ptr, collect_deduped_interface_verifiers, private::ArenaObj};
-use crate::deps::FxHashMap;
+use crate::deps::hash::FxHashMap;
 use crate::deps::sync::LazyLock;
 use crate::dialect::{Dialect, DialectName};
 use crate::identifier::Identifier;

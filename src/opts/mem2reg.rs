@@ -3,7 +3,6 @@
 use core::panic;
 
 use alloc::vec::Vec;
-use hashbrown::hash_map::Entry;
 use pliron_derive::op_interface;
 
 use crate::{
@@ -12,7 +11,7 @@ use crate::{
     common_traits::Named,
     context::{Context, Ptr},
     debug_info::set_block_arg_name,
-    deps::{FxHashMap, FxHashSet},
+    deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},

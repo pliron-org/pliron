@@ -8,12 +8,11 @@ use core::{
     cell::RefCell,
     hash::{Hash, Hasher},
 };
-use hashbrown::hash_map::Entry;
 use rustc_hash::FxHasher;
 
 use crate::{
     context::{Arena, ArenaIndex},
-    deps::FxHashMap,
+    deps::hash::{FxHashMap, hash_map::Entry},
 };
 
 /// Computes the hash of a rust value and its rust type.

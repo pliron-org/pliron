@@ -2,7 +2,6 @@
 
 use alloc::{string::ToString, vec::Vec};
 use combine::{Parser, attempt, between, parser::char::spaces, sep_by, token};
-use hashbrown::hash_map::Entry;
 use pliron::derive::pliron_attr;
 use pliron_derive::attr_interface_impl;
 
@@ -11,6 +10,7 @@ use crate::{
     basic_block::BasicBlock,
     builtin::{ATTR_KEY_DEBUG_INFO, attr_interfaces::OutlinedAttr},
     context::{Context, Ptr},
+    deps::hash::hash_map::Entry,
     identifier::Identifier,
     operation::Operation,
     parsable::{Parsable, ParseResult, StateStream},

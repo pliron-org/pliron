@@ -87,8 +87,11 @@ pub mod io {
     }
 }
 
-pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
-pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
+pub mod hash {
+    pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
+    pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
+    pub use hashbrown::*;
+}
 
 use alloc::string::String;
 

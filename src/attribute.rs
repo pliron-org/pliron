@@ -54,7 +54,7 @@ use crate::{
     builtin::attr_interfaces::OutlinedAttr,
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    deps::FxHashMap,
+    deps::hash::FxHashMap,
     deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,

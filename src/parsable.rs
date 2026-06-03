@@ -9,7 +9,10 @@ use crate::{
         ops::ForwardRefOp,
     },
     context::{Context, Ptr},
-    deps::{CharIter, FxHashMap},
+    deps::{
+        CharIter,
+        hash::{FxHashMap, hash_map::Entry},
+    },
     identifier::Identifier,
     input_err,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
@@ -31,7 +34,6 @@ use combine::{
         state::Stream,
     },
 };
-use hashbrown::hash_map::Entry;
 use thiserror::Error;
 
 /// State during parsing of any [Parsable] object.

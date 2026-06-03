@@ -10,7 +10,7 @@ use alloc::{vec, vec::Vec};
 use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
-    deps::{FxHashMap, FxHashSet},
+    deps::hash::{FxHashMap, FxHashSet},
     graph::{
         ControlFlowGraph,
         dominance::{DomInfo, DomTree},
