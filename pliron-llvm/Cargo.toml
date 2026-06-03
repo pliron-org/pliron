@@ -15,7 +15,7 @@ license.workspace = true
 default = ["llvm-sys"]
 
 [dependencies]
-pliron = { path = "../", version = "0", features = ["std"] }
+pliron = { path = "../", version = "0" }
 thiserror.workspace = true
 rustc-hash.workspace = true
 # When upgrading the LLVM version, change the LLVM versions in
