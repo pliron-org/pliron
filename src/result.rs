@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn wrapped_err() {
         let ctx = &mut Context::new();
-        let src = Source::new_from_file(ctx, "/tmp/test.pliron".into());
+        let src = Source::new_from_file(ctx, "/tmp/test.pliron");
 
         let pos1 = SourcePosition::default();
         let loc1 = Location::SrcPos { src, pos: pos1 };
@@ -591,7 +591,7 @@ mod tests {
     #[test]
     fn printable_err() {
         let ctx = &mut Context::new();
-        let src = Source::new_from_file(ctx, "/tmp/test.pliron".into());
+        let src = Source::new_from_file(ctx, "/tmp/test.pliron");
 
         let pos = SourcePosition::default();
         let loc = Location::SrcPos { src, pos };

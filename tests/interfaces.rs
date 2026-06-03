@@ -958,7 +958,7 @@ fn test_outline_printonce_attr() -> Result<()> {
         ty: IntegerType::get(ctx, 32, pliron::builtin::types::Signedness::Signed).into(),
     };
 
-    let src = Source::new_from_file(ctx, "/tmp/test.pliron".into());
+    let src = Source::new_from_file(ctx, "/tmp/test.pliron");
 
     let pos1 = SourcePosition::default();
     let loc1 = Location::SrcPos { src, pos: pos1 };

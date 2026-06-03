@@ -14,6 +14,7 @@ use rustc_hash::FxHashSet;
 use crate::{
     attribute::AttrObj,
     context::Context,
+    deps::io::PathBuf,
     impl_printable_for_display,
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
@@ -28,7 +29,7 @@ use crate::{
 #[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
 pub enum Source {
     /// Program being read from a file.
-    File(UniquedKey<String>),
+    File(UniquedKey<PathBuf>),
     /// Program is in memory.
     // TODO: Maybe have an `Rc` to the buffer?
     InMemory,
@@ -36,8 +37,8 @@ pub enum Source {
 
 impl Source {
     /// Get a [Source] handle to the source specified by `path`.
-    pub fn new_from_file(ctx: &mut Context, path: String) -> Self {
-        Self::File(uniqued_any::save(ctx, path))
+    pub fn new_from_file(ctx: &mut Context, path: impl Into<PathBuf>) -> Self {
+        Self::File(uniqued_any::save(ctx, path.into()))
     }
 }
 
@@ -51,7 +52,7 @@ impl Printable for Source {
         let _ = ctx;
         match self {
             Source::File(path_key) => {
-                write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key))
+                write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
             }
             Source::InMemory => write!(f, "<in-memory>"),
         }
