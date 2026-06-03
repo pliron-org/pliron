@@ -8,9 +8,9 @@
 use alloc::{vec, vec::Vec};
 
 use crate::{
-    FxHashMap, FxHashSet,
     basic_block::BasicBlock,
     context::{Context, Ptr},
+    deps::{FxHashMap, FxHashSet},
     graph::{
         ControlFlowGraph,
         dominance::{DomInfo, DomTree},

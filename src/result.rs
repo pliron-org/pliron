@@ -102,12 +102,11 @@ use crate::{
 
 use alloc::{boxed::Box, string::String};
 use downcast_rs::{Downcast, impl_downcast};
-#[cfg(feature = "std")]
-use std::backtrace::{Backtrace, BacktraceStatus};
 use thiserror::Error;
 
 use crate::{
     context::Context,
+    deps::backtrace::{Backtrace, BacktraceStatus},
     location::{Located, Location},
     printable::{Printable, State},
     utils::trait_cast::any_to_trait,
@@ -143,7 +142,6 @@ pub struct Error {
     pub err: Box<dyn AnyError>,
     /// Location of this error in the code being compiled
     pub loc: Location,
-    #[cfg(feature = "std")]
     /// Details of how this error occurred
     pub backtrace: Backtrace,
 }
@@ -181,7 +179,6 @@ impl Printable for Error {
             write!(f, "{}", self_val.disp(ctx))?;
         } else {
             write!(f, "{}", self.err)?;
-            #[cfg(feature = "std")]
             if self.backtrace.status() == BacktraceStatus::Captured {
                 write!(f, "\nError backtrace:\n{}", self.backtrace)?;
             }
@@ -241,7 +238,6 @@ impl<T> ExpectOk<T> for Result<T> {
 #[error("{0}")]
 pub struct StringError(pub String);
 
-#[cfg(feature = "std")]
 /// Specify [ErrorKind] and create [struct@Error] from any [std::error::Error] object.
 /// To create [Result], use [create_err!](crate::create_err) instead.
 /// The macro also accepts [format!] like arguments to create one-off errors.
@@ -257,27 +253,7 @@ macro_rules! create_error {
             kind: $kind,
             err: $crate::alloc::boxed::Box::new($err),
             loc: $loc,
-            backtrace: std::backtrace::Backtrace::capture(),
-        }
-    };
-}
-
-#[cfg(not(feature = "std"))]
-/// Specify [ErrorKind] and create [struct@Error] from any [std::error::Error] object.
-/// To create [Result], use [create_err!](crate::create_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
-/// It may be shorter to just use [verify_error!](crate::verify_error),
-/// [input_error!](crate::input_error) or [arg_error!](crate::arg_error) instead.
-#[macro_export]
-macro_rules! create_error {
-    ($loc: expr, $kind: expr, $str: literal $($t:tt)*) => {
-        $crate::create_error!($loc, $kind, $crate::result::StringError($crate::alloc::format!($str $($t)*)))
-    };
-    ($loc: expr, $kind: expr, $err: expr) => {
-        $crate::result::Error {
-            kind: $kind,
-            err: $crate::alloc::boxed::Box::new($err),
-            loc: $loc,
+            backtrace: $crate::deps::backtrace::Backtrace::capture(),
         }
     };
 }

@@ -35,10 +35,10 @@
 //! [TypeObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use crate::__private::sync::LazyLock;
-use crate::FxHashMap;
 use crate::common_traits::Verify;
 use crate::context::{Arena, Context, Ptr, collect_deduped_interface_verifiers, private::ArenaObj};
+use crate::deps::FxHashMap;
+use crate::deps::sync::LazyLock;
 use crate::dialect::{Dialect, DialectName};
 use crate::identifier::Identifier;
 use crate::irfmt::parsers::spaced;

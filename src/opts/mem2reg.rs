@@ -7,12 +7,12 @@ use hashbrown::hash_map::Entry;
 use pliron_derive::op_interface;
 
 use crate::{
-    FxHashMap, FxHashSet,
     basic_block::BasicBlock,
     builtin::op_interfaces::BranchOpInterface,
     common_traits::Named,
     context::{Context, Ptr},
     debug_info::set_block_arg_name,
+    deps::{FxHashMap, FxHashSet},
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},

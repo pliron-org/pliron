@@ -51,11 +51,11 @@ use downcast_rs::{Downcast, impl_downcast};
 use dyn_clone::DynClone;
 
 use crate::{
-    __private::sync::LazyLock,
-    FxHashMap,
     builtin::attr_interfaces::OutlinedAttr,
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
+    deps::FxHashMap,
+    deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -469,7 +469,7 @@ type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
-    use crate::__private::sync::LazyLock;
+    use crate::deps::sync::LazyLock;
 
     #[::pliron::linkme::distributed_slice]
     pub static ATTR_INTERFACE_VERIFIERS: [LazyLock<AttrInterfaceVerifierInfo>] = [..];

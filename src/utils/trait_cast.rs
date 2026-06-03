@@ -7,7 +7,7 @@
 
 use core::any::{Any, TypeId};
 
-use crate::{__private::sync::LazyLock, FxHashMap};
+use crate::{deps::FxHashMap, deps::sync::LazyLock};
 
 /// Cast a [dyn Any](Any) object to a `dyn Trait` object for any
 /// trait that the contained (in [Any]) type implements, and for which

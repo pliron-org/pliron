@@ -51,12 +51,12 @@ use dyn_clone::DynClone;
 use thiserror::Error;
 
 use crate::{
-    __private::sync::LazyLock,
-    FxHashMap,
     attribute::AttributeDict,
     builtin::{type_interfaces::FunctionTypeInterface, types::FunctionType},
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
+    deps::FxHashMap,
+    deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,

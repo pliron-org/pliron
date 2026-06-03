@@ -9,10 +9,11 @@ use core::{
 };
 
 use crate::{
-    __private::sync::LazyLock,
-    FxHashMap, FxHashSet, arg_error_noloc,
+    arg_error_noloc,
     basic_block::BasicBlock,
     common_traits::Verify,
+    deps::sync::LazyLock,
+    deps::{FxHashMap, FxHashSet},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     operation::Operation,
@@ -458,8 +459,8 @@ macro_rules! dict_key {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::DICT_KEY_IDS), linkme(crate = ::pliron::linkme))]
-            pub static $decl: $crate::__private::sync::LazyLock<::pliron::context::DictKeyId> =
-                $crate::__private::sync::LazyLock::new(|| ::pliron::context::DictKeyId {
+            pub static $decl: $crate::deps::sync::LazyLock<::pliron::context::DictKeyId> =
+                $crate::deps::sync::LazyLock::new(|| ::pliron::context::DictKeyId {
                     id: $name.try_into().unwrap(),
                     file: file!(),
                     line: line!(),
@@ -473,8 +474,8 @@ macro_rules! dict_key {
         };
         $(#[$outer])*
         // Create a static variable with the provided name to access the identifier.
-        pub static $decl: $crate::__private::sync::LazyLock<::pliron::identifier::Identifier> =
-            $crate::__private::sync::LazyLock::new(|| $name.try_into().unwrap());
+        pub static $decl: $crate::deps::sync::LazyLock<::pliron::identifier::Identifier> =
+            $crate::deps::sync::LazyLock::new(|| $name.try_into().unwrap());
     };
 }
 
@@ -498,8 +499,8 @@ macro_rules! context_registration {
             $(#[$outer])*
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::CONTEXT_REGISTRATIONS), linkme(crate = ::pliron::linkme))]
-            static CONTEXT_REGISTRATION: $crate::__private::sync::LazyLock<::pliron::context::ContextRegistration> =
-                $crate::__private::sync::LazyLock::new(|| $registration);
+            static CONTEXT_REGISTRATION: $crate::deps::sync::LazyLock<::pliron::context::ContextRegistration> =
+                $crate::deps::sync::LazyLock::new(|| $registration);
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {

@@ -3,13 +3,13 @@
 use core::any::Any;
 
 use crate::{
-    FxHashMap,
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{IsolatedFromAboveInterface, OneResultInterface},
         ops::ForwardRefOp,
     },
     context::{Context, Ptr},
+    deps::{CharIter, FxHashMap},
     identifier::Identifier,
     input_err,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
@@ -33,8 +33,6 @@ use combine::{
 };
 use hashbrown::hash_map::Entry;
 use thiserror::Error;
-#[cfg(feature = "std")]
-use utf8_chars::BufReadCharsExt;
 
 /// State during parsing of any [Parsable] object.
 /// Every parser implemented using [Parsable] will be passed
@@ -182,19 +180,12 @@ pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
     }
 }
 
-#[cfg(feature = "std")]
 /// Build a [StateStream] from a file, for use with [Parsable].
 pub fn state_stream_from_file<'a>(
-    file_reader: &'a mut std::io::BufReader<std::fs::File>,
+    file_reader: &'a mut impl CharIter,
     state: State<'a>,
 ) -> StateStream<'a> {
-    state_stream_from_iterator(
-        file_reader.chars().map(|c| {
-            c.map_err(|e| std::eprintln!("Error reading chars from file: {e}"))
-                .unwrap()
-        }),
-        state,
-    )
+    state_stream_from_iterator(file_reader.chars_iter(), state)
 }
 
 /// Convert [Result] into [StdParseResult2].

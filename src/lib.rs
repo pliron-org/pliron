@@ -60,17 +60,7 @@ pub mod uniqued_any;
 pub mod utils;
 pub mod value;
 
-pub(crate) type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
-pub(crate) type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
-
-pub mod __private {
-    pub mod sync {
-        #[cfg(not(feature = "std"))]
-        pub use spin::LazyLock;
-        #[cfg(feature = "std")]
-        pub use std::sync::LazyLock;
-    }
-}
+pub mod deps;
 
 /// A macro to initialize `env_logger` for tests. Default logger level is set to "off".
 /// It sets `env_logger`'s test mode so that logs are captured by the test framework.

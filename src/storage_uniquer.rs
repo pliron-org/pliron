@@ -12,8 +12,8 @@ use hashbrown::hash_map::Entry;
 use rustc_hash::FxHasher;
 
 use crate::{
-    FxHashMap,
     context::{Arena, ArenaIndex},
+    deps::FxHashMap,
 };
 
 /// Computes the hash of a rust value and its rust type.
