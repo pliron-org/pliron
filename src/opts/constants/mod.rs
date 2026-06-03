@@ -40,7 +40,8 @@ pub trait ConstFoldInterface {
     }
 }
 
-/// Interface for ruling out branch destinations based on static information about branch conditions.
+/// Interface for ruling out branch destinations
+/// based on static information about branch conditions.
 #[op_interface]
 pub trait BranchOpFoldInterface: BranchOpInterface {
     /// Return the list of possible successor blocks given that `operands`

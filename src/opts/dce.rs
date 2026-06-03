@@ -243,7 +243,7 @@ pub fn dce(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
                         branch_interface.remove_successor_operand(ctx, succ_idx, opd_idx)
                     })
                     .collect::<Vec<_>>();
-                log::trace!(
+                log::debug!(
                     "Erasing block argument {} of block {}",
                     opd_idx,
                     block.label(ctx)
@@ -259,7 +259,7 @@ pub fn dce(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
                 // Collect defining values before erasing this one
                 let defining_vals: Vec<Value> = dead_op.deref(ctx).operands().collect();
                 // Erase the dead operation
-                log::trace!("Erasing dead operation: {}", OpDbg { op: dead_op, ctx });
+                log::debug!("Erasing dead operation: {}", OpDbg { op: dead_op, ctx });
                 rewriter.erase_operation(ctx, dead_op);
                 note_erased_ops(
                     rewriter.get_listener_mut(),

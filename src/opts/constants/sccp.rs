@@ -1,9 +1,39 @@
+//! Sparse Conditional Constant Propagation (SCCP).
+//!
+//! This pass performs sparse conditional constant propagation over an operation
+//! and its nested IR. The implementation roughly follows the presentations in
+//! "Constant Propagation with Conditional Branches" by Wegman and Zadeck, and
+//! Chapter 19 of Andrew Appel's "Modern Compiler Implementation in ML".
+//!
+//! SCCP relies on three key interfaces that operations must implement for it to be effective.
+//! 1. [BranchOpFoldInterface]: To rule out branch destinations based on inferred constant
+//!    values of its operands.
+//! 2. [ConstFoldInterface]: To infer constant results from operand constness.
+//! 3. [MaterializableAttr]: To materialize operations from constant block arguments
+//!    (whose inferred constant values (attributes) must implement this interface).
+//!
+//! The analysis is sparse (SSA based) and worklist-driven:
+//! 1. Reachable blocks are visited and their operations are analyzed.
+//! 2. Branch operations can provide [BranchOpFoldInterface] to prune infeasible
+//!    successors while forwarding operand facts to successor block arguments.
+//! 3. Constant-foldable operations provide [ConstFoldInterface] to infer constant
+//!    results from operand constness.
+//!
+//! After convergence, this pass rewrites IR by:
+//! 1. Folding operations in reachable blocks in place.
+//! 2. Materializing constant block arguments when the inferred constant attributes
+//!    implement [MaterializableAttr], and replacing uses accordingly.
+
 use crate::{
     attribute::{AttrObj, attr_cast},
     basic_block::BasicBlock,
     builtin::{attr_interfaces::MaterializableAttr, op_interfaces::BranchOpInterface},
+    common_traits::Named,
     context::{Context, Ptr},
-    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
+    graph::{
+        dominance::DomInfo,
+        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
+    },
     irbuild::{
         IRStatus,
         inserter::Inserter,
@@ -12,8 +42,9 @@ use crate::{
     },
     linked_list::ContainsLinkedList,
     op::op_cast,
-    operation::Operation,
+    operation::{OpDbg, Operation},
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
+    pass_manager::{AnalysisManager, Pass, PassResult},
     result::Result,
     value::Value,
 };
@@ -38,8 +69,8 @@ fn operand_attrs(op: Ptr<Operation>, ctx: &Context, state: &SccpState) -> Vec<Op
         .collect()
 }
 
-/// Compute the [Constness] of the results of `fold_op` given the current operands' [Constness], and merge them
-/// into the state.
+/// Compute the [Constness] of the results of `fold_op` given the current operands'
+/// [Constness], and merge them into the state.
 fn process_fold_op(fold_op: &dyn ConstFoldInterface, ctx: &Context, state: &mut SccpState) {
     let op = fold_op.get_operation();
     let attrs = operand_attrs(op, ctx, state);
@@ -55,24 +86,24 @@ fn process_fold_op(fold_op: &dyn ConstFoldInterface, ctx: &Context, state: &mut 
 }
 
 /// Compute which successor edges are traversable given the current [Constness] of
-/// `branch_op`'s operands, forward operand [Constness] into the successor blocks' arguments, and mark
-/// newly-reachable successor blocks for processing.
+/// `branch_op`'s operands, forward operand [Constness] into the successor blocks'
+/// arguments, and mark newly-reachable successor blocks for processing.
 fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &mut SccpState) {
     let op = branch_op.get_operation();
     let op_dyn = Operation::get_op_dyn(op, ctx);
     let attrs = operand_attrs(op, ctx, state);
-    let feasible_successors: FxHashSet<Ptr<BasicBlock>> = match op_cast::<dyn BranchOpFoldInterface>(
-        op_dyn.as_ref(),
-    ) {
-        Some(branch_op_fold) => branch_op_fold.check_fold(ctx, &attrs).into_iter().collect(),
-        None => {
-            log::info!(
-                "Branch operation '{}' does not implement BranchOpFoldInterface, weakening sccp optimization",
-                branch_op.disp(ctx)
-            );
-            op.deref(ctx).successors().collect()
-        }
-    };
+    let feasible_successors: FxHashSet<Ptr<BasicBlock>> =
+        match op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
+            Some(branch_op_fold) => branch_op_fold.check_fold(ctx, &attrs).into_iter().collect(),
+            None => {
+                log::info!(
+                    "Branch operation '{}' does not implement BranchOpFoldInterface,
+                        weakening sccp optimization",
+                    branch_op.disp(ctx)
+                );
+                op.deref(ctx).successors().collect()
+            }
+        };
     let static_successors: Vec<Ptr<BasicBlock>> = op.deref(ctx).successors().collect();
     for (succ_idx, succ_block) in static_successors.into_iter().enumerate() {
         if !feasible_successors.contains(&succ_block) {
@@ -88,7 +119,7 @@ fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &m
     }
 }
 
-/// Mark all `op`'s results as `NotAConstant`.
+/// Mark all `op`'s results as [Constness::NotAConstant].
 fn process_generic_op(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
     let results: Vec<Value> = op.deref(ctx).results().collect();
     for res in results {
@@ -193,10 +224,35 @@ pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     let mut rewriter = IRRewriter::<Recorder>::default();
     let mut status = IRStatus::Unchanged;
     for (op, attrs) in fold_candidates {
+        let log_message = if log::log_enabled!(log::Level::Debug) {
+            // Implementations of `ConstFoldInterface` (such as with `ConstantOp`)
+            // will not actually fold the operation as they're already folded.
+            // So we log the message only if there was an actual folding.
+            let op_dbg = OpDbg { op, ctx };
+            let attr_strs: Vec<String> = attrs
+                .iter()
+                .map(|a| {
+                    a.as_ref().map_or("undetermined".to_string(), |attr| {
+                        attr.disp(ctx).to_string()
+                    })
+                })
+                .collect();
+            format!(
+                "Folding operation '{}' with inferred operand attributes {}",
+                op_dbg,
+                attr_strs.join(", ")
+            )
+        } else {
+            "".into()
+        };
         rewriter.set_insertion_point_before_operation(op);
         let op_dyn = Operation::get_op_dyn(op, ctx);
         let fold_interface = op_cast::<dyn ConstFoldInterface>(op_dyn.as_ref()).unwrap();
-        status |= fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
+        let fold_result = fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
+        if fold_result == IRStatus::Changed {
+            log::debug!("{}", log_message);
+        }
+        status |= fold_result;
     }
 
     for (block, arg, val) in const_block_args {
@@ -207,6 +263,11 @@ pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
             );
             continue;
         };
+        log::debug!(
+            "Materializing block argument '{}' with inferred constant value '{}'",
+            arg.unique_name(ctx),
+            val.disp(ctx)
+        );
         let materialized_op = materializable.materialize(ctx);
         rewriter.set_insertion_point_to_block_start(block);
         rewriter.insert_operation(ctx, materialized_op);
@@ -216,4 +277,29 @@ pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     }
 
     Ok(status)
+}
+
+#[derive(Default)]
+/// A [Pass] that performs sparse conditional constant propagation
+/// as described in the module-level documentation.
+pub struct SCCPPass;
+
+impl Pass for SCCPPass {
+    fn run(
+        &self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        _analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_res = PassResult::default();
+        // Run SCCP on the entire operation tree rooted at `op`
+        pass_res.ir_changed |= sccp(op, ctx)?;
+        // SCCP does not touch the CFG structure, so we can preserve dominator info if it exists.
+        pass_res.set_preserved::<DomInfo>();
+        Ok(pass_res)
+    }
+
+    fn name(&self) -> &str {
+        "sccp"
+    }
 }

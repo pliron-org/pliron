@@ -609,7 +609,7 @@ pub fn mem2reg(
             let op = Operation::get_op_dyn(op, ctx);
             let piface = op_cast::<dyn PromotableAllocationInterface>(op.as_ref())
                 .expect("Alloc op must implement PromotableAllocationInterface");
-            log::trace!(
+            log::debug!(
                 "Promoting allocation {}",
                 OpDbg {
                     op: op.get_operation(),

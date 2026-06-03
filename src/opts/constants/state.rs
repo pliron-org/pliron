@@ -13,7 +13,7 @@ use crate::{
 
 /// Information about whether a block is reachable or not.
 #[derive(Clone, Debug)]
-pub enum BlockState {
+pub(super) enum BlockState {
     /// Block is reachable.
     /// Lattice bottom
     Reachable,
@@ -68,7 +68,7 @@ impl BlockState {
 ///                         NotAConstant  (⊥)
 /// ```
 #[derive(Clone, Debug)]
-pub enum Constness {
+pub(super) enum Constness {
     /// The analysis has not determined whether this is a constant or not.
     /// The lattice ⊤.
     Undetermined,
@@ -123,7 +123,7 @@ impl Constness {
     }
 }
 
-pub struct SccpState {
+pub(super) struct SccpState {
     /// Maps each block to information about whether the block is reachable
     /// Blocks not present as keys are assumed to be unreachable.
     block_states: FxHashMap<Ptr<BasicBlock>, BlockState>,
@@ -144,7 +144,7 @@ pub struct SccpState {
 impl SccpState {
     /// Creates an initial state for analyzing `root_op`. Marks all of `root_op`'s
     /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.
-    pub fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
+    pub(super) fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
         let mut state = SccpState {
             block_states: FxHashMap::default(),
             val_states: FxHashMap::default(),
@@ -159,7 +159,7 @@ impl SccpState {
     /// propagate information from the op to its nested regions conservatively
     /// by marking each of their entry blocks as Reachable and each of their
     /// entry blocks' arguments as NotAConstant.
-    pub fn seed_nested_regions(&mut self, op: Ptr<Operation>, ctx: &Context) {
+    pub(super) fn seed_nested_regions(&mut self, op: Ptr<Operation>, ctx: &Context) {
         let regions: Vec<_> = op.deref(ctx).regions().collect();
         for region in regions {
             let Some(entry) = region.deref(ctx).get_head() else {
@@ -176,7 +176,7 @@ impl SccpState {
     /// Meet `incoming` with whatever [Constness] is currently stored at `val`,
     /// storing the result. If the meet is strictly less than the previous stored value,
     /// insert `val` into the value worklist so its users get re-processed.
-    pub fn merge_val_state(&mut self, ctx: &Context, val: Value, incoming: Constness) {
+    pub(super) fn merge_val_state(&mut self, ctx: &Context, val: Value, incoming: Constness) {
         let old = self.get_val_state(val);
         let new = Constness::meet(&old, &incoming);
         log::trace!(
@@ -194,7 +194,7 @@ impl SccpState {
     /// Meet `incoming` into whatever [BlockState] is currently stored at `block`,
     /// storing the result. If the meet is strictly less than the previous stored value,
     /// insert `block` into the block worklist.
-    pub fn merge_block_state(
+    pub(super) fn merge_block_state(
         &mut self,
         ctx: &Context,
         block: Ptr<BasicBlock>,
@@ -219,7 +219,7 @@ impl SccpState {
     }
 
     /// Get the [Constness] of `val`.
-    pub fn get_val_state(&self, val: Value) -> Constness {
+    pub(super) fn get_val_state(&self, val: Value) -> Constness {
         self.val_states
             .get(&val)
             .cloned()
@@ -227,7 +227,7 @@ impl SccpState {
     }
 
     /// Get the [BlockState] of `block`.
-    pub fn get_block_state(&self, block: Ptr<BasicBlock>) -> BlockState {
+    pub(super) fn get_block_state(&self, block: Ptr<BasicBlock>) -> BlockState {
         self.block_states
             .get(&block)
             .cloned()
@@ -235,21 +235,21 @@ impl SccpState {
     }
 
     /// Pop an arbitrary block from the block worklist, if any.
-    pub fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
+    pub(super) fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
         let block = self.block_worklist.iter().next().copied()?;
         self.block_worklist.remove(&block);
         Some(block)
     }
 
     /// Pop an arbitrary value from the value worklist, if any.
-    pub fn pop_val(&mut self) -> Option<Value> {
+    pub(super) fn pop_val(&mut self) -> Option<Value> {
         let val = self.val_worklist.iter().next().copied()?;
         self.val_worklist.remove(&val);
         Some(val)
     }
 
     /// Are both block and value worklists empty?
-    pub fn are_worklists_empty(&self) -> bool {
+    pub(super) fn are_worklists_empty(&self) -> bool {
         self.block_worklist.is_empty() && self.val_worklist.is_empty()
     }
 }
