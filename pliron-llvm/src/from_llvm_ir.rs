@@ -639,14 +639,22 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
         LLVMValueKind::LLVMGlobalVariableValueKind => {
             let global_name = llvm_get_value_name(val).unwrap_or_default();
             let global_name = cctx.id_legaliser.legalise(&global_name);
-            let global_op = AddressOfOp::new(ctx, global_name);
+            let global_op = AddressOfOp::new(
+                ctx,
+                global_name,
+                llvm_get_pointer_address_space(llvm_type_of(val)),
+            );
             insert_const_inst(ctx, cctx, global_op.get_operation());
             cctx.value_map.insert(val, global_op.get_result(ctx));
         }
         LLVMValueKind::LLVMFunctionValueKind => {
             let fn_name = llvm_get_value_name(val).unwrap_or_default();
             let fn_name = cctx.id_legaliser.legalise(&fn_name);
-            let func_op = AddressOfOp::new(ctx, fn_name);
+            let func_op = AddressOfOp::new(
+                ctx,
+                fn_name,
+                llvm_get_pointer_address_space(llvm_type_of(val)),
+            );
             insert_const_inst(ctx, cctx, func_op.get_operation());
             cctx.value_map.insert(val, func_op.get_result(ctx));
         }

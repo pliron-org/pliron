@@ -2533,9 +2533,8 @@ pub struct AddressOfOp;
 
 impl AddressOfOp {
     /// Create a new [AddressOfOp].
-    pub fn new(ctx: &mut Context, global_name: Identifier) -> Self {
-        // TODO: once globals carry an address space, use the global's space here.
-        let result_type = PointerType::get(ctx, 0).into();
+    pub fn new(ctx: &mut Context, global_name: Identifier, address_space: u32) -> Self {
+        let result_type = PointerType::get(ctx, address_space).into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
