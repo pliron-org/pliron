@@ -240,7 +240,7 @@ pub struct StringError(pub String);
 
 /// Specify [ErrorKind] and create [struct@Error] from any [std::error::Error] object.
 /// To create [Result], use [create_err!](crate::create_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_error!](crate::verify_error),
 /// [input_error!](crate::input_error) or [arg_error!](crate::arg_error) instead.
 #[macro_export]
@@ -260,7 +260,7 @@ macro_rules! create_error {
 
 /// Specify [ErrorKind] and create [Result] from any [std::error::Error] object.
 /// To create [struct@Error], use [create_error!](crate::create_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_err!](crate::verify_err),
 /// [input_err!](crate::input_err) or [arg_err!](crate::arg_err) instead.
 #[macro_export]
@@ -275,7 +275,7 @@ macro_rules! create_err {
 
 // Create [ErrorKind::VerificationFailed] [struct@Error] from any [std::error::Error] object.
 /// To create [Result], use [verify_err!](crate::verify_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{verify_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -309,7 +309,7 @@ macro_rules! verify_error {
 
 /// Create [ErrorKind::VerificationFailed] [Result] from any [std::error::Error] object.
 /// To create [struct@Error], use [verify_error!](crate::verify_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{verify_err, result::{Result, ErrorKind, Error}, location::Location};
@@ -343,7 +343,7 @@ macro_rules! verify_err {
 
 /// Create [ErrorKind::InvalidInput] [struct@Error] from any [std::error::Error] object.
 /// To create [Result], use [input_err!](crate::input_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{input_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -377,7 +377,7 @@ macro_rules! input_error {
 
 /// Create [ErrorKind::InvalidInput] [Result] from any [std::error::Error] object.
 /// To create [struct@Error], use [input_error!](crate::input_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{input_err, result::{Result, ErrorKind, Error}, location::Location};
@@ -411,7 +411,7 @@ macro_rules! input_err {
 
 /// Create [ErrorKind::InvalidArgument] [struct@Error] from any [std::error::Error] object.
 /// To create [Result], use [arg_err!](crate::arg_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{arg_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -445,7 +445,7 @@ macro_rules! arg_error {
 
 /// Create [ErrorKind::InvalidArgument] [Result] from any [std::error::Error] object.
 /// To create [struct@Error], use [arg_error!](crate::arg_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{arg_err, result::{Result, ErrorKind, Error}, location::Location};
