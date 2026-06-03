@@ -316,8 +316,9 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use super::{ContainsLinkedList, LinkedList, private};
+    use super::*;
     use crate::context::{Arena, Context, Ptr, private::ArenaObj};
+    use alloc::{vec, vec::Vec};
 
     #[derive(PartialEq)]
     struct LLNode {

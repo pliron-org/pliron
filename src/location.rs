@@ -296,8 +296,7 @@ pub trait Located {
 
 #[cfg(test)]
 mod tests {
-
-    use alloc::format;
+    use alloc::{format, string::ToString, vec};
     use combine::ParseError;
 
     use expect_test::expect;

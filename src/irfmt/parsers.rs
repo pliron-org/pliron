@@ -290,6 +290,7 @@ pub fn process_parsed_ssa_defs(
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::{format, string::ToString};
 
     use expect_test::expect;
 

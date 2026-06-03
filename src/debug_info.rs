@@ -269,6 +269,7 @@ pub fn get_block_arg_name(
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use pliron::derive::pliron_op;
 
     use crate::{

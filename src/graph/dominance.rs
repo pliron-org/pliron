@@ -502,10 +502,17 @@ impl Analysis for DomInfo {
 
 #[cfg(test)]
 mod tests {
-    use super::{DomFrontierMap, compute_dominator_tree};
-    use crate::graph::{ControlFlowGraph, HasLabel};
+    use alloc::{
+        boxed::Box,
+        string::{String, ToString},
+    };
+
+    use super::*;
+    use crate::{
+        deps::hash::HashSet,
+        graph::{ControlFlowGraph, HasLabel},
+    };
     use rustc_hash::FxHashSet;
-    use std::collections::HashSet;
 
     #[derive(Clone, Debug)]
     struct Node {

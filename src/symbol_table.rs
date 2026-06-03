@@ -302,6 +302,7 @@ mod tests {
     use crate::context::Context;
     use crate::identifier::Identifier;
     use crate::op::Op;
+    use alloc::vec;
 
     #[test]
     fn test_symbol_table() -> Result<()> {

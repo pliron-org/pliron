@@ -336,6 +336,7 @@ impl APInt {
 }
 #[cfg(test)]
 mod tests {
+    use alloc::string::ToString;
     use expect_test::expect;
 
     use super::*;

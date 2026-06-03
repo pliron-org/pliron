@@ -757,7 +757,7 @@ impl<T: Float + GetSemantics + core::fmt::Debug + 'static> From<T> for Box<dyn D
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use alloc::{str::FromStr, string::ToString};
 
     use rustc_apfloat::ParseError;
 
@@ -786,8 +786,7 @@ mod tests {
             match T::parse(&mut state_stream, ()) {
                 Ok((parsed_res, _)) => parsed_res,
                 Err(err) => {
-                    eprintln!("{}", err.into_inner().error);
-                    panic!("Error parsing {}", s);
+                    panic!("{}\nError parsing {}", err.into_inner().error, s);
                 }
             }
         };

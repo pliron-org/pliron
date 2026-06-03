@@ -681,7 +681,7 @@ impl<T: RegionLiveness> Liveness<T> {
 
 #[cfg(test)]
 mod tests {
-    use super::Liveness;
+    use super::*;
     use crate::{
         analyses::liveness::LivenessTq,
         basic_block::BasicBlock,

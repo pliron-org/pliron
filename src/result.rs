@@ -527,7 +527,7 @@ macro_rules! arg_err_noloc {
 
 #[cfg(test)]
 mod tests {
-
+    use alloc::string::{String, ToString};
     use combine::stream::position::{Positioner, SourcePosition};
     use expect_test::expect;
     use thiserror::Error;

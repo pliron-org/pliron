@@ -63,6 +63,7 @@ pub fn get<T: Any + Hash + Eq>(ctx: &Context, key: UniquedKey<T>) -> Ref<'_, T> 
 #[cfg(test)]
 mod tests {
     use crate::context::Context;
+    use alloc::string::String;
 
     use super::{get, save};
 

@@ -150,7 +150,7 @@ impl Dialect {
 
 #[cfg(test)]
 mod test {
-
+    use alloc::{format, string::ToString};
     use expect_test::expect;
 
     use crate::{
@@ -160,7 +160,7 @@ mod test {
         printable::Printable,
     };
 
-    use super::DialectName;
+    use super::*;
 
     #[test]
     fn parse_dialect_name() {

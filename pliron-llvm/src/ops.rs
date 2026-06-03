@@ -1335,7 +1335,7 @@ impl Verify for GetElementPtrOp {
             return Err(Error {
                 kind: ErrorKind::VerificationFailed,
                 // We reset the error origin to be from here
-                backtrace: crate::deps::backtrace::Backtrace::capture(),
+                backtrace: pliron::deps::backtrace::Backtrace::capture(),
                 ..e
             });
         }

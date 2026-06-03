@@ -24,6 +24,11 @@
 //! 2. Materializing constant block arguments when the inferred constant attributes
 //!    implement [MaterializableAttr], and replacing uses accordingly.
 
+use alloc::{
+    format,
+    string::{String, ToString},
+};
+
 use crate::{
     attribute::{AttrObj, attr_cast},
     basic_block::BasicBlock,
