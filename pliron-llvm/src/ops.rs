@@ -6,7 +6,7 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::TypedAttrInterface,
-        attributes::{IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
+        attributes::{BoolAttr, IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{
             self, ATTR_KEY_SYM_NAME, AtLeastNOpdsInterface, AtLeastNResultsInterface,
             AtMostNOpdsInterface, AtMostNRegionsInterface, AtMostOneRegionInterface,
@@ -1815,6 +1815,59 @@ impl AtomicStoreOp {
         if let Some(scope) = syncscope {
             op.set_attr_llvm_st_syncscope(ctx, StringAttr::new(scope));
         }
+        op
+    }
+}
+
+/// Equivalent to LLVM's inline assembly call. The template and constraint
+/// strings follow LLVM's inline-asm syntax; `convergent` marks asm that must
+/// not be reordered across divergent control flow (e.g. warp-synchronous PTX).
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `inputs` | input operands to the inline asm |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | the asm result (a void type when there is none) |
+#[pliron_op(
+    name = "llvm.inline_asm",
+    format = "attr($inline_asm_template, $StringAttr) `, ` attr($inline_asm_constraints, $StringAttr) ` convergent = ` attr($inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    interfaces = [OneResultInterface, NResultsInterface<1>],
+    attributes = (
+        inline_asm_template: StringAttr,
+        inline_asm_constraints: StringAttr,
+        inline_asm_convergent: BoolAttr
+    ),
+    verifier = "succ"
+)]
+pub struct InlineAsmOp;
+
+impl InlineAsmOp {
+    /// Create a new [InlineAsmOp]. Use a void result type for asm with no
+    /// result value.
+    pub fn new(
+        ctx: &mut Context,
+        result_ty: Ptr<TypeObj>,
+        inputs: Vec<Value>,
+        asm_template: &str,
+        constraints: &str,
+        convergent: bool,
+    ) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![result_ty],
+            inputs,
+            vec![],
+            0,
+        );
+        let op = InlineAsmOp { op };
+        op.set_attr_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
+        op.set_attr_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
+        op.set_attr_inline_asm_convergent(ctx, BoolAttr::new(convergent));
         op
     }
 }
@@ -4212,7 +4265,7 @@ impl IsDeclaration for FuncOp {
 mod tests {
     use super::{
         AddrSpaceCastOp, AtomicCmpxchgOp, AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, FenceOp,
-        FuncOp, ReturnOp,
+        FuncOp, InlineAsmOp, ReturnOp,
     };
     use crate::attributes::{AtomicOrderingAttr, AtomicRmwKindAttr};
     use crate::op_interfaces::CastOpInterface;
@@ -4387,6 +4440,20 @@ mod tests {
                 .insert_at_back(entry, ctx);
             },
             &["llvm.atomic_store", "Release", "device"],
+        );
+    }
+
+    #[test]
+    fn test_inline_asm_roundtrips() {
+        assert_op_roundtrips(
+            |ctx| vec![i32_ty(ctx)],
+            |ctx, entry, args| {
+                let res = i32_ty(ctx);
+                InlineAsmOp::new(ctx, res, vec![args[0]], "mov $0, $1", "=r,r", true)
+                    .get_operation()
+                    .insert_at_back(entry, ctx);
+            },
+            &["llvm.inline_asm", "mov", "=r,r", "convergent"],
         );
     }
 }
