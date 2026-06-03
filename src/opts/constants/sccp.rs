@@ -48,6 +48,7 @@ use crate::{
     result::Result,
     value::Value,
 };
+use alloc::vec::Vec;
 use rustc_hash::FxHashSet;
 
 use super::state::{BlockState, Constness, SccpState};

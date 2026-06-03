@@ -148,8 +148,9 @@
 //! }
 //! ```
 
-use std::cell::{Ref, RefCell, RefMut};
+use core::cell::{Ref, RefCell, RefMut};
 
+use alloc::{boxed::Box, vec::Vec};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -170,12 +171,12 @@ use crate::{
 /// [IRStatus::Unchanged] implies all analyses are preserved.
 pub struct PassResult {
     pub ir_changed: IRStatus,
-    preserved_analyses: FxHashSet<std::any::TypeId>,
+    preserved_analyses: FxHashSet<core::any::TypeId>,
 }
 
 impl PassResult {
     pub fn set_preserved<A: Analysis + 'static>(&mut self) {
-        self.preserved_analyses.insert(std::any::TypeId::of::<A>());
+        self.preserved_analyses.insert(core::any::TypeId::of::<A>());
     }
 }
 
@@ -268,13 +269,13 @@ pub trait Guard {
 
 /// Allow [Operation]s of a specific `Op`.
 pub struct OpGuard<T: Op> {
-    _marker: std::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 impl<T: Op> Default for OpGuard<T> {
     fn default() -> Self {
         Self {
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 }
@@ -287,13 +288,13 @@ impl<T: Op> Guard for OpGuard<T> {
 
 /// Allow [Operation]s that implement a specific `OpInterface`.
 pub struct OpInterfaceGuard<T: ?Sized + OpInterfaceMarker + 'static> {
-    _marker: std::marker::PhantomData<T>,
+    _marker: core::marker::PhantomData<T>,
 }
 
 impl<T: ?Sized + OpInterfaceMarker + 'static> Default for OpInterfaceGuard<T> {
     fn default() -> Self {
         Self {
-            _marker: std::marker::PhantomData,
+            _marker: core::marker::PhantomData,
         }
     }
 }
@@ -363,7 +364,7 @@ impl_downcast!(Analysis);
 
 /// An [Analysis] together with the [Operation] it is computed for.
 /// Used as a key in the [AnalysisManager] cache.
-type AnalysisManagerKey = (std::any::TypeId, Ptr<Operation>);
+type AnalysisManagerKey = (core::any::TypeId, Ptr<Operation>);
 
 #[derive(Default)]
 /// A manager for analyses, responsible for caching and invalidating them.
@@ -378,7 +379,7 @@ impl AnalysisManager {
         op: Ptr<Operation>,
         ctx: &Context,
     ) -> Result<()> {
-        let key = (std::any::TypeId::of::<A>(), op);
+        let key = (core::any::TypeId::of::<A>(), op);
         if !self.analyses.contains_key(&key) {
             let analysis = A::compute(op, ctx, self)?;
             self.analyses.insert(key, Box::new(RefCell::new(analysis)));
@@ -393,7 +394,7 @@ impl AnalysisManager {
         ctx: &Context,
     ) -> Result<RefMut<'a, A>> {
         self.compute_analysis::<A>(op, ctx)?;
-        let key = (std::any::TypeId::of::<A>(), op);
+        let key = (core::any::TypeId::of::<A>(), op);
         let analysis = self.analyses.get(&key).unwrap();
         Ok(RefMut::map(analysis.borrow_mut(), |a| {
             a.downcast_mut::<A>().unwrap()
@@ -407,7 +408,7 @@ impl AnalysisManager {
         ctx: &Context,
     ) -> Result<Ref<'a, A>> {
         self.compute_analysis::<A>(op, ctx)?;
-        let key = (std::any::TypeId::of::<A>(), op);
+        let key = (core::any::TypeId::of::<A>(), op);
         let analysis = self.analyses.get(&key).unwrap();
         Ok(Ref::map(analysis.borrow(), |a| {
             a.downcast_ref::<A>().unwrap()
@@ -419,7 +420,7 @@ impl AnalysisManager {
         &'a self,
         op: Ptr<Operation>,
     ) -> Option<Ref<'a, A>> {
-        let key = (std::any::TypeId::of::<A>(), op);
+        let key = (core::any::TypeId::of::<A>(), op);
         self.analyses
             .get(&key)
             .map(|analysis| Ref::map(analysis.borrow(), |a| a.downcast_ref::<A>().unwrap()))
@@ -430,7 +431,7 @@ impl AnalysisManager {
         &'a self,
         op: Ptr<Operation>,
     ) -> Option<RefMut<'a, A>> {
-        let key = (std::any::TypeId::of::<A>(), op);
+        let key = (core::any::TypeId::of::<A>(), op);
         self.analyses
             .get(&key)
             .map(|analysis| RefMut::map(analysis.borrow_mut(), |a| a.downcast_mut::<A>().unwrap()))
@@ -446,7 +447,7 @@ impl AnalysisManager {
     }
 
     /// Get a list of all analyses currently cached.
-    fn list_analyses(&self) -> FxHashSet<std::any::TypeId> {
+    fn list_analyses(&self) -> FxHashSet<core::any::TypeId> {
         self.analyses.keys().map(|(type_id, _)| *type_id).collect()
     }
 }
