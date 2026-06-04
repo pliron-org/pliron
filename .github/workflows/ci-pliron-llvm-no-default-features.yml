@@ -1,4 +1,4 @@
-name: pliron
+name: pliron-llvm-no-default-features
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    name: Test (no default features)
+    name: Test pliron-llvm - no default features
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -27,14 +27,14 @@ jobs:
     - name: Format
       run: cargo fmt --check
 
-    - name: Clippy LLVM - no default features
+    - name: Clippy pliron-llvm - no default features
       run: cargo clippy -p pliron-llvm --all-targets --no-default-features -- -D warnings
 
-    - name: Test LLVM - debug no default features
+    - name: Test debug pliron-llvm - no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --verbose
 
-    - name: Test LLVM - release no default features
+    - name: Test release pliron-llvm - no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --release --verbose
 
-    - name: Documentation LLVM - no default features
+    - name: Documentation pliron-llvm - no default features
       run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron-llvm --no-default-features --verbose
