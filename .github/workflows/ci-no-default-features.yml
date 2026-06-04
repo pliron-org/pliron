@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    name: Build and Test (without default features)
+    name: Test (no default features)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
@@ -27,14 +27,14 @@ jobs:
     - name: Format
       run: cargo fmt --check
 
-    - name: Clippy LLVM - without default features
+    - name: Clippy LLVM - no default features
       run: cargo clippy -p pliron-llvm --all-targets --no-default-features -- -D warnings
 
-    - name: Build & Test LLVM - debug without default features
+    - name: Test LLVM - debug no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --verbose
 
-    - name: Build & Test LLVM - release without default features
+    - name: Test LLVM - release no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --release --verbose
 
-    - name: Documentation LLVM - without default features
+    - name: Documentation LLVM - no default features
       run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron-llvm --no-default-features --verbose
