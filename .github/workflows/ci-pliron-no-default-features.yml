@@ -1,4 +1,4 @@
-name: pliron-llvm/no-default-features
+name: pliron/no-default-features
 
 on:
   push:
