@@ -28,7 +28,7 @@ jobs:
       run: cargo fmt --check
 
     - name: Clippy LLVM - without default features
-      run: cargo clippy -p pliron-llvm --all-targets -- -D warnings --no-default-features
+      run: cargo clippy -p pliron-llvm --all-targets --no-default-features -- -D warnings
 
     - name: Build & Test LLVM - debug without default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --verbose
