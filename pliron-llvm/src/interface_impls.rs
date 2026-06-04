@@ -3,7 +3,7 @@
 use pliron::{
     attribute::AttrObj,
     basic_block::BasicBlock,
-    builtin::{attributes::IntegerAttr, ops::ConstantOp},
+    builtin::{attributes::IntegerAttr, op_interfaces::BranchOpInterface, ops::ConstantOp},
     context::{Context, Ptr},
     derive::op_interface_impl,
     irbuild::{IRStatus, rewriter::Rewriter},
@@ -183,6 +183,32 @@ impl BranchOpFoldInterface for BrOp {
     fn check_fold(&self, ctx: &Context, _operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
         self.get_operation().deref(ctx).successors().collect()
     }
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _ops: &[Option<AttrObj>],
+        _rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
+    }
+}
+
+impl CondBrOp {
+    fn possible_successor_indices(
+        &self,
+        ctx: &Context,
+        operands: &[Option<AttrObj>],
+    ) -> Vec<usize> {
+        let num_successors = self.get_operation().deref(ctx).successors().count();
+        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+            return (0..num_successors).collect();
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("CondBrOp condition operand must be an IntegerAttr");
+        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
+        vec![taken]
+    }
 }
 
 #[op_interface_impl]
@@ -190,14 +216,36 @@ impl BranchOpFoldInterface for CondBrOp {
     fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
         let successors: Vec<Ptr<BasicBlock>> =
             self.get_operation().deref(ctx).successors().collect();
-        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
-            return successors;
+
+        self.possible_successor_indices(ctx, operands)
+            .iter()
+            .map(|ind| successors[*ind])
+            .collect()
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let possible_successor_indices = self.possible_successor_indices(ctx, ops);
+        if possible_successor_indices.len() != 1 {
+            return IRStatus::Unchanged;
         };
-        let cond_int = cond_attr
-            .downcast_ref::<IntegerAttr>()
-            .expect("CondBrOp condition operand must be an IntegerAttr");
-        let taken = if cond_int.value().is_zero() { 1 } else { 0 };
-        vec![successors[taken]]
+        let successor_ind = possible_successor_indices[0];
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let new_op = BrOp::new(
+            ctx,
+            successors[successor_ind],
+            self.successor_operands(ctx, successor_ind),
+        )
+        .get_operation();
+        let old_op = self.get_operation();
+        rewriter.insert_operation(ctx, new_op);
+        rewriter.replace_operation(ctx, old_op, new_op);
+        IRStatus::Changed
     }
 }
 
@@ -224,5 +272,43 @@ impl BranchOpFoldInterface for SwitchOp {
             .map(|i| i + 1)
             .unwrap_or(0);
         vec![successors[taken]]
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let Some(cond_attr) = ops.first().and_then(|o| o.as_ref()) else {
+            return IRStatus::Unchanged;
+        };
+        let cond_int = cond_attr
+            .downcast_ref::<IntegerAttr>()
+            .expect("Switch condition operand must be an IntegerAttr")
+            .value();
+        let successor_ind = {
+            let case_values = self
+                .get_attr_switch_case_values(ctx)
+                .expect("SwitchOp missing case values attribute");
+            case_values
+                .0
+                .iter()
+                .position(|case| case.value() == cond_int)
+                .map(|i| i + 1)
+                .unwrap_or(0)
+        };
+        let successors: Vec<Ptr<BasicBlock>> =
+            self.get_operation().deref(ctx).successors().collect();
+        let new_op = BrOp::new(
+            ctx,
+            successors[successor_ind],
+            self.successor_operands(ctx, successor_ind),
+        )
+        .get_operation();
+        let old_op = self.get_operation();
+        rewriter.insert_operation(ctx, new_op);
+        rewriter.replace_operation(ctx, old_op, new_op);
+        IRStatus::Changed
     }
 }

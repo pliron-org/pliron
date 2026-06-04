@@ -49,6 +49,17 @@ pub trait BranchOpFoldInterface: BranchOpInterface {
     /// the known constant value.
     fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>>;
 
+    /// Given a slice `operand_attrs` corresponding to each operand, indicating a known
+    /// compile time constant value for that operand (if any), attempts to fold the op in
+    /// place using the provided `rewriter`. Assumes that `rewriter` is positioned just
+    /// before the op to be folded.
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        operand_attrs: &[Option<AttrObj>],
+        rewriter: &mut dyn Rewriter,
+    ) -> IRStatus;
+
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where
         Self: Sized,
