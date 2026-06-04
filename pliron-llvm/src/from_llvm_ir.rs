@@ -3,7 +3,8 @@
 use std::num::NonZero;
 
 use llvm_sys::{
-    LLVMIntPredicate, LLVMLinkage, LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
+    LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMIntPredicate, LLVMLinkage, LLVMOpcode,
+    LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
 };
 use pliron::{
     attribute::AttrObj,
@@ -16,7 +17,7 @@ use pliron::{
         },
         ops::{ConstantOp, ModuleOp},
         type_interfaces::FloatTypeInterface,
-        types::{FP32Type, FP64Type, IntegerType, Signedness},
+        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     debug_info,
@@ -40,41 +41,45 @@ use thiserror::Error;
 
 use crate::{
     attributes::{
-        FCmpPredicateAttr, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr,
-        LinkageAttr,
+        AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, FastmathFlagsAttr,
+        ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMModule, LLVMType, LLVMValue, basic_block_iter, function_iter,
         global_iter, incoming_iter, instruction_iter, llvm_can_value_use_fast_math_flags,
         llvm_const_int_get_zext_value, llvm_const_real_get_double, llvm_count_struct_element_types,
         llvm_get_aggregate_element, llvm_get_alignment, llvm_get_allocated_type,
-        llvm_get_array_length2, llvm_get_basic_block_name, llvm_get_basic_block_terminator,
-        llvm_get_called_function_type, llvm_get_called_value, llvm_get_const_opcode,
-        llvm_get_element_type, llvm_get_fast_math_flags, llvm_get_fcmp_predicate,
-        llvm_get_gep_source_element_type, llvm_get_icmp_predicate, llvm_get_indices,
-        llvm_get_initializer, llvm_get_instruction_opcode, llvm_get_instruction_parent,
-        llvm_get_int_type_width, llvm_get_linkage, llvm_get_mask_value, llvm_get_module_identifier,
-        llvm_get_nneg, llvm_get_nsw, llvm_get_num_arg_operands, llvm_get_num_mask_elements,
-        llvm_get_num_operands, llvm_get_nuw, llvm_get_operand, llvm_get_param_types,
-        llvm_get_return_type, llvm_get_struct_element_types, llvm_get_struct_name,
-        llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind, llvm_get_value_name,
-        llvm_get_vector_size, llvm_global_get_value_type, llvm_is_a, llvm_is_declaration,
-        llvm_is_function_type_var_arg, llvm_is_opaque_struct, llvm_lookup_intrinsic_id,
-        llvm_print_value_to_string, llvm_type_of, llvm_value_as_basic_block,
-        llvm_value_is_basic_block, param_iter,
+        llvm_get_array_length2, llvm_get_atomic_rmw_bin_op, llvm_get_atomic_sync_scope_id,
+        llvm_get_basic_block_name, llvm_get_basic_block_terminator, llvm_get_called_function_type,
+        llvm_get_called_value, llvm_get_cmpxchg_failure_ordering,
+        llvm_get_cmpxchg_success_ordering, llvm_get_const_opcode, llvm_get_element_type,
+        llvm_get_fast_math_flags, llvm_get_fcmp_predicate, llvm_get_gep_source_element_type,
+        llvm_get_icmp_predicate, llvm_get_indices, llvm_get_initializer,
+        llvm_get_inline_asm_asm_string, llvm_get_inline_asm_constraint_string,
+        llvm_get_instruction_opcode, llvm_get_instruction_parent, llvm_get_int_type_width,
+        llvm_get_linkage, llvm_get_mask_value, llvm_get_module_identifier, llvm_get_nneg,
+        llvm_get_nsw, llvm_get_num_arg_operands, llvm_get_num_mask_elements, llvm_get_num_operands,
+        llvm_get_nuw, llvm_get_operand, llvm_get_ordering, llvm_get_param_types,
+        llvm_get_pointer_address_space, llvm_get_return_type, llvm_get_struct_element_types,
+        llvm_get_struct_name, llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind,
+        llvm_get_value_name, llvm_get_vector_size, llvm_global_get_value_type, llvm_is_a,
+        llvm_is_declaration, llvm_is_function_type_var_arg, llvm_is_opaque_struct,
+        llvm_lookup_intrinsic_id, llvm_print_value_to_string, llvm_type_of,
+        llvm_value_as_basic_block, llvm_value_is_basic_block, param_iter,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOpWithFastMathFlags, IntBinArithOpWithOverflowFlag, LlvmSymbolName,
     },
     ops::{
-        AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CallIntrinsicOp, CallOp,
+        AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
+        AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BrOp, CallIntrinsicOp, CallOp,
         CondBrOp, ExtractElementOp, ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp,
-        FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FreezeOp, FuncOp, GepIndex,
-        GetElementPtrOp, GlobalOp, ICmpOp, InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp,
-        LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp, SRemOp,
-        SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchCase, SwitchOp, TruncOp, UDivOp,
-        UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
+        FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FenceOp, FreezeOp, FuncOp,
+        GepIndex, GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp, InsertValueOp,
+        IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp,
+        SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchCase, SwitchOp,
+        TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
     },
     types::{
         ArrayType, FuncType, PointerType, StructErr, StructType, VectorType, VectorTypeKind,
@@ -137,7 +142,9 @@ fn convert_type(
             let bit_width = llvm_get_int_type_width(ty);
             Ok(IntegerType::get(ctx, bit_width, Signedness::Signless).into())
         }
-        LLVMTypeKind::LLVMPointerTypeKind => Ok(PointerType::get(ctx).into()),
+        LLVMTypeKind::LLVMPointerTypeKind => {
+            Ok(PointerType::get(ctx, llvm_get_pointer_address_space(ty)).into())
+        }
         LLVMTypeKind::LLVMStructTypeKind => {
             let name_opt: Option<Identifier> =
                 llvm_get_struct_name(ty).map(|str| cctx.id_legaliser.legalise(&str));
@@ -173,7 +180,7 @@ fn convert_type(
             };
             Ok(VectorType::get(ctx, elem_ty, num_elements, kind).into())
         }
-        LLVMTypeKind::LLVMHalfTypeKind => todo!(),
+        LLVMTypeKind::LLVMHalfTypeKind => Ok(FP16Type::get(ctx).into()),
         LLVMTypeKind::LLVMX86_FP80TypeKind => todo!(),
         LLVMTypeKind::LLVMFP128TypeKind => todo!(),
         LLVMTypeKind::LLVMPPC_FP128TypeKind => todo!(),
@@ -637,14 +644,22 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
         LLVMValueKind::LLVMGlobalVariableValueKind => {
             let global_name = llvm_get_value_name(val).unwrap_or_default();
             let global_name = cctx.id_legaliser.legalise(&global_name);
-            let global_op = AddressOfOp::new(ctx, global_name);
+            let global_op = AddressOfOp::new(
+                ctx,
+                global_name,
+                llvm_get_pointer_address_space(llvm_type_of(val)),
+            );
             insert_const_inst(ctx, cctx, global_op.get_operation());
             cctx.value_map.insert(val, global_op.get_result(ctx));
         }
         LLVMValueKind::LLVMFunctionValueKind => {
             let fn_name = llvm_get_value_name(val).unwrap_or_default();
             let fn_name = cctx.id_legaliser.legalise(&fn_name);
-            let func_op = AddressOfOp::new(ctx, fn_name);
+            let func_op = AddressOfOp::new(
+                ctx,
+                fn_name,
+                llvm_get_pointer_address_space(llvm_type_of(val)),
+            );
             insert_const_inst(ctx, cctx, func_op.get_operation());
             cctx.value_map.insert(val, func_op.get_result(ctx));
         }
@@ -781,6 +796,54 @@ fn convert_branch_args(
     Ok(args)
 }
 
+/// Map an LLVM-C [LLVMAtomicOrdering] to a pliron [AtomicOrderingAttr].
+fn convert_ordering_from_llvm(o: LLVMAtomicOrdering) -> AtomicOrderingAttr {
+    match o {
+        LLVMAtomicOrdering::LLVMAtomicOrderingMonotonic => AtomicOrderingAttr::Monotonic,
+        LLVMAtomicOrdering::LLVMAtomicOrderingAcquire => AtomicOrderingAttr::Acquire,
+        LLVMAtomicOrdering::LLVMAtomicOrderingRelease => AtomicOrderingAttr::Release,
+        LLVMAtomicOrdering::LLVMAtomicOrderingAcquireRelease => AtomicOrderingAttr::AcqRel,
+        LLVMAtomicOrdering::LLVMAtomicOrderingSequentiallyConsistent => AtomicOrderingAttr::SeqCst,
+        other => panic!("unsupported atomic ordering from LLVM: {other:?}"),
+    }
+}
+
+/// Map an LLVM-C [LLVMAtomicRMWBinOp] to a pliron [AtomicRmwKindAttr].
+fn convert_rmw_kind_from_llvm(k: LLVMAtomicRMWBinOp) -> AtomicRmwKindAttr {
+    match k {
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpXchg => AtomicRmwKindAttr::Xchg,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpAdd => AtomicRmwKindAttr::Add,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpSub => AtomicRmwKindAttr::Sub,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpAnd => AtomicRmwKindAttr::And,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpNand => AtomicRmwKindAttr::Nand,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpOr => AtomicRmwKindAttr::Or,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpXor => AtomicRmwKindAttr::Xor,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpMax => AtomicRmwKindAttr::Max,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpMin => AtomicRmwKindAttr::Min,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpUMax => AtomicRmwKindAttr::UMax,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpUMin => AtomicRmwKindAttr::UMin,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpFAdd => AtomicRmwKindAttr::FAdd,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpFSub => AtomicRmwKindAttr::FSub,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpFMax => AtomicRmwKindAttr::FMax,
+        LLVMAtomicRMWBinOp::LLVMAtomicRMWBinOpFMin => AtomicRmwKindAttr::FMin,
+        other => panic!("unsupported atomicrmw binop from LLVM: {other:?}"),
+    }
+}
+
+/// Recover pliron syncscope (`None` = system) from an atomic instruction.
+///
+/// LLVM's built-in `SyncScope` ids are `SingleThread = 0` and `System = 1`;
+/// any named scope (e.g. NVVM "device"/"block") is assigned an id >= 2. LLVM-C
+/// exposes the id but not its name, so only the two built-in scopes round-trip;
+/// named scopes cannot be mapped back to a name and fall back to the system
+/// scope.
+fn syncscope_from_llvm(inst: LLVMValue) -> Option<String> {
+    match llvm_get_atomic_sync_scope_id(inst) {
+        0 => Some("singlethread".to_string()),
+        _ => None,
+    }
+}
+
 fn convert_call(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
@@ -792,6 +855,17 @@ fn convert_call(
     let (args, _) = convert_operands(ctx, cctx, &llvm_operands)?;
 
     let callee = llvm_get_called_value(inst);
+
+    // Inline asm: the callee is an inline-asm value rather than a function.
+    if llvm_get_value_kind(callee) == LLVMValueKind::LLVMInlineAsmValueKind {
+        let asm = llvm_get_inline_asm_asm_string(callee);
+        let constraints = llvm_get_inline_asm_constraint_string(callee);
+        let result_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
+        // `convergent` is a call-site attribute, not recoverable through LLVM-C here.
+        return Ok(
+            InlineAsmOp::new(ctx, result_ty, args, &asm, &constraints, false).get_operation(),
+        );
+    }
 
     enum Callee {
         FnCall(CallOpCallable),
@@ -876,7 +950,11 @@ fn convert_instruction(
                     .get_operation(),
             )
         }
-        LLVMOpcode::LLVMAddrSpaceCast => todo!(),
+        LLVMOpcode::LLVMAddrSpaceCast => {
+            let arg = get_operand(opds, 0)?;
+            let res_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
+            Ok(AddrSpaceCastOp::new(ctx, arg, res_ty).get_operation())
+        }
         LLVMOpcode::LLVMAlloca => {
             let elem_type = convert_type(ctx, cctx, llvm_get_allocated_type(inst))?;
             let size = get_operand(opds, 0)?;
@@ -895,8 +973,27 @@ fn convert_instruction(
             let (lhs, rhs) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
             Ok(AShrOp::new(ctx, lhs, rhs).get_operation())
         }
-        LLVMOpcode::LLVMAtomicCmpXchg => todo!(),
-        LLVMOpcode::LLVMAtomicRMW => todo!(),
+        LLVMOpcode::LLVMAtomicCmpXchg => {
+            let (ptr, cmp, new) = (
+                get_operand(opds, 0)?,
+                get_operand(opds, 1)?,
+                get_operand(opds, 2)?,
+            );
+            let success = convert_ordering_from_llvm(llvm_get_cmpxchg_success_ordering(inst));
+            let failure = convert_ordering_from_llvm(llvm_get_cmpxchg_failure_ordering(inst));
+            let syncscope = syncscope_from_llvm(inst);
+            Ok(
+                AtomicCmpxchgOp::new(ctx, ptr, cmp, new, success, failure, syncscope)
+                    .get_operation(),
+            )
+        }
+        LLVMOpcode::LLVMAtomicRMW => {
+            let (ptr, val) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
+            let kind = convert_rmw_kind_from_llvm(llvm_get_atomic_rmw_bin_op(inst));
+            let ordering = convert_ordering_from_llvm(llvm_get_ordering(inst));
+            let syncscope = syncscope_from_llvm(inst);
+            Ok(AtomicRmwOp::new(ctx, ptr, val, kind, ordering, syncscope).get_operation())
+        }
         LLVMOpcode::LLVMBitCast => {
             let arg = get_operand(opds, 0)?;
             let res_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
@@ -1048,7 +1145,11 @@ fn convert_instruction(
             let nneg = llvm_get_nneg(inst);
             Ok(UIToFPOp::new_with_nneg(ctx, arg, res_ty, nneg).get_operation())
         }
-        LLVMOpcode::LLVMFence => todo!(),
+        LLVMOpcode::LLVMFence => {
+            let ordering = convert_ordering_from_llvm(llvm_get_ordering(inst));
+            let syncscope = syncscope_from_llvm(inst);
+            Ok(FenceOp::new(ctx, ordering, syncscope).get_operation())
+        }
         LLVMOpcode::LLVMFreeze => {
             let arg = get_operand(opds, 0)?;
             Ok(FreezeOp::new(ctx, arg).get_operation())
@@ -1117,12 +1218,28 @@ fn convert_instruction(
         LLVMOpcode::LLVMLandingPad => todo!(),
         LLVMOpcode::LLVMLoad => {
             let res_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
-            let load_op = LoadOp::new(ctx, get_operand(opds, 0)?, res_ty);
+            let ptr = get_operand(opds, 0)?;
             let alignment = llvm_get_alignment(inst);
-            if alignment != 0 {
-                load_op.set_alignment(ctx, alignment);
+            let ordering = llvm_get_ordering(inst);
+            if matches!(ordering, LLVMAtomicOrdering::LLVMAtomicOrderingNotAtomic) {
+                let load_op = LoadOp::new(ctx, ptr, res_ty);
+                if alignment != 0 {
+                    load_op.set_alignment(ctx, alignment);
+                }
+                Ok(load_op.get_operation())
+            } else {
+                let load_op = AtomicLoadOp::new(
+                    ctx,
+                    ptr,
+                    res_ty,
+                    convert_ordering_from_llvm(ordering),
+                    syncscope_from_llvm(inst),
+                );
+                if alignment != 0 {
+                    load_op.set_alignment(ctx, alignment);
+                }
+                Ok(load_op.get_operation())
             }
-            Ok(load_op.get_operation())
         }
         LLVMOpcode::LLVMLShr => {
             let (lhs, rhs) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
@@ -1200,12 +1317,27 @@ fn convert_instruction(
         }
         LLVMOpcode::LLVMStore => {
             let (value_opd, ptr_opd) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
-            let store_op = StoreOp::new(ctx, value_opd, ptr_opd);
             let alignment = llvm_get_alignment(inst);
-            if alignment != 0 {
-                store_op.set_alignment(ctx, alignment);
+            let ordering = llvm_get_ordering(inst);
+            if matches!(ordering, LLVMAtomicOrdering::LLVMAtomicOrderingNotAtomic) {
+                let store_op = StoreOp::new(ctx, value_opd, ptr_opd);
+                if alignment != 0 {
+                    store_op.set_alignment(ctx, alignment);
+                }
+                Ok(store_op.get_operation())
+            } else {
+                let store_op = AtomicStoreOp::new(
+                    ctx,
+                    value_opd,
+                    ptr_opd,
+                    convert_ordering_from_llvm(ordering),
+                    syncscope_from_llvm(inst),
+                );
+                if alignment != 0 {
+                    store_op.set_alignment(ctx, alignment);
+                }
+                Ok(store_op.get_operation())
             }
-            Ok(store_op.get_operation())
         }
         LLVMOpcode::LLVMSub => {
             let (lhs, rhs) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
@@ -1408,6 +1540,11 @@ fn convert_global(
     )?;
 
     let op = GlobalOp::new(ctx, name.clone(), ty);
+
+    let addr_space = llvm_get_pointer_address_space(llvm_type_of(global));
+    if addr_space != 0 {
+        op.set_address_space(ctx, addr_space);
+    }
 
     if <Identifier as Into<String>>::into(name) != llvm_name {
         op.set_llvm_symbol_name(ctx, llvm_name);

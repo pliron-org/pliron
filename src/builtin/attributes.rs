@@ -13,7 +13,7 @@ use crate::{
     attribute::{AttrObj, AttributeDict},
     builtin::{
         attr_interfaces::FloatAttr,
-        types::{FP32Type, FP64Type},
+        types::{FP16Type, FP32Type, FP64Type},
     },
     common_traits::Verify,
     context::{Context, Ptr},
@@ -246,6 +246,49 @@ impl MaterializableAttr for IntegerAttr {
     fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
         let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
         const_op.get_operation()
+    }
+}
+
+#[pliron_attr(name = "builtin.half", format = "$0", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug)]
+/// An attribute that is a half-precision (16-bit) floating-point number.
+pub struct FPHalfAttr(pub apfloat::Half);
+
+impl Hash for FPHalfAttr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
+    }
+}
+
+#[attr_interface_impl]
+impl TypedAttrInterface for FPHalfAttr {
+    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+        FP16Type::get(ctx).into()
+    }
+}
+
+#[attr_interface_impl]
+impl FloatAttr for FPHalfAttr {
+    fn get_inner(&self) -> &dyn apfloat::DynFloat {
+        &self.0
+    }
+
+    fn build_from(&self, df: Box<dyn apfloat::DynFloat>) -> Box<dyn FloatAttr> {
+        let df = df
+            .downcast::<apfloat::Half>()
+            .expect("Expected a Half precision float");
+        Box::new(FPHalfAttr(*df))
+    }
+
+    fn get_semantics(&self) -> apfloat::Semantics {
+        Self::get_semantics_static()
+    }
+
+    fn get_semantics_static() -> apfloat::Semantics
+    where
+        Self: Sized,
+    {
+        <apfloat::Half as apfloat::GetSemantics>::get_semantics()
     }
 }
 

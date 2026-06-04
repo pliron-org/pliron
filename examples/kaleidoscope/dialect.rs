@@ -106,7 +106,7 @@ impl DeclOp {
     /// The op result is always a pointer slot, and the variable type
     /// is stored in the `var_type` attribute.
     pub fn new(ctx: &mut Context, var_ty: Ptr<TypeObj>) -> Self {
-        let ptr_ty = PointerType::get(ctx).into();
+        let ptr_ty = PointerType::get(ctx, 0).into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),

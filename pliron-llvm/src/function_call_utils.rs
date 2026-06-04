@@ -74,12 +74,13 @@ pub fn lookup_or_create_malloc_fn(
     symbol_table_op: Box<dyn SymbolTableInterface>,
 ) -> Result<FuncOp> {
     let size_ty = get_size_type(ctx);
+    let ret_ty = PointerType::get(ctx, 0).into();
     lookup_or_insert_function(
         ctx,
         symbol_table_collection,
         symbol_table_op,
         "malloc".try_into().unwrap(),
-        PointerType::get(ctx).into(),
+        ret_ty,
         vec![size_ty],
         false,
     )
@@ -92,7 +93,7 @@ pub fn lookup_or_create_free_fn(
     symbol_table_collection: &mut SymbolTableCollection,
     symbol_table_op: Box<dyn SymbolTableInterface>,
 ) -> Result<FuncOp> {
-    let ptr_ty = PointerType::get(ctx).into();
+    let ptr_ty = PointerType::get(ctx, 0).into();
     lookup_or_insert_function(
         ctx,
         symbol_table_collection,
@@ -115,7 +116,7 @@ pub fn compute_type_size_in_bytes(
     //   %0 = getelementptr %ty* null, %sizeType 1
     //   %1 = ptrtoint %ty* %0 to %sizeType
     let size_ty = get_size_type(ctx);
-    let pointer_ty = PointerType::get(ctx).into();
+    let pointer_ty = PointerType::get(ctx, 0).into();
     let zero_op = ZeroOp::new(ctx, pointer_ty);
     inserter.append_op(ctx, &zero_op);
     let gep_op = GetElementPtrOp::new(
