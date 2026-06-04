@@ -1,4 +1,4 @@
-name: pliron-llvm-no-default-features
+name: pliron-llvm/no-default-features
 
 on:
   push:
@@ -11,7 +11,7 @@ env:
 
 jobs:
   build:
-    name: Test pliron-llvm - no default features
+    name: Test
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
