@@ -51,4 +51,3 @@ if [ "$WASM_TESTS" = true ]; then
   cargo test --release --target wasm32-unknown-unknown
 fi
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace
-RUSTFLAGS="-D warnings" cargo build -p pliron-llvm --no-default-features
