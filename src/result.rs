@@ -3,7 +3,7 @@
 //! - [ErrorKind] describes the kind of error.
 //! - [struct@Error] is the main error type used throughout the compiler. This `struct` contains
 //!   the field `err` which holds the actual error that implements [AnyError]. [AnyError] is an
-//!   extension trait to enforce [std::error::Error] + [Downcast].
+//!   extension trait to enforce [core::error::Error] + [Downcast].
 //! - [Result] is an alias for `std::result::Result` with the error type set to [struct@Error].
 //!   [Result] implements [ExpectOk], which provides a method [expect_ok](ExpectOk::expect_ok)
 //!   to `unwrap` the result, and if that fails, panics with the error message printed using
@@ -24,7 +24,7 @@
 //!   - [arg_err]: Create [Result] for argument errors with location information
 //!
 //! The inner `err` when constructing [struct@Error] is typically a custom error type
-//! that derives [std::error::Error] using [thiserror].
+//! that derives [core::error::Error] using [thiserror].
 //!
 //! ```
 //! use thiserror::Error;
@@ -112,7 +112,7 @@ use crate::{
     utils::trait_cast::any_to_trait,
 };
 
-/// A wrapper trait combining [`std::error::Error`] and [`downcast_rs::Downcast`]
+/// A wrapper trait combining [`core::error::Error`] and [`downcast_rs::Downcast`]
 /// to allow upcasting to [Any](core::any::Any), so that, we can downcast it
 /// to the [Printable] trait if the error implements it.
 pub trait AnyError: core::error::Error + Send + Sync + 'static + Downcast {}
@@ -133,7 +133,7 @@ pub enum ErrorKind {
     InvalidArgument,
 }
 
-/// An error object that can hold any [std::error::Error].
+/// An error object that can hold any [core::error::Error].
 #[derive(Debug)]
 pub struct Error {
     /// The kind of error this is
@@ -238,7 +238,7 @@ impl<T> ExpectOk<T> for Result<T> {
 #[error("{0}")]
 pub struct StringError(pub String);
 
-/// Specify [ErrorKind] and create [struct@Error] from any [std::error::Error] object.
+/// Specify [ErrorKind] and create [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [create_err!](crate::create_err) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_error!](crate::verify_error),
@@ -258,7 +258,7 @@ macro_rules! create_error {
     };
 }
 
-/// Specify [ErrorKind] and create [Result] from any [std::error::Error] object.
+/// Specify [ErrorKind] and create [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [create_error!](crate::create_error) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_err!](crate::verify_err),
@@ -273,7 +273,7 @@ macro_rules! create_err {
     };
 }
 
-// Create [ErrorKind::VerificationFailed] [struct@Error] from any [std::error::Error] object.
+// Create [ErrorKind::VerificationFailed] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [verify_err!](crate::verify_err) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
@@ -307,7 +307,7 @@ macro_rules! verify_error {
     }
 }
 
-/// Create [ErrorKind::VerificationFailed] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::VerificationFailed] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [verify_error!](crate::verify_error) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
@@ -341,7 +341,7 @@ macro_rules! verify_err {
     }
 }
 
-/// Create [ErrorKind::InvalidInput] [struct@Error] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidInput] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [input_err!](crate::input_err) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
@@ -375,7 +375,7 @@ macro_rules! input_error {
     }
 }
 
-/// Create [ErrorKind::InvalidInput] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidInput] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [input_error!](crate::input_error) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
@@ -409,7 +409,7 @@ macro_rules! input_err {
     }
 }
 
-/// Create [ErrorKind::InvalidArgument] [struct@Error] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidArgument] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [arg_err!](crate::arg_err) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
@@ -443,7 +443,7 @@ macro_rules! arg_error {
     }
 }
 
-/// Create [ErrorKind::InvalidArgument] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidArgument] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [arg_error!](crate::arg_error) instead.
 /// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
