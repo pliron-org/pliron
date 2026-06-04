@@ -52,7 +52,7 @@ pub trait Named {
 }
 
 /// For reference-counted containers, [share](Self::share) data by increasing the reference count.
-/// This is equivalent in semantics to (i.e., [Rc::clone](std::rc::Rc::clone)),
+/// This is equivalent in semantics to (i.e., [Rc::clone](alloc::rc::Rc::clone)),
 /// but with a goal of having a less ambiguous name.
 pub trait RcShare {
     /// Share this object with someone else by increasing the reference count.

@@ -224,7 +224,7 @@ impl<'a, T: ArenaObj> Ptr<T> {
     /// Try and borrow the inner [RefCell] and return a [Ref] to the pointee.
     /// The borrow is live as long as the returned [Ref] lives.
     /// If [Ptr] is dangling or already mutably borrowed, an [Error](crate::result::Error)
-    /// with [DanglingPtrDerefError] or [BorrowError](std::cell::BorrowError) is returned.
+    /// with [DanglingPtrDerefError] or [BorrowError](core::cell::BorrowError) is returned.
     pub fn try_deref(&self, ctx: &'a Context) -> Result<Ref<'a, T>> {
         T::get_arena(ctx)
             .get(self.idx)
@@ -236,7 +236,7 @@ impl<'a, T: ArenaObj> Ptr<T> {
     /// Try and mutably borrow the inner [RefCell] and return a [RefMut] to the pointee.
     /// The borrow is live as long as the returned [RefMut] lives.
     /// If [Ptr] is dangling or already borrowed, an [Error](crate::result::Error)
-    /// with [DanglingPtrDerefError] or [BorrowMutError](std::cell::BorrowMutError) is returned.
+    /// with [DanglingPtrDerefError] or [BorrowMutError](core::cell::BorrowMutError) is returned.
     pub fn try_deref_mut(&self, ctx: &'a Context) -> Result<RefMut<'a, T>> {
         T::get_arena(ctx)
             .get(self.idx)

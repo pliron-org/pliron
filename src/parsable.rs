@@ -182,7 +182,7 @@ pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
     }
 }
 
-/// Build a [StateStream] from a [`BufReader`](std::io::BufReader) or source [`String`],
+/// Build a [StateStream] from a `BufReader` or source [`String`],
 /// for use with [Parsable].
 pub fn state_stream_from_file<'a>(
     file_reader: &'a mut impl CharIter,

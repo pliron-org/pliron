@@ -198,7 +198,7 @@ impl Located for Error {
     }
 }
 
-/// Type alias for [std::result::Result] with the error type set to [struct@Error]
+/// Type alias for [core::result::Result] with the error type set to [struct@Error]
 pub type Result<T> = core::result::Result<T, Error>;
 
 impl<T: Printable> Printable for Result<T> {
