@@ -2,7 +2,6 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     attribute::AttrObj, basic_block::BasicBlock, builtin::{op_interfaces::BranchOpInterface, ops::ConstantOp}, context::{Context, Ptr}, graph::{
-        dominance::DomInfo,
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     }, irbuild::{
         IRStatus,
@@ -76,33 +75,95 @@ fn try_merge_succ(
     true
 }
 
-/// Perform block merging and culling on the regions of `op`. Returns whether the IR was changed.
-pub fn simplify_op(op: Ptr<Operation>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+/// Perform culling on blocks nested inside `op`. Returns whether the IR was changed.
+pub fn cull_inside_op(op: Ptr<Operation>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
   let regions : Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
   let mut status = IRStatus::Unchanged;
   //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
   for region in regions {
-    status |= simplify_region(region, ctx, rewriter);
+    status |= cull_inside_region(region, ctx, rewriter);
   }
   status
 }
 
-/// Perform block merging and culling on nested regions of each operation in block.
-/// Returns whether the IR was changed.
-pub fn simplify_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+/// Perform culling on blocks nested inside `block`. Returns whether the IR was changed.
+pub fn cull_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
     let ops : Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
     let mut status = IRStatus::Unchanged;
     for op in ops {
-        status |= simplify_op(op, ctx, rewriter);
+        status |= cull_inside_op(op, ctx, rewriter);
     }
     status
 }
 
-/// Perform block merging and culling on `region`. Returns whether the IR was changed.
-pub fn simplify_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+/// Perform culling on blocks nested inside `region`. Returns whether the IR was changed.
+pub fn cull_inside_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
   if !region.deref(ctx).has_ssa_dominance(ctx) {
     let head = region.deref(ctx).get_head().expect("all regions should have entry block");
-    return simplify_block(head, ctx, rewriter);
+    return cull_inside_block(head, ctx, rewriter);
+  }
+
+  let Some(entry) = region.deref(ctx).get_head() else {
+    return IRStatus::Unchanged;
+  };
+
+  let mut status = IRStatus::Unchanged;
+  let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
+  let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
+  while let Some(block) = stack.pop() {
+    if !visited.insert(block) {
+      continue;
+    }
+
+    status |= cull_inside_block(block, ctx, rewriter);
+
+    for succ in block.deref(ctx).succs(ctx) {
+      stack.push(succ);
+    }
+  }
+
+  let dead_blocks : Vec<Ptr<BasicBlock>> = region
+    .deref(ctx)
+    .iter(ctx)
+    .filter(|b| !visited.contains(b))
+    .collect();
+  if !dead_blocks.is_empty() {
+    status = IRStatus::Changed;
+  }
+  dead_blocks.iter().for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
+  dead_blocks.iter().for_each(|b| rewriter.erase_block(ctx, *b));
+
+  status
+}
+
+/// Perform merging on blocks nested inside `op`. Returns whether the IR was changed.
+pub fn merge_inside_op(op: Ptr<Operation>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+  let regions : Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
+  let mut status = IRStatus::Unchanged;
+  //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
+  for region in regions {
+    status |= merge_inside_region(region, ctx, rewriter);
+  }
+  status
+}
+
+/// Perform merging on blocks nested inside the operations of `block`.
+/// Returns whether the IR was changed.
+pub fn merge_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+    let ops : Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
+    let mut status = IRStatus::Unchanged;
+    for op in ops {
+        status |= merge_inside_op(op, ctx, rewriter);
+    }
+    status
+}
+
+/// Perform merging on blocks nested inside `region. Returns whether the
+/// IR was changed.
+pub fn merge_inside_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
+  if !region.deref(ctx).has_ssa_dominance(ctx) {
+    let head = region.deref(ctx).get_head().expect("all regions should have entry block");
+    return merge_inside_block(head, ctx, rewriter);
   }
 
   let Some(entry) = region.deref(ctx).get_head() else {
@@ -121,23 +182,12 @@ pub fn simplify_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dy
       status = IRStatus::Changed;
     }
 
-    status |= simplify_block(block, ctx, rewriter);
+    status |= merge_inside_block(block, ctx, rewriter);
 
     for succ in block.deref(ctx).succs(ctx) {
       stack.push(succ);
     }
   }
-
-  let dead_blocks : Vec<Ptr<BasicBlock>> = region
-    .deref(ctx)
-    .iter(ctx)
-    .filter(|b| !visited.contains(b))
-    .collect();
-  if !dead_blocks.is_empty() {
-    status = IRStatus::Changed;
-  }
-  dead_blocks.iter().for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
-  dead_blocks.iter().for_each(|b| BasicBlock::erase(*b, ctx));
 
   status
 }
@@ -169,7 +219,8 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         }
     }
 
-    status |= simplify_op(op, ctx, &mut rewriter);
+    status |= cull_inside_op(op, ctx, &mut rewriter);
+    status |= merge_inside_op(op, ctx, &mut rewriter);
 
     Ok(status)
 }
@@ -187,9 +238,7 @@ impl Pass for SimplifyCFGPass {
         _analyses: &mut AnalysisManager,
     ) -> Result<PassResult> {
         let mut pass_res = PassResult::default();
-        // Run SCCP on the entire operation tree rooted at `op`
         pass_res.ir_changed |= simplify_cfg(op, ctx)?;
-        pass_res.set_preserved::<DomInfo>();
         Ok(pass_res)
     }
 
