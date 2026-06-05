@@ -1,3 +1,17 @@
+//! Control flow graph (CFG) simplification.
+//!
+//! This optimizer performs three tasks in sequence:
+//!
+//! 1. It rewrites any conditional branch operation that implements [BranchOpFoldInterface] and
+//! whose condition operand is defined as a constant to an unconditional branch.
+//!
+//! 2. It detects unreachable blocks by performing a DFS on every nested SSA region, removing
+//! all unreachable blocks it detects.
+//!
+//! 3. It merges every pair of blocks `A` and `B`, where `B` is the sole successor of `A` and
+//! `A` is the sole predecessor of `B`, removing `A`'s terminator and forwarding the actual
+//! branch arguments of `A` into the formal arguments of `B`
+
 use rustc_hash::FxHashSet;
 
 use crate::{
@@ -239,6 +253,7 @@ pub fn merge_inside_region(
     status
 }
 
+/// Simplifies the CFG, as described in the module-level documentation.
 pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     let mut fold_candidates: Vec<(Ptr<Operation>, Vec<Option<AttrObj>>)> = Vec::new();
     walk_op(
