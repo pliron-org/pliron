@@ -15,7 +15,7 @@ use pliron::printable::Printable;
 use pliron::result::Result;
 use pliron::{impl_printable_for_display, input_error, verify_err_noloc};
 
-use crate::llvm_sys::core::FastmathFlags;
+use bitflags::bitflags;
 
 /// Integer overflow flags for arithmetic operations.
 /// The description below is from LLVM's
@@ -29,6 +29,21 @@ use crate::llvm_sys::core::FastmathFlags;
 pub struct IntegerOverflowFlagsAttr {
     pub nsw: bool,
     pub nuw: bool,
+}
+
+bitflags! {
+    /// Fast math flags for floating point operations.
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+    pub struct FastmathFlags: u8 {
+        const NNAN = 1;
+        const NINF = 2;
+        const NSZ = 4;
+        const ARCP = 8;
+        const CONTRACT = 16;
+        const AFN = 32;
+        const REASSOC = 64;
+        const FAST = 127;
+    }
 }
 
 #[pliron_attr(name = "llvm.fast_math_flags", verifier = "succ")]
@@ -215,6 +230,44 @@ pub struct InsertExtractValueIndicesAttr(pub Vec<u32>);
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct AlignmentAttr(pub u32);
 
+/// Address space of a pointer or global, corresponding to LLVM's `addrspace(N)`.
+#[pliron_attr(name = "llvm.addrspace", format = "$0", verifier = "succ")]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct AddressSpaceAttr(pub u32);
+
+/// Memory ordering for an atomic operation (`atomicrmw` / `cmpxchg` / `fence` /
+/// atomic `load` / `store`).
+#[pliron_attr(name = "llvm.atomic_ordering", verifier = "succ", format)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub enum AtomicOrderingAttr {
+    Monotonic,
+    Acquire,
+    Release,
+    AcqRel,
+    SeqCst,
+}
+
+/// The kind of an LLVM `atomicrmw` operation.
+#[pliron_attr(name = "llvm.atomic_rmw_kind", verifier = "succ", format)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub enum AtomicRmwKindAttr {
+    Xchg,
+    Add,
+    Sub,
+    And,
+    Nand,
+    Or,
+    Xor,
+    Max,
+    Min,
+    UMax,
+    UMin,
+    FAdd,
+    FSub,
+    FMax,
+    FMin,
+}
+
 #[pliron_attr(
     name = "llvm.shuffle_vector_mask",
     format = "`[` vec($0, CharSpace(`,`)) `]`",
@@ -330,6 +383,76 @@ mod tests {
                 "#]]
                 .assert_eq(&e.to_string());
             }
+        }
+    }
+
+    fn assert_attr_roundtrips<A>(ctx: &mut Context, attr: A)
+    where
+        A: Parsable<Arg = (), Parsed = A> + Printable + PartialEq + std::fmt::Debug,
+    {
+        let printed = attr.disp(ctx).to_string();
+        let mut state_stream = state_stream_from_iterator(
+            printed.chars(),
+            parsable::State::new(ctx, location::Source::InMemory),
+        );
+        let (parsed, _) = A::parse(&mut state_stream, ()).unwrap();
+        assert_eq!(parsed, attr, "round-trip mismatch for `{printed}`");
+    }
+
+    #[test]
+    fn test_atomic_ordering_attr_roundtrip() {
+        let ctx = &mut Context::default();
+        for ordering in [
+            AtomicOrderingAttr::Monotonic,
+            AtomicOrderingAttr::Acquire,
+            AtomicOrderingAttr::Release,
+            AtomicOrderingAttr::AcqRel,
+            AtomicOrderingAttr::SeqCst,
+        ] {
+            assert_attr_roundtrips(ctx, ordering);
+        }
+    }
+
+    #[test]
+    fn test_atomic_rmw_kind_attr_roundtrip() {
+        let ctx = &mut Context::default();
+        for kind in [
+            AtomicRmwKindAttr::Xchg,
+            AtomicRmwKindAttr::Add,
+            AtomicRmwKindAttr::Sub,
+            AtomicRmwKindAttr::And,
+            AtomicRmwKindAttr::Nand,
+            AtomicRmwKindAttr::Or,
+            AtomicRmwKindAttr::Xor,
+            AtomicRmwKindAttr::Max,
+            AtomicRmwKindAttr::Min,
+            AtomicRmwKindAttr::UMax,
+            AtomicRmwKindAttr::UMin,
+            AtomicRmwKindAttr::FAdd,
+            AtomicRmwKindAttr::FSub,
+            AtomicRmwKindAttr::FMax,
+            AtomicRmwKindAttr::FMin,
+        ] {
+            assert_attr_roundtrips(ctx, kind);
+        }
+    }
+
+    #[test]
+    fn test_address_space_attr_roundtrip() {
+        let ctx = &mut Context::default();
+        for n in [0u32, 1, 3, 5, 7] {
+            assert_attr_roundtrips(ctx, AddressSpaceAttr(n));
+        }
+    }
+
+    #[test]
+    fn test_fp_half_attr_roundtrip() {
+        use pliron::builtin::attributes::FPHalfAttr;
+        use pliron::utils::apfloat::Half;
+        let ctx = &mut Context::default();
+        for s in ["0.0", "1.5", "-2.25"] {
+            let value: Half = s.parse().expect("valid half literal");
+            assert_attr_roundtrips(ctx, FPHalfAttr(value));
         }
     }
 }

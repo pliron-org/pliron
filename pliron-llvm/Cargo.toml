@@ -11,13 +11,16 @@ license.workspace = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = ["llvm-sys"]
+
 [dependencies]
 pliron = { path = "../", version = "0" }
 thiserror.workspace = true
 rustc-hash.workspace = true
 # When upgrading the LLVM version, change the LLVM versions in
 # `ci.yml` and the READMEs in `pliron-llvm` and `llvm-opt`.
-llvm-sys = "221"
+llvm-sys = { version = "221", optional = true }
 log.workspace = true
 bitflags = { workspace = true, features = ["std"] }
 

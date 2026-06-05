@@ -6,8 +6,6 @@ use std::{
     ptr,
 };
 
-use bitflags::bitflags;
-
 use llvm_sys::{
     LLVMFastMathAllowContract, LLVMFastMathAllowReassoc, LLVMFastMathAllowReciprocal,
     LLVMFastMathApproxFunc, LLVMFastMathFlags, LLVMFastMathNoInfs, LLVMFastMathNoNaNs,
@@ -16,13 +14,13 @@ use llvm_sys::{
     analysis::LLVMVerifyModule,
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
-        LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddIncoming,
+        LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddGlobalInAddressSpace, LLVMAddIncoming,
         LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBuildAShr,
-        LLVMBuildAdd, LLVMBuildAnd, LLVMBuildArrayAlloca, LLVMBuildBitCast, LLVMBuildBr,
-        LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement, LLVMBuildExtractValue,
-        LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFPExt,
-        LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc, LLVMBuildFRem, LLVMBuildFSub,
-        LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildInsertElement,
+        LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca, LLVMBuildBitCast,
+        LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
+        LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
+        LLVMBuildFPExt, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc, LLVMBuildFRem,
+        LLVMBuildFSub, LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildInsertElement,
         LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMul,
         LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet, LLVMBuildRetVoid,
         LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect,
@@ -49,20 +47,21 @@ use llvm_sys::{
         LLVMGetNamedFunction, LLVMGetNamedGlobal, LLVMGetNextBasicBlock, LLVMGetNextFunction,
         LLVMGetNextGlobal, LLVMGetNextInstruction, LLVMGetNextParam, LLVMGetNumArgOperands,
         LLVMGetNumIndices, LLVMGetNumMaskElements, LLVMGetNumOperands, LLVMGetOperand,
-        LLVMGetParam, LLVMGetParamTypes, LLVMGetPoison, LLVMGetPreviousBasicBlock,
-        LLVMGetPreviousFunction, LLVMGetPreviousGlobal, LLVMGetPreviousInstruction,
-        LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStructElementTypes, LLVMGetStructName,
-        LLVMGetSwitchCaseValue, LLVMGetTypeKind, LLVMGetUndef, LLVMGetUndefMaskElem,
-        LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize, LLVMGlobalGetValueType,
-        LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst,
-        LLVMIsAUser, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct,
-        LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext,
-        LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore, LLVMPrintModuleToFile,
-        LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
-        LLVMScalableVectorType, LLVMSetAlignment, LLVMSetFastMathFlags, LLVMSetInitializer,
-        LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
-        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
-        LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
+        LLVMGetParam, LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison,
+        LLVMGetPreviousBasicBlock, LLVMGetPreviousFunction, LLVMGetPreviousGlobal,
+        LLVMGetPreviousInstruction, LLVMGetPreviousParam, LLVMGetReturnType,
+        LLVMGetStructElementTypes, LLVMGetStructName, LLVMGetSwitchCaseValue, LLVMGetTypeKind,
+        LLVMGetUndef, LLVMGetUndefMaskElem, LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize,
+        LLVMGlobalGetValueType, LLVMHalfTypeInContext, LLVMIntTypeInContext,
+        LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
+        LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct, LLVMLookupIntrinsicID,
+        LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
+        LLVMPositionBuilderBefore, LLVMPrintModuleToFile, LLVMPrintModuleToString,
+        LLVMPrintTypeToString, LLVMPrintValueToString, LLVMScalableVectorType, LLVMSetAlignment,
+        LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg,
+        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
+        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType,
+        LLVMVoidTypeInContext,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
@@ -74,6 +73,8 @@ use llvm_sys::{
 use crate::llvm_sys::{
     ToBool, c_array_to_vec, cstr_to_string, sized_cstr_to_string, to_c_str, uninitialized_vec,
 };
+
+use crate::attributes::FastmathFlags;
 
 /// Opaque wrapper around LLVMValueRef to hide the raw pointer
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -208,21 +209,6 @@ mod llvm_builder {
 }
 
 pub use llvm_builder::LLVMBuilder;
-
-bitflags! {
-    /// Fast math flags for floating point operations.
-    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
-    pub struct FastmathFlags: u8 {
-        const NNAN = 1;
-        const NINF = 2;
-        const NSZ = 4;
-        const ARCP = 8;
-        const CONTRACT = 16;
-        const AFN = 32;
-        const REASSOC = 64;
-        const FAST = 127;
-    }
-}
 
 impl From<LLVMFastMathFlags> for FastmathFlags {
     fn from(flags: LLVMFastMathFlags) -> Self {
@@ -648,6 +634,12 @@ pub fn llvm_is_function_type_var_arg(ty: LLVMType) -> bool {
 pub fn llvm_get_int_type_width(ty: LLVMType) -> u32 {
     assert!(llvm_get_type_kind(ty) == LLVMTypeKind::LLVMIntegerTypeKind);
     unsafe { LLVMGetIntTypeWidth(ty.into()) }
+}
+
+/// LLVMGetPointerAddressSpace
+pub fn llvm_get_pointer_address_space(ty: LLVMType) -> u32 {
+    assert!(llvm_get_type_kind(ty) == LLVMTypeKind::LLVMPointerTypeKind);
+    unsafe { LLVMGetPointerAddressSpace(ty.into()) }
 }
 
 /// LLVMIsOpaqueStruct
@@ -1208,6 +1200,24 @@ pub fn llvm_add_global(module: &LLVMModule, ty: LLVMType, name: &str) -> LLVMVal
     unsafe { LLVMAddGlobal(module.inner_ref(), ty.into(), to_c_str(name).as_ptr()).into() }
 }
 
+/// LLVMAddGlobalInAddressSpace
+pub fn llvm_add_global_in_address_space(
+    module: &LLVMModule,
+    ty: LLVMType,
+    name: &str,
+    addr_space: u32,
+) -> LLVMValue {
+    unsafe {
+        LLVMAddGlobalInAddressSpace(
+            module.inner_ref(),
+            ty.into(),
+            to_c_str(name).as_ptr(),
+            addr_space,
+        )
+        .into()
+    }
+}
+
 /// LLVMGetInsertBlock
 pub fn llvm_get_insert_block(builder: &LLVMBuilder) -> Option<LLVMBasicBlock> {
     unsafe {
@@ -1245,6 +1255,11 @@ pub fn llvm_float_type_in_context(context: &LLVMContext) -> LLVMType {
 /// LLVMDoubleTypeInContext
 pub fn llvm_double_type_in_context(context: &LLVMContext) -> LLVMType {
     unsafe { LLVMDoubleTypeInContext(context.inner_ref()).into() }
+}
+
+/// LLVMHalfTypeInContext
+pub fn llvm_half_type_in_context(context: &LLVMContext) -> LLVMType {
+    unsafe { LLVMHalfTypeInContext(context.inner_ref()).into() }
 }
 
 /// ArrayType::isValidElementType
@@ -1654,6 +1669,25 @@ pub fn llvm_build_bitcast(
     assert!(llvm_get_insert_block(builder).is_some());
     unsafe {
         LLVMBuildBitCast(
+            builder.inner_ref(),
+            val.into(),
+            dest_ty.into(),
+            to_c_str(name).as_ptr(),
+        )
+        .into()
+    }
+}
+
+/// LLVMBuildAddrSpaceCast
+pub fn llvm_build_addrspacecast(
+    builder: &LLVMBuilder,
+    val: LLVMValue,
+    dest_ty: LLVMType,
+    name: &str,
+) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe {
+        LLVMBuildAddrSpaceCast(
             builder.inner_ref(),
             val.into(),
             dest_ty.into(),
@@ -2721,4 +2755,192 @@ pub(super) fn handle_err(err: LLVMErrorRef) -> Result<(), String> {
             Err(err_msg)
         }
     }
+}
+
+// =============================================================================
+// Atomics + inline assembly.
+//
+// Wrappers for the LLVM-C atomic and inline-asm builders/accessors, used by the
+// to_llvm_ir / from_llvm_ir bridge for `llvm.atomicrmw`, `llvm.cmpxchg`,
+// `llvm.fence`, `llvm.atomic_load`, `llvm.atomic_store` and `llvm.inline_asm`.
+// =============================================================================
+
+// llvm-sys 221's binding for `LLVMGetSyncScopeID` is missing its return type
+// (it is declared as returning `()`), so we re-declare the correct signature.
+// The real LLVM-C symbol returns the `unsigned` synchronization-scope id.
+unsafe extern "C" {
+    fn LLVMGetSyncScopeID(
+        c: llvm_sys::prelude::LLVMContextRef,
+        name: *const core::ffi::c_char,
+        slen: usize,
+    ) -> core::ffi::c_uint;
+}
+
+/// Resolve a synchronization-scope id by name within `ctx`. The empty string is
+/// the system scope (id 1); `"singlethread"` is the single-thread scope (id 0).
+pub fn llvm_get_sync_scope_id(ctx: &LLVMContext, name: &str) -> u32 {
+    unsafe {
+        LLVMGetSyncScopeID(
+            ctx.inner_ref(),
+            name.as_ptr() as *const core::ffi::c_char,
+            name.len(),
+        )
+    }
+}
+
+/// LLVMBuildAtomicRMWSyncScope
+pub fn llvm_build_atomic_rmw(
+    builder: &LLVMBuilder,
+    op: llvm_sys::LLVMAtomicRMWBinOp,
+    ptr: LLVMValue,
+    val: LLVMValue,
+    ordering: llvm_sys::LLVMAtomicOrdering,
+    ssid: u32,
+) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe {
+        llvm_sys::core::LLVMBuildAtomicRMWSyncScope(
+            builder.inner_ref(),
+            op,
+            ptr.into(),
+            val.into(),
+            ordering,
+            ssid,
+        )
+        .into()
+    }
+}
+
+/// LLVMBuildAtomicCmpXchgSyncScope (result is the `{ T, i1 }` pair).
+pub fn llvm_build_atomic_cmpxchg(
+    builder: &LLVMBuilder,
+    ptr: LLVMValue,
+    cmp: LLVMValue,
+    new: LLVMValue,
+    success: llvm_sys::LLVMAtomicOrdering,
+    failure: llvm_sys::LLVMAtomicOrdering,
+    ssid: u32,
+) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe {
+        llvm_sys::core::LLVMBuildAtomicCmpXchgSyncScope(
+            builder.inner_ref(),
+            ptr.into(),
+            cmp.into(),
+            new.into(),
+            success,
+            failure,
+            ssid,
+        )
+        .into()
+    }
+}
+
+/// LLVMBuildFenceSyncScope
+pub fn llvm_build_fence(
+    builder: &LLVMBuilder,
+    ordering: llvm_sys::LLVMAtomicOrdering,
+    ssid: u32,
+    name: &str,
+) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe {
+        llvm_sys::core::LLVMBuildFenceSyncScope(
+            builder.inner_ref(),
+            ordering,
+            ssid,
+            to_c_str(name).as_ptr(),
+        )
+        .into()
+    }
+}
+
+/// LLVMSetOrdering: turn a plain load/store into an atomic one.
+pub fn llvm_set_ordering(inst: LLVMValue, ordering: llvm_sys::LLVMAtomicOrdering) {
+    unsafe { llvm_sys::core::LLVMSetOrdering(inst.into(), ordering) }
+}
+
+/// LLVMGetOrdering
+pub fn llvm_get_ordering(inst: LLVMValue) -> llvm_sys::LLVMAtomicOrdering {
+    unsafe { llvm_sys::core::LLVMGetOrdering(inst.into()) }
+}
+
+/// LLVMSetAtomicSyncScopeID
+pub fn llvm_set_atomic_sync_scope_id(inst: LLVMValue, ssid: u32) {
+    unsafe { llvm_sys::core::LLVMSetAtomicSyncScopeID(inst.into(), ssid) }
+}
+
+/// LLVMGetAtomicSyncScopeID
+pub fn llvm_get_atomic_sync_scope_id(inst: LLVMValue) -> u32 {
+    unsafe { llvm_sys::core::LLVMGetAtomicSyncScopeID(inst.into()) }
+}
+
+/// LLVMGetAtomicRMWBinOp
+pub fn llvm_get_atomic_rmw_bin_op(inst: LLVMValue) -> llvm_sys::LLVMAtomicRMWBinOp {
+    unsafe { llvm_sys::core::LLVMGetAtomicRMWBinOp(inst.into()) }
+}
+
+/// LLVMGetCmpXchgSuccessOrdering
+pub fn llvm_get_cmpxchg_success_ordering(inst: LLVMValue) -> llvm_sys::LLVMAtomicOrdering {
+    unsafe { llvm_sys::core::LLVMGetCmpXchgSuccessOrdering(inst.into()) }
+}
+
+/// LLVMGetCmpXchgFailureOrdering
+pub fn llvm_get_cmpxchg_failure_ordering(inst: LLVMValue) -> llvm_sys::LLVMAtomicOrdering {
+    unsafe { llvm_sys::core::LLVMGetCmpXchgFailureOrdering(inst.into()) }
+}
+
+/// LLVMGetInlineAsm: create an inline-asm callee value of function type `fn_ty`.
+#[allow(clippy::too_many_arguments)]
+pub fn llvm_get_inline_asm(
+    fn_ty: LLVMType,
+    asm: &str,
+    constraints: &str,
+    has_side_effects: bool,
+    is_align_stack: bool,
+    dialect: llvm_sys::LLVMInlineAsmDialect,
+    can_throw: bool,
+) -> LLVMValue {
+    unsafe {
+        llvm_sys::core::LLVMGetInlineAsm(
+            fn_ty.into(),
+            asm.as_ptr() as *const core::ffi::c_char,
+            asm.len(),
+            constraints.as_ptr() as *const core::ffi::c_char,
+            constraints.len(),
+            has_side_effects as llvm_sys::prelude::LLVMBool,
+            is_align_stack as llvm_sys::prelude::LLVMBool,
+            dialect,
+            can_throw as llvm_sys::prelude::LLVMBool,
+        )
+        .into()
+    }
+}
+
+/// LLVMGetInlineAsmAsmString
+pub fn llvm_get_inline_asm_asm_string(v: LLVMValue) -> String {
+    unsafe {
+        let mut len: usize = 0;
+        let ptr = llvm_sys::core::LLVMGetInlineAsmAsmString(v.into(), &mut len);
+        String::from_utf8_lossy(std::slice::from_raw_parts(ptr as *const u8, len)).into_owned()
+    }
+}
+
+/// LLVMGetInlineAsmConstraintString
+pub fn llvm_get_inline_asm_constraint_string(v: LLVMValue) -> String {
+    unsafe {
+        let mut len: usize = 0;
+        let ptr = llvm_sys::core::LLVMGetInlineAsmConstraintString(v.into(), &mut len);
+        String::from_utf8_lossy(std::slice::from_raw_parts(ptr as *const u8, len)).into_owned()
+    }
+}
+
+/// LLVMGetInlineAsmHasSideEffects
+pub fn llvm_get_inline_asm_has_side_effects(v: LLVMValue) -> bool {
+    unsafe { llvm_sys::core::LLVMGetInlineAsmHasSideEffects(v.into()) != 0 }
+}
+
+/// LLVMGetInlineAsmFunctionType
+pub fn llvm_get_inline_asm_function_type(v: LLVMValue) -> LLVMType {
+    unsafe { llvm_sys::core::LLVMGetInlineAsmFunctionType(v.into()).into() }
 }

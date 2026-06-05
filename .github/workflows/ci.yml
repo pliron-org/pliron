@@ -1,4 +1,4 @@
-name: pliron
+name: workspace
 
 on:
   push:
@@ -51,7 +51,7 @@ jobs:
     - name: Build
       run: RUSTFLAGS="-D warnings" cargo build --workspace --verbose
 
-    # We don't need to support pliron-llvm on WASM
+      # We don't need to support pliron-llvm on WASM
     - name: Build Wasm Target
       run: RUSTFLAGS="-D warnings" cargo build -p pliron -p pliron-derive --target wasm32-unknown-unknown --verbose
 
@@ -69,4 +69,3 @@ jobs:
 
     - name: Documentation
       run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace
-

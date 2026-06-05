@@ -100,7 +100,7 @@ fn mem2reg_basic_store_and_load() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       stored_val = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
       llvm.store *alloc <- stored_val;
       loaded_val = llvm.load alloc : builtin.integer i64;
@@ -127,7 +127,7 @@ fn mem2reg_multiple_stores_one_load() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
       llvm.store *alloc <- val1;
       val2 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
@@ -155,7 +155,7 @@ fn mem2reg_no_store_uses_default() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       loaded = llvm.load alloc : builtin.integer i64;
       llvm.return loaded
     }
@@ -180,7 +180,7 @@ fn mem2reg_no_load_dead_allocation() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
       llvm.store *alloc <- val;
       dead_val = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
@@ -204,7 +204,7 @@ fn mem2reg_phi_with_conditional_branch() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       llvm.cond_br if cond ^then() else ^else()
 
       ^then():
@@ -244,8 +244,8 @@ fn mem2reg_multiple_allocations() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc1 = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
-      alloc2 = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc1 = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
+      alloc2 = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val1 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
       val2 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
       llvm.store *alloc1 <- val1;
@@ -278,7 +278,7 @@ fn mem2reg_linear_chain_of_stores_and_loads() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
       llvm.store *alloc <- val1;
       load1 = llvm.load alloc : builtin.integer i64;
@@ -301,7 +301,7 @@ fn mem2reg_diamond_pattern() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       init_val = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
       llvm.store *alloc <- init_val;
       llvm.cond_br if cond ^then() else ^else()
@@ -337,7 +337,7 @@ fn mem2reg_nested_branches() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1, builtin.integer i1) variadic = false> [] {
       ^entry(cond1: builtin.integer i1, cond2: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
       llvm.store *alloc <- val0;
       llvm.cond_br if cond1 ^if1_then() else ^if1_else()
@@ -384,7 +384,7 @@ fn mem2reg_unused_block_arguments() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val_then = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
       val_else = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64;
       llvm.cond_br if cond ^then() else ^else()
@@ -417,7 +417,7 @@ fn mem2reg_multiple_paths_convergence() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1, builtin.integer i1) variadic = false> [] {
       ^entry(cond1: builtin.integer i1, cond2: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       v0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
       llvm.store *alloc <- v0;
       llvm.cond_br if cond1 ^path1() else ^path2()
@@ -462,7 +462,7 @@ fn mem2reg_load_before_any_store() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       first_load = llvm.load alloc : builtin.integer i64;
       store_val = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
       llvm.store *alloc <- store_val;
@@ -489,7 +489,7 @@ fn mem2reg_complex_liveness() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       init = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
       llvm.store *alloc <- init;
       loaded1 = llvm.load alloc : builtin.integer i64;
@@ -527,7 +527,7 @@ fn mem2reg_no_promotion_when_alloca_address_escapes() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       val = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
       llvm.store *alloc <- val;
       loaded = llvm.load alloc : builtin.integer i64;
@@ -552,7 +552,7 @@ fn mem2reg_repeated_forward_edges() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1, builtin.integer i1) variadic = false> [] {
       ^entry(cond1: builtin.integer i1, cond2: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       v0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
       llvm.store *alloc <- v0;
       llvm.cond_br if cond1 ^block_a() else ^block_b()
@@ -586,7 +586,7 @@ fn mem2reg_not_promoted_when_load_is_in_nested_region() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       v = builtin.constant <builtin.integer <9: i64>> : builtin.integer i64;
       llvm.store *alloc <- v;
       test.region_carrier {
@@ -612,7 +612,7 @@ fn mem2reg_not_promoted_when_store_is_in_nested_region() -> Result<()> {
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       v = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
       test.region_carrier {
         ^nested():
@@ -639,7 +639,7 @@ fn mem2reg_not_promoted_for_interface_declared_non_promotable_use() -> Result<()
     llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
       ^entry():
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       v = builtin.constant <builtin.integer <13: i64>> : builtin.integer i64;
       llvm.store *alloc <- v;
       test.non_promotable_use alloc;
@@ -664,7 +664,7 @@ fn mem2reg_not_promoted_when_phi_pred_has_non_branch_successor_terminator() -> R
     llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
       ^entry(cond: builtin.integer i1):
       size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
       llvm.cond_br if cond ^left() else ^right()
 
       ^left():

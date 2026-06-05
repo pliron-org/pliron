@@ -1,21 +1,20 @@
 //! [Op]s defined in the LLVM dialect
 
-use std::{sync::LazyLock, vec};
-
 use pliron::{
     arg_err, arg_err_noloc,
     attribute::{AttrObj, AttributeDict, attr_cast},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::TypedAttrInterface,
-        attributes::{IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
+        attributes::{BoolAttr, IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{
             self, ATTR_KEY_SYM_NAME, AtLeastNOpdsInterface, AtLeastNResultsInterface,
             AtMostNOpdsInterface, AtMostNRegionsInterface, AtMostOneRegionInterface,
             BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
-            IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, OneOpdInterface,
-            OneResultInterface, OperandNOfType, OperandSegmentInterface, OptionalOpdInterface,
-            ResultNOfType, SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
+            OneOpdInterface, OneResultInterface, OneSuccInterface, OperandNOfType,
+            OperandSegmentInterface, OptionalOpdInterface, ResultNOfType,
+            SameOperandsAndResultType, SameOperandsType, SameResultsType,
             SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
@@ -54,10 +53,10 @@ use pliron::{
 
 use crate::{
     attributes::{
-        AlignmentAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr,
-        InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr,
+        AddressSpaceAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr, CaseValuesAttr,
+        FCmpPredicateAttr, FastmathFlagsAttr, InsertExtractValueIndicesAttr, LinkageAttr,
+        ShuffleVectorMaskAttr,
     },
-    llvm_sys::core::{llvm_get_undef_mask_elem, llvm_lookup_intrinsic_id},
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
@@ -69,6 +68,9 @@ use crate::{
     },
     types::{ArrayType, FuncType, StructType, VectorType},
 };
+
+#[cfg(feature = "llvm-sys")]
+use crate::llvm_sys::core::{llvm_get_undef_mask_elem, llvm_lookup_intrinsic_id};
 
 use pliron::combine::{
     self, between, optional,
@@ -95,7 +97,6 @@ use super::{
     name = "llvm.return",
     format = "operands(CharSpace(`,`))",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>, AtMostNOpdsInterface<1>, OptionalOpdInterface],
-    verifier = "succ"
 )]
 pub struct ReturnOp;
 impl ReturnOp {
@@ -115,6 +116,45 @@ impl ReturnOp {
     /// Get the returned value, if it exists.
     pub fn retval(&self, ctx: &Context) -> Option<Value> {
         self.get_operand(ctx)
+    }
+}
+
+#[derive(Error, Debug)]
+enum ReturnOpVerifyErr {
+    #[error("ReturnOp must have no operands in a void function")]
+    VoidWithOperand,
+    #[error("ReturnOp must have exactly one operand in a non-void function")]
+    NonVoidArity,
+    #[error("ReturnOp operand type does not match the function's result type")]
+    ResultTypeMismatch,
+}
+
+impl Verify for ReturnOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        use pliron::r#type::Typed;
+        // Signature coupling is only enforced when the return is inside a FuncOp.
+        let Some(parent_op) = self.get_operation().deref(ctx).get_parent_op(ctx) else {
+            return Ok(());
+        };
+        let Some(func_op) = Operation::get_op::<FuncOp>(parent_op, ctx) else {
+            return Ok(());
+        };
+        let func_ty = func_op.get_type(ctx);
+        let res_ty = func_ty.deref(ctx).result_type();
+        let num_operands = self.get_operation().deref(ctx).get_num_operands();
+        if res_ty.deref(ctx).is::<crate::types::VoidType>() {
+            if num_operands != 0 {
+                verify_err!(self.loc(ctx), ReturnOpVerifyErr::VoidWithOperand)?
+            }
+        } else if num_operands != 1 {
+            verify_err!(self.loc(ctx), ReturnOpVerifyErr::NonVoidArity)?
+        } else {
+            let ret_ty = self.get_operation().deref(ctx).get_operand(0).get_type(ctx);
+            if ret_ty != res_ty {
+                verify_err!(self.loc(ctx), ReturnOpVerifyErr::ResultTypeMismatch)?
+            }
+        }
+        Ok(())
     }
 }
 
@@ -449,7 +489,8 @@ impl PointerTypeResult for AllocaOp {
 impl AllocaOp {
     /// Create a new [AllocaOp]
     pub fn new(ctx: &mut Context, elem_type: Ptr<TypeObj>, size: Value) -> Self {
-        let ptr_ty = PointerType::get(ctx).into();
+        // `alloca` yields a pointer in the default (stack) address space.
+        let ptr_ty = PointerType::get(ctx, 0).into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -601,6 +642,33 @@ pub enum PtrToIntOpErr {
 )]
 pub struct PtrToIntOp;
 
+/// Equivalent to LLVM's AddrSpaceCast opcode: casts a pointer to a pointer in a
+/// different address space.
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `arg` | [PointerType] |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | [PointerType] |
+#[pliron_op(
+    name = "llvm.addrspacecast",
+    format = "$0 ` to ` type($0)",
+    interfaces = [
+        OneResultInterface,
+        OneOpdInterface,
+        NResultsInterface<1>,
+        NOpdsInterface<1>,
+        CastOpInterface,
+        OperandNOfType<0, PointerType>,
+        ResultNOfType<0, PointerType>,
+    ],
+    verifier = "succ"
+)]
+pub struct AddrSpaceCastOp;
+
 /// Equivalent to LLVM's Unconditional Branch.
 /// ### Operands
 /// | operand | description |
@@ -615,7 +683,12 @@ pub struct PtrToIntOp;
 #[pliron_op(
     name = "llvm.br",
     format = "succ($0) `(` operands(CharSpace(`,`)) `)`",
-    interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+    interfaces = [
+        IsTerminatorInterface,
+        NResultsInterface<0>,
+        NSuccsInterface<1>,
+        OneSuccInterface
+    ],
     verifier = "succ"
 )]
 pub struct BrOp;
@@ -675,7 +748,7 @@ impl BrOp {
 /// | `false_dest` | Any successor |
 #[pliron_op(
     name = "llvm.cond_br",
-    interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+    interfaces = [IsTerminatorInterface, NResultsInterface<0>, NSuccsInterface<2>],
 )]
 pub struct CondBrOp;
 impl CondBrOp {
@@ -1279,7 +1352,17 @@ impl GetElementPtrOp {
         indices: Vec<GepIndex>,
         src_elem_type: Ptr<TypeObj>,
     ) -> Self {
-        let result_type = PointerType::get(ctx).into();
+        use pliron::r#type::Typed;
+
+        // A GEP result inherits the address space of its base pointer.
+        let addr_space = {
+            let base_ty = base.get_type(ctx);
+            base_ty
+                .deref(ctx)
+                .downcast_ref::<PointerType>()
+                .map_or(0, PointerType::address_space)
+        };
+        let result_type = PointerType::get(ctx, addr_space).into();
         let mut attr: Vec<GepIndexAttr> = Vec::new();
         let mut opds: Vec<Value> = vec![base];
         for idx in indices {
@@ -1526,6 +1609,310 @@ impl PromotableOpInterface for StoreOp {
         }
         rewriter.erase_operation(ctx, self.get_operation());
         Ok(())
+    }
+}
+
+/// Equivalent to LLVM's `atomicrmw`: atomically applies `kind` to the value at
+/// a pointer and returns the old value.
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `ptr` | [PointerType] |
+/// | `val` | value to combine with the one in memory |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | the old value (same type as `val`) |
+#[pliron_op(
+    name = "llvm.atomicrmw",
+    format = "attr($llvm_rmw_kind, $AtomicRmwKindAttr) ` ` $0 `, ` $1 ` ` opt_attr($llvm_rmw_syncscope, $StringAttr, label($syncscope)) attr($llvm_rmw_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    interfaces = [
+        OneResultInterface,
+        NResultsInterface<1>,
+        NOpdsInterface<2>,
+        OperandNOfType<0, PointerType>
+    ],
+    attributes = (
+        llvm_rmw_kind: AtomicRmwKindAttr,
+        llvm_rmw_ordering: AtomicOrderingAttr,
+        llvm_rmw_syncscope: StringAttr
+    ),
+    verifier = "succ"
+)]
+pub struct AtomicRmwOp;
+
+impl AtomicRmwOp {
+    /// Create a new [AtomicRmwOp]. `syncscope` is `None` for the system scope.
+    pub fn new(
+        ctx: &mut Context,
+        ptr: Value,
+        val: Value,
+        kind: AtomicRmwKindAttr,
+        ordering: AtomicOrderingAttr,
+        syncscope: Option<String>,
+    ) -> Self {
+        use pliron::r#type::Typed;
+        let res_ty = val.get_type(ctx);
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![res_ty],
+            vec![ptr, val],
+            vec![],
+            0,
+        );
+        let op = AtomicRmwOp { op };
+        op.set_attr_llvm_rmw_kind(ctx, kind);
+        op.set_attr_llvm_rmw_ordering(ctx, ordering);
+        if let Some(scope) = syncscope {
+            op.set_attr_llvm_rmw_syncscope(ctx, StringAttr::new(scope));
+        }
+        op
+    }
+}
+
+/// Equivalent to LLVM's `cmpxchg`: atomically compares the value at a pointer
+/// with `cmp` and, if equal, stores `new`. Returns a `{ value, i1 }` pair of the
+/// loaded value and whether the swap succeeded.
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `ptr` | [PointerType] |
+/// | `cmp` | expected value |
+/// | `new` | value to store on success |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | `{ value, i1 }` (loaded value, success flag) |
+#[pliron_op(
+    name = "llvm.cmpxchg",
+    format = "$0 `, ` $1 `, ` $2 ` ` opt_attr($llvm_cas_syncscope, $StringAttr, label($syncscope)) attr($llvm_cas_success_ordering, $AtomicOrderingAttr) ` ` attr($llvm_cas_failure_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    interfaces = [
+        OneResultInterface,
+        NResultsInterface<1>,
+        NOpdsInterface<3>,
+        OperandNOfType<0, PointerType>
+    ],
+    attributes = (
+        llvm_cas_success_ordering: AtomicOrderingAttr,
+        llvm_cas_failure_ordering: AtomicOrderingAttr,
+        llvm_cas_syncscope: StringAttr
+    ),
+    verifier = "succ"
+)]
+pub struct AtomicCmpxchgOp;
+
+impl AtomicCmpxchgOp {
+    /// Create a new [AtomicCmpxchgOp]. `syncscope` is `None` for the system scope.
+    pub fn new(
+        ctx: &mut Context,
+        ptr: Value,
+        cmp: Value,
+        new_val: Value,
+        success_ordering: AtomicOrderingAttr,
+        failure_ordering: AtomicOrderingAttr,
+        syncscope: Option<String>,
+    ) -> Self {
+        use pliron::r#type::Typed;
+        let val_ty = cmp.get_type(ctx);
+        let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
+        let res_ty = StructType::get_unnamed(ctx, vec![val_ty, bool_ty.into()]).into();
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![res_ty],
+            vec![ptr, cmp, new_val],
+            vec![],
+            0,
+        );
+        let op = AtomicCmpxchgOp { op };
+        op.set_attr_llvm_cas_success_ordering(ctx, success_ordering);
+        op.set_attr_llvm_cas_failure_ordering(ctx, failure_ordering);
+        if let Some(scope) = syncscope {
+            op.set_attr_llvm_cas_syncscope(ctx, StringAttr::new(scope));
+        }
+        op
+    }
+}
+
+/// Equivalent to LLVM's `fence`: orders memory accesses. Has no operands or
+/// results.
+#[pliron_op(
+    name = "llvm.fence",
+    format = "opt_attr($llvm_fence_syncscope, $StringAttr, label($syncscope)) attr($llvm_fence_ordering, $AtomicOrderingAttr)",
+    interfaces = [NResultsInterface<0>, NOpdsInterface<0>],
+    attributes = (llvm_fence_ordering: AtomicOrderingAttr, llvm_fence_syncscope: StringAttr),
+    verifier = "succ"
+)]
+pub struct FenceOp;
+
+impl FenceOp {
+    /// Create a new [FenceOp]. `syncscope` is `None` for the system scope.
+    pub fn new(ctx: &mut Context, ordering: AtomicOrderingAttr, syncscope: Option<String>) -> Self {
+        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
+        let op = FenceOp { op };
+        op.set_attr_llvm_fence_ordering(ctx, ordering);
+        if let Some(scope) = syncscope {
+            op.set_attr_llvm_fence_syncscope(ctx, StringAttr::new(scope));
+        }
+        op
+    }
+}
+
+/// Equivalent to LLVM's atomic `load`.
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `ptr` | [PointerType] |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | the loaded value |
+#[pliron_op(
+    name = "llvm.atomic_load",
+    format = "$0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` opt_attr($llvm_ld_syncscope, $StringAttr, label($syncscope)) attr($llvm_ld_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    interfaces = [
+        OneResultInterface,
+        OneOpdInterface,
+        NResultsInterface<1>,
+        NOpdsInterface<1>,
+        AlignableOpInterface,
+        OperandNOfType<0, PointerType>
+    ],
+    attributes = (llvm_ld_ordering: AtomicOrderingAttr, llvm_ld_syncscope: StringAttr),
+    verifier = "succ"
+)]
+pub struct AtomicLoadOp;
+
+impl AtomicLoadOp {
+    /// Create a new [AtomicLoadOp]. `syncscope` is `None` for the system scope.
+    pub fn new(
+        ctx: &mut Context,
+        ptr: Value,
+        res_ty: Ptr<TypeObj>,
+        ordering: AtomicOrderingAttr,
+        syncscope: Option<String>,
+    ) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![res_ty],
+            vec![ptr],
+            vec![],
+            0,
+        );
+        let op = AtomicLoadOp { op };
+        op.set_attr_llvm_ld_ordering(ctx, ordering);
+        if let Some(scope) = syncscope {
+            op.set_attr_llvm_ld_syncscope(ctx, StringAttr::new(scope));
+        }
+        op
+    }
+}
+
+/// Equivalent to LLVM's atomic `store`.
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `val` | value to store |
+/// | `ptr` | [PointerType] |
+#[pliron_op(
+    name = "llvm.atomic_store",
+    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` opt_attr($llvm_st_syncscope, $StringAttr, label($syncscope)) attr($llvm_st_ordering, $AtomicOrderingAttr)",
+    interfaces = [
+        NResultsInterface<0>,
+        AlignableOpInterface,
+        OperandNOfType<1, PointerType>,
+        NOpdsInterface<2>
+    ],
+    attributes = (llvm_st_ordering: AtomicOrderingAttr, llvm_st_syncscope: StringAttr),
+    verifier = "succ"
+)]
+pub struct AtomicStoreOp;
+
+impl AtomicStoreOp {
+    /// Create a new [AtomicStoreOp]. `syncscope` is `None` for the system scope.
+    pub fn new(
+        ctx: &mut Context,
+        value: Value,
+        ptr: Value,
+        ordering: AtomicOrderingAttr,
+        syncscope: Option<String>,
+    ) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![],
+            vec![value, ptr],
+            vec![],
+            0,
+        );
+        let op = AtomicStoreOp { op };
+        op.set_attr_llvm_st_ordering(ctx, ordering);
+        if let Some(scope) = syncscope {
+            op.set_attr_llvm_st_syncscope(ctx, StringAttr::new(scope));
+        }
+        op
+    }
+}
+
+/// Equivalent to LLVM's inline assembly call. The template and constraint
+/// strings follow LLVM's inline-asm syntax; `convergent` marks asm that must
+/// not be reordered across divergent control flow (e.g. warp-synchronous PTX).
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `inputs` | input operands to the inline asm |
+///
+/// ### Result(s):
+/// | result | description |
+/// |-----|-------|
+/// | `res` | the asm result (a void type when there is none) |
+#[pliron_op(
+    name = "llvm.inline_asm",
+    format = "attr($inline_asm_template, $StringAttr) `, ` attr($inline_asm_constraints, $StringAttr) ` convergent = ` attr($inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    interfaces = [OneResultInterface, NResultsInterface<1>],
+    attributes = (
+        inline_asm_template: StringAttr,
+        inline_asm_constraints: StringAttr,
+        inline_asm_convergent: BoolAttr
+    ),
+    verifier = "succ"
+)]
+pub struct InlineAsmOp;
+
+impl InlineAsmOp {
+    /// Create a new [InlineAsmOp]. Use a void result type for asm with no
+    /// result value.
+    pub fn new(
+        ctx: &mut Context,
+        result_ty: Ptr<TypeObj>,
+        inputs: Vec<Value>,
+        asm_template: &str,
+        constraints: &str,
+        convergent: bool,
+    ) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![result_ty],
+            inputs,
+            vec![],
+            0,
+        );
+        let op = InlineAsmOp { op };
+        op.set_attr_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
+        op.set_attr_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
+        op.set_attr_inline_asm_convergent(ctx, BoolAttr::new(convergent));
+        op
     }
 }
 
@@ -1825,7 +2212,7 @@ impl Verify for CallOp {
 #[pliron_op(
     name = "llvm.undef",
     format = "`: ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>],
     verifier = "succ"
 )]
 pub struct UndefOp;
@@ -1963,7 +2350,12 @@ pub enum GlobalOpVerifyErr {
         LlvmSymbolName,
         AlignableOpInterface
     ],
-    attributes = (llvm_global_type: TypeAttr, global_initializer, llvm_global_linkage: LinkageAttr)
+    attributes = (
+        llvm_global_type: TypeAttr,
+        global_initializer,
+        llvm_global_linkage: LinkageAttr,
+        llvm_global_addrspace: AddressSpaceAttr
+    )
 )]
 pub struct GlobalOp;
 
@@ -1975,6 +2367,17 @@ impl GlobalOp {
         op.set_symbol_name(ctx, name);
         op.set_attr_llvm_global_type(ctx, TypeAttr::new(ty));
         op
+    }
+
+    /// Get the address space of this global (0 if unset).
+    pub fn address_space(&self, ctx: &Context) -> u32 {
+        self.get_attr_llvm_global_addrspace(ctx)
+            .map_or(0, |attr| attr.0)
+    }
+
+    /// Set the address space of this global.
+    pub fn set_address_space(&self, ctx: &mut Context, addr_space: u32) {
+        self.set_attr_llvm_global_addrspace(ctx, AddressSpaceAttr(addr_space));
     }
 }
 
@@ -2166,16 +2569,30 @@ impl Parsable for GlobalOp {
 #[pliron_op(
     name = "llvm.addressof",
     format = "`@` attr($global_name, $IdentifierAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, ResultNOfType<0, PointerType>],
+    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>, ResultNOfType<0, PointerType>],
     attributes = (global_name: IdentifierAttr),
-    verifier = "succ"
 )]
 pub struct AddressOfOp;
 
+#[derive(Error, Debug)]
+enum AddressOfOpVerifyErr {
+    #[error("AddressOfOp is missing its `global_name` attribute")]
+    MissingGlobalName,
+}
+
+impl Verify for AddressOfOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        if self.get_attr_global_name(ctx).is_none() {
+            verify_err!(self.loc(ctx), AddressOfOpVerifyErr::MissingGlobalName)?
+        }
+        Ok(())
+    }
+}
+
 impl AddressOfOp {
     /// Create a new [AddressOfOp].
-    pub fn new(ctx: &mut Context, global_name: Identifier) -> Self {
-        let result_type = PointerType::get(ctx).into();
+    pub fn new(ctx: &mut Context, global_name: Identifier, address_space: u32) -> Self {
+        let result_type = PointerType::get(ctx, address_space).into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -3149,7 +3566,11 @@ impl Verify for ShuffleVectorOp {
 }
 
 /// The undef mask element used in ShuffleVectorOp masks.
-pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: LazyLock<i32> = LazyLock::new(llvm_get_undef_mask_elem);
+#[cfg(feature = "llvm-sys")]
+pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: std::sync::LazyLock<i32> =
+    std::sync::LazyLock::new(llvm_get_undef_mask_elem);
+#[cfg(not(feature = "llvm-sys"))]
+pub static SHUFFLE_VECTOR_UNDEF_MASK_ELEM: i32 = -1;
 
 impl ShuffleVectorOp {
     /// Create a new [ShuffleVectorOp].
@@ -3674,7 +4095,14 @@ impl Verify for CallIntrinsicOp {
             return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::ResultsMismatch);
         }
 
-        if llvm_lookup_intrinsic_id(&<StringAttr as Into<String>>::into(name.clone())).is_none() {
+        let name: String = name.clone().into();
+        #[cfg(feature = "llvm-sys")]
+        if llvm_lookup_intrinsic_id(&name).is_none() {
+            return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::UnknownIntrinsicName);
+        }
+        #[cfg(not(feature = "llvm-sys"))]
+        // We can't verify the intrinsic name without llvm-sys, so just check that it's not empty.
+        if name.is_empty() {
             return verify_err!(self.loc(ctx), CallIntrinsicVerifyErr::UnknownIntrinsicName);
         }
 

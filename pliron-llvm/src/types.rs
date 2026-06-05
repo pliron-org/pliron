@@ -295,10 +295,26 @@ impl Parsable for StructType {
 
 impl Eq for StructType {}
 
-/// An opaque pointer, corresponding to LLVM's pointer type.
-#[pliron_type(name = "llvm.ptr", generate_get = true, format, verifier = "succ")]
+/// A pointer, corresponding to LLVM's pointer type. It is opaque (carries no
+/// pointee type) but carries an address space. The address space is always
+/// printed, e.g. `llvm.ptr (0)` or `llvm.ptr (1)`.
+#[pliron_type(
+    name = "llvm.ptr",
+    generate_get = true,
+    format = "`(` $address_space `)`",
+    verifier = "succ"
+)]
 #[derive(Hash, PartialEq, Eq, Debug)]
-pub struct PointerType;
+pub struct PointerType {
+    address_space: u32,
+}
+
+impl PointerType {
+    /// The address space of this pointer.
+    pub fn address_space(&self) -> u32 {
+        self.address_space
+    }
+}
 
 /// Array type, corresponding to LLVM's array type.
 #[pliron_type(
@@ -421,7 +437,7 @@ mod tests {
     use pliron::combine::{self, Parser, eof, token};
     use pliron::derive::{pliron_type, verify_succ};
 
-    use crate::types::{FuncType, StructType, VoidType};
+    use crate::types::{FuncType, PointerType, StructType, VoidType};
     use pliron::{
         builtin::types::{IntegerType, Signedness},
         context::{Context, Ptr},
@@ -575,6 +591,58 @@ mod tests {
         assert_eq!(
             &res.disp(&ctx).to_string(),
             "llvm.typed_ptr <builtin.integer si64>"
+        );
+    }
+
+    #[test]
+    fn test_opaque_pointer_addrspace() {
+        let mut ctx = Context::new();
+
+        // The address space is always printed, so addrspace 0 round-trips as
+        // `llvm.ptr (0)`.
+        let state_stream = state_stream_from_iterator(
+            "llvm.ptr (0)".chars(),
+            parsable::State::new(&mut ctx, location::Source::InMemory),
+        );
+        let res = type_parser().parse(state_stream).unwrap().0;
+        assert_eq!(res.disp(&ctx).to_string().trim(), "llvm.ptr (0)");
+        assert_eq!(
+            res.deref(&ctx)
+                .downcast_ref::<PointerType>()
+                .unwrap()
+                .address_space(),
+            0
+        );
+
+        // A non-zero address space round-trips as `llvm.ptr (N)`.
+        let state_stream = state_stream_from_iterator(
+            "llvm.ptr (3)".chars(),
+            parsable::State::new(&mut ctx, location::Source::InMemory),
+        );
+        let res = type_parser().parse(state_stream).unwrap().0;
+        assert_eq!(res.disp(&ctx).to_string().trim(), "llvm.ptr (3)");
+        assert_eq!(
+            res.deref(&ctx)
+                .downcast_ref::<PointerType>()
+                .unwrap()
+                .address_space(),
+            3
+        );
+    }
+
+    #[test]
+    fn test_fp16_type_roundtrip() {
+        let mut ctx = Context::new();
+        let state_stream = state_stream_from_iterator(
+            "builtin.fp16".chars(),
+            parsable::State::new(&mut ctx, location::Source::InMemory),
+        );
+        let res = type_parser().parse(state_stream).unwrap().0;
+        assert_eq!(res.disp(&ctx).to_string().trim(), "builtin.fp16");
+        assert!(
+            res.deref(&ctx)
+                .downcast_ref::<pliron::builtin::types::FP16Type>()
+                .is_some()
         );
     }
 

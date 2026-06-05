@@ -111,6 +111,44 @@ pub trait BranchOpInterface: IsTerminatorInterface {
     }
 }
 
+#[derive(Error, Debug)]
+#[error("Expected {0} successors, but found {1}")]
+pub struct NSuccsVerifyErr(pub usize, pub usize);
+
+/// An [Op] having exactly `N` successors. Successors are branch targets, so this
+/// requires [BranchOpInterface] (which separately checks the forwarded operands
+/// against each target block's arguments).
+#[op_interface]
+pub trait NSuccsInterface<const N: usize>: BranchOpInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let opr = op.get_operation();
+        let op = &*opr.deref(ctx);
+        if op.get_num_successors() != N {
+            return verify_err!(op.loc(), NSuccsVerifyErr(N, op.get_num_successors()));
+        }
+        Ok(())
+    }
+}
+
+/// An [Op] having exactly one successor.
+#[op_interface]
+pub trait OneSuccInterface: NSuccsInterface<1> {
+    /// Get the single successor block of this [Op].
+    fn get_successor(&self, ctx: &Context) -> Ptr<BasicBlock> {
+        self.get_operation().deref(ctx).get_successor(0)
+    }
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
 dict_key!(
     /// Key for the `operand_segment_sizes` attribute.
     ATTR_KEY_OPERAND_SEGMENT_SIZES, "operand_segment_sizes"
