@@ -524,4 +524,3 @@ fn simplify_cfg_collapses_straight_line_chain() -> Result<()> {
     assert!(after.contains("llvm.return c"));
     Ok(())
 }
-

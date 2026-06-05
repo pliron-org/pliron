@@ -1,14 +1,25 @@
 use rustc_hash::FxHashSet;
 
 use crate::{
-    attribute::AttrObj, basic_block::BasicBlock, builtin::{op_interfaces::BranchOpInterface, ops::ConstantOp}, context::{Context, Ptr}, graph::{
-        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
-    }, irbuild::{
+    attribute::AttrObj,
+    basic_block::BasicBlock,
+    builtin::{op_interfaces::BranchOpInterface, ops::ConstantOp},
+    context::{Context, Ptr},
+    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
+    irbuild::{
         IRStatus,
         inserter::{Inserter, OpInsertionPoint},
         listener::Recorder,
         rewriter::{IRRewriter, Rewriter},
-    }, linked_list::{ContainsLinkedList, LinkedList}, op::op_cast, operation::Operation, opts::constants::BranchOpFoldInterface, pass_manager::{AnalysisManager, Pass, PassResult}, region::Region, result::Result, value::Value
+    },
+    linked_list::{ContainsLinkedList, LinkedList},
+    op::op_cast,
+    operation::Operation,
+    opts::constants::BranchOpFoldInterface,
+    pass_manager::{AnalysisManager, Pass, PassResult},
+    region::Region,
+    result::Result,
+    value::Value,
 };
 
 /// For each operand of `op`, return the constant value it carries if the operand
@@ -17,7 +28,9 @@ fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrO
     op.deref(ctx)
         .operands()
         .map(|v| {
-            let const_op = v.defining_op().and_then(|def| Operation::get_op::<ConstantOp>(def, ctx))?;
+            let const_op = v
+                .defining_op()
+                .and_then(|def| Operation::get_op::<ConstantOp>(def, ctx))?;
             Some(const_op.get_value(ctx))
         })
         .collect()
@@ -76,19 +89,27 @@ fn try_merge_succ(
 }
 
 /// Perform culling on blocks nested inside `op`. Returns whether the IR was changed.
-pub fn cull_inside_op(op: Ptr<Operation>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-  let regions : Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
-  let mut status = IRStatus::Unchanged;
-  //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
-  for region in regions {
-    status |= cull_inside_region(region, ctx, rewriter);
-  }
-  status
+pub fn cull_inside_op(
+    op: Ptr<Operation>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let regions: Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
+    let mut status = IRStatus::Unchanged;
+    //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
+    for region in regions {
+        status |= cull_inside_region(region, ctx, rewriter);
+    }
+    status
 }
 
 /// Perform culling on blocks nested inside `block`. Returns whether the IR was changed.
-pub fn cull_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-    let ops : Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
+pub fn cull_inside_block(
+    block: Ptr<BasicBlock>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let ops: Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
     let mut status = IRStatus::Unchanged;
     for op in ops {
         status |= cull_inside_op(op, ctx, rewriter);
@@ -97,60 +118,79 @@ pub fn cull_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &m
 }
 
 /// Perform culling on blocks nested inside `region`. Returns whether the IR was changed.
-pub fn cull_inside_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-  if !region.deref(ctx).has_ssa_dominance(ctx) {
-    let head = region.deref(ctx).get_head().expect("all regions should have entry block");
-    return cull_inside_block(head, ctx, rewriter);
-  }
-
-  let Some(entry) = region.deref(ctx).get_head() else {
-    return IRStatus::Unchanged;
-  };
-
-  let mut status = IRStatus::Unchanged;
-  let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
-  let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
-  while let Some(block) = stack.pop() {
-    if !visited.insert(block) {
-      continue;
+pub fn cull_inside_region(
+    region: Ptr<Region>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    if !region.deref(ctx).has_ssa_dominance(ctx) {
+        let head = region
+            .deref(ctx)
+            .get_head()
+            .expect("all regions should have entry block");
+        return cull_inside_block(head, ctx, rewriter);
     }
 
-    status |= cull_inside_block(block, ctx, rewriter);
+    let Some(entry) = region.deref(ctx).get_head() else {
+        return IRStatus::Unchanged;
+    };
 
-    for succ in block.deref(ctx).succs(ctx) {
-      stack.push(succ);
+    let mut status = IRStatus::Unchanged;
+    let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
+    let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
+    while let Some(block) = stack.pop() {
+        if !visited.insert(block) {
+            continue;
+        }
+
+        status |= cull_inside_block(block, ctx, rewriter);
+
+        for succ in block.deref(ctx).succs(ctx) {
+            stack.push(succ);
+        }
     }
-  }
 
-  let dead_blocks : Vec<Ptr<BasicBlock>> = region
-    .deref(ctx)
-    .iter(ctx)
-    .filter(|b| !visited.contains(b))
-    .collect();
-  if !dead_blocks.is_empty() {
-    status = IRStatus::Changed;
-  }
-  dead_blocks.iter().for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
-  dead_blocks.iter().for_each(|b| rewriter.erase_block(ctx, *b));
+    let dead_blocks: Vec<Ptr<BasicBlock>> = region
+        .deref(ctx)
+        .iter(ctx)
+        .filter(|b| !visited.contains(b))
+        .collect();
+    if !dead_blocks.is_empty() {
+        status = IRStatus::Changed;
+    }
+    dead_blocks
+        .iter()
+        .for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
+    dead_blocks
+        .iter()
+        .for_each(|b| rewriter.erase_block(ctx, *b));
 
-  status
+    status
 }
 
 /// Perform merging on blocks nested inside `op`. Returns whether the IR was changed.
-pub fn merge_inside_op(op: Ptr<Operation>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-  let regions : Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
-  let mut status = IRStatus::Unchanged;
-  //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
-  for region in regions {
-    status |= merge_inside_region(region, ctx, rewriter);
-  }
-  status
+pub fn merge_inside_op(
+    op: Ptr<Operation>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let regions: Vec<Ptr<Region>> = op.deref(ctx).regions().collect();
+    let mut status = IRStatus::Unchanged;
+    //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
+    for region in regions {
+        status |= merge_inside_region(region, ctx, rewriter);
+    }
+    status
 }
 
 /// Perform merging on blocks nested inside the operations of `block`.
 /// Returns whether the IR was changed.
-pub fn merge_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-    let ops : Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
+pub fn merge_inside_block(
+    block: Ptr<BasicBlock>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let ops: Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
     let mut status = IRStatus::Unchanged;
     for op in ops {
         status |= merge_inside_op(op, ctx, rewriter);
@@ -160,36 +200,43 @@ pub fn merge_inside_block(block: Ptr<BasicBlock>, ctx: &mut Context, rewriter: &
 
 /// Perform merging on blocks nested inside `region. Returns whether the
 /// IR was changed.
-pub fn merge_inside_region(region: Ptr<Region>, ctx: &mut Context, rewriter: &mut dyn Rewriter) -> IRStatus {
-  if !region.deref(ctx).has_ssa_dominance(ctx) {
-    let head = region.deref(ctx).get_head().expect("all regions should have entry block");
-    return merge_inside_block(head, ctx, rewriter);
-  }
-
-  let Some(entry) = region.deref(ctx).get_head() else {
-    return IRStatus::Unchanged;
-  };
-
-  let mut status = IRStatus::Unchanged;
-  let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
-  let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
-  while let Some(block) = stack.pop() {
-    if !visited.insert(block) {
-      continue;
+pub fn merge_inside_region(
+    region: Ptr<Region>,
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    if !region.deref(ctx).has_ssa_dominance(ctx) {
+        let head = region
+            .deref(ctx)
+            .get_head()
+            .expect("all regions should have entry block");
+        return merge_inside_block(head, ctx, rewriter);
     }
 
-    while try_merge_succ(block, entry, ctx, rewriter) {
-      status = IRStatus::Changed;
+    let Some(entry) = region.deref(ctx).get_head() else {
+        return IRStatus::Unchanged;
+    };
+
+    let mut status = IRStatus::Unchanged;
+    let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
+    let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
+    while let Some(block) = stack.pop() {
+        if !visited.insert(block) {
+            continue;
+        }
+
+        while try_merge_succ(block, entry, ctx, rewriter) {
+            status = IRStatus::Changed;
+        }
+
+        status |= merge_inside_block(block, ctx, rewriter);
+
+        for succ in block.deref(ctx).succs(ctx) {
+            stack.push(succ);
+        }
     }
 
-    status |= merge_inside_block(block, ctx, rewriter);
-
-    for succ in block.deref(ctx).succs(ctx) {
-      stack.push(succ);
-    }
-  }
-
-  status
+    status
 }
 
 pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
