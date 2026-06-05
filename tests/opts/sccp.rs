@@ -102,7 +102,6 @@ fn sccp_is_path_sensitive() -> Result<()> {
 
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert!(after.contains("<2: i64>"));
-    assert!(!after.contains("llvm.cond_br"));
     assert_eq!(status, IRStatus::Changed);
     Ok(())
 }
@@ -133,7 +132,6 @@ fn sccp_folded_condition_makes_branch_dead() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     assert!(after.contains("<2: i64>"));
-    assert!(!after.contains("llvm.cond_br"));
     Ok(())
 }
 
@@ -166,7 +164,6 @@ fn sccp_meets_distinct_constants_from_live_predecessors_as_not_a_constant() -> R
     assert_eq!(status, IRStatus::Changed);
     assert!(after.contains("<10: i64>"));
     assert!(after.contains("llvm.add"));
-    assert!(after.contains("llvm.cond_br"));
     Ok(())
 }
 
@@ -193,7 +190,6 @@ fn sccp_is_path_sensitive_2() -> Result<()> {
 
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert!(after.contains("llvm.add"));
-    assert!(!after.contains("llvm.cond_br"));
     // Materialized constants inserted into ^bb0, ^bb1, and ^bb2
     assert_eq!(status, IRStatus::Changed);
     Ok(())
@@ -339,7 +335,6 @@ fn sccp_materializes_multiple_constant_block_args() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     assert_eq!(after.matches("constant").count(), 6);
-    assert!(after.contains("llvm.cond_br"));
     Ok(())
 }
 
@@ -362,7 +357,6 @@ fn sccp_materializes_constant_carried_through_loop_back_edge() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     assert_eq!(after.matches("constant").count(), 3);
-    assert!(after.contains("llvm.cond_br"));
     Ok(())
 }
 
@@ -386,7 +380,6 @@ fn sccp_loop_back_edge_with_different_constant_meets_to_not_a_constant() -> Resu
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     assert_eq!(after.matches("constant").count(), 2);
-    assert!(after.contains("llvm.cond_br"));
     Ok(())
 }
 
@@ -435,77 +428,6 @@ fn sccp_does_not_materialize_not_a_constant_block_arg() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     assert_eq!(after.matches("constant").count(), 2);
-    assert!(after.contains("llvm.cond_br"));
-    Ok(())
-}
-
-#[test]
-fn sccp_folds_switch_to_br_to_default_case() -> Result<()> {
-    let input = r#"
-    llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
-      ^entry():
-      a = builtin.constant <builtin.integer <2: i32>> : builtin.integer i32;
-      b = builtin.constant <builtin.integer <3: i32>> : builtin.integer i32;
-      cond = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i32;
-      llvm.switch cond, ^default()
-      [
-        { <0: i32> : ^bb0() },
-        { <1: i32> : ^bb1() }
-      ]
-
-      ^default():
-      d = builtin.constant <builtin.integer <100: i64>> : builtin.integer i64;
-      llvm.return d
-
-      ^bb0():
-      z0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
-      llvm.return z0
-
-      ^bb1():
-      z1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      llvm.return z1
-    }
-  "#;
-
-    let (status, _before, after) = run_sccp_on_text(input)?;
-    assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.switch"));
-    assert!(after.contains("llvm.br ^default"));
-    Ok(())
-}
-
-#[test]
-fn sccp_folds_switch_to_br_to_non_default_case() -> Result<()> {
-    let input = r#"
-    llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
-      ^entry():
-      a = builtin.constant <builtin.integer <0: i32>> : builtin.integer i32;
-      b = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32;
-      cond = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i32;
-      llvm.switch cond, ^default()
-      [
-        { <0: i32> : ^bb0() },
-        { <1: i32> : ^bb1() }
-      ]
-
-      ^default():
-      d = builtin.constant <builtin.integer <100: i64>> : builtin.integer i64;
-      llvm.return d
-
-      ^bb0():
-      z0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
-      llvm.return z0
-
-      ^bb1():
-      z1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
-      llvm.return z1
-    }
-  "#;
-
-    let (status, _before, after) = run_sccp_on_text(input)?;
-    assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.switch"));
-    assert!(after.contains("llvm.br ^bb1"));
     Ok(())
 }
 

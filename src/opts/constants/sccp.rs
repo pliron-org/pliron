@@ -202,11 +202,10 @@ pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
                     return;
                 }
                 let op_dyn = Operation::get_op_dyn(op, ctx);
-                if op_cast::<dyn ConstFoldInterface>(op_dyn.as_ref()).is_some()
-                    || op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()).is_some()
-                {
-                    candidates.push((op, operand_attrs(op, ctx, state)));
+                if op_cast::<dyn ConstFoldInterface>(op_dyn.as_ref()).is_none() {
+                    return;
                 }
+                candidates.push((op, operand_attrs(op, ctx, state)));
             }
             IRNode::BasicBlock(block) => {
                 if !matches!(state.get_block_state(block), BlockState::Reachable) {
@@ -248,15 +247,8 @@ pub fn sccp(root_op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         };
         rewriter.set_insertion_point_before_operation(op);
         let op_dyn = Operation::get_op_dyn(op, ctx);
-        let fold_result = if let Some(fold_interface) =
-            op_cast::<dyn ConstFoldInterface>(op_dyn.as_ref())
-        {
-            fold_interface.fold_in_place(ctx, &attrs, &mut rewriter)
-        } else if let Some(fold_interface) = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
-            fold_interface.fold_in_place(ctx, &attrs, &mut rewriter)
-        } else {
-            IRStatus::Unchanged
-        };
+        let fold_interface = op_cast::<dyn ConstFoldInterface>(op_dyn.as_ref()).unwrap();
+        let fold_result = fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
         if fold_result == IRStatus::Changed {
             log::debug!("{}", log_message);
         }
