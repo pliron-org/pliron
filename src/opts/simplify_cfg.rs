@@ -3,14 +3,14 @@
 //! This optimizer performs three tasks in sequence:
 //!
 //! 1. It rewrites any conditional branch operation that implements [BranchOpFoldInterface] and
-//! whose condition operand is defined as a constant to an unconditional branch.
+//!    whose condition operand is defined as a constant to an unconditional branch.
 //!
 //! 2. It detects unreachable blocks by performing a DFS on every nested SSA region, removing
-//! all unreachable blocks it detects.
+//!    all unreachable blocks it detects.
 //!
 //! 3. It merges every pair of blocks `A` and `B`, where `B` is the sole successor of `A` and
-//! `A` is the sole predecessor of `B`, removing `A`'s terminator and forwarding the actual
-//! branch arguments of `A` into the formal arguments of `B`
+//!    `A` is the sole predecessor of `B`, removing `A`'s terminator and forwarding the actual
+//!    branch arguments of `A` into the formal arguments of `B`
 
 use rustc_hash::FxHashSet;
 
