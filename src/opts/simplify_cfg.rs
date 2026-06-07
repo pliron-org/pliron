@@ -56,10 +56,7 @@ fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrO
     };
     op.deref(ctx)
         .operands()
-        .map(|v| {
-            let const_attr = v.defining_op().and_then(|def| get_def_const(def, v))?;
-            Some(const_attr)
-        })
+        .map(|v| v.defining_op().and_then(|def| get_def_const(def, v)))
         .collect()
 }
 
@@ -89,6 +86,11 @@ fn try_merge_succ(
     let actual_args: Vec<Value> = {
         let terminator_dyn = Operation::get_op_dyn(pred_terminator, ctx);
         let Some(branch) = op_cast::<dyn BranchOpInterface>(terminator_dyn.as_ref()) else {
+            log::info!(
+                "Terminator operation '{}' does not implement BranchOpFoldInterface,
+                    weakening simplify-cfg optimization",
+                terminator_dyn.disp(ctx)
+            );
             return false;
         };
         branch.successor_operands(ctx, 0)
@@ -286,9 +288,8 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     for (op, attrs) in fold_candidates {
         rewriter.set_insertion_point_before_operation(op);
         let op_dyn = Operation::get_op_dyn(op, ctx);
-        if let Some(fold_interface) = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
-            status |= fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
-        }
+        let fold_interface = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()).unwrap();
+        status |= fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
     }
 
     status |= remove_blocks_inside_op(op, ctx, &mut rewriter);
