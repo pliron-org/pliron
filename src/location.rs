@@ -49,7 +49,6 @@ impl Printable for Source {
         _state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        let _ = ctx;
         match self {
             Source::File(path_key) => {
                 write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
