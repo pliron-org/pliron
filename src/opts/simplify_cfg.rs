@@ -17,7 +17,7 @@ use rustc_hash::FxHashSet;
 use crate::{
     attribute::AttrObj,
     basic_block::BasicBlock,
-    builtin::{op_interfaces::BranchOpInterface, ops::ConstantOp},
+    builtin::op_interfaces::BranchOpInterface,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     irbuild::{
@@ -27,9 +27,9 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     linked_list::{ContainsLinkedList, LinkedList},
-    op::op_cast,
+    op::{op_cast, op_impls},
     operation::Operation,
-    opts::constants::BranchOpFoldInterface,
+    opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
     pass_manager::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
@@ -39,13 +39,26 @@ use crate::{
 /// For each operand of `op`, return the constant value it carries if the operand
 /// is defined by a [ConstantOp], or `None` otherwise.
 fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrObj>> {
+    // Assumes `v` is defined by `def`.
+    // Returns `Some(attr_obj)` if `def` implements `ConstFoldInterface` and the
+    // result corresponding to `v` is determined to be the constant `attr_obj`.
+    let get_def_const = |def: Ptr<Operation>, v: Value| {
+        let def_dyn = Operation::get_op_dyn(def, ctx);
+        match op_cast::<dyn ConstFoldInterface>(def_dyn.as_ref()) {
+            Some(fold_interface) => {
+                let def_ops_nonconst = vec![None; def.deref(ctx).get_num_operands()];
+                let results = fold_interface.check_fold(ctx, def_ops_nonconst.as_slice());
+                let ind = v.find_index(ctx);
+                results[ind].clone()
+            }
+            None => None,
+        }
+    };
     op.deref(ctx)
         .operands()
         .map(|v| {
-            let const_op = v
-                .defining_op()
-                .and_then(|def| Operation::get_op::<ConstantOp>(def, ctx))?;
-            Some(const_op.get_value(ctx))
+            let const_attr = v.defining_op().and_then(|def| get_def_const(def, v))?;
+            Some(const_attr)
         })
         .collect()
 }
@@ -72,16 +85,17 @@ fn try_merge_succ(
     let pred_terminator = pred
         .deref(ctx)
         .get_terminator(ctx)
-        .expect("a block with a successor must have a terminator");
+        .expect("all blocks must have terminators");
     let actual_args: Vec<Value> = {
         let terminator_dyn = Operation::get_op_dyn(pred_terminator, ctx);
-        let branch = op_cast::<dyn BranchOpInterface>(terminator_dyn.as_ref())
-            .expect("a terminator with successors must implement BranchOpInterface");
+        let Some(branch) = op_cast::<dyn BranchOpInterface>(terminator_dyn.as_ref()) else {
+            return false;
+        };
         branch.successor_operands(ctx, 0)
     };
 
     let formal_args: Vec<Value> = succ.deref(ctx).arguments().collect();
-    debug_assert_eq!(
+    assert_eq!(
         formal_args.len(),
         actual_args.len(),
         "branch must forward one operand per successor block argument"
@@ -102,8 +116,8 @@ fn try_merge_succ(
     true
 }
 
-/// Perform culling on blocks nested inside `op`. Returns whether the IR was changed.
-pub fn cull_inside_op(
+/// Remove unreachable blocks nested inside `op`. Returns whether the IR was changed.
+pub fn remove_blocks_inside_op(
     op: Ptr<Operation>,
     ctx: &mut Context,
     rewriter: &mut dyn Rewriter,
@@ -112,13 +126,13 @@ pub fn cull_inside_op(
     let mut status = IRStatus::Unchanged;
     //TODO: RegionBranchOpInterface should allow us to handle this less conservatively
     for region in regions {
-        status |= cull_inside_region(region, ctx, rewriter);
+        status |= remove_blocks_inside_region(region, ctx, rewriter);
     }
     status
 }
 
-/// Perform culling on blocks nested inside `block`. Returns whether the IR was changed.
-pub fn cull_inside_block(
+/// Remove unreachable blocks nested inside `block`. Returns whether the IR was changed.
+pub fn remove_blocks_inside_block(
     block: Ptr<BasicBlock>,
     ctx: &mut Context,
     rewriter: &mut dyn Rewriter,
@@ -126,13 +140,13 @@ pub fn cull_inside_block(
     let ops: Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
     let mut status = IRStatus::Unchanged;
     for op in ops {
-        status |= cull_inside_op(op, ctx, rewriter);
+        status |= remove_blocks_inside_op(op, ctx, rewriter);
     }
     status
 }
 
-/// Perform culling on blocks nested inside `region`. Returns whether the IR was changed.
-pub fn cull_inside_region(
+/// Remove unreachable blocks nested inside `region`. Returns whether the IR was changed.
+pub fn remove_blocks_inside_region(
     region: Ptr<Region>,
     ctx: &mut Context,
     rewriter: &mut dyn Rewriter,
@@ -142,7 +156,7 @@ pub fn cull_inside_region(
             .deref(ctx)
             .get_head()
             .expect("all regions should have entry block");
-        return cull_inside_block(head, ctx, rewriter);
+        return remove_blocks_inside_block(head, ctx, rewriter);
     }
 
     let Some(entry) = region.deref(ctx).get_head() else {
@@ -157,14 +171,14 @@ pub fn cull_inside_region(
             continue;
         }
 
-        status |= cull_inside_block(block, ctx, rewriter);
+        status |= remove_blocks_inside_block(block, ctx, rewriter);
 
         for succ in block.deref(ctx).succs(ctx) {
             stack.push(succ);
         }
     }
 
-    let dead_blocks: Vec<Ptr<BasicBlock>> = region
+    let dead_blocks: FxHashSet<Ptr<BasicBlock>> = region
         .deref(ctx)
         .iter(ctx)
         .filter(|b| !visited.contains(b))
@@ -172,12 +186,8 @@ pub fn cull_inside_region(
     if !dead_blocks.is_empty() {
         status = IRStatus::Changed;
     }
-    dead_blocks
-        .iter()
-        .for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
-    dead_blocks
-        .iter()
-        .for_each(|b| rewriter.erase_block(ctx, *b));
+
+    rewriter.erase_blocks(ctx, &dead_blocks);
 
     status
 }
@@ -264,7 +274,7 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         |ctx, candidates, node| {
             if let IRNode::Operation(op) = node {
                 let op_dyn = Operation::get_op_dyn(op, ctx);
-                if op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()).is_some() {
+                if op_impls::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
                     candidates.push((op, constant_operand_attrs(op, ctx)));
                 }
             }
@@ -281,7 +291,7 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
         }
     }
 
-    status |= cull_inside_op(op, ctx, &mut rewriter);
+    status |= remove_blocks_inside_op(op, ctx, &mut rewriter);
     status |= merge_inside_op(op, ctx, &mut rewriter);
 
     Ok(status)

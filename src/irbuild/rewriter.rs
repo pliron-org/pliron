@@ -2,6 +2,8 @@
 
 use std::vec;
 
+use rustc_hash::FxHashSet;
+
 use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -44,6 +46,9 @@ pub trait Rewriter: Inserter {
 
     /// Erase a [BasicBlock]. The block must have no uses.
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>);
+
+    /// Erase a set of [BasicBlock]s. The blocks must have no uses outside the set.
+    fn erase_blocks(&mut self, ctx: &mut Context, blocks: &FxHashSet<Ptr<BasicBlock>>);
 
     /// Erase a [Region]. Affects the index of all regions after it.
     fn erase_region(&mut self, ctx: &mut Context, region: Ptr<Region>);
@@ -256,6 +261,24 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
 
         Operation::erase(op, ctx);
         self.mark_modified();
+    }
+
+    fn erase_blocks(&mut self, ctx: &mut Context, blocks: &FxHashSet<Ptr<BasicBlock>>) {
+        for ptr in blocks {
+            for pred in ptr.preds(ctx) {
+                assert!(
+                    blocks.contains(&pred),
+                    "BasicBlock {} with predecessor {} being erased",
+                    ptr.deref(ctx).unique_name(ctx),
+                    pred.deref(ctx).unique_name(ctx)
+                );
+            }
+        }
+
+        blocks
+            .iter()
+            .for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
+        blocks.iter().for_each(|b| self.erase_block(ctx, *b));
     }
 
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>) {
@@ -521,6 +544,10 @@ impl<'a> Rewriter for ScopedRewriter<'a> {
 
     fn erase_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) {
         self.rewriter.erase_operation(ctx, op)
+    }
+
+    fn erase_blocks(&mut self, ctx: &mut Context, blocks: &FxHashSet<Ptr<BasicBlock>>) {
+        self.rewriter.erase_blocks(ctx, blocks)
     }
 
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>) {

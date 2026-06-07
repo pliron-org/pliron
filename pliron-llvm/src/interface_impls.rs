@@ -199,8 +199,8 @@ impl CondBrOp {
         ctx: &Context,
         operands: &[Option<AttrObj>],
     ) -> Vec<usize> {
-        let num_successors = self.get_operation().deref(ctx).successors().count();
-        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+        let Some(cond_attr) = operands.first().unwrap().as_ref() else {
+            let num_successors = self.get_operation().deref(ctx).successors().count();
             return (0..num_successors).collect();
         };
         let cond_int = cond_attr
@@ -280,7 +280,7 @@ impl BranchOpFoldInterface for SwitchOp {
         ops: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
-        let Some(cond_attr) = ops.first().and_then(|o| o.as_ref()) else {
+        let Some(cond_attr) = ops.first().unwrap().as_ref() else {
             return IRStatus::Unchanged;
         };
         let cond_int = cond_attr
@@ -295,7 +295,10 @@ impl BranchOpFoldInterface for SwitchOp {
                 .0
                 .iter()
                 .position(|case| case.value() == cond_int)
+                // There is no case value corresponding to the default successor,
+                // so case_values index 0 corresponds to succesors index 1, etc.
                 .map(|i| i + 1)
+                // successor index 0 is the default successor
                 .unwrap_or(0)
         };
         let successors: Vec<Ptr<BasicBlock>> =
