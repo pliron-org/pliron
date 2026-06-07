@@ -188,8 +188,12 @@ pub fn remove_blocks_inside_region(
     if !dead_blocks.is_empty() {
         status = IRStatus::Changed;
     }
-
-    rewriter.erase_blocks(ctx, &dead_blocks);
+    dead_blocks
+        .iter()
+        .for_each(|b| BasicBlock::drop_all_uses(*b, ctx));
+    dead_blocks
+        .iter()
+        .for_each(|b| rewriter.erase_block(ctx, *b));
 
     status
 }
