@@ -181,14 +181,13 @@ impl ConstFoldInterface for MulOp {
 impl ConstFoldInterface for ShlOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         match get_int_bin_operands(ops) {
-            Some((_, rhs)) => {
+            Some((lhs, rhs)) => {
                 let shamt = rhs.value();
-                let bw = APInt::from_usize(shamt.bw(), NonZero::new(shamt.bw()).unwrap());
-                if shamt.ult(&bw) {
+                let lhs_bw : usize = lhs.value().bw();
+                let lhs_bw : APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                if shamt.ult(&lhs_bw) {
                     check_fold_int_bin_op(ops, APInt::shl)
                 } else {
-                    // A shift amount >= the bitwidth is poison in LLVM, so only fold
-                    // when the shift amount is in range.
                     vec![None]
                 }
             }
