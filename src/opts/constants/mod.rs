@@ -7,9 +7,7 @@ use crate::{
     builtin::{attr_interfaces::MaterializableAttr, op_interfaces::BranchOpInterface},
     context::{Context, Ptr},
     irbuild::{IRStatus, rewriter::Rewriter},
-    op::{Op, op_cast},
-    operation::Operation,
-    opts::dce::SideEffects,
+    op::Op,
     result::Result,
 };
 
@@ -52,7 +50,6 @@ pub trait ConstFoldInterface {
     ) -> IRStatus {
         let folded = self.check_fold(ctx, operand_attrs);
         let op = self.get_operation();
-        let num_results = op.deref(ctx).get_num_results();
 
         let mut num_materialized = 0;
         for (result_idx, attr) in folded.iter().enumerate() {
@@ -70,19 +67,10 @@ pub trait ConstFoldInterface {
             num_materialized += 1;
         }
         if num_materialized == 0 {
-            return IRStatus::Unchanged;
+            IRStatus::Unchanged
+        } else {
+            IRStatus::Changed
         }
-        if num_materialized == num_results {
-            let op_dyn = Operation::get_op_dyn(op, ctx);
-            let has_side_effects = match op_cast::<dyn SideEffects>(&*op_dyn) {
-                Some(side_effects_op) => side_effects_op.has_side_effects(ctx),
-                None => true,
-            };
-            if !has_side_effects {
-                rewriter.erase_operation(ctx, op);
-            }
-        }
-        IRStatus::Changed
     }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
