@@ -183,8 +183,8 @@ impl ConstFoldInterface for ShlOp {
         match get_int_bin_operands(ops) {
             Some((lhs, rhs)) => {
                 let shamt = rhs.value();
-                let lhs_bw : usize = lhs.value().bw();
-                let lhs_bw : APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                let lhs_bw: usize = lhs.value().bw();
+                let lhs_bw: APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
                 if shamt.ult(&lhs_bw) {
                     check_fold_int_bin_op(ops, APInt::shl)
                 } else {
