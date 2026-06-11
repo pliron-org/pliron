@@ -2,12 +2,14 @@ use alloc::vec::Vec;
 use pliron_derive::op_interface;
 
 use crate::{
-    attribute::AttrObj,
+    attribute::{AttrObj, attr_cast},
     basic_block::BasicBlock,
-    builtin::op_interfaces::BranchOpInterface,
+    builtin::{attr_interfaces::MaterializableAttr, op_interfaces::BranchOpInterface},
     context::{Context, Ptr},
     irbuild::{IRStatus, rewriter::Rewriter},
-    op::Op,
+    op::{Op, op_cast},
+    operation::Operation,
+    opts::dce::SideEffects,
     result::Result,
 };
 
@@ -26,12 +28,62 @@ pub trait ConstFoldInterface {
     /// compile time constant value for that operand (if any), attempts to fold the op in
     /// place using the provided `rewriter`. Assumes that `rewriter` is positioned just
     /// before the op to be folded.
+    ///
+    /// Implementors that fold by materializing constant values for their results can
+    /// usually delegate to [fold_with_materialization](Self::fold_with_materialization)
+    /// rather than reimplementing the materialization logic.
     fn fold_in_place(
         &self,
         ctx: &mut Context,
         operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus;
+
+    /// A helper for implementing [fold_in_place](Self::fold_in_place) by materializing
+    /// the constants inferred by [check_fold](Self::check_fold).
+    ///
+    /// Only constants whose attribute types implement [MaterializableAttr] get
+    /// materialized.
+    fn fold_with_materialization(
+        &self,
+        ctx: &mut Context,
+        operand_attrs: &[Option<AttrObj>],
+        rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let folded = self.check_fold(ctx, operand_attrs);
+        let op = self.get_operation();
+        let num_results = op.deref(ctx).get_num_results();
+
+        let mut num_materialized = 0;
+        for (result_idx, attr) in folded.iter().enumerate() {
+            let Some(attr) = attr else {
+                continue;
+            };
+            let Some(materializable) = attr_cast::<dyn MaterializableAttr>(&**attr) else {
+                continue;
+            };
+            let const_op = materializable.materialize(ctx);
+            rewriter.insert_operation(ctx, const_op);
+            let new_value = const_op.deref(ctx).get_result(0);
+            let old_value = op.deref(ctx).get_result(result_idx);
+            rewriter.replace_value_uses_with(ctx, old_value, new_value);
+            num_materialized += 1;
+        }
+        if num_materialized == 0 {
+            return IRStatus::Unchanged;
+        }
+        if num_materialized == num_results {
+            let op_dyn = Operation::get_op_dyn(op, ctx);
+            let has_side_effects = match op_cast::<dyn SideEffects>(&*op_dyn) {
+                Some(side_effects_op) => side_effects_op.has_side_effects(ctx),
+                None => true,
+            };
+            if !has_side_effects {
+                rewriter.erase_operation(ctx, op);
+            }
+        }
+        IRStatus::Changed
+    }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where
