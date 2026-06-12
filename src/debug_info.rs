@@ -1,7 +1,6 @@
 //! Utilities for attaching / retrieving debug info to / from the IR.
 
-use std::collections::hash_map::Entry;
-
+use alloc::{string::ToString, vec::Vec};
 use combine::{Parser, attempt, between, parser::char::spaces, sep_by, token};
 use pliron::derive::pliron_attr;
 use pliron_derive::attr_interface_impl;
@@ -11,6 +10,7 @@ use crate::{
     basic_block::BasicBlock,
     builtin::{ATTR_KEY_DEBUG_INFO, attr_interfaces::OutlinedAttr},
     context::{Context, Ptr},
+    deps::hash::hash_map::Entry,
     identifier::Identifier,
     operation::Operation,
     parsable::{Parsable, ParseResult, StateStream},
@@ -54,8 +54,8 @@ impl Printable for DebugInfoAttr {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(
             f,
             "[{}]",
@@ -269,6 +269,7 @@ pub fn get_block_arg_name(
 
 #[cfg(test)]
 mod tests {
+    use alloc::vec;
     use pliron::derive::pliron_op;
 
     use crate::{

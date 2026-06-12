@@ -1,0 +1,46 @@
+name: pliron/no-default-features
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+    
+    - name: Setup LLVM
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 22 all
+
+    - name: Format
+      run: cargo fmt --check
+
+    - name: Clippy pliron - no default features
+      run: cargo clippy -p pliron --all-targets --no-default-features -- -D warnings
+
+    - name: Test debug pliron - no default features
+      run: RUSTFLAGS="-D warnings" cargo test -p pliron --no-default-features --verbose
+
+    - name: Test release pliron - no default features
+      run: RUSTFLAGS="-D warnings" cargo test -p pliron --no-default-features --release --verbose
+
+    - name: Documentation pliron - no default features
+      run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron --no-default-features --verbose

@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use combine::{
     Parser, choice,
     parser::char::{spaces, string},
@@ -184,20 +185,19 @@ impl FloatTypeInterface for FP16Type {
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, string::ToString, vec};
     use combine::{Parser, eof};
     use expect_test::expect;
 
-    use super::FunctionType;
+    use super::*;
     use crate::{
-        builtin::{
-            type_interfaces::FunctionTypeInterface as _,
-            types::{IntegerType, Signedness},
-        },
+        builtin::types::{IntegerType, Signedness},
         context::Context,
         location,
         parsable::{self, Parsable, state_stream_from_iterator},
         r#type::Type,
     };
+
     #[test]
     fn test_integer_types() {
         let mut ctx = Context::new();

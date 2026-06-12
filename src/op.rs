@@ -31,20 +31,23 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use combine::{
     Parser,
     parser::{self, char::spaces},
     token,
 };
-use downcast_rs::{Downcast, impl_downcast};
-use dyn_clone::DynClone;
-use rustc_hash::FxHashMap;
-use std::{
+use core::{
     fmt::{self, Display},
     hash::Hash,
     ops::Deref,
-    sync::LazyLock,
 };
+use downcast_rs::{Downcast, impl_downcast};
+use dyn_clone::DynClone;
 use thiserror::Error;
 
 use crate::{
@@ -52,6 +55,8 @@ use crate::{
     builtin::{type_interfaces::FunctionTypeInterface, types::FunctionType},
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
+    deps::hash::FxHashMap,
+    deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -111,7 +116,7 @@ impl Parsable for OpName {
 }
 
 impl Display for OpName {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}", self.0)
     }
 }
@@ -146,12 +151,12 @@ impl Parsable for OpId {
 }
 
 impl Display for OpId {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{}.{}", self.dialect, self.name)
     }
 }
 
-pub(crate) type ConcreteOpInfo = (fn(Ptr<Operation>) -> OpObj, std::any::TypeId);
+pub(crate) type ConcreteOpInfo = (fn(Ptr<Operation>) -> OpObj, core::any::TypeId);
 
 /// A wrapper around [Operation] for Op(code) specific work.
 /// All per-instance data must be in the underyling Operation,
@@ -183,7 +188,7 @@ pub trait Op: Downcast + Verify + Printable + DynClone {
     where
         Self: Sized,
     {
-        (Self::wrap_operation, std::any::TypeId::of::<Self>())
+        (Self::wrap_operation, core::any::TypeId::of::<Self>())
     }
 
     /// Get this Op's OpId
@@ -244,7 +249,7 @@ pub fn verify_op(op: &dyn Op, ctx: &Context) -> Result<()> {
 impl Eq for OpObj {}
 
 impl Hash for OpObj {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         self.as_ref().get_operation().hash(state)
     }
 }
@@ -320,7 +325,7 @@ pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
 #[doc(hidden)]
 /// An [Op] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type OpInterfaceVerifierInfo = (std::any::TypeId, OpInterfaceAllVerifiers);
+type OpInterfaceVerifierInfo = (core::any::TypeId, OpInterfaceAllVerifiers);
 
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
@@ -354,7 +359,7 @@ pub use statics::*;
 /// A map from every [Op] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<std::any::TypeId, Vec<OpInterfaceVerifier>>,
+    FxHashMap<core::any::TypeId, Vec<OpInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(get_op_interface_verifiers()));
 
 /// Printer for an [Op] in canonical syntax.
@@ -507,7 +512,7 @@ impl OpBox {
             const ASSERTTION: () = {
                 // Ensure that OpData and T have the same size.
                 assert!(
-                    std::mem::size_of::<OpData>() == std::mem::size_of::<S>(),
+                    core::mem::size_of::<OpData>() == core::mem::size_of::<S>(),
                     "OpBox can only box Op objects"
                 );
             };
@@ -516,7 +521,7 @@ impl OpBox {
 
         let dyn_ref: &dyn Op = &op;
         let (_, vtable_ptr) =
-            unsafe { std::mem::transmute::<&dyn Op, (*const T, *const ())>(dyn_ref) };
+            unsafe { core::mem::transmute::<&dyn Op, (*const T, *const ())>(dyn_ref) };
 
         OpBox {
             data: OpData {
@@ -529,8 +534,10 @@ impl OpBox {
     /// Get a reference to the underlying [Op] object.
     pub fn op_ref(&self) -> &dyn Op {
         unsafe {
-            let dyn_ref: &dyn Op =
-                std::mem::transmute::<(&OpData, *const ()), &dyn Op>((&self.data, self.vtable_ptr));
+            let dyn_ref: &dyn Op = core::mem::transmute::<(&OpData, *const ()), &dyn Op>((
+                &self.data,
+                self.vtable_ptr,
+            ));
             dyn_ref
         }
     }

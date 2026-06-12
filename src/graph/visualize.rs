@@ -1,3 +1,5 @@
+use alloc::{format, string::String};
+use core::{fmt::Display, ops::Deref};
 use pliron::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -11,7 +13,6 @@ use pliron::{
     region::Region,
 };
 use rustc_hash::FxHashMap;
-use std::{fmt::Display, ops::Deref};
 
 /// Visualise an [Operation], as a graphviz DOT graph.
 /// The returned value implements [Display], so it can be printed directly.
@@ -46,8 +47,8 @@ struct Visualizer<'a> {
     ctx: &'a Context,
 }
 
-impl std::fmt::Display for Visualizer<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl core::fmt::Display for Visualizer<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match &self.graph_component {
             IRNode::Operation(op) => operation_entry_point(self.ctx, *op, f),
             IRNode::BasicBlock(block) => block_entry_point(self.ctx, *block, f),
@@ -60,11 +61,11 @@ impl std::fmt::Display for Visualizer<'_> {
 struct GraphState<'a, 'b> {
     op_nodes: FxHashMap<Ptr<Operation>, (u32, u32)>,
     op_counter: u32,
-    f: &'a mut std::fmt::Formatter<'b>,
+    f: &'a mut core::fmt::Formatter<'b>,
 }
 
 impl<'a, 'b> GraphState<'a, 'b> {
-    fn new(f: &'a mut std::fmt::Formatter<'b>) -> GraphState<'a, 'b> {
+    fn new(f: &'a mut core::fmt::Formatter<'b>) -> GraphState<'a, 'b> {
         GraphState {
             op_nodes: FxHashMap::default(),
             op_counter: 0,
@@ -95,11 +96,11 @@ impl<'a, 'b> GraphState<'a, 'b> {
 }
 
 trait ToWalkResult {
-    fn to_walk_result(self) -> WalkResult<std::fmt::Error>;
+    fn to_walk_result(self) -> WalkResult<core::fmt::Error>;
 }
 
-impl ToWalkResult for std::fmt::Result {
-    fn to_walk_result(self) -> WalkResult<std::fmt::Error> {
+impl ToWalkResult for core::fmt::Result {
+    fn to_walk_result(self) -> WalkResult<core::fmt::Error> {
         match self {
             Ok(_) => walk_advance(),
             Err(e) => walk_break(e),
@@ -111,7 +112,7 @@ trait ToResult {
     fn to_result(self) -> Result<(), core::fmt::Error>;
 }
 
-impl ToResult for WalkResult<std::fmt::Error> {
+impl ToResult for WalkResult<core::fmt::Error> {
     fn to_result(self) -> Result<(), core::fmt::Error> {
         match self {
             WalkResult::Continue(_) => Ok(()),
@@ -123,7 +124,7 @@ impl ToResult for WalkResult<std::fmt::Error> {
 fn operation_entry_point(
     ctx: &Context,
     op: Ptr<Operation>,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     write!(f, "strict digraph pliron_graph {{\n rankdir=TB;\n")?;
     let graph_state = &mut GraphState::new(f);
@@ -142,7 +143,7 @@ fn operation_entry_point(
 fn region_entry_point(
     ctx: &Context,
     region: Ptr<Region>,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     write!(f, "strict digraph pliron_graph {{\n rankdir=TB;\n")?;
     walkers::interruptible::immutable::walk_region(
@@ -160,7 +161,7 @@ fn region_entry_point(
 fn block_entry_point(
     ctx: &Context,
     block: Ptr<BasicBlock>,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     write!(f, "strict digraph pliron_graph {{\n rankdir=TB;\n")?;
     walkers::interruptible::immutable::walk_block(
@@ -179,7 +180,7 @@ fn graphviz_callback(
     ctx: &Context,
     graph_state: &mut GraphState,
     node: IRNode,
-) -> WalkResult<std::fmt::Error> {
+) -> WalkResult<core::fmt::Error> {
     match node {
         IRNode::Operation(op) => {
             let oper_index = graph_state.get_operation_index(op);

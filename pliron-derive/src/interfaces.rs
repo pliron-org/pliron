@@ -44,8 +44,8 @@ pub(crate) fn interface_define(
     // Create a method for getting super verifiers + self verifier
     let all_verifiers = quote! {
         #[doc(hidden)]
-        fn __all_verifiers() -> Vec<#verifier_type> where Self: Sized {
-            let mut all_verifiers: Vec<#verifier_type> = Vec::new();
+        fn __all_verifiers() -> ::pliron::alloc::vec::Vec<#verifier_type> where Self: Sized {
+            let mut all_verifiers: ::pliron::alloc::vec::Vec<#verifier_type> = ::pliron::alloc::vec::Vec::new();
             #(
                 all_verifiers.append(&mut <Self as #dep_interfaces>::__all_verifiers());
             )*
@@ -121,17 +121,17 @@ pub(crate) fn interface_impl(
     let verifiers_entry = quote! {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]
-            static INTERFACE_VERIFIER: std::sync::LazyLock<(std::any::TypeId, (#all_verifiers_fn_type))> =
-                std::sync::LazyLock::new(|| {
+            static INTERFACE_VERIFIER: ::pliron::deps::sync::LazyLock<(::core::any::TypeId, (#all_verifiers_fn_type))> =
+                ::pliron::deps::sync::LazyLock::new(|| {
                     ::pliron::log::debug!(
                         target: "interface_registration",
                         "{}({:?}) for type {}({:?})",
-                        std::any::type_name::<dyn #intr_name>(),
-                        std::any::TypeId::of::<dyn #intr_name>(),
-                        std::any::type_name::<#rust_ty>(),
-                        std::any::TypeId::of::<#rust_ty>(),
+                        ::core::any::type_name::<dyn #intr_name>(),
+                        ::core::any::TypeId::of::<dyn #intr_name>(),
+                        ::core::any::type_name::<#rust_ty>(),
+                        ::core::any::TypeId::of::<#rust_ty>(),
                     );
-                    (std::any::TypeId::of::<#rust_ty>(),
+                    (::core::any::TypeId::of::<#rust_ty>(),
                         <#rust_ty as #intr_name>::__all_verifiers)
                 });
 

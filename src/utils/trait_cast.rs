@@ -5,12 +5,9 @@
 //! a trait and needs to be casted to it, and then use [any_to_trait]
 //! to do the actual cast. See their documentation for details and examples.
 
-use std::{
-    any::{Any, TypeId},
-    sync::LazyLock,
-};
+use core::any::{Any, TypeId};
 
-use rustc_hash::FxHashMap;
+use crate::{deps::hash::FxHashMap, deps::sync::LazyLock};
 
 /// Cast a [dyn Any](Any) object to a `dyn Trait` object for any
 /// trait that the contained (in [Any]) type implements, and for which
@@ -22,7 +19,7 @@ use rustc_hash::FxHashMap;
 /// Example:
 /// ```
 /// # use pliron::{type_to_trait, utils::trait_cast::any_to_trait};
-/// # use std::any::Any;
+/// # use core::any::Any;
 /// # use downcast_rs::Downcast;
 ///
 /// trait Trait1: Downcast {}
@@ -106,7 +103,7 @@ static TRAIT_CASTERS_MAP: LazyLock<FxHashMap<(TypeId, TypeId), &'static (dyn Any
 /// Example:
 /// ```
 /// # use pliron::{type_to_trait, utils::trait_cast::any_to_trait};
-/// # use std::any::Any;
+/// # use core::any::Any;
 /// trait Trait {}
 /// struct S1;
 /// impl Trait for S1 {}
@@ -134,14 +131,14 @@ macro_rules! type_to_trait {
             )]
             static CAST_TO_TRAIT: $crate::utils::trait_cast::TraitCasterInfo =
                 $crate::utils::trait_cast::TraitCasterInfo {
-                    from: std::any::TypeId::of::<$ty_name>(),
-                    to: std::any::TypeId::of::<dyn $to_trait_name>(),
+                    from: core::any::TypeId::of::<$ty_name>(),
+                    to: core::any::TypeId::of::<dyn $to_trait_name>(),
                     caster: &(cast_to_trait
                         as for<'a> fn(
-                            &'a (dyn std::any::Any + 'static),
+                            &'a (dyn core::any::Any + 'static),
                         )
                             -> Option<&'a (dyn $to_trait_name + 'static)>)
-                        as &'static (dyn std::any::Any + Sync + Send),
+                        as &'static (dyn core::any::Any + Sync + Send),
                 };
 
             #[cfg(target_family = "wasm")]
@@ -150,7 +147,7 @@ macro_rules! type_to_trait {
             }
 
             fn cast_to_trait<'a>(
-                r: &'a (dyn std::any::Any + 'static),
+                r: &'a (dyn core::any::Any + 'static),
             ) -> Option<&'a (dyn $to_trait_name + 'static)> {
                 r.downcast_ref::<$ty_name>()
                     .map(|s| s as &dyn $to_trait_name)

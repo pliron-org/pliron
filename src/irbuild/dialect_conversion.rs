@@ -3,8 +3,9 @@
 //! - no unrealized conversion casts,
 //! - definitions are always converted before their uses.
 
-use std::{cell::Ref, collections::VecDeque};
+use core::cell::Ref;
 
+use alloc::{collections::vec_deque::VecDeque, vec, vec::Vec};
 use rustc_hash::FxHashMap;
 
 use crate::{
@@ -43,8 +44,8 @@ impl Printable for OperandsInfo {
         &self,
         ctx: &Context,
         _state: &crate::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(f, "[")?;
         for (opd_idx, (opd, previous_types)) in self.0.iter().enumerate() {
             write!(
@@ -333,7 +334,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         fn process_recorder_events(&mut self, ctx: &mut Context) -> Result<()> {
             let events = {
                 let listener = self.rewriter.get_listener_mut();
-                std::mem::take(&mut listener.events)
+                core::mem::take(&mut listener.events)
             };
 
             for event in &events {

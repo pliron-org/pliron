@@ -14,9 +14,9 @@ use super::{Elem, Format};
 
 type Stream<'a> = combine::stream::position::Stream<&'a str, IndexPositioner>;
 
-pub(crate) type Result<T, E = Error> = std::result::Result<T, E>;
+pub(crate) type Result<T, E = Error> = core::result::Result<T, E>;
 
-pub(crate) type Error = Box<dyn std::error::Error>;
+pub(crate) type Error = Box<dyn core::error::Error>;
 
 /// Parse a format string.
 ///

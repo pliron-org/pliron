@@ -73,7 +73,7 @@ pub enum IRNode {
 
 /// Walkers that can be interrupted.
 pub mod interruptible {
-    use std::ops::ControlFlow;
+    use core::ops::ControlFlow;
 
     use crate::{
         basic_block::BasicBlock,

@@ -1,5 +1,9 @@
 //! Utilities to work with [SymbolTableInterface] Ops.
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
@@ -298,6 +302,7 @@ mod tests {
     use crate::context::Context;
     use crate::identifier::Identifier;
     use crate::op::Op;
+    use alloc::vec;
 
     #[test]
     fn test_symbol_table() -> Result<()> {

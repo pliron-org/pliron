@@ -129,7 +129,7 @@ impl ToTokens for ImplOp {
 
                 fn verify_interfaces(&self, ctx: &::pliron::context::Context) -> ::pliron::result::Result<()> {
                     if let Some(interface_verifiers) =
-                        ::pliron::op::OP_INTERFACE_VERIFIERS_MAP.get(&std::any::TypeId::of::<Self>())
+                        ::pliron::op::OP_INTERFACE_VERIFIERS_MAP.get(&::core::any::TypeId::of::<Self>())
                     {
                         for verifier in interface_verifiers {
                             verifier(self, ctx)?;
@@ -229,7 +229,7 @@ pub(crate) fn derive_attr_get_set(
         let fn_name_get = format_ident!("get_attr_{}", attr_name);
         let fn_name_set = format_ident!("set_attr_{}", attr_name);
         let fn_comment_get = format!(
-            "Get a [Ref](std::cell::Ref) to the value of the attribute named `{attr_name}`."
+            "Get a [Ref](core::cell::Ref) to the value of the attribute named `{attr_name}`."
         );
         let fn_comment_set = format!("Set the value of the attribute named `{attr_name}`.");
         let get_set_fns = if let Some(ty) = ty_opt {
@@ -237,9 +237,9 @@ pub(crate) fn derive_attr_get_set(
                 #[doc = #fn_comment_get]
                 /// The `Ref` is a borrow of the containing `Operation` object.
                 pub fn #fn_name_get<'a>(&self, ctx: &'a ::pliron::context::Context)
-                    -> Option<std::cell::Ref<'a, #ty>>
+                    -> Option<::core::cell::Ref<'a, #ty>>
                 {
-                    std::cell::Ref::filter_map(self.op.deref(ctx), |op|
+                    ::core::cell::Ref::filter_map(self.op.deref(ctx), |op|
                         op.attributes.get::<#ty>(&*#module_name::#attr_name_const)).ok()
                 }
 
@@ -253,9 +253,9 @@ pub(crate) fn derive_attr_get_set(
                 #[doc = #fn_comment_get]
                 /// The `Ref` is a borrow of the containing `Operation` object.
                 pub fn #fn_name_get<'a>(&self, ctx: &'a ::pliron::context::Context)
-                    -> Option<std::cell::Ref<'a, ::pliron::attribute::AttrObj>>
+                    -> Option<::core::cell::Ref<'a, ::pliron::attribute::AttrObj>>
                 {
-                    std::cell::Ref::filter_map(self.op.deref(ctx), |op|
+                    ::core::cell::Ref::filter_map(self.op.deref(ctx), |op|
                         op.attributes.0.get(&*#module_name::#attr_name_const)).ok()
                 }
 
@@ -300,7 +300,7 @@ pub(crate) fn derive_attr_get_set(
     let attr_name_const_decls = quote! {
         #[doc(hidden)]
         pub mod #module_name {
-            use std::sync::LazyLock;
+            use ::pliron::deps::sync::LazyLock;
             use ::pliron::identifier::Identifier;
 
             #(#attr_name_const_decls)
@@ -374,7 +374,7 @@ mod tests {
                     ctx: &::pliron::context::Context,
                 ) -> ::pliron::result::Result<()> {
                     if let Some(interface_verifiers) = ::pliron::op::OP_INTERFACE_VERIFIERS_MAP
-                        .get(&std::any::TypeId::of::<Self>())
+                        .get(&::core::any::TypeId::of::<Self>())
                     {
                         for verifier in interface_verifiers {
                             verifier(self, ctx)?;

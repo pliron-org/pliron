@@ -5,6 +5,8 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 /// Region traversal utilities
 pub mod region {
+    use alloc::{vec, vec::Vec};
+
     use crate::graph::HasLabel;
 
     use super::*;
@@ -312,6 +314,12 @@ pub mod region {
 mod tests {
     use super::region::{DFSEdgeKind, DFSTraversal, post_order, topological_order};
     use crate::graph::{ControlFlowGraph, HasLabel};
+    use alloc::{
+        boxed::Box,
+        string::{String, ToString},
+        vec,
+        vec::Vec,
+    };
 
     #[derive(Clone, Debug)]
     struct Node {

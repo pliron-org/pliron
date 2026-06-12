@@ -1,5 +1,7 @@
 //! Listen to IR building / rewriting events.
 
+use alloc::vec::Vec;
+
 use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},

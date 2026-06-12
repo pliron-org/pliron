@@ -1,6 +1,6 @@
 //! Object specific printers and ir_format directives.
 
-use std::fmt;
+use core::fmt;
 
 use crate::{
     builtin::op_interfaces::{OneRegionInterface, SymbolOpInterface},

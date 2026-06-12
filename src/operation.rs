@@ -2,8 +2,9 @@
 //! The general idea is similar to MLIR's
 //! [Operation](https://mlir.llvm.org/docs/LangRef/#operations)
 
-use std::marker::PhantomData;
+use core::marker::PhantomData;
 
+use alloc::{format, string::ToString, vec, vec::Vec};
 use combine::{Parser, attempt, parser::char::spaces, token};
 use thiserror::Error;
 
@@ -354,7 +355,7 @@ impl Operation {
     /// Any [`Use<Value>`](Use) of the replaced operand will be invalidated.
     pub fn replace_operand(this: Ptr<Operation>, ctx: &Context, opd_idx: usize, other: Value) {
         let new_operand = Operand::new(ctx, other, this);
-        std::mem::replace(&mut this.deref_mut(ctx).operands[opd_idx], new_operand)
+        core::mem::replace(&mut this.deref_mut(ctx).operands[opd_idx], new_operand)
             .drop_use(ctx, this);
     }
 
@@ -400,7 +401,7 @@ impl Operation {
         other: Ptr<BasicBlock>,
     ) {
         let new_successor = Operand::new(ctx, other, this);
-        std::mem::replace(&mut this.deref_mut(ctx).successors[succ_idx], new_successor)
+        core::mem::replace(&mut this.deref_mut(ctx).successors[succ_idx], new_successor)
             .drop_use(ctx, this);
     }
 
@@ -517,12 +518,12 @@ impl Operation {
     /// Drop all uses that this operation holds.
     pub fn drop_all_uses(ptr: Ptr<Self>, ctx: &Context) {
         // The operands cease to be a use of their definitions.
-        let operands = std::mem::take(&mut (ptr.deref_mut(ctx).operands));
+        let operands = core::mem::take(&mut (ptr.deref_mut(ctx).operands));
         for opd in operands.into_iter() {
             opd.drop_use(ctx, ptr);
         }
         // The successors cease to be a use of their definitions.
-        let successors = std::mem::take(&mut (ptr.deref_mut(ctx).successors));
+        let successors = core::mem::take(&mut (ptr.deref_mut(ctx).successors));
         for succ in successors.into_iter() {
             succ.drop_use(ctx, ptr);
         }
@@ -733,8 +734,8 @@ pub fn verify_value_dominance(ir: Ptr<Operation>, ctx: &Context) -> Result<()> {
         ir,
         walker_callback,
     ) {
-        std::ops::ControlFlow::Continue(_) => {}
-        std::ops::ControlFlow::Break(err) => return Err(err),
+        core::ops::ControlFlow::Continue(_) => {}
+        core::ops::ControlFlow::Break(err) => return Err(err),
     }
     Ok(())
 }
@@ -899,7 +900,7 @@ impl Parsable for Operation {
 pub fn print_dbg(
     ctx: &Context,
     opr: Ptr<Operation>,
-    f: &mut std::fmt::Formatter<'_>,
+    f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     let sep = printable::ListSeparator::CharSpace(',');
 
@@ -945,21 +946,21 @@ pub fn print_dbg(
     Ok(())
 }
 
-/// A helper type that implements [Display](std::fmt::Display) and [Debug](std::fmt::Debug)
+/// A helper type that implements [Display](core::fmt::Display) and [Debug](core::fmt::Debug)
 /// for debug printing an [Operation] with [print_dbg].
 pub struct OpDbg<'a> {
     pub op: Ptr<Operation>,
     pub ctx: &'a Context,
 }
 
-impl<'a> std::fmt::Display for OpDbg<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Display for OpDbg<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         print_dbg(self.ctx, self.op, f)
     }
 }
 
-impl<'a> std::fmt::Debug for OpDbg<'a> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<'a> core::fmt::Debug for OpDbg<'a> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         print_dbg(self.ctx, self.op, f)
     }
 }

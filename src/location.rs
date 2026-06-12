@@ -1,7 +1,8 @@
 //! Source location for different IR entities
 
-use std::{fmt::Debug, path::PathBuf};
+use core::fmt::Debug;
 
+use alloc::{boxed::Box, string::String, vec::Vec};
 use combine::{
     Parser, between, optional,
     parser::char::{spaces, string},
@@ -13,6 +14,7 @@ use rustc_hash::FxHashSet;
 use crate::{
     attribute::AttrObj,
     context::Context,
+    deps::io::PathBuf,
     impl_printable_for_display,
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
@@ -35,8 +37,8 @@ pub enum Source {
 
 impl Source {
     /// Get a [Source] handle to the source specified by `path`.
-    pub fn new_from_file(ctx: &mut Context, path: PathBuf) -> Self {
-        Self::File(uniqued_any::save(ctx, path))
+    pub fn new_from_file(ctx: &mut Context, path: impl Into<PathBuf>) -> Self {
+        Self::File(uniqued_any::save(ctx, path.into()))
     }
 }
 
@@ -45,8 +47,8 @@ impl Printable for Source {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             Source::File(path_key) => {
                 write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
@@ -77,9 +79,7 @@ impl Parsable for Source {
         parser
             .parse_stream(state_stream)
             .map(|source| match source {
-                Source::Filename(s) => {
-                    Self::new_from_file(state_stream.state.ctx, PathBuf::from(s))
-                }
+                Source::Filename(s) => Self::new_from_file(state_stream.state.ctx, s),
                 Source::InMemory => Self::InMemory,
             })
             .into_result()
@@ -170,8 +170,8 @@ impl Printable for Location {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             Self::SrcPos { src, pos } => {
                 write!(f, "{}: {}", src.disp(ctx), pos)
@@ -295,7 +295,7 @@ pub trait Located {
 
 #[cfg(test)]
 mod tests {
-
+    use alloc::{format, string::ToString, vec};
     use combine::ParseError;
 
     use expect_test::expect;
