@@ -24,8 +24,8 @@ impl Printable for OpInsertionPoint {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             OpInsertionPoint::AtBlockStart(block) => {
                 write!(

@@ -1,9 +1,19 @@
 //! [Context] and [Ptr] together provide memory management for `pliron`.
 
+use core::{
+    any::{Any, TypeId},
+    cell::{Cell, Ref, RefCell, RefMut},
+    fmt::Display,
+    hash::Hash,
+    marker::PhantomData,
+};
+
 use crate::{
     arg_error_noloc,
     basic_block::BasicBlock,
     common_traits::Verify,
+    deps::hash::{FxHashMap, FxHashSet},
+    deps::sync::LazyLock,
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     operation::Operation,
@@ -15,16 +25,8 @@ use crate::{
     uniqued_any::UniquedAny,
     verify_err_noloc,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
+use alloc::{boxed::Box, format, string::ToString, vec, vec::Vec};
 use slotmap::{SlotMap, new_key_type};
-use std::{
-    any::{Any, TypeId},
-    cell::{Cell, Ref, RefCell, RefMut},
-    fmt::{Debug, Display},
-    hash::Hash,
-    marker::PhantomData,
-    sync::LazyLock,
-};
 
 new_key_type! {
     /// The index type for the [SlotMap] used to store IR objects.
@@ -37,7 +39,7 @@ new_key_type! {
 }
 
 impl Display for ArenaIndex {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "{:?}", self.0)
     }
 }
@@ -134,9 +136,7 @@ impl Default for Context {
 }
 
 pub(crate) mod private {
-    use std::{cell::RefCell, marker::PhantomData};
-
-    use super::{Arena, ArenaIndex, Context, Ptr};
+    use super::*;
 
     /// An IR object owned by Context
     pub trait ArenaObj
@@ -184,9 +184,9 @@ pub struct Ptr<T: ArenaObj> {
     pub(crate) _dummy: PhantomData<T>,
 }
 
-impl<T: ArenaObj> std::fmt::Debug for Ptr<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Ptr<{}>[{}]", std::any::type_name::<T>(), self.idx)
+impl<T: ArenaObj> core::fmt::Debug for Ptr<T> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "Ptr<{}>[{}]", core::any::type_name::<T>(), self.idx)
     }
 }
 
@@ -224,7 +224,7 @@ impl<'a, T: ArenaObj> Ptr<T> {
     /// Try and borrow the inner [RefCell] and return a [Ref] to the pointee.
     /// The borrow is live as long as the returned [Ref] lives.
     /// If [Ptr] is dangling or already mutably borrowed, an [Error](crate::result::Error)
-    /// with [DanglingPtrDerefError] or [BorrowError](std::cell::BorrowError) is returned.
+    /// with [DanglingPtrDerefError] or [BorrowError](core::cell::BorrowError) is returned.
     pub fn try_deref(&self, ctx: &'a Context) -> Result<Ref<'a, T>> {
         T::get_arena(ctx)
             .get(self.idx)
@@ -236,7 +236,7 @@ impl<'a, T: ArenaObj> Ptr<T> {
     /// Try and mutably borrow the inner [RefCell] and return a [RefMut] to the pointee.
     /// The borrow is live as long as the returned [RefMut] lives.
     /// If [Ptr] is dangling or already borrowed, an [Error](crate::result::Error)
-    /// with [DanglingPtrDerefError] or [BorrowMutError](std::cell::BorrowMutError) is returned.
+    /// with [DanglingPtrDerefError] or [BorrowMutError](core::cell::BorrowMutError) is returned.
     pub fn try_deref_mut(&self, ctx: &'a Context) -> Result<RefMut<'a, T>> {
         T::get_arena(ctx)
             .get(self.idx)
@@ -269,7 +269,7 @@ impl<T: ArenaObj> PartialEq for Ptr<T> {
 impl<T: ArenaObj> Eq for Ptr<T> {}
 
 impl<T: ArenaObj + 'static> Hash for Ptr<T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         TypeId::of::<T>().hash(state);
         self.idx.hash(state);
     }
@@ -459,8 +459,8 @@ macro_rules! dict_key {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::DICT_KEY_IDS), linkme(crate = ::pliron::linkme))]
-            pub static $decl: std::sync::LazyLock<::pliron::context::DictKeyId> =
-                std::sync::LazyLock::new(|| ::pliron::context::DictKeyId {
+            pub static $decl: $crate::deps::sync::LazyLock<::pliron::context::DictKeyId> =
+                $crate::deps::sync::LazyLock::new(|| ::pliron::context::DictKeyId {
                     id: $name.try_into().unwrap(),
                     file: file!(),
                     line: line!(),
@@ -474,8 +474,8 @@ macro_rules! dict_key {
         };
         $(#[$outer])*
         // Create a static variable with the provided name to access the identifier.
-        pub static $decl: std::sync::LazyLock<::pliron::identifier::Identifier> =
-            std::sync::LazyLock::new(|| $name.try_into().unwrap());
+        pub static $decl: $crate::deps::sync::LazyLock<::pliron::identifier::Identifier> =
+            $crate::deps::sync::LazyLock::new(|| $name.try_into().unwrap());
     };
 }
 
@@ -499,8 +499,8 @@ macro_rules! context_registration {
             $(#[$outer])*
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::CONTEXT_REGISTRATIONS), linkme(crate = ::pliron::linkme))]
-            static CONTEXT_REGISTRATION: std::sync::LazyLock<::pliron::context::ContextRegistration> =
-                std::sync::LazyLock::new(|| $registration);
+            static CONTEXT_REGISTRATION: $crate::deps::sync::LazyLock<::pliron::context::ContextRegistration> =
+                $crate::deps::sync::LazyLock::new(|| $registration);
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {

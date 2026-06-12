@@ -3,14 +3,17 @@
 //! Only a single unique copy (in self context) will
 //! exit of objects instantiated by this utility.
 
-use rustc_hash::{FxHashMap, FxHasher};
-use std::{
+use alloc::{vec, vec::Vec};
+use core::{
     cell::RefCell,
-    collections::hash_map::Entry,
     hash::{Hash, Hasher},
 };
+use rustc_hash::FxHasher;
 
-use crate::context::{Arena, ArenaIndex};
+use crate::{
+    context::{Arena, ArenaIndex},
+    deps::hash::{FxHashMap, hash_map::Entry},
+};
 
 /// Computes the hash of a rust value and its rust type.
 /// ```rust
@@ -33,7 +36,7 @@ impl TypeValueHash {
     pub fn new<T: Hash + 'static>(t: &T) -> TypeValueHash {
         let mut hasher = FxHasher::default();
         t.hash(&mut hasher);
-        std::any::TypeId::of::<T>().hash(&mut hasher);
+        core::any::TypeId::of::<T>().hash(&mut hasher);
         TypeValueHash {
             hash: hasher.finish(),
         }

@@ -1,5 +1,6 @@
 //! Implementation of various interfaces for builtin dialect entities.
 
+use alloc::{vec, vec::Vec};
 use pliron::{
     attribute::AttrObj,
     context::Context,

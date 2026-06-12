@@ -1,5 +1,6 @@
-use std::hash::{Hash, Hasher};
+use core::hash::{Hash, Hasher};
 
+use alloc::{boxed::Box, string::String, vec::Vec};
 use combine::{
     Parser, between, many1,
     parser::char::{char, digit, spaces},
@@ -529,6 +530,8 @@ pub struct OperandSegmentSizesAttr(pub Vec<u32>);
 
 #[cfg(test)]
 mod tests {
+    use alloc::{format, string::ToString, vec};
+
     use awint::bw;
     use expect_test::expect;
 
@@ -550,7 +553,8 @@ mod tests {
         utils::apint::APInt,
     };
 
-    use super::{DictAttr, TypeAttr, VecAttr};
+    use super::*;
+
     #[test]
     fn test_integer_attributes() {
         let mut ctx = Context::new();

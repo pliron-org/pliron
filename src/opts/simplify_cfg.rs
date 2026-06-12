@@ -12,13 +12,19 @@
 //!    `A` is the sole predecessor of `B`, removing `A`'s terminator and forwarding the actual
 //!    branch arguments of `A` into the formal arguments of `B`.
 
-use rustc_hash::FxHashSet;
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 
 use crate::{
     attribute::AttrObj,
     basic_block::BasicBlock,
     builtin::op_interfaces::BranchOpInterface,
     context::{Context, Ptr},
+    deps::hash::FxHashSet,
     graph::{
         HasLabel,
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},

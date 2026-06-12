@@ -237,7 +237,7 @@ pub fn def_op(args: TokenStream, input: TokenStream) -> TokenStream {
 /// This expands to add the following getter / setter items:
 /// ```Rust
 /// # use pliron::derive::{def_op, format_op, derive_attr_get_set};
-/// # use std::cell::Ref;
+/// # use core::cell::Ref;
 /// # use pliron::dict_key;
 /// # use pliron::{attribute::AttrObj, context::Context};
 /// # use pliron::{builtin::attributes::TypeAttr};

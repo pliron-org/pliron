@@ -5,6 +5,13 @@ pub mod traversals;
 pub mod visualize;
 pub mod walkers;
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::hash::Hash;
+
 use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -13,7 +20,6 @@ use crate::{
     operation::Operation,
     region::Region,
 };
-use std::hash::Hash;
 
 /// A trait for graph nodes that can be labeled for visualization purposes.
 pub trait HasLabel<GraphContext> {

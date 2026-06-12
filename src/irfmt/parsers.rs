@@ -1,6 +1,6 @@
 //! Utilities for parsing.
 
-use std::{num::ParseIntError, str::FromStr};
+use core::{num::ParseIntError, str::FromStr};
 
 use crate::{
     arg_err,
@@ -16,6 +16,7 @@ use crate::{
     r#type::TypeObj,
     value::Value,
 };
+use alloc::{boxed::Box, string::String, vec::Vec};
 use combine::{
     Parser, Stream, any, between, many, many1, none_of,
     parser::char::{digit, spaces},
@@ -66,7 +67,7 @@ pub fn type_parser<'a>()
 pub fn int_parse<'a, IntT>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseResult<'a, IntT>
 where
     IntT: FromStr,
-    IntT::Err: std::error::Error + Send + Sync + 'static,
+    IntT::Err: core::error::Error + Send + Sync + 'static,
 {
     many1::<String, _, _>(digit())
         .and_then(|digits| digits.parse::<IntT>())
@@ -79,7 +80,7 @@ pub fn int_parser<'a, IntT>()
 -> Box<dyn Parser<StateStream<'a>, Output = IntT, PartialState = ()> + 'a>
 where
     IntT: FromStr,
-    IntT::Err: std::error::Error + Send + Sync + 'static,
+    IntT::Err: core::error::Error + Send + Sync + 'static,
 {
     combine::parser(move |parsable_state: &mut StateStream<'a>| int_parse(parsable_state, ()))
         .boxed()
@@ -87,14 +88,14 @@ where
 
 /// A trait for parsing an integer from a string with a given radix.
 pub trait FromStrRadix: Sized {
-    fn from_str_radix(src: &str, radix: u32) -> std::result::Result<Self, ParseIntError>;
+    fn from_str_radix(src: &str, radix: u32) -> core::result::Result<Self, ParseIntError>;
 }
 
 macro_rules! impl_from_str_radix_for_int {
     ($($ty:ty),*) => {
         $(
             impl FromStrRadix for $ty {
-                fn from_str_radix(src: &str, radix: u32) -> std::result::Result<Self, ParseIntError> {
+                fn from_str_radix(src: &str, radix: u32) -> core::result::Result<Self, ParseIntError> {
                     <$ty>::from_str_radix(src, radix)
                 }
             }
@@ -289,6 +290,7 @@ pub fn process_parsed_ssa_defs(
 #[cfg(test)]
 mod test {
     use super::*;
+    use alloc::{format, string::ToString};
 
     use expect_test::expect;
 

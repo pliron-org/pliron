@@ -1,4 +1,4 @@
-use std::cmp::Ordering;
+use core::cmp::Ordering;
 
 use crate::attribute::Attribute;
 use crate::context::{Context, Ptr};
@@ -7,6 +7,7 @@ use crate::result::Result;
 use crate::storage_uniquer::TypeValueHash;
 use crate::r#type::TypeObj;
 use crate::utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd};
+use alloc::boxed::Box;
 use pliron::derive::attr_interface;
 
 /// [Attribute]s that have an associated [Type](crate::type::Type).
@@ -143,37 +144,37 @@ pub trait FloatAttr: TypedAttrInterface {
             .map(|from_u128| self.build_from(from_u128))
     }
 
-    /// [Neg::neg](std::ops::Neg::neg)
+    /// [Neg::neg](core::ops::Neg::neg)
     fn neg(&self) -> Box<dyn FloatAttr> {
         let df = self.get_inner();
         let negated = df.neg();
         self.build_from(negated)
     }
-    /// [Add::add](std::ops::Add::add)
+    /// [Add::add](core::ops::Add::add)
     fn add(&self, rhs: &dyn FloatAttr) -> StatusAnd<Box<dyn FloatAttr>> {
         let df = self.get_inner();
         let rhs_df = rhs.get_inner();
         df.add(rhs_df).map(|add| self.build_from(add))
     }
-    /// [Sub::sub](std::ops::Sub::sub)
+    /// [Sub::sub](core::ops::Sub::sub)
     fn sub(&self, rhs: &dyn FloatAttr) -> StatusAnd<Box<dyn FloatAttr>> {
         let df = self.get_inner();
         let rhs_df = rhs.get_inner();
         df.sub(rhs_df).map(|sub| self.build_from(sub))
     }
-    /// [Mul::mul](std::ops::Mul::mul)
+    /// [Mul::mul](core::ops::Mul::mul)
     fn mul(&self, rhs: &dyn FloatAttr) -> StatusAnd<Box<dyn FloatAttr>> {
         let df = self.get_inner();
         let rhs_df = rhs.get_inner();
         df.mul(rhs_df).map(|mul| self.build_from(mul))
     }
-    /// [Div::div](std::ops::Div::div)
+    /// [Div::div](core::ops::Div::div)
     fn div(&self, rhs: &dyn FloatAttr) -> StatusAnd<Box<dyn FloatAttr>> {
         let df = self.get_inner();
         let rhs_df = rhs.get_inner();
         df.div(rhs_df).map(|div| self.build_from(div))
     }
-    /// [Rem::rem](std::ops::Rem::rem)
+    /// [Rem::rem](core::ops::Rem::rem)
     fn rem(&self, rhs: &dyn FloatAttr) -> StatusAnd<Box<dyn FloatAttr>> {
         let df = self.get_inner();
         let rhs_df = rhs.get_inner();

@@ -3,9 +3,11 @@
 //! This module provides a set of reusable printers for IR objects.
 //! The printers are also used by the Printable derive macro.
 
-use std::fmt;
+use core::fmt;
 
 pub mod op;
+
+use alloc::string::String;
 
 use crate::{
     context::Context,

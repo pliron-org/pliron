@@ -1,5 +1,6 @@
 //! A [BasicBlock] is a list of [Operation]s.
 
+use alloc::{format, string::String, vec, vec::Vec};
 use combine::{
     optional,
     parser::{Parser, char::spaces},

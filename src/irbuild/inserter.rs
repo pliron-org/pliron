@@ -1,6 +1,8 @@
 //! A utility for inserting [Operation]s from a specified insertion point.
 //! Similar in spirit to LLVM's IRBuilder, but does not build operations.
 
+use alloc::vec::Vec;
+
 use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -41,8 +43,8 @@ impl Printable for OpInsertionPoint {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             OpInsertionPoint::Unset => write!(f, "Op Insertion Point not set"),
             OpInsertionPoint::AtBlockStart(block) => {
@@ -74,8 +76,8 @@ impl Printable for BlockInsertionPoint {
         &self,
         ctx: &Context,
         _state: &printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             BlockInsertionPoint::Unset => write!(f, "Block Insertion Point not set"),
             BlockInsertionPoint::AtRegionStart(region) => {

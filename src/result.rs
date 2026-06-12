@@ -3,7 +3,7 @@
 //! - [ErrorKind] describes the kind of error.
 //! - [struct@Error] is the main error type used throughout the compiler. This `struct` contains
 //!   the field `err` which holds the actual error that implements [AnyError]. [AnyError] is an
-//!   extension trait to enforce [std::error::Error] + [Downcast].
+//!   extension trait to enforce [core::error::Error] + [Downcast].
 //! - [Result] is an alias for `std::result::Result` with the error type set to [struct@Error].
 //!   [Result] implements [ExpectOk], which provides a method [expect_ok](ExpectOk::expect_ok)
 //!   to `unwrap` the result, and if that fails, panics with the error message printed using
@@ -24,7 +24,7 @@
 //!   - [arg_err]: Create [Result] for argument errors with location information
 //!
 //! The inner `err` when constructing [struct@Error] is typically a custom error type
-//! that derives [std::error::Error] using [thiserror].
+//! that derives [core::error::Error] using [thiserror].
 //!
 //! ```
 //! use thiserror::Error;
@@ -55,7 +55,7 @@
 //! the inner error implements [Printable] and use it if available.
 //!
 //! ```rust
-//! use std::fmt::Display;
+//! use core::fmt::Display;
 //! use expect_test::expect;
 //! use thiserror::Error;
 //! use pliron::{
@@ -65,7 +65,7 @@
 //! };
 //!
 //! #[derive(Debug, Error)]
-//! #[error("Error displayed using std::fmt::Display: {0}")]
+//! #[error("Error displayed using core::fmt::Display: {0}")]
 //! pub struct PrintableErr(String);
 
 //! impl Printable for PrintableErr {
@@ -73,8 +73,8 @@
 //!         &self,
 //!         ctx: &Context,
 //!         state: &State,
-//!         f: &mut std::fmt::Formatter<'_>,
-//!     ) -> std::fmt::Result {
+//!         f: &mut core::fmt::Formatter<'_>,
+//!     ) -> core::fmt::Result {
 //!         write!(f, "Error printed using Printable: {}", self.0)
 //!     }
 //! }
@@ -91,6 +91,8 @@
 //! ]].assert_eq(&res.disp(ctx).to_string());
 //! ```
 
+use core::fmt::Display;
+
 #[cfg(doc)]
 use crate::{
     arg_err, arg_err_noloc, arg_error, arg_error_noloc, input_err, input_err_noloc, input_error,
@@ -98,26 +100,23 @@ use crate::{
     verify_error_noloc,
 };
 
-use std::{
-    backtrace::{Backtrace, BacktraceStatus},
-    fmt::Display,
-};
-
+use alloc::{boxed::Box, string::String};
 use downcast_rs::{Downcast, impl_downcast};
 use thiserror::Error;
 
 use crate::{
     context::Context,
+    deps::backtrace::{Backtrace, BacktraceStatus},
     location::{Located, Location},
     printable::{Printable, State},
     utils::trait_cast::any_to_trait,
 };
 
-/// A wrapper trait combining [`std::error::Error`] and [`downcast_rs::Downcast`]
-/// to allow upcasting to [Any](std::any::Any), so that, we can downcast it
+/// A wrapper trait combining [`core::error::Error`] and [`downcast_rs::Downcast`]
+/// to allow upcasting to [Any](core::any::Any), so that, we can downcast it
 /// to the [Printable] trait if the error implements it.
-pub trait AnyError: std::error::Error + Send + Sync + 'static + Downcast {}
-impl<T: std::error::Error + Send + Sync + 'static> AnyError for T {}
+pub trait AnyError: core::error::Error + Send + Sync + 'static + Downcast {}
+impl<T: core::error::Error + Send + Sync + 'static> AnyError for T {}
 impl_downcast!(AnyError);
 
 /// The kinds of errors we have during compilation.
@@ -134,7 +133,7 @@ pub enum ErrorKind {
     InvalidArgument,
 }
 
-/// An error object that can hold any [std::error::Error].
+/// An error object that can hold any [core::error::Error].
 #[derive(Debug)]
 pub struct Error {
     /// The kind of error this is
@@ -147,11 +146,11 @@ pub struct Error {
     pub backtrace: Backtrace,
 }
 
-impl std::error::Error for Error {}
+impl core::error::Error for Error {}
 
 /// This does not print [Location] or [Backtrace]. Use [Printable::disp] for that.
 impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "Compilation error: {}.\n{}", self.kind, self.err)
     }
 }
@@ -161,8 +160,8 @@ impl Printable for Error {
         &self,
         ctx: &Context,
         _state: &State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         if self.loc.is_unknown() {
             writeln!(f, "Compilation error: {}.", self.kind,)
         } else {
@@ -199,16 +198,16 @@ impl Located for Error {
     }
 }
 
-/// Type alias for [std::result::Result] with the error type set to [struct@Error]
-pub type Result<T> = std::result::Result<T, Error>;
+/// Type alias for [core::result::Result] with the error type set to [struct@Error]
+pub type Result<T> = core::result::Result<T, Error>;
 
 impl<T: Printable> Printable for Result<T> {
     fn fmt(
         &self,
         ctx: &Context,
         state: &State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         match self {
             Ok(val) => val.fmt(ctx, state, f),
             Err(err) => Printable::fmt(err, ctx, state, f),
@@ -239,44 +238,44 @@ impl<T> ExpectOk<T> for Result<T> {
 #[error("{0}")]
 pub struct StringError(pub String);
 
-/// Specify [ErrorKind] and create [struct@Error] from any [std::error::Error] object.
+/// Specify [ErrorKind] and create [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [create_err!](crate::create_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_error!](crate::verify_error),
 /// [input_error!](crate::input_error) or [arg_error!](crate::arg_error) instead.
 #[macro_export]
 macro_rules! create_error {
     ($loc: expr, $kind: expr, $str: literal $($t:tt)*) => {
-        $crate::create_error!($loc, $kind, $crate::result::StringError(format!($str $($t)*)))
+        $crate::create_error!($loc, $kind, $crate::result::StringError($crate::alloc::format!($str $($t)*)))
     };
     ($loc: expr, $kind: expr, $err: expr) => {
         $crate::result::Error {
             kind: $kind,
-            err: Box::new($err),
+            err: $crate::alloc::boxed::Box::new($err),
             loc: $loc,
-            backtrace: std::backtrace::Backtrace::capture(),
+            backtrace: $crate::deps::backtrace::Backtrace::capture(),
         }
     };
 }
 
-/// Specify [ErrorKind] and create [Result] from any [std::error::Error] object.
+/// Specify [ErrorKind] and create [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [create_error!](crate::create_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// It may be shorter to just use [verify_err!](crate::verify_err),
 /// [input_err!](crate::input_err) or [arg_err!](crate::arg_err) instead.
 #[macro_export]
 macro_rules! create_err {
     ($loc: expr, $kind: expr, $str: literal $($t:tt)*) => {
-        $crate::create_err!($loc, $kind, $crate::result::StringError(format!($str $($t)*)))
+        $crate::create_err!($loc, $kind, $crate::result::StringError($crate::alloc::format!($str $($t)*)))
     };
     ($loc: expr, $kind: expr, $err: expr) => {
         Err($crate::create_error!($loc, $kind, $err))
     };
 }
 
-// Create [ErrorKind::VerificationFailed] [struct@Error] from any [std::error::Error] object.
+// Create [ErrorKind::VerificationFailed] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [verify_err!](crate::verify_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{verify_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -308,9 +307,9 @@ macro_rules! verify_error {
     }
 }
 
-/// Create [ErrorKind::VerificationFailed] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::VerificationFailed] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [verify_error!](crate::verify_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{verify_err, result::{Result, ErrorKind, Error}, location::Location};
@@ -342,9 +341,9 @@ macro_rules! verify_err {
     }
 }
 
-/// Create [ErrorKind::InvalidInput] [struct@Error] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidInput] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [input_err!](crate::input_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{input_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -376,9 +375,9 @@ macro_rules! input_error {
     }
 }
 
-/// Create [ErrorKind::InvalidInput] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidInput] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [input_error!](crate::input_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{input_err, result::{Result, ErrorKind, Error}, location::Location};
@@ -410,9 +409,9 @@ macro_rules! input_err {
     }
 }
 
-/// Create [ErrorKind::InvalidArgument] [struct@Error] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidArgument] [struct@Error] from any [core::error::Error] object.
 /// To create [Result], use [arg_err!](crate::arg_err) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{arg_error, result::{Result, ErrorKind, Error}, location::Location};
@@ -444,9 +443,9 @@ macro_rules! arg_error {
     }
 }
 
-/// Create [ErrorKind::InvalidArgument] [Result] from any [std::error::Error] object.
+/// Create [ErrorKind::InvalidArgument] [Result] from any [core::error::Error] object.
 /// To create [struct@Error], use [arg_error!](crate::arg_error) instead.
-/// The macro also accepts [format!] like arguments to create one-off errors.
+/// The macro also accepts [format!](alloc::format) like arguments to create one-off errors.
 /// ```rust
 /// use thiserror::Error;
 /// use pliron::{arg_err, result::{Result, ErrorKind, Error}, location::Location};
@@ -528,7 +527,7 @@ macro_rules! arg_err_noloc {
 
 #[cfg(test)]
 mod tests {
-
+    use alloc::string::{String, ToString};
     use combine::stream::position::{Positioner, SourcePosition};
     use expect_test::expect;
     use thiserror::Error;
@@ -547,8 +546,8 @@ mod tests {
     #[derive(Debug, Error)]
     pub struct PrintableErr(String);
 
-    impl std::fmt::Display for PrintableErr {
-        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    impl core::fmt::Display for PrintableErr {
+        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
             write!(f, "Display: {}", self.0)
         }
     }
@@ -558,8 +557,8 @@ mod tests {
             &self,
             _ctx: &Context,
             _state: &crate::printable::State,
-            f: &mut std::fmt::Formatter<'_>,
-        ) -> std::fmt::Result {
+            f: &mut core::fmt::Formatter<'_>,
+        ) -> core::fmt::Result {
             write!(f, "Printable: {}", self.0)
         }
     }
@@ -569,7 +568,7 @@ mod tests {
     #[test]
     fn wrapped_err() {
         let ctx = &mut Context::new();
-        let src = Source::new_from_file(ctx, "/tmp/test.pliron".into());
+        let src = Source::new_from_file(ctx, "/tmp/test.pliron");
 
         let pos1 = SourcePosition::default();
         let loc1 = Location::SrcPos { src, pos: pos1 };
@@ -592,7 +591,7 @@ mod tests {
     #[test]
     fn printable_err() {
         let ctx = &mut Context::new();
-        let src = Source::new_from_file(ctx, "/tmp/test.pliron".into());
+        let src = Source::new_from_file(ctx, "/tmp/test.pliron");
 
         let pos = SourcePosition::default();
         let loc = Location::SrcPos { src, pos };

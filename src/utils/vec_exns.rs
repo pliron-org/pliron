@@ -1,5 +1,7 @@
 //! Extend functionality of Rust vectors.
 
+use alloc::vec::Vec;
+
 /// This trait provides additionaly functionality for Rust vectors
 pub trait VecExtns<T> {
     /// Insert a new element and get back its index in the container.

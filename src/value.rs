@@ -8,12 +8,13 @@
 //!     This may describe either a [Value] use (as operand in an [Operation])
 //!     or a [BasicBlock] use (as successor of an [Operation]).
 
-use rustc_hash::FxHashSet;
-use std::{
+use alloc::{format, vec::Vec};
+use core::{
     cell::{Ref, RefMut},
     hash::Hash,
     marker::PhantomData,
 };
+use rustc_hash::FxHashSet;
 
 use crate::{
     arg_error,
@@ -91,7 +92,7 @@ impl<T: DefUseParticipant> DefNode<T> {
     where
         T: DefTrait + UseTrait,
     {
-        if std::ptr::eq(&*this.get_defnode_ref(ctx), &*other.get_defnode_ref(ctx)) {
+        if core::ptr::eq(&*this.get_defnode_ref(ctx), &*other.get_defnode_ref(ctx)) {
             return;
         }
 
@@ -327,8 +328,8 @@ impl Printable for Value {
         &self,
         ctx: &Context,
         _state: &crate::printable::State,
-        f: &mut std::fmt::Formatter<'_>,
-    ) -> std::fmt::Result {
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
         write!(f, "{}", self.unique_name(ctx))
     }
 }

@@ -4,6 +4,7 @@ use crate::{
     r#type::{Type, TypeObj},
     utils::apfloat::Semantics,
 };
+use alloc::vec::Vec;
 use pliron_derive::type_interface;
 
 /// Types that represent floating point numbers.

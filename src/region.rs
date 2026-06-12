@@ -1,4 +1,5 @@
 //! Regions are containers for [BasicBlock]s within an [Operation].
+use alloc::vec::Vec;
 use combine::{Parser, parser::char::spaces, token};
 
 use crate::{

@@ -1,15 +1,15 @@
 //! IR objects that are to be printed must implement [Printable].
 
-use std::{
+use alloc::{boxed::Box, rc::Rc, string::String};
+use core::{
     any::Any,
     cell::{Ref, RefCell, RefMut},
     fmt::{self, Display},
-    rc::Rc,
 };
 
-use rustc_hash::FxHashMap;
-
-use crate::{common_traits::RcShare, context::Context, identifier::Identifier};
+use crate::{
+    common_traits::RcShare, context::Context, deps::hash::FxHashMap, identifier::Identifier,
+};
 
 struct StateInner {
     // Number of spaces per indentation
@@ -115,7 +115,7 @@ impl<T: Printable + ?Sized> Display for Displayable<'_, '_, T> {
 /// Example:
 /// ```
 /// use pliron::{context::Context, printable::{State, Printable, ListSeparator}};
-/// use std::fmt;
+/// use core::fmt;
 /// struct S {
 ///     i: i64,
 /// }
@@ -164,8 +164,8 @@ pub trait Printable {
 /// Example:
 /// ```
 ///     struct MyType;
-///     impl std::fmt::Display for MyType {
-///         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+///     impl core::fmt::Display for MyType {
+///         fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
 ///             write!(f, "MyType")
 ///         }
 ///     }
@@ -179,8 +179,8 @@ macro_rules! impl_printable_for_display {
                 &self,
                 _ctx: &pliron::context::Context,
                 _state: &pliron::printable::State,
-                f: &mut std::fmt::Formatter<'_>,
-            ) -> std::fmt::Result {
+                f: &mut core::fmt::Formatter<'_>,
+            ) -> core::fmt::Result {
                 write!(f, "{}", self)
             }
         }
@@ -216,8 +216,8 @@ macro_rules! impl_printable_for_debug {
                 &self,
                 _ctx: &pliron::context::Context,
                 _state: &pliron::printable::State,
-                f: &mut std::fmt::Formatter<'_>,
-            ) -> std::fmt::Result {
+                f: &mut core::fmt::Formatter<'_>,
+            ) -> core::fmt::Result {
                 write!(f, "{:?}", self)
             }
         }

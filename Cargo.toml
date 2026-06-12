@@ -24,6 +24,10 @@ keywords = ["pliron", "llvm", "mlir", "compiler"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+std = []
+default = ["std"]
+
 [dependencies]
 pliron-derive = { path = "./pliron-derive", version = "0" }
 
@@ -39,6 +43,8 @@ regex = "1"
 dyn-clone.workspace = true
 log.workspace = true
 hi_sparse_bitset.workspace = true
+hashbrown.workspace = true
+spin.workspace = true
 
 [target.'cfg(target_family = "wasm")'.dependencies]
 inventory = "0"
@@ -76,6 +82,8 @@ env_logger = "0"
 cargo-manifest = "0"
 which = "8"
 hi_sparse_bitset = "0"
+hashbrown = "0.17"
+spin = "0.12"
 
 [[example]]
 name = "kaleidoscope"

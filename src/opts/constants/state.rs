@@ -1,3 +1,4 @@
+use alloc::vec::Vec;
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{

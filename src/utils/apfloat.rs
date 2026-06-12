@@ -18,10 +18,14 @@
 //!    [Parsable] implementation requires knowing the concrete type, and the
 //!    concrete types already implement [Parsable].
 
-use std::cmp::Ordering;
-use std::fmt::Display;
-use std::ops::{Add, Div, Mul, Neg, Rem, Sub};
+use core::cmp::Ordering;
+use core::fmt::Display;
+use core::ops::{Add, Div, Mul, Neg, Rem, Sub};
 
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+};
 use combine::{Parser, parser::char};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_apfloat::ieee::{
@@ -745,7 +749,7 @@ impl Display for dyn DynFloat {
 
 impl_printable_for_display!(dyn DynFloat);
 
-impl<T: Float + GetSemantics + std::fmt::Debug + 'static> From<T> for Box<dyn DynFloat> {
+impl<T: Float + GetSemantics + core::fmt::Debug + 'static> From<T> for Box<dyn DynFloat> {
     fn from(value: T) -> Self {
         Box::new(value)
     }
@@ -753,7 +757,7 @@ impl<T: Float + GetSemantics + std::fmt::Debug + 'static> From<T> for Box<dyn Dy
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use alloc::{str::FromStr, string::ToString};
 
     use rustc_apfloat::ParseError;
 
@@ -782,8 +786,7 @@ mod tests {
             match T::parse(&mut state_stream, ()) {
                 Ok((parsed_res, _)) => parsed_res,
                 Err(err) => {
-                    eprintln!("{}", err.into_inner().error);
-                    panic!("Error parsing {}", s);
+                    panic!("{}\nError parsing {}", err.into_inner().error, s);
                 }
             }
         };
