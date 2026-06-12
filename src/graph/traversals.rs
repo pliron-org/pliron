@@ -28,7 +28,7 @@ pub mod region {
         // Start from `node`.
         seen_nodes.insert(node.clone());
         // The second element of the pair is the index of the next successor to visit for this node.
-        stack.push((node.clone(), 0));
+        stack.push((node, 0));
         while let Some((node, succ_idx)) = stack.pop() {
             if succ_idx < graph.num_successors(ctx, &node) {
                 // Push the current node back to stack with next successor index.
