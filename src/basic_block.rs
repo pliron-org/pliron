@@ -240,9 +240,34 @@ impl BasicBlock {
             .unwrap_or_default()
     }
 
+    /// Does this block have any successors?
+    pub fn has_succ(&self, ctx: &Context) -> bool {
+        self.get_terminator(ctx)
+            .map(|term| term.deref(ctx).get_num_successors() > 0)
+            .unwrap_or(false)
+    }
+
     /// Is `succ` a successor of this block?
-    pub fn has_succ(&self, ctx: &Context, succ: Ptr<BasicBlock>) -> bool {
-        self.succs(ctx).contains(&succ)
+    /// O(n) in the number of successors.
+    pub fn is_succ(&self, ctx: &Context, succ: Ptr<BasicBlock>) -> bool {
+        self.get_terminator(ctx)
+            .is_some_and(|term| term.deref(ctx).successors().any(|s| s == succ))
+    }
+
+    /// Get the `i`-th successor of this block.
+    /// Panics if there is no terminator or if `i` is out of bounds.
+    pub fn get_succ(&self, ctx: &Context, i: usize) -> Ptr<BasicBlock> {
+        self.get_terminator(ctx)
+            .expect("Can't get successor of block with no terminator")
+            .deref(ctx)
+            .get_successor(i)
+    }
+
+    /// Get the number of successors of this block. Returns 0 if there is no terminator.
+    pub fn num_succ(&self, ctx: &Context) -> usize {
+        self.get_terminator(ctx)
+            .map(|term| term.deref(ctx).get_num_successors())
+            .unwrap_or(0)
     }
 
     /// Get the block terminator, if one exists.
@@ -386,7 +411,7 @@ impl Verify for BasicBlock {
         // Check that every predecessor points back to this block.
         // (This is almost a repetition of the previous check).
         for pred in self.self_ptr.preds(ctx) {
-            if !pred.deref(ctx).has_succ(ctx, self.self_ptr) {
+            if !pred.deref(ctx).is_succ(ctx, self.self_ptr) {
                 verify_err!(self.loc(), DefUseVerifyErr::OperandNotUseOfDef)?;
             }
         }

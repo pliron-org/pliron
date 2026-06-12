@@ -22,17 +22,37 @@ pub mod region {
             // node already visited.
             return;
         }
-        seen_nodes.insert(node.clone());
 
-        // Visit successors before visiting this node.
-        for succ in graph.successors(ctx, &node) {
-            post_order_walk_component(ctx, graph, succ, seen_nodes, po);
+        let mut stack = Vec::<(G::Node, usize)>::new();
+
+        // Start from `node`.
+        seen_nodes.insert(node.clone());
+        // The second element of the pair is the index of the next successor to visit for this node.
+        stack.push((node.clone(), 0));
+        while let Some((node, succ_idx)) = stack.pop() {
+            if succ_idx < graph.num_successors(ctx, &node) {
+                // Push the current node back to stack with next successor index.
+                stack.push((node.clone(), succ_idx + 1));
+
+                let succ = graph.get_successor(ctx, &node, succ_idx);
+                if seen_nodes.contains(&succ) {
+                    // successor already visited.
+                    continue;
+                }
+
+                // Visit this successor next.
+                seen_nodes.insert(succ.clone());
+                stack.push((succ, 0));
+            } else {
+                // All successors of this node have been visited. We can visit this node now.
+                po.push(node);
+            }
         }
-        // Visit this node.
-        po.push(node);
     }
 
     /// Compute post-order of the nodes in a graph.
+    /// *Note*: Assumes that for each disconnected component the entry node appears
+    /// before all other nodes in the component in the input.
     pub fn post_order<G, GraphContext>(ctx: &GraphContext, graph: &G) -> Vec<G::Node>
     where
         G: ControlFlowGraph<GraphContext>,
@@ -45,6 +65,8 @@ pub mod region {
 
     /// Compute the post-order of the nodes in a graph,
     /// providing result for each connected component separately.
+    /// *Note*: Assumes that for each disconnected component the entry node appears
+    /// before all other nodes in the component in the input.
     pub fn post_order_by_component<G, GraphContext>(
         ctx: &GraphContext,
         graph: &G,
@@ -67,6 +89,8 @@ pub mod region {
     }
 
     /// Compute reverse-post-order of the nodes in a graph.
+    /// *Note*: Assumes that for each disconnected component the entry node appears
+    /// before all other nodes in the component in the input.
     pub fn topological_order<G, GraphContext>(ctx: &GraphContext, graph: &G) -> Vec<G::Node>
     where
         G: ControlFlowGraph<GraphContext>,
@@ -79,7 +103,9 @@ pub mod region {
 
     /// Compute the reverse-post-order of the nodes in a graph,
     /// providing result for each connected component separately.
-    /// Note: Component wise order remains the same as the input.
+    /// *Note*:
+    ///   1. Component wise order remains the same as the input.
+    ///   2. Each component must have its entry node as the first node.
     pub fn topological_order_by_component<G, GraphContext>(
         ctx: &GraphContext,
         graph: &G,
@@ -138,10 +164,11 @@ pub mod region {
     ) where
         G: ControlFlowGraph<GraphContext>,
     {
-        // Assign pre-order number to this node.
+        let mut stack = Vec::<(G::Node, usize)>::new();
+
+        // Assign pre-order number to the entry node and start DFS from it.
         let pre_order_number = *pre_order_counter;
         *pre_order_counter += 1;
-
         let newly_inserted = result.insert(
             node.clone(),
             DFSNumber {
@@ -155,37 +182,46 @@ pub mod region {
             "Node {} visited multiple times during DFS traversal",
             node.label(ctx)
         );
+        stack.push((node, 0));
 
-        // Visit successors before visiting this node.
-        for succ in graph.successors(ctx, &node) {
-            if result.contains_key(&succ) {
-                // node already visited.
-                continue;
+        while let Some((node, succ_idx)) = stack.pop() {
+            if succ_idx < graph.num_successors(ctx, &node) {
+                // Re-visit this node after attempting this successor.
+                stack.push((node.clone(), succ_idx + 1));
+
+                let succ = graph.get_successor(ctx, &node, succ_idx);
+                if result.contains_key(&succ) {
+                    // successor already visited.
+                    continue;
+                }
+
+                // First time we discover this successor: assign pre-order and descend.
+                let pre_order_number = *pre_order_counter;
+                *pre_order_counter += 1;
+                let newly_inserted = result.insert(
+                    succ.clone(),
+                    DFSNumber {
+                        pre_order_number,
+                        post_order_number: 0,         // to be filled later
+                        reverse_post_order_number: 0, // to be filled later
+                    },
+                );
+                assert!(
+                    newly_inserted.is_none(),
+                    "Node {} visited multiple times during DFS traversal",
+                    succ.label(ctx)
+                );
+                stack.push((succ, 0));
+            } else {
+                // All successors are processed, so we can assign post-order now.
+                let post_order_number = *post_order_counter;
+                *post_order_counter += 1;
+                result
+                    .get_mut(&node)
+                    .expect("Node missing during DFS traversal")
+                    .post_order_number = post_order_number;
             }
-            dfs_walk(
-                ctx,
-                graph,
-                succ,
-                pre_order_counter,
-                post_order_counter,
-                result,
-            );
         }
-
-        // Assign post-order and reverse-post-order numbers to this node.
-        let post_order_number = *post_order_counter;
-        *post_order_counter += 1;
-
-        result.get_mut(&node).unwrap().post_order_number = post_order_number;
-
-        result.insert(
-            node.clone(),
-            DFSNumber {
-                pre_order_number,
-                post_order_number,
-                reverse_post_order_number: 0, // to be filled later
-            },
-        );
     }
 
     impl<G, GraphContext> DFSTraversal<G, GraphContext>
@@ -331,23 +367,32 @@ mod tests {
     impl ControlFlowGraph<Vec<Node>> for ArenaGraph {
         type Node = usize;
 
-        fn successors(&self, ctx: &Vec<Node>, node: &Self::Node) -> Vec<Self::Node> {
-            ctx[*node].succs.clone()
-        }
-
-        fn predecessors(&self, ctx: &Vec<Node>, node: &Self::Node) -> Vec<Self::Node> {
-            ctx.iter()
-                .enumerate()
-                .filter_map(|(idx, n)| n.succs.contains(node).then_some(idx))
-                .collect()
-        }
-
         fn entry_node(&self, ctx: &Vec<Node>) -> Option<Self::Node> {
             (!ctx.is_empty()).then_some(0)
         }
 
         fn nodes<'a>(&'a self, ctx: &'a Vec<Node>) -> Box<dyn Iterator<Item = Self::Node> + 'a> {
             Box::new(0..ctx.len())
+        }
+
+        fn num_successors(&self, ctx: &Vec<Node>, node: &Self::Node) -> usize {
+            ctx[*node].succs.len()
+        }
+
+        fn get_successor(&self, ctx: &Vec<Node>, node: &Self::Node, i: usize) -> Self::Node {
+            ctx[*node].succs[i]
+        }
+
+        fn num_predecessors(&self, ctx: &Vec<Node>, node: &Self::Node) -> usize {
+            ctx.iter().filter(|n| n.succs.contains(node)).count()
+        }
+
+        fn get_predecessor(&self, ctx: &Vec<Node>, node: &Self::Node, i: usize) -> Self::Node {
+            ctx.iter()
+                .enumerate()
+                .filter_map(|(idx, n)| n.succs.contains(node).then_some(idx))
+                .nth(i)
+                .expect("Node doesn't have that many predecessors")
         }
     }
 

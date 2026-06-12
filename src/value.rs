@@ -389,12 +389,40 @@ impl Ptr<BasicBlock> {
         self.deref(ctx).preds.is_used()
     }
 
+    /// Is `pred` a predecessor of this block?
+    /// *Note*: O(n) in the number of predecessors of this block.
+    pub fn is_pred(&self, ctx: &Context, pred: Ptr<BasicBlock>) -> bool {
+        self.deref(ctx)
+            .preds
+            .uses()
+            .any(|r#use| r#use.user_op.deref(ctx).get_parent_block() == Some(pred))
+    }
+
     /// Number of predecessors to this block.
     pub fn num_preds(&self, ctx: &Context) -> usize {
         self.deref(ctx).preds.num_uses()
     }
 
+    /// Get the `i`-th predecessor of this block. Panics if `i` is out of bounds.
+    /// *Note*:
+    ///     1. The order of predecessors is not guaranteed to be deterministic
+    ///     across different platforms or rust compiler versions.
+    ///     2. O(n) in the number of predecessors of this block.
+    pub fn get_pred(&self, ctx: &Context, i: usize) -> Ptr<BasicBlock> {
+        self.deref(ctx)
+            .preds
+            .uses()
+            .nth(i)
+            .expect("Predecessor index out of bounds")
+            .user_op
+            .deref(ctx)
+            .get_container()
+            .expect("Terminator branching to this block is not in any basic block")
+    }
+
     /// Get all predecessors of this block.
+    /// *Note*: The order of predecessors is not guaranteed to be deterministic
+    /// across different platforms or rust compiler versions.
     pub fn preds(&self, ctx: &Context) -> Vec<Ptr<BasicBlock>> {
         self.deref(ctx)
             .preds

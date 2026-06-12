@@ -23,11 +23,32 @@ pub trait HasLabel<GraphContext> {
 pub trait ControlFlowGraph<GraphContext> {
     type Node: Eq + Hash + Clone + HasLabel<GraphContext>;
 
-    /// Returns the successors of a node in the graph.
-    fn successors(&self, ctx: &GraphContext, node: &Self::Node) -> Vec<Self::Node>;
+    /// Number of successors of `node`.
+    fn num_successors(&self, ctx: &GraphContext, node: &Self::Node) -> usize;
 
-    /// Returns the predecessors of a node in the graph.
-    fn predecessors(&self, ctx: &GraphContext, node: &Self::Node) -> Vec<Self::Node>;
+    /// Get the `i`-th successor of `node`. Panics if `i` is out of bounds.
+    fn get_successor(&self, ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node;
+
+    /// Get all successors of `node`.
+    /// The default implementation provided may be overridden for better performance.
+    fn successors(&self, ctx: &GraphContext, node: &Self::Node) -> Vec<Self::Node> {
+        (0..self.num_successors(ctx, node))
+            .map(|i| self.get_successor(ctx, node, i))
+            .collect()
+    }
+    /// Number of predecessors of `node`.
+    fn num_predecessors(&self, ctx: &GraphContext, node: &Self::Node) -> usize;
+
+    /// Get the `i`-th predecessor of `node`. Panics if `i` is out of bounds.
+    fn get_predecessor(&self, ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node;
+
+    /// Get all predecessors of `node`.
+    /// The default implementation provided may be overridden for better performance.
+    fn predecessors(&self, ctx: &GraphContext, node: &Self::Node) -> Vec<Self::Node> {
+        (0..self.num_predecessors(ctx, node))
+            .map(|i| self.get_predecessor(ctx, node, i))
+            .collect()
+    }
 
     /// Returns the entry node of the graph.
     fn entry_node(&self, ctx: &GraphContext) -> Option<Self::Node>;
@@ -39,8 +60,24 @@ pub trait ControlFlowGraph<GraphContext> {
 impl ControlFlowGraph<Context> for Ptr<Region> {
     type Node = Ptr<BasicBlock>;
 
+    fn num_successors(&self, ctx: &Context, node: &Self::Node) -> usize {
+        node.deref(ctx).num_succ(ctx)
+    }
+
+    fn get_successor(&self, ctx: &Context, node: &Self::Node, i: usize) -> Self::Node {
+        node.deref(ctx).get_succ(ctx, i)
+    }
+
     fn successors(&self, ctx: &Context, node: &Self::Node) -> Vec<Self::Node> {
         node.deref(ctx).succs(ctx)
+    }
+
+    fn num_predecessors(&self, ctx: &Context, node: &Self::Node) -> usize {
+        node.num_preds(ctx)
+    }
+
+    fn get_predecessor(&self, ctx: &Context, node: &Self::Node, i: usize) -> Self::Node {
+        node.get_pred(ctx, i)
     }
 
     fn predecessors(&self, ctx: &Context, node: &Self::Node) -> Vec<Self::Node> {

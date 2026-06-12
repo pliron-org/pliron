@@ -234,10 +234,10 @@ where
             .map(|n| (n, FxHashSet::default()))
             .collect();
         for b in graph.nodes(ctx) {
-            let preds = graph.predecessors(ctx, &b);
-            if preds.len() < 2 {
+            if graph.num_predecessors(ctx, &b) < 2 {
                 continue;
             }
+            let preds = graph.predecessors(ctx, &b);
             let b_idom = dom_tree.idom(&b).unwrap();
             for p in preds.into_iter().filter(|n| dom_tree.contains(n)) {
                 for runner in dom_tree.dominators(&p).take_while(|n| *n != b_idom) {
@@ -523,15 +523,24 @@ mod tests {
     impl ControlFlowGraph<Vec<Node>> for ArenaGraph {
         type Node = usize;
 
-        fn successors(&self, ctx: &Vec<Node>, node: &Self::Node) -> Vec<Self::Node> {
-            ctx[*node].succs.clone()
+        fn num_successors(&self, ctx: &Vec<Node>, node: &Self::Node) -> usize {
+            ctx[*node].succs.len()
         }
 
-        fn predecessors(&self, ctx: &Vec<Node>, node: &Self::Node) -> Vec<Self::Node> {
+        fn get_successor(&self, ctx: &Vec<Node>, node: &Self::Node, i: usize) -> Self::Node {
+            ctx[*node].succs[i]
+        }
+
+        fn num_predecessors(&self, ctx: &Vec<Node>, node: &Self::Node) -> usize {
+            ctx.iter().filter(|n| n.succs.contains(node)).count()
+        }
+
+        fn get_predecessor(&self, ctx: &Vec<Node>, node: &Self::Node, i: usize) -> Self::Node {
             ctx.iter()
                 .enumerate()
                 .filter_map(|(idx, n)| n.succs.contains(node).then_some(idx))
-                .collect()
+                .nth(i)
+                .expect("Predecessor index out of bounds")
         }
 
         fn entry_node(&self, ctx: &Vec<Node>) -> Option<Self::Node> {
