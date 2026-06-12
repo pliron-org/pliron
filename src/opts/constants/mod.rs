@@ -51,7 +51,7 @@ pub trait ConstFoldInterface {
         let folded = self.check_fold(ctx, operand_attrs);
         let op = self.get_operation();
 
-        let mut num_materialized = 0;
+        let mut status = IRStatus::Unchanged;
         for (result_idx, attr) in folded.iter().enumerate() {
             let Some(attr) = attr else {
                 continue;
@@ -60,17 +60,13 @@ pub trait ConstFoldInterface {
                 continue;
             };
             let const_op = materializable.materialize(ctx);
-            rewriter.insert_operation(ctx, const_op);
+            rewriter.append_operation(ctx, const_op);
             let new_value = const_op.deref(ctx).get_result(0);
             let old_value = op.deref(ctx).get_result(result_idx);
             rewriter.replace_value_uses_with(ctx, old_value, new_value);
-            num_materialized += 1;
+            status = IRStatus::Changed;
         }
-        if num_materialized == 0 {
-            IRStatus::Unchanged
-        } else {
-            IRStatus::Changed
-        }
+        status
     }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
