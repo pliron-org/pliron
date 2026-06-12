@@ -1,10 +1,10 @@
 //! Regions are containers for [BasicBlock]s within an [Operation].
 use alloc::vec::Vec;
-use combine::{Parser, parser::char::spaces, token};
 
 use crate::{
     basic_block::BasicBlock,
     builtin::op_interfaces::RegionKindInterface,
+    combine::{Parser, parser::char::spaces, token},
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
     indented_block,

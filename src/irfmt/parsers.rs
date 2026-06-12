@@ -6,6 +6,11 @@ use crate::{
     arg_err,
     attribute::AttrObj,
     basic_block::BasicBlock,
+    combine::{
+        Parser, Stream, any, between, many, many1, none_of,
+        parser::char::{digit, spaces},
+        sep_by, token,
+    },
     context::Ptr,
     debug_info::set_operation_result_name,
     identifier::Identifier,
@@ -16,12 +21,8 @@ use crate::{
     r#type::TypeObj,
     value::Value,
 };
+
 use alloc::{boxed::Box, string::String, vec::Vec};
-use combine::{
-    Parser, Stream, any, between, many, many1, none_of,
-    parser::char::{digit, spaces},
-    sep_by, token,
-};
 
 /// Parse from `parser`, ignoring whitespace(s) before and after.
 /// > **Warning**: Do not use this inside inside [combine::optional] or
@@ -33,7 +34,7 @@ use combine::{
 /// >   A possibly right way to, for example, parse a comma separated list of [Identifier]s:
 ///
 ///```
-///     # use combine::{parser::char::spaces, Parser};
+///     # use pliron::combine::{parser::char::spaces, Parser};
 ///     # use pliron::parsable::Parsable;
 ///     let ids = spaces().with
 ///               (combine::sep_by::<Vec<_>, _, _, _>

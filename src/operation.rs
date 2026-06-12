@@ -2,16 +2,15 @@
 //! The general idea is similar to MLIR's
 //! [Operation](https://mlir.llvm.org/docs/LangRef/#operations)
 
-use core::marker::PhantomData;
-
 use alloc::{format, string::ToString, vec, vec::Vec};
-use combine::{Parser, attempt, parser::char::spaces, token};
+use core::marker::PhantomData;
 use thiserror::Error;
 
 use crate::{
     attribute::{AttributeDict, verify_attr},
     basic_block::{BasicBlock, BasicBlockVerifyErr},
     builtin::op_interfaces::{IsTerminatorInterface, SymbolOpInterface},
+    combine::{Parser, attempt, parser::char::spaces, token},
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
     debug_info,

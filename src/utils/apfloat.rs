@@ -18,15 +18,17 @@
 //!    [Parsable] implementation requires knowing the concrete type, and the
 //!    concrete types already implement [Parsable].
 
-use core::cmp::Ordering;
-use core::fmt::Display;
-use core::ops::{Add, Div, Mul, Neg, Rem, Sub};
+use core::{
+    cmp::Ordering,
+    fmt::Display,
+    ops::{Add, Div, Mul, Neg, Rem, Sub},
+};
 
 use alloc::{
     boxed::Box,
     string::{String, ToString},
 };
-use combine::{Parser, parser::char};
+
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_apfloat::ieee::{
     BFloatS, DoubleS, Float8E4M3FNS, Float8E5M2S, HalfS, NonfiniteBehavior, QuadS, SingleS,
@@ -34,15 +36,19 @@ use rustc_apfloat::ieee::{
 };
 use thiserror::Error;
 
-pub use rustc_apfloat::ieee::{
-    BFloat, Double, Float8E4M3FN, Float8E5M2, Half, Quad, Single, X87DoubleExtended,
+pub use rustc_apfloat::{
+    Category, ExpInt, Float, Round, StatusAnd,
+    ieee::{BFloat, Double, Float8E4M3FN, Float8E5M2, Half, Quad, Single, X87DoubleExtended},
 };
-pub use rustc_apfloat::{Category, ExpInt, Float, Round, StatusAnd};
 
-use crate::location::Located;
-use crate::parsable::{IntoParseResult, Parsable, ParseResult, StateStream};
-use crate::result::Result;
-use crate::{arg_error_noloc, impl_printable_for_display, input_error};
+use crate::{
+    arg_error_noloc,
+    combine::{Parser, parser::char},
+    impl_printable_for_display, input_error,
+    location::Located,
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    result::Result,
+};
 
 impl_printable_for_display!(BFloat);
 impl_printable_for_display!(Double);

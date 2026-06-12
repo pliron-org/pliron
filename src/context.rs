@@ -12,8 +12,10 @@ use crate::{
     arg_error_noloc,
     basic_block::BasicBlock,
     common_traits::Verify,
-    deps::hash::{FxHashMap, FxHashSet},
-    deps::sync::LazyLock,
+    deps::{
+        hash::{FxHashMap, FxHashSet},
+        sync::LazyLock,
+    },
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     operation::Operation,

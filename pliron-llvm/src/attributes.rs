@@ -1,19 +1,21 @@
 //! Attributes belonging to the LLVM dialect.
 
 use core::fmt::Display;
-
-use pliron::combine::{self, Parser, choice, parser::char::spaces};
 use thiserror::Error;
 
-use pliron::builtin::attributes::IntegerAttr;
-use pliron::common_traits::Verify;
-use pliron::context::Context;
-use pliron::derive::{format, pliron_attr};
-use pliron::location::Located;
-use pliron::parsable::{IntoParseResult, Parsable};
-use pliron::printable::Printable;
-use pliron::result::Result;
-use pliron::{impl_printable_for_display, input_error, verify_err_noloc};
+use pliron::{
+    builtin::attributes::IntegerAttr,
+    combine::{self, Parser, choice, parser::char::spaces},
+    common_traits::Verify,
+    context::Context,
+    derive::{format, pliron_attr},
+    impl_printable_for_display, input_error,
+    location::Located,
+    parsable::{IntoParseResult, Parsable},
+    printable::Printable,
+    result::Result,
+    verify_err_noloc,
+};
 
 use bitflags::bitflags;
 
@@ -447,8 +449,7 @@ mod tests {
 
     #[test]
     fn test_fp_half_attr_roundtrip() {
-        use pliron::builtin::attributes::FPHalfAttr;
-        use pliron::utils::apfloat::Half;
+        use pliron::{builtin::attributes::FPHalfAttr, utils::apfloat::Half};
         let ctx = &mut Context::default();
         for s in ["0.0", "1.5", "-2.25"] {
             let value: Half = s.parse().expect("valid half literal");

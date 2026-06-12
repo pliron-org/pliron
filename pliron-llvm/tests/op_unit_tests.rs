@@ -21,15 +21,15 @@ use pliron::{
     r#type::TypeObj,
     value::Value,
 };
-use pliron_llvm::attributes::{AtomicOrderingAttr, AtomicRmwKindAttr};
-// `AddrSpaceCastOp::new` is provided by this interface (cast ops share a
-// generated constructor), so the trait must be in scope.
-use pliron_llvm::op_interfaces::CastOpInterface;
-use pliron_llvm::ops::{
-    AddrSpaceCastOp, AtomicCmpxchgOp, AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, FenceOp, FuncOp,
-    InlineAsmOp, ReturnOp,
+use pliron_llvm::{
+    attributes::{AtomicOrderingAttr, AtomicRmwKindAttr},
+    op_interfaces::CastOpInterface,
+    ops::{
+        AddrSpaceCastOp, AtomicCmpxchgOp, AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, FenceOp,
+        FuncOp, InlineAsmOp, ReturnOp,
+    },
+    types::{FuncType, PointerType, VoidType},
 };
-use pliron_llvm::types::{FuncType, PointerType, VoidType};
 
 /// Build a module with a function whose entry block has the given argument
 /// types, let `build` add ops to that block, then assert the whole module

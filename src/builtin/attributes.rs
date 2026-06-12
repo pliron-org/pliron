@@ -1,11 +1,6 @@
 use core::hash::{Hash, Hasher};
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use combine::{
-    Parser, between, many1,
-    parser::char::{char, digit, spaces},
-    token,
-};
 use pliron::derive::{attr_interface_impl, pliron_attr};
 use rustc_apfloat::Float;
 use thiserror::Error;
@@ -15,6 +10,11 @@ use crate::{
     builtin::{
         attr_interfaces::FloatAttr,
         types::{FP16Type, FP32Type, FP64Type},
+    },
+    combine::{
+        Parser, between, many1,
+        parser::char::{char, digit, spaces},
+        token,
     },
     common_traits::Verify,
     context::{Context, Ptr},

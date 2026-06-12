@@ -35,32 +35,35 @@
 //! [TypeObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use crate::common_traits::Verify;
-use crate::context::{Arena, Context, Ptr, collect_deduped_interface_verifiers, private::ArenaObj};
-use crate::deps::hash::FxHashMap;
-use crate::deps::sync::LazyLock;
-use crate::dialect::{Dialect, DialectName};
-use crate::identifier::Identifier;
-use crate::irfmt::parsers::spaced;
-use crate::location::Located;
-use crate::parsable::{Parsable, ParseResult, StateStream};
-use crate::printable::{self, Printable};
-use crate::result::Result;
-use crate::storage_uniquer::TypeValueHash;
-use crate::{arg_err_noloc, impl_printable_for_display, input_err};
+use crate::{
+    arg_err_noloc,
+    combine::{Parser, parser},
+    common_traits::Verify,
+    context::{Arena, Context, Ptr, collect_deduped_interface_verifiers, private::ArenaObj},
+    deps::{hash::FxHashMap, sync::LazyLock},
+    dialect::{Dialect, DialectName},
+    identifier::Identifier,
+    impl_printable_for_display, input_err,
+    irfmt::parsers::spaced,
+    location::Located,
+    parsable::{Parsable, ParseResult, StateStream},
+    printable::{self, Printable},
+    result::Result,
+    storage_uniquer::TypeValueHash,
+};
 
 use alloc::{
     boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
-use combine::{Parser, parser};
-use core::cell::Ref;
-use core::fmt::Debug;
-use core::fmt::Display;
-use core::hash::{Hash, Hasher};
-use core::marker::PhantomData;
-use core::ops::Deref;
+use core::{
+    cell::Ref,
+    fmt::{Debug, Display},
+    hash::{Hash, Hasher},
+    marker::PhantomData,
+    ops::Deref,
+};
 use downcast_rs::{Downcast, impl_downcast};
 use thiserror::Error;
 

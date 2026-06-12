@@ -36,11 +36,6 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use combine::{
-    Parser,
-    parser::{self, char::spaces},
-    token,
-};
 use core::{
     fmt::{self, Display},
     hash::Hash,
@@ -53,10 +48,14 @@ use thiserror::Error;
 use crate::{
     attribute::AttributeDict,
     builtin::{type_interfaces::FunctionTypeInterface, types::FunctionType},
+    combine::{
+        Parser,
+        parser::{self, char::spaces},
+        token,
+    },
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
-    deps::hash::FxHashMap,
-    deps::sync::LazyLock,
+    deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,

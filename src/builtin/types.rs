@@ -1,12 +1,13 @@
 use alloc::vec::Vec;
-use combine::{
-    Parser, choice,
-    parser::char::{spaces, string},
-};
+
 use pliron::derive::{pliron_type, type_interface_impl};
 
 use crate::{
     builtin::type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
+    combine::{
+        Parser, choice,
+        parser::char::{spaces, string},
+    },
     context::{Context, Ptr},
     irfmt::parsers::int_parser,
     parsable::{Parsable, ParseResult, StateStream},
@@ -186,12 +187,13 @@ impl FloatTypeInterface for FP16Type {
 #[cfg(test)]
 mod tests {
     use alloc::{format, string::ToString, vec};
-    use combine::{Parser, eof};
     use expect_test::expect;
 
     use super::*;
+
     use crate::{
         builtin::types::{IntegerType, Signedness},
+        combine::{Parser, eof},
         context::Context,
         location,
         parsable::{self, Parsable, state_stream_from_iterator},

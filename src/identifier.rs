@@ -1,20 +1,19 @@
 //! [Identifier]s are strings used to name entities in programming languages.
 
-use core::{
-    fmt::Display,
-    ops::{Add, Deref},
-};
-
 use alloc::{
     format,
     string::{String, ToString},
 };
-use combine::{Parser, token};
+use core::{
+    fmt::Display,
+    ops::{Add, Deref},
+};
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
     builtin::attributes::StringAttr,
+    combine::{Parser, token},
     impl_printable_for_display,
     parsable::{self, Parsable, ParseResult},
     result::{self, Result},
@@ -124,7 +123,7 @@ impl Parsable for Identifier {
         state_stream: &mut parsable::StateStream<'a>,
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
-        use combine::{many, parser::char};
+        use crate::combine::{many, parser::char};
         let parser = (char::letter().or(token('_')))
             .and(many::<String, _, _>(char::alpha_num().or(char::char('_'))))
             .map(|(c, rest)| c.to_string() + &rest);

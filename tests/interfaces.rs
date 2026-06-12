@@ -2,46 +2,38 @@ mod common;
 
 use std::sync::{LazyLock, Mutex};
 
-use combine::Parser;
-use combine::stream::position::SourcePosition;
 use common::{ConstantOp, ReturnOp};
 use expect_test::expect;
-use pliron::attribute::{attr_cast, verify_attr};
-use pliron::builtin::attr_interfaces::{OutlinedAttr, PrintOnceAttr};
-use pliron::builtin::op_interfaces::NResultsInterface;
-use pliron::derive::{
-    attr_interface, attr_interface_impl, op_interface, op_interface_impl, pliron_attr, pliron_op,
-    pliron_type, type_interface, type_interface_impl,
-};
-use pliron::location::{self, Located, Source};
-use pliron::op::verify_op;
-use pliron::operation::verify_operation;
-use pliron::parsable::{self, state_stream_from_iterator};
-use pliron::result::ExpectOk;
-use pliron::storage_uniquer::TypeValueHash;
-use pliron::r#type::{type_cast, verify_type};
+
 use pliron::{
-    attribute::Attribute,
+    attribute::{Attribute, attr_cast, verify_attr},
     builtin::{
-        attr_interfaces::TypedAttrInterface,
+        attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
         attributes::{IntegerAttr, StringAttr},
-        op_interfaces::{NResultsVerifyErr, OneResultInterface},
+        op_interfaces::{NResultsInterface, NResultsVerifyErr, OneResultInterface},
         ops::ModuleOp,
         types::{IntegerType, UnitType},
     },
+    combine::{Parser, stream::position::SourcePosition},
     common_traits::Verify,
     context::{Context, Ptr},
+    derive::{
+        attr_interface, attr_interface_impl, op_interface, op_interface_impl, pliron_attr,
+        pliron_op, pliron_type, type_interface, type_interface_impl,
+    },
     identifier::Identifier,
-    location::Location,
-    op::{Op, OpObj, op_cast},
-    operation::Operation,
-    parsable::{Parsable, ParseResult, StateStream},
+    input_error,
+    location::{self, Located, Location, Source},
+    op::{Op, OpObj, op_cast, verify_op},
+    operation::{Operation, verify_operation},
+    parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
     printable::{self, Printable},
-    result::{Error, ErrorKind, Result},
-    r#type::{Type, TypeObj},
+    result::{Error, ErrorKind, ExpectOk, Result},
+    storage_uniquer::TypeValueHash,
+    r#type::{Type, TypeObj, type_cast, verify_type},
     utils::trait_cast::any_to_trait,
+    verify_err,
 };
-use pliron::{input_error, verify_err};
 use thiserror::Error;
 
 use crate::common::const_ret_in_mod;

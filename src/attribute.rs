@@ -36,26 +36,24 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use core::{
-    fmt::{Debug, Display},
-    ops::Deref,
-};
-
 use alloc::{
     boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
-use combine::{Parser, parser, token};
+use core::{
+    fmt::{Debug, Display},
+    ops::Deref,
+};
 use downcast_rs::{Downcast, impl_downcast};
 use dyn_clone::DynClone;
 
 use crate::{
     builtin::attr_interfaces::OutlinedAttr,
+    combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    deps::hash::FxHashMap,
-    deps::sync::LazyLock,
+    deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,

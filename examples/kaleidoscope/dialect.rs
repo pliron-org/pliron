@@ -455,17 +455,21 @@ mod tests {
     // ANCHOR: fib_build_function
     #[test]
     fn build_fib_example() {
-        use pliron::basic_block::BasicBlock;
-        use pliron::builtin::{
-            op_interfaces::OneResultInterface,
-            ops::{FuncOp, ModuleOp},
-            types::FunctionType,
+        use pliron::{
+            basic_block::BasicBlock,
+            builtin::{
+                op_interfaces::OneResultInterface,
+                ops::{FuncOp, ModuleOp},
+                types::FunctionType,
+            },
+            debug_info::set_operation_result_name,
+            irbuild::{
+                inserter::{IRInserter, Inserter},
+                listener::DummyListener,
+            },
+            op::verify_op,
+            printable::Printable,
         };
-        use pliron::debug_info::set_operation_result_name;
-        use pliron::irbuild::inserter::{IRInserter, Inserter};
-        use pliron::irbuild::listener::DummyListener;
-        use pliron::op::verify_op;
-        use pliron::printable::Printable;
 
         type OpInserter = IRInserter<DummyListener>;
 

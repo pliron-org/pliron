@@ -1,31 +1,28 @@
 use awint::bw;
-use pliron::builtin::op_interfaces::NResultsVerifyErr;
-use pliron::derive::pliron_op;
-use pliron::init_env_logger_for_tests;
-use pliron::op::verify_op;
-use pliron::utils::apint::APInt;
 use pliron::{
     attribute::AttrObj,
     builtin::{
         attributes::IntegerAttr,
         op_interfaces::{
-            IsTerminatorInterface, NOpdsInterface, NResultsInterface, OneResultInterface,
-            SingleBlockRegionInterface,
+            IsTerminatorInterface, NOpdsInterface, NResultsInterface, NResultsVerifyErr,
+            OneResultInterface, SingleBlockRegionInterface,
         },
         ops::{FuncOp, ModuleOp},
         types::{FunctionType, IntegerType, Signedness},
     },
     context::Context,
     debug_info::set_operation_result_name,
+    derive::pliron_op,
     identifier::Identifier,
-    input_err,
+    init_env_logger_for_tests, input_err,
     irfmt::parsers::{attr_parser, process_parsed_ssa_defs},
     location::{Located, Location},
-    op::{Op, OpObj},
+    op::{Op, OpObj, verify_op},
     operation::Operation,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
+    utils::apint::APInt,
     value::Value,
 };
 

@@ -3,9 +3,6 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use combine::{Parser, optional, token};
-use pliron::derive::pliron_op;
-use pliron_derive::op_interface_impl;
 use thiserror::Error;
 
 use crate::{
@@ -21,6 +18,7 @@ use crate::{
         ops::func_op_attr_names::ATTR_KEY_FUNC_TYPE,
         type_interfaces::FunctionTypeInterface,
     },
+    combine::{Parser, optional, token},
     common_traits::{Named, Verify},
     context::{Context, Ptr},
     identifier::Identifier,
@@ -40,6 +38,7 @@ use crate::{
     r#type::{TypeObj, TypePtr, Typed},
     verify_err,
 };
+use pliron::derive::{op_interface_impl, pliron_op};
 
 use super::{
     attr_interfaces::TypedAttrInterface,

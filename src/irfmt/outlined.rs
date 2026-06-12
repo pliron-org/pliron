@@ -5,13 +5,13 @@
 use core::{borrow::Borrow, hash::Hash};
 
 use alloc::{boxed::Box, vec::Vec};
-use combine::{Parser, between, optional, parser::char::spaces, token};
 use rustc_hash::FxHashMap;
 
 use crate::{
     attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
     basic_block::BasicBlock,
     builtin::attr_interfaces::{OutlinedAttr, PrintOnceAttr},
+    combine::{Parser, between, optional, parser::char::spaces, token},
     context::{Context, Ptr},
     dict_key,
     identifier::Identifier,

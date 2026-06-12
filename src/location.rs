@@ -1,18 +1,17 @@
 //! Source location for different IR entities
 
-use core::fmt::Debug;
-
 use alloc::{boxed::Box, string::String, vec::Vec};
-use combine::{
-    Parser, between, optional,
-    parser::char::{spaces, string},
-    stream::position::SourcePosition,
-    token,
-};
+use core::fmt::Debug;
 use rustc_hash::FxHashSet;
 
 use crate::{
     attribute::AttrObj,
+    combine::{
+        Parser, between, optional,
+        parser::char::{spaces, string},
+        stream::position::SourcePosition,
+        token,
+    },
     context::Context,
     deps::io::PathBuf,
     impl_printable_for_display,
@@ -296,14 +295,12 @@ pub trait Located {
 #[cfg(test)]
 mod tests {
     use alloc::{format, string::ToString, vec};
-    use combine::ParseError;
-
     use expect_test::expect;
 
-    use crate::builtin::attributes::StringAttr;
-
-    use crate::input_err;
     use crate::{
+        builtin::attributes::StringAttr,
+        combine::ParseError,
+        input_err,
         location::Source,
         parsable::{self, state_stream_from_iterator},
     };

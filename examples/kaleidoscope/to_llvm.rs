@@ -590,8 +590,7 @@ mod tests {
         printable::Printable,
     };
 
-    use crate::ast::parse_program;
-    use crate::from_ast::lower_function;
+    use crate::{ast::parse_program, from_ast::lower_function};
 
     use super::lower_module;
 

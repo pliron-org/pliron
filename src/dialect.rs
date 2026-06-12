@@ -3,11 +3,11 @@
 use core::{fmt::Display, ops::Deref};
 
 use alloc::string::String;
-use combine::Parser;
 use rustc_hash::FxHashMap;
 
 use crate::{
     attribute::{AttrId, AttrParserFn},
+    combine::Parser,
     context::Context,
     identifier::Identifier,
     impl_printable_for_display, input_err,

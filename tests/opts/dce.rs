@@ -1,8 +1,8 @@
 //! DCE integration tests using textual LLVM dialect IR parsing.
 
-use combine::Parser;
 use pliron::{
     basic_block::BasicBlock,
+    combine::Parser,
     context::{Context, Ptr},
     init_env_logger_for_tests,
     irbuild::IRStatus,

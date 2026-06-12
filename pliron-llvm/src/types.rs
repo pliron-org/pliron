@@ -1,12 +1,11 @@
 //! [Type]s defined in the LLVM dialect.
 
-use pliron::combine::{Parser, between, optional, token};
-
-use pliron::builtin::type_interfaces::FunctionTypeInterface;
-use pliron::derive::{format, pliron_type, type_interface_impl};
 use pliron::{
+    builtin::type_interfaces::FunctionTypeInterface,
+    combine::{Parser, between, optional, token},
     common_traits::Verify,
     context::{Context, Ptr},
+    derive::{format, pliron_type, type_interface_impl},
     identifier::Identifier,
     input_err_noloc,
     irfmt::{
@@ -433,14 +432,13 @@ impl VectorType {
 #[cfg(test)]
 mod tests {
 
-    use expect_test::expect;
-    use pliron::combine::{self, Parser, eof, token};
-    use pliron::derive::{pliron_type, verify_succ};
-
     use crate::types::{FuncType, PointerType, StructType, VoidType};
+    use expect_test::expect;
     use pliron::{
         builtin::types::{IntegerType, Signedness},
+        combine::{self, Parser, eof, token},
         context::{Context, Ptr},
+        derive::{pliron_type, verify_succ},
         identifier::Identifier,
         irfmt::parsers::{spaced, type_parser},
         location,

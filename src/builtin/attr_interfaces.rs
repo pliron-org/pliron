@@ -1,12 +1,14 @@
 use core::cmp::Ordering;
 
-use crate::attribute::Attribute;
-use crate::context::{Context, Ptr};
-use crate::operation::Operation;
-use crate::result::Result;
-use crate::storage_uniquer::TypeValueHash;
-use crate::r#type::TypeObj;
-use crate::utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd};
+use crate::{
+    attribute::Attribute,
+    context::{Context, Ptr},
+    operation::Operation,
+    result::Result,
+    storage_uniquer::TypeValueHash,
+    r#type::TypeObj,
+    utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd},
+};
 use alloc::boxed::Box;
 use pliron::derive::attr_interface;
 

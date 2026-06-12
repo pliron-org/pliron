@@ -1,16 +1,10 @@
 //! Attribute macros for defining and implementing Interfaces.
 
-use quote::ToTokens;
-use quote::quote;
-use syn::DeriveInput;
-use syn::ItemImpl;
-use syn::Path;
-use syn::Token;
-use syn::TypeParamBound;
-use syn::parse::Parse;
-use syn::parse_quote;
-use syn::punctuated::Punctuated;
-use syn::{ItemTrait, Result};
+use quote::{ToTokens, quote};
+use syn::{
+    DeriveInput, ItemImpl, ItemTrait, Path, Result, Token, TypeParamBound, parse::Parse,
+    parse_quote, punctuated::Punctuated,
+};
 
 /// This macro does two things:
 /// 1. Prepends `supertrait` as a super trait.

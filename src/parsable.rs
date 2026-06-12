@@ -1,12 +1,25 @@
 //! IR objects that can be parsed from their text representation.
 
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use core::any::Any;
+use thiserror::Error;
 
 use crate::{
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{IsolatedFromAboveInterface, OneResultInterface},
         ops::ForwardRefOp,
+    },
+    combine::{
+        Parser, Positioned, StreamOnce, choice,
+        easy::{self, Errors, ParseError},
+        error::{StdParseResult2, Tracked},
+        parser::char::string,
+        stream::{
+            self, IteratorStream, buffered,
+            position::{self, SourcePosition},
+            state::Stream,
+        },
     },
     context::{Context, Ptr},
     deps::{
@@ -22,19 +35,6 @@ use crate::{
     result::{self, Result},
     value::{DefiningEntity, Value},
 };
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
-use combine::{
-    Parser, Positioned, StreamOnce, choice,
-    easy::{self, Errors, ParseError},
-    error::{StdParseResult2, Tracked},
-    parser::char::string,
-    stream::{
-        self, IteratorStream, buffered,
-        position::{self, SourcePosition},
-        state::Stream,
-    },
-};
-use thiserror::Error;
 
 /// State during parsing of any [Parsable] object.
 /// Every parser implemented using [Parsable] will be passed
@@ -110,7 +110,7 @@ pub type ParseResult<'a, T> = StdParseResult2<T, <StateStream<'a> as StreamOnce>
 /// specified and constrained by the associated type [Parsable::Arg].
 /// Example:
 /// ```
-/// use combine::{
+/// use pliron::combine::{
 ///     Parser, Stream, StreamOnce, easy, stream::position,
 ///     parser::char::digit, many1
 /// };

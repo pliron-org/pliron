@@ -1,8 +1,8 @@
 //! Tests for the `mem2reg` optimization pass.
 
-use combine::Parser;
 use pliron::{
     builtin::op_interfaces::{IsTerminatorInterface, NOpdsInterface, NResultsInterface},
+    combine::Parser,
     context::Context,
     derive::pliron_op,
     init_env_logger_for_tests,

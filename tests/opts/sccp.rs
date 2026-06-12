@@ -1,7 +1,7 @@
 //! SCCP integration tests using textual LLVM dialect IR parsing.
 
-use combine::Parser;
 use pliron::{
+    combine::Parser,
     context::Context,
     init_env_logger_for_tests,
     irbuild::IRStatus,

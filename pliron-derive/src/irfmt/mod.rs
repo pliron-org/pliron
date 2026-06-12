@@ -1,9 +1,9 @@
 use proc_macro2::{Span, TokenStream};
 use quote::format_ident;
-use syn::parse::{Parse, ParseStream};
-use syn::{self, DataEnum, DeriveInput, LitStr};
-use syn::{Data, Ident};
-use syn::{Fields, Type};
+use syn::{
+    self, Data, DataEnum, DeriveInput, Fields, Ident, LitStr, Type,
+    parse::{Parse, ParseStream},
+};
 
 mod parser;
 

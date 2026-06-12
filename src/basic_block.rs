@@ -1,16 +1,16 @@
 //! A [BasicBlock] is a list of [Operation]s.
 
 use alloc::{format, string::String, vec, vec::Vec};
-use combine::{
-    optional,
-    parser::{Parser, char::spaces},
-    sep_by, token,
-};
 use thiserror::Error;
 
 use crate::{
     attribute::AttributeDict,
     builtin::op_interfaces::{IsTerminatorInterface, NoTerminatorInterface},
+    combine::{
+        optional,
+        parser::{Parser, char::spaces},
+        sep_by, token,
+    },
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
     debug_info::{self, set_block_arg_name},

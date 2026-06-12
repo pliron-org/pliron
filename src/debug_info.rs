@@ -1,14 +1,14 @@
 //! Utilities for attaching / retrieving debug info to / from the IR.
 
 use alloc::{string::ToString, vec::Vec};
-use combine::{Parser, attempt, between, parser::char::spaces, sep_by, token};
-use pliron::derive::pliron_attr;
-use pliron_derive::attr_interface_impl;
+
+use pliron::derive::{attr_interface_impl, pliron_attr};
 
 use crate::{
     attribute::AttributeDict,
     basic_block::BasicBlock,
     builtin::{ATTR_KEY_DEBUG_INFO, attr_interfaces::OutlinedAttr},
+    combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
     context::{Context, Ptr},
     deps::hash::hash_map::Entry,
     identifier::Identifier,

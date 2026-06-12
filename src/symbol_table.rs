@@ -7,22 +7,26 @@ use alloc::{
 use rustc_hash::FxHashMap;
 use thiserror::Error;
 
-use crate::builtin::op_interfaces::{SymbolOpInterface, SymbolTableInterface};
-use crate::graph::walkers::interruptible::immutable::walk_region;
-use crate::graph::walkers::interruptible::{WalkResult, walk_advance, walk_skip};
-use crate::graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD};
-use crate::irbuild::inserter::{IRInserter, Inserter, OpInsertionPoint};
-use crate::irbuild::listener::DummyListener;
-use crate::location::Located;
-use crate::printable::Printable;
-use crate::{arg_err, arg_error};
-
-use crate::context::{Context, Ptr};
-use crate::identifier::Identifier;
-use crate::linked_list::ContainsLinkedList;
-use crate::op::op_cast;
-use crate::operation::Operation;
-use crate::result::Result;
+use crate::{
+    arg_err, arg_error,
+    builtin::op_interfaces::{SymbolOpInterface, SymbolTableInterface},
+    context::{Context, Ptr},
+    graph::walkers::{
+        IRNode, WALKCONFIG_PREORDER_FORWARD,
+        interruptible::{WalkResult, immutable::walk_region, walk_advance, walk_skip},
+    },
+    identifier::Identifier,
+    irbuild::{
+        inserter::{IRInserter, Inserter, OpInsertionPoint},
+        listener::DummyListener,
+    },
+    linked_list::ContainsLinkedList,
+    location::Located,
+    op::op_cast,
+    operation::Operation,
+    printable::Printable,
+    result::Result,
+};
 
 /// A utility to efficiently lookup and update [Symbol](SymbolOpInterface)s
 /// in a [SymbolTableInterface] Op. Similar to its counterpart in MLIR,
@@ -297,11 +301,15 @@ impl SymbolTableCollection {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::builtin::ops::{FuncOp, ModuleOp};
-    use crate::builtin::types::FunctionType;
-    use crate::context::Context;
-    use crate::identifier::Identifier;
-    use crate::op::Op;
+    use crate::{
+        builtin::{
+            ops::{FuncOp, ModuleOp},
+            types::FunctionType,
+        },
+        context::Context,
+        identifier::Identifier,
+        op::Op,
+    };
     use alloc::vec;
 
     #[test]

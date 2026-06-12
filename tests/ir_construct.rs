@@ -1,27 +1,23 @@
-use common::{ConstantOp, ReturnOp};
+use common::{ConstantOp, ReturnOp, const_ret_in_mod};
 use expect_test::{Expect, expect};
-use pliron::basic_block::BasicBlockVerifyErr;
-use pliron::builtin::attributes::StringAttr;
-use pliron::context::Ptr;
-use pliron::derive::pliron_op;
-use pliron::dict_key;
-use pliron::op::verify_op;
-use pliron::operation::{DefUseVerifyErr, verify_operation};
-use pliron::r#type::TypeObj;
 use pliron::{
-    basic_block::BasicBlock,
+    basic_block::{BasicBlock, BasicBlockVerifyErr},
     builtin::{
+        attributes::StringAttr,
         op_interfaces::{
             IsTerminatorInterface, OneRegionInterface, OneResultInterface,
             SingleBlockRegionInterface,
         },
         types::{IntegerType, Signedness},
     },
-    context::Context,
+    combine::parser::Parser,
+    context::{Context, Ptr},
     debug_info::{
         get_block_arg_name, get_operation_result_name, set_block_arg_name,
         set_operation_result_name,
     },
+    derive::pliron_op,
+    dict_key,
     graph::walkers::{
         self, IRNode, WALKCONFIG_POSTORDER_FORWARD, WALKCONFIG_POSTORDER_REVERSE,
         WALKCONFIG_PREORDER_FORWARD,
@@ -29,15 +25,13 @@ use pliron::{
     },
     irfmt::parsers::spaced,
     location,
-    op::Op,
-    operation::Operation,
+    op::{Op, verify_op},
+    operation::{DefUseVerifyErr, Operation, verify_operation},
     parsable::{self, state_stream_from_iterator},
     printable::Printable,
     result::Result,
+    r#type::TypeObj,
 };
-
-use crate::common::const_ret_in_mod;
-use combine::parser::Parser;
 
 #[cfg(target_family = "wasm")]
 use wasm_bindgen_test::*;
