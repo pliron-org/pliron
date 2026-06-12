@@ -5,6 +5,7 @@
 # It differs from .github/workflows/ci.yml as follows
 #   - LLVM setup is not performed.
 #   - Cargo commands are not passed the additional `--verbose` flag.
+#   - --no-default-features is not tested
 
 set -e
 

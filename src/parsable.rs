@@ -166,6 +166,25 @@ pub trait Parsable {
 }
 
 /// Build a [StateStream] from an iterator, for use with [Parsable].
+///
+/// Example:
+/// ```
+/// use pliron::{
+///     combine::Parser,
+///     context::{Context, Ptr},
+///     location::Source,
+///     operation::Operation,
+///     parsable::{state_stream_from_iterator, State},
+/// };
+///
+/// let mut ctx = Context::new();
+/// let source = Source::InMemory;
+/// let input = "builtin.module @m {}";
+/// let state_stream =
+///     state_stream_from_iterator(input.chars(), State::new(&mut ctx, source));
+/// let (_parsed_res, _): (Ptr<Operation>, _) =
+///     Operation::top_level_parser().parse(state_stream).unwrap();
+/// ```
 pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
     input: T,
     state: State<'a>,
@@ -184,6 +203,29 @@ pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
 
 /// Build a [StateStream] from a `BufReader` or source [`String`],
 /// for use with [Parsable].
+///
+/// Example:
+/// ```no_run
+/// use pliron::{
+///     combine::Parser,
+///     context::{Context, Ptr},
+///     location::Source,
+///     operation::Operation,
+///     parsable::{state_stream_from_file, State},
+/// };
+///
+/// fn main() {
+///     let mut ctx = Context::new();
+///     let plir_path = std::path::PathBuf::from("input.plir");
+///     let plir_file = std::fs::File::open(&plir_path).unwrap();
+///     let mut plir_file = std::io::BufReader::new(plir_file);
+///
+///     let source = Source::new_from_file(&mut ctx, plir_path);
+///     let state_stream = state_stream_from_file(&mut plir_file, State::new(&mut ctx, source));
+///     let (_parsed_res, _) : (Ptr<Operation>, _) =
+///         Operation::top_level_parser().parse(state_stream).unwrap();
+/// }
+/// ```
 pub fn state_stream_from_file<'a>(
     file_reader: &'a mut impl CharIter,
     state: State<'a>,
