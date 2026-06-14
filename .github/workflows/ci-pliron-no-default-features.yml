@@ -49,9 +49,3 @@ jobs:
       run: |
         cargo add -p pliron-llvm pliron --no-default-features
         RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --verbose
-
-    # - name: Test pliron on thumbv7m-none-eabi, which doesn't have std
-    #   run: |
-    #     rustup target add thumbv7m-none-eabi
-    #     cargo add -p pliron-derive pliron --dev --no-default-features
-    #     RUSTFLAGS="-D warnings" cargo check -p pliron-derive --all-targets --target thumbv7m-none-eabi
