@@ -92,28 +92,3 @@ pub mod hash {
     pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
     pub use hashbrown::*;
 }
-
-use alloc::string::String;
-
-pub trait CharIter {
-    fn chars_iter(&mut self) -> impl Iterator<Item = char>;
-}
-
-impl CharIter for String {
-    fn chars_iter(&mut self) -> impl Iterator<Item = char> {
-        self.chars()
-    }
-}
-
-// This should ideally be any `T: BufRead`, but coherence rules don't allow it because `std` may
-// add an implementation of `BufRead` for `String` in the future.
-#[cfg(feature = "std")]
-impl<T: std::io::Read> CharIter for std::io::BufReader<T> {
-    fn chars_iter(&mut self) -> impl Iterator<Item = char> {
-        use utf8_chars::BufReadCharsExt;
-        self.chars().map(|c| {
-            c.map_err(|e| std::eprintln!("Error reading chars from file: {e}"))
-                .unwrap()
-        })
-    }
-}

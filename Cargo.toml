@@ -38,7 +38,6 @@ downcast-rs = "2"
 rustc-hash.workspace = true
 thiserror.workspace = true
 combine.workspace = true
-utf8-chars = "3"
 regex = "1"
 dyn-clone.workspace = true
 log.workspace = true
@@ -56,6 +55,7 @@ linkme = "0"
 expect-test.workspace = true
 env_logger.workspace = true
 clap.workspace = true
+utf8-chars.workspace = true
 
 [target.'cfg(not(target_family = "wasm"))'.dev-dependencies]
 pliron-llvm = { path = "./pliron-llvm" }
@@ -84,6 +84,7 @@ which = "8"
 hi_sparse_bitset = "0"
 hashbrown = "0.17"
 spin = "0.12"
+utf8-chars = "3"
 
 [[example]]
 name = "kaleidoscope"
