@@ -31,3 +31,4 @@ assert_cmd.workspace = true
 env_logger.workspace = true
 cargo-manifest.workspace = true
 which.workspace = true
+utf8-chars.workspace = true

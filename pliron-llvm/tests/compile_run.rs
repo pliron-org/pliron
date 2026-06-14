@@ -19,7 +19,7 @@ use pliron::{
         constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
         simplify_cfg::SimplifyCFGPass,
     },
-    parsable::{self, state_stream_from_file},
+    parsable::{self, state_stream_from_iterator},
     pass_manager::{AnalysisManager, OpPass, OpPassManager, Pass, PassGroup, PassManager},
     printable::Printable,
 };
@@ -135,9 +135,14 @@ fn test_llvm_ir_via_pliron(input_file: &str, opts: impl Pass, expected_output: i
     // Parse the plir file and verify it.
     let plir_file = std::fs::File::open(&plir_path).unwrap();
     let mut plir_file = std::io::BufReader::new(plir_file);
+    use utf8_chars::BufReadCharsExt;
+    let chars_iter = plir_file.chars().map(|c| {
+        c.inspect_err(|e| eprint!("Error reading chars from file: {e}"))
+            .unwrap()
+    });
 
     let source = location::Source::new_from_file(ctx, plir_path.clone());
-    let state_stream = state_stream_from_file(&mut plir_file, parsable::State::new(ctx, source));
+    let state_stream = state_stream_from_iterator(chars_iter, parsable::State::new(ctx, source));
 
     let parsed_res = match Operation::top_level_parser().parse(state_stream) {
         Ok((parsed_res, _)) => parsed_res,
