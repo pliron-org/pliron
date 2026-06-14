@@ -141,7 +141,7 @@ fn test_llvm_ir_via_pliron(input_file: &str, opts: impl Pass, expected_output: i
             .unwrap()
     });
 
-    let source = location::Source::new_from_file(ctx, plir_path.clone());
+    let source = location::Source::new_from_file(ctx, plir_path.to_str().unwrap());
     let state_stream = state_stream_from_iterator(chars_iter, parsable::State::new(ctx, source));
 
     let parsed_res = match Operation::top_level_parser().parse(state_stream) {
