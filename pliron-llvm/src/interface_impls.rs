@@ -1,9 +1,11 @@
 //! Implementation of various op interfaces for LLVM IR instructions.
 
+use std::num::NonZero;
+
 use pliron::{
     attribute::AttrObj,
     basic_block::BasicBlock,
-    builtin::{attributes::IntegerAttr, op_interfaces::BranchOpInterface, ops::ConstantOp},
+    builtin::{attributes::IntegerAttr, op_interfaces::BranchOpInterface},
     context::{Context, Ptr},
     derive::op_interface_impl,
     irbuild::{IRStatus, rewriter::Rewriter},
@@ -98,13 +100,10 @@ impl BlockArgRemoval for FuncOp {
     }
 }
 
-/// If all elements of `operand_attrs` are `Some(x)`, combine the operands
-/// and return the result. Otherwise, return None. Assumes that the
-/// concrete type of the attributes are `IntegerAttr`.
-fn fold_int_bin_operands(
-    operand_attrs: &[Option<AttrObj>],
-    combine: impl Fn(&APInt, &APInt) -> APInt,
-) -> Option<AttrObj> {
+/// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
+/// be casted to an [IntegerAttr], return the casted results. Otherwise, return `None`.
+fn get_int_bin_operands(operand_attrs: &[Option<AttrObj>]) -> Option<(IntegerAttr, IntegerAttr)> {
+    assert!(operand_attrs.len() == 2);
     let [Some(lhs), Some(rhs)] = operand_attrs else {
         return None;
     };
@@ -114,38 +113,23 @@ fn fold_int_bin_operands(
     let rhs_int = rhs
         .downcast_ref::<IntegerAttr>()
         .expect("invalid operand type: typecheck before optimizing");
-    Some(Box::new(IntegerAttr::new(
-        lhs_int.get_type(),
-        combine(&lhs_int.value(), &rhs_int.value()),
-    )) as AttrObj)
+    Some((lhs_int.clone(), rhs_int.clone()))
 }
 
-/// Constant fold this binary operation into a singleton vector containing
-/// its result type if folding is successful, or None otherwise.
+/// Constant fold this binary integer operation into a singleton vector
+/// containing its result type if folding is successful, or None otherwise.
 fn check_fold_int_bin_op(
     operand_attrs: &[Option<AttrObj>],
     combine: impl Fn(&APInt, &APInt) -> APInt,
 ) -> Vec<Option<AttrObj>> {
-    vec![fold_int_bin_operands(operand_attrs, combine)]
-}
-
-/// Attempt to perform constant folding the given operation
-fn fold_in_place_int_bin_op(
-    op: &impl Op,
-    ctx: &mut Context,
-    operand_attrs: &[Option<AttrObj>],
-    rewriter: &mut dyn Rewriter,
-    combine: impl Fn(&APInt, &APInt) -> APInt,
-) -> IRStatus {
-    let Some(folded) = fold_int_bin_operands(operand_attrs, combine) else {
-        return IRStatus::Unchanged;
+    let Some((lhs, rhs)) = get_int_bin_operands(operand_attrs) else {
+        return vec![None];
     };
-    let new_const = ConstantOp::new(ctx, folded);
-    let old_op = op.get_operation();
-    let new_op = new_const.get_operation();
-    rewriter.insert_operation(ctx, new_op);
-    rewriter.replace_operation(ctx, old_op, new_op);
-    IRStatus::Changed
+    let res = Box::new(IntegerAttr::new(
+        lhs.get_type(),
+        combine(&lhs.value(), &rhs.value()),
+    )) as AttrObj;
+    vec![Some(res)]
 }
 
 #[op_interface_impl]
@@ -159,7 +143,7 @@ impl ConstFoldInterface for AddOp {
         ops: &[Option<AttrObj>],
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
-        fold_in_place_int_bin_op(self, ctx, ops, rw, APInt::add)
+        self.fold_with_materialization(ctx, ops, rw)
     }
 }
 
@@ -174,7 +158,121 @@ impl ConstFoldInterface for SubOp {
         ops: &[Option<AttrObj>],
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
-        fold_in_place_int_bin_op(self, ctx, ops, rw, APInt::sub)
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for MulOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_bin_op(ops, APInt::mul)
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ShlOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        match get_int_bin_operands(ops) {
+            Some((lhs, rhs)) => {
+                let shamt = rhs.value();
+                let lhs_bw: usize = lhs.value().bw();
+                let lhs_bw: APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                if shamt.ult(&lhs_bw) {
+                    check_fold_int_bin_op(ops, APInt::shl)
+                } else {
+                    vec![None]
+                }
+            }
+            None => vec![None],
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for UDivOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        match get_int_bin_operands(ops) {
+            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            _ => check_fold_int_bin_op(ops, APInt::udiv),
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SDivOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        match get_int_bin_operands(ops) {
+            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            _ => check_fold_int_bin_op(ops, APInt::sdiv),
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for URemOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        match get_int_bin_operands(ops) {
+            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            _ => check_fold_int_bin_op(ops, APInt::urem),
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SRemOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        match get_int_bin_operands(ops) {
+            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            _ => check_fold_int_bin_op(ops, APInt::srem),
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
     }
 }
 
