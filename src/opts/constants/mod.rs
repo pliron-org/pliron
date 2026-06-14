@@ -58,7 +58,8 @@ pub trait ConstFoldInterface {
             };
             let Some(materializable) = attr_cast::<dyn MaterializableAttr>(&**attr) else {
                 log::info!(
-                    "Constant propagation tried to materialize {}, but its type does not implement MaterializableAttr.",
+                    "Constant propagation tried to materialize {}, but its type does not \
+                     implement MaterializableAttr. This potentially prevents optimizations.",
                     attr.disp(ctx)
                 );
                 continue;
