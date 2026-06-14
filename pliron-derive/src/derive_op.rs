@@ -5,6 +5,41 @@ use syn::{DeriveInput, LitStr, Result, parse::Parser, parse_quote};
 
 const PROC_MACRO_NAME: &str = "def_op";
 
+struct OperandOrResultSpec {
+    name: Option<syn::Ident>,
+    ty: Option<Box<syn::Type>>,
+}
+
+impl ToTokens for OperandOrResultSpec {
+    fn to_tokens(&self, tokens: &mut TokenStream) {
+        match &self.name {
+            Some(name) => name.to_tokens(tokens),
+            None => tokens.extend(quote! { _ }),
+        }
+        if let Some(ty) = &self.ty {
+            tokens.extend(quote! { : #ty });
+        }
+    }
+}
+
+impl syn::parse::Parse for OperandOrResultSpec {
+    fn parse(input: syn::parse::ParseStream) -> syn::Result<Self> {
+        let name = if input.peek(syn::Token![_]) {
+            input.parse::<syn::Token![_]>()?;
+            None
+        } else {
+            Some(input.parse()?)
+        };
+        let ty = if input.peek(syn::Token![:]) {
+            input.parse::<syn::Token![:]>()?;
+            Some(Box::new(input.parse()?))
+        } else {
+            None
+        };
+        Ok(Self { name, ty })
+    }
+}
+
 pub(crate) fn def_op(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
@@ -321,6 +356,108 @@ pub(crate) fn derive_attr_get_set(
     input.attrs.extend(attr_comment_lines);
 
     // Since this is an attribute macro, we need to include the original input too.
+    output.extend(input.to_token_stream());
+
+    Ok(output)
+}
+
+pub(crate) fn operands(
+    args: impl Into<TokenStream>,
+    input: impl Into<TokenStream>,
+) -> Result<TokenStream> {
+    let operands =
+        syn::punctuated::Punctuated::<OperandOrResultSpec, syn::Token![,]>::parse_terminated
+            .parse2(args.into())?;
+
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
+    let op_name = input.ident.clone();
+
+    let mut getter_fns = Vec::new();
+    let mut typed_interfaces = Vec::new();
+    for (index, operand) in operands.iter().enumerate() {
+        if let Some(name) = &operand.name {
+            let fn_name_get = format_ident!("get_operand_{}", name);
+            getter_fns.push(quote! {
+                pub fn #fn_name_get(&self, ctx: &::pliron::context::Context) -> ::pliron::value::Value {
+                    self.op.deref(ctx).get_operand(#index)
+                }
+            });
+        }
+
+        if let Some(ty) = &operand.ty {
+            typed_interfaces.push(quote! {
+                ::pliron::builtin::op_interfaces::OperandNOfType<#index, #ty>
+            });
+        }
+    }
+
+    if !typed_interfaces.is_empty() {
+        let typed_interface_list = quote! { #(#typed_interfaces),* };
+        input.attrs.push(parse_quote! {
+            #[::pliron::derive::derive_op_interface_impl(#typed_interface_list)]
+        });
+    }
+
+    let mut output = TokenStream::new();
+    if !getter_fns.is_empty() {
+        output.extend(quote! {
+            impl #op_name {
+                #(#getter_fns)*
+            }
+        });
+    }
+
+    // Since this is an attribute macro, we need to include the original input too.
+    output.extend(input.to_token_stream());
+
+    Ok(output)
+}
+
+pub(crate) fn results(
+    args: impl Into<TokenStream>,
+    input: impl Into<TokenStream>,
+) -> Result<TokenStream> {
+    let results =
+        syn::punctuated::Punctuated::<OperandOrResultSpec, syn::Token![,]>::parse_terminated
+            .parse2(args.into())?;
+
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
+    let op_name = input.ident.clone();
+
+    let mut getter_fns = Vec::new();
+    let mut typed_interfaces = Vec::new();
+    for (index, result) in results.iter().enumerate() {
+        if let Some(name) = &result.name {
+            let fn_name_get = format_ident!("get_result_{}", name);
+            getter_fns.push(quote! {
+                pub fn #fn_name_get(&self, ctx: &::pliron::context::Context) -> ::pliron::value::Value {
+                    self.op.deref(ctx).get_result(#index)
+                }
+            });
+        }
+
+        if let Some(ty) = &result.ty {
+            typed_interfaces.push(quote! {
+                ::pliron::builtin::op_interfaces::ResultNOfType<#index, #ty>
+            });
+        }
+    }
+
+    let typed_interface_list = quote! { #(#typed_interfaces),* };
+    if !typed_interface_list.is_empty() {
+        input.attrs.push(parse_quote! {
+            #[::pliron::derive::derive_op_interface_impl(#typed_interface_list)]
+        });
+    }
+
+    let mut output = TokenStream::new();
+    if !getter_fns.is_empty() {
+        output.extend(quote! {
+            impl #op_name {
+                #(#getter_fns)*
+            }
+        });
+    }
     output.extend(input.to_token_stream());
 
     Ok(output)

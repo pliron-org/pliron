@@ -658,7 +658,7 @@ impl ToLLVMValue for CondBrOp {
         let (true_succ, false_succ) = (op.get_successor(0), op.get_successor(1));
         let true_succ_llvm = convert_block_operand(cctx, ctx, true_succ)?;
         let false_succ_llvm = convert_block_operand(cctx, ctx, false_succ)?;
-        let cond = convert_value_operand(cctx, ctx, &self.condition(ctx))?;
+        let cond = convert_value_operand(cctx, ctx, &self.get_operand_condition(ctx))?;
 
         let branch_op = llvm_build_cond_br(&cctx.builder, cond, true_succ_llvm, false_succ_llvm);
 
@@ -691,7 +691,7 @@ impl ToLLVMValue for SwitchOp {
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
         let op = self.get_operation().deref(ctx);
-        let cond = convert_value_operand(cctx, ctx, &self.condition(ctx))?;
+        let cond = convert_value_operand(cctx, ctx, &self.get_operand_condition(ctx))?;
         let default_succ = convert_block_operand(cctx, ctx, self.default_dest(ctx))?;
         let switch_op = llvm_build_switch(
             &cctx.builder,
@@ -761,8 +761,8 @@ impl ToLLVMValue for StoreOp {
         _llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let value = convert_value_operand(cctx, ctx, &self.value_opd(ctx))?;
-        let ptr = convert_value_operand(cctx, ctx, &self.address_opd(ctx))?;
+        let value = convert_value_operand(cctx, ctx, &self.get_operand_value(ctx))?;
+        let ptr = convert_value_operand(cctx, ctx, &self.get_operand_address(ctx))?;
         let store_op = llvm_build_store(&cctx.builder, value, ptr);
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(store_op, alignment);
@@ -1392,7 +1392,7 @@ impl ToLLVMValue for GetElementPtrOp {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        let base = convert_value_operand(cctx, ctx, &self.src_ptr(ctx))?;
+        let base = convert_value_operand(cctx, ctx, &self.get_operand_src_ptr(ctx))?;
 
         let src_elem_type = convert_type(ctx, llvm_ctx, cctx, self.src_elem_type(ctx))?;
         let gep_op = llvm_build_gep2(
@@ -1464,9 +1464,9 @@ impl ToLLVMValue for InsertElementOp {
         _llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let base = convert_value_operand(cctx, ctx, &self.vector_operand(ctx))?;
-        let value = convert_value_operand(cctx, ctx, &self.element_operand(ctx))?;
-        let index = convert_value_operand(cctx, ctx, &self.index_operand(ctx))?;
+        let base = convert_value_operand(cctx, ctx, &self.get_operand_vector(ctx))?;
+        let value = convert_value_operand(cctx, ctx, &self.get_operand_element(ctx))?;
+        let index = convert_value_operand(cctx, ctx, &self.get_operand_index(ctx))?;
         let insert_op = llvm_build_insert_element(
             &cctx.builder,
             base,
@@ -1486,8 +1486,8 @@ impl ToLLVMValue for ExtractElementOp {
         _llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let base = convert_value_operand(cctx, ctx, &self.vector_operand(ctx))?;
-        let index = convert_value_operand(cctx, ctx, &self.index_operand(ctx))?;
+        let base = convert_value_operand(cctx, ctx, &self.get_operand_vector(ctx))?;
+        let index = convert_value_operand(cctx, ctx, &self.get_operand_index(ctx))?;
         let extract_op = llvm_build_extract_element(
             &cctx.builder,
             base,
@@ -2110,7 +2110,7 @@ impl ToLLVMConstValue for InsertElementOp {
         let op = self.get_operation().deref(ctx);
         let base = convert_to_llvm_const(ctx, cctx, llvm_ctx, op.get_operand(0))?;
         let value = convert_to_llvm_const(ctx, cctx, llvm_ctx, op.get_operand(1))?;
-        let index = self.index_operand(ctx);
+        let index = self.get_operand_index(ctx);
         let index = convert_to_llvm_const(ctx, cctx, llvm_ctx, index)?;
 
         // LLVM's builder tries to fold this, so we rely on that.

@@ -12,9 +12,8 @@ use pliron::{
             AtMostNOpdsInterface, AtMostNRegionsInterface, AtMostOneRegionInterface,
             BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
             IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
-            OneOpdInterface, OneResultInterface, OneSuccInterface, OperandNOfType,
-            OperandSegmentInterface, OptionalOpdInterface, ResultNOfType,
-            SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
+            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
             SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
@@ -460,9 +459,9 @@ pub enum AllocaOpVerifyErr {
         NResultsInterface<1>,
         NOpdsInterface<1>,
         AlignableOpInterface,
-        OperandNOfType<0, IntegerType>,
-        ResultNOfType<0, PointerType>,
     ],
+    operands = (array_size: IntegerType),
+    results = (_: PointerType),
     attributes = (alloca_element_type: TypeAttr)
 )]
 pub struct AllocaOp;
@@ -601,9 +600,9 @@ pub enum IntToPtrOpErr {
         NResultsInterface<1>,
         NOpdsInterface<1>,
         CastOpInterface,
-        OperandNOfType<0, IntegerType>,
-        ResultNOfType<0, PointerType>
      ],
+      operands = (arg: IntegerType),
+    results = (_: PointerType),
      verifier = "succ"
 )]
 pub struct IntToPtrOp;
@@ -635,9 +634,9 @@ pub enum PtrToIntOpErr {
         NResultsInterface<1>,
         NOpdsInterface<1>,
         CastOpInterface,
-        OperandNOfType<0, PointerType>,
-        ResultNOfType<0, IntegerType>,
     ],
+    operands = (arg: PointerType),
+    results = (_: IntegerType),
     verifier = "succ"
 )]
 pub struct PtrToIntOp;
@@ -662,9 +661,9 @@ pub struct PtrToIntOp;
         NResultsInterface<1>,
         NOpdsInterface<1>,
         CastOpInterface,
-        OperandNOfType<0, PointerType>,
-        ResultNOfType<0, PointerType>,
     ],
+    operands = (arg: PointerType),
+    results = (_: PointerType),
     verifier = "succ"
 )]
 pub struct AddrSpaceCastOp;
@@ -749,6 +748,7 @@ impl BrOp {
 #[pliron_op(
     name = "llvm.cond_br",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>, NSuccsInterface<2>],
+    operands = (condition, true_dest_opds, false_dest_opds),
 )]
 pub struct CondBrOp;
 impl CondBrOp {
@@ -779,11 +779,6 @@ impl CondBrOp {
         op.set_operand_segment_sizes(ctx, segment_sizes);
         op
     }
-
-    /// Get the condition value for the branch.
-    pub fn condition(&self, ctx: &Context) -> Value {
-        self.op.deref(ctx).get_operand(0)
-    }
 }
 
 #[derive(Error, Debug)]
@@ -796,7 +791,7 @@ impl Verify for CondBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         use pliron::r#type::Typed;
         // Ensure that the condition is a 1-bit signless integer
-        let condition_ty = self.condition(ctx).get_type(ctx);
+        let condition_ty = self.get_operand_condition(ctx).get_type(ctx);
         let condition_ty = condition_ty.deref(ctx);
         let condition_int_ty = condition_ty.downcast_ref::<IntegerType>().ok_or_else(|| {
             verify_error!(self.loc(ctx), CondBrOpVerifyErr::IncorrectConditionType)
@@ -946,6 +941,7 @@ impl BranchOpInterface for CondBrOp {
 #[pliron_op(
     name = "llvm.switch",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+    operands = (condition, default_dest_opds, case_dest_opds),
     attributes = (switch_case_values: CaseValuesAttr)
 )]
 pub struct SwitchOp;
@@ -1180,11 +1176,6 @@ impl SwitchOp {
             .collect()
     }
 
-    /// Get the condition value for the switch.
-    pub fn condition(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(0)
-    }
-
     /// Get the default destination of this switch operation.
     pub fn default_dest(&self, ctx: &Context) -> Ptr<BasicBlock> {
         self.get_operation().deref(ctx).get_successor(0)
@@ -1308,7 +1299,9 @@ pub enum GetElementPtrOpErr {
 #[pliron_op(
     name = "llvm.gep",
     format = "`<` attr($gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` attr($gep_indices, $GepIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, ResultNOfType<0, PointerType>],
+    interfaces = [OneResultInterface, NResultsInterface<1>],
+    operands = (src_ptr, dynamic_indices),
+    results = (_: PointerType),
     attributes = (gep_src_elem_type: TypeAttr, gep_indices: GepIndicesAttr)
 )]
 pub struct GetElementPtrOp;
@@ -1398,11 +1391,6 @@ impl GetElementPtrOp {
             .get_type(ctx)
     }
 
-    /// Get the base (source) pointer of this GEP.
-    pub fn src_ptr(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(0)
-    }
-
     /// Get the indices of this GEP.
     pub fn indices(&self, ctx: &Context) -> Vec<GepIndex> {
         let op = &*self.op.deref(ctx);
@@ -1478,8 +1466,8 @@ pub enum LoadOpVerifyErr {
         NResultsInterface<1>,
         NOpdsInterface<1>,
         AlignableOpInterface,
-        OperandNOfType<0, PointerType>
     ],
+    operands = (address: PointerType),
     verifier = "succ"
 )]
 pub struct LoadOp;
@@ -1497,17 +1485,12 @@ impl LoadOp {
             ),
         }
     }
-
-    /// Get the address operand
-    pub fn address_opd(&self, ctx: &Context) -> Value {
-        self.op.deref(ctx).get_operand(0)
-    }
 }
 
 #[op_interface_impl]
 impl PromotableOpInterface for LoadOp {
     fn promotion_kind(&self, ctx: &Context, alloc_info: &AllocInfo) -> PromotableOpKind {
-        if self.address_opd(ctx) == alloc_info.ptr {
+        if self.get_operand_address(ctx) == alloc_info.ptr {
             PromotableOpKind::Load
         } else {
             PromotableOpKind::NonPromotableUse
@@ -1524,7 +1507,7 @@ impl PromotableOpInterface for LoadOp {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);
         }
         let (alloc_info, reaching_def) = &alloc_info_reaching_defs[0];
-        if self.address_opd(ctx) != alloc_info.ptr {
+        if self.get_operand_address(ctx) != alloc_info.ptr {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);
         }
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![*reaching_def]);
@@ -1552,9 +1535,9 @@ pub enum StoreOpVerifyErr {
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,
-        OperandNOfType<1, PointerType>,
         NOpdsInterface<2>
     ],
+    operands = (value, address: PointerType),
     verifier = "succ"
 )]
 pub struct StoreOp;
@@ -1572,23 +1555,13 @@ impl StoreOp {
             ),
         }
     }
-
-    /// Get the value operand
-    pub fn value_opd(&self, ctx: &Context) -> Value {
-        self.op.deref(ctx).get_operand(0)
-    }
-
-    /// Get the address operand
-    pub fn address_opd(&self, ctx: &Context) -> Value {
-        self.op.deref(ctx).get_operand(1)
-    }
 }
 
 #[op_interface_impl]
 impl PromotableOpInterface for StoreOp {
     fn promotion_kind(&self, ctx: &Context, alloc_info: &AllocInfo) -> PromotableOpKind {
-        if self.address_opd(ctx) == alloc_info.ptr {
-            PromotableOpKind::Store(self.value_opd(ctx))
+        if self.get_operand_address(ctx) == alloc_info.ptr {
+            PromotableOpKind::Store(self.get_operand_value(ctx))
         } else {
             PromotableOpKind::NonPromotableUse
         }
@@ -1604,7 +1577,7 @@ impl PromotableOpInterface for StoreOp {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);
         }
         let (alloc_info, _reaching_def) = &alloc_info_reaching_defs[0];
-        if self.address_opd(ctx) != alloc_info.ptr {
+        if self.get_operand_address(ctx) != alloc_info.ptr {
             return arg_err!(self.loc(ctx), UnrelatedAllocInfo);
         }
         rewriter.erase_operation(ctx, self.get_operation());
@@ -1632,8 +1605,8 @@ impl PromotableOpInterface for StoreOp {
         OneResultInterface,
         NResultsInterface<1>,
         NOpdsInterface<2>,
-        OperandNOfType<0, PointerType>
     ],
+    operands = (ptr: PointerType, val),
     attributes = (
         llvm_rmw_kind: AtomicRmwKindAttr,
         llvm_rmw_ordering: AtomicOrderingAttr,
@@ -1695,8 +1668,8 @@ impl AtomicRmwOp {
         OneResultInterface,
         NResultsInterface<1>,
         NOpdsInterface<3>,
-        OperandNOfType<0, PointerType>
     ],
+    operands = (ptr: PointerType, cmp, new_val),
     attributes = (
         llvm_cas_success_ordering: AtomicOrderingAttr,
         llvm_cas_failure_ordering: AtomicOrderingAttr,
@@ -1783,8 +1756,8 @@ impl FenceOp {
         NResultsInterface<1>,
         NOpdsInterface<1>,
         AlignableOpInterface,
-        OperandNOfType<0, PointerType>
     ],
+    operands = (ptr: PointerType),
     attributes = (llvm_ld_ordering: AtomicOrderingAttr, llvm_ld_syncscope: StringAttr),
     verifier = "succ"
 )]
@@ -1829,9 +1802,9 @@ impl AtomicLoadOp {
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,
-        OperandNOfType<1, PointerType>,
         NOpdsInterface<2>
     ],
+    operands = (value, ptr: PointerType),
     attributes = (llvm_st_ordering: AtomicOrderingAttr, llvm_st_syncscope: StringAttr),
     verifier = "succ"
 )]
@@ -2569,7 +2542,8 @@ impl Parsable for GlobalOp {
 #[pliron_op(
     name = "llvm.addressof",
     format = "`@` attr($global_name, $IdentifierAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>, ResultNOfType<0, PointerType>],
+    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>],
+    results = (_: PointerType),
     attributes = (global_name: IdentifierAttr),
 )]
 pub struct AddressOfOp;
@@ -3351,7 +3325,8 @@ pub enum InsertExtractValueErr {
 #[pliron_op(
     name = "llvm.insert_element",
     format = "$0 `, ` $1 `, ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<3>]
+    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<3>],
+    operands = (vector, element, index)
 )]
 pub struct InsertElementOp;
 impl Verify for InsertElementOp {
@@ -3401,21 +3376,6 @@ impl InsertElementOp {
         TypePtr::<VectorType>::from_ptr(ty, ctx)
             .expect("InsertElementOp result type is not a VectorType")
     }
-
-    /// Get the vector operand of the InsertElementOp.
-    pub fn vector_operand(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(0)
-    }
-
-    /// Get the element operand of the InsertElementOp.
-    pub fn element_operand(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(1)
-    }
-
-    /// Get the index operand of the InsertElementOp.
-    pub fn index_operand(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(2)
-    }
 }
 
 #[derive(Error, Debug)]
@@ -3440,7 +3400,8 @@ pub enum InsertExtractElementOpVerifyErr {
 #[pliron_op(
     name = "llvm.extract_element",
     format = "$0 `, ` $1 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<2>]
+    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<2>],
+    operands = (vector, index)
 )]
 pub struct ExtractElementOp;
 
@@ -3489,19 +3450,9 @@ impl ExtractElementOp {
     /// Get the vector type of the ExtractElementOp.
     pub fn vector_type(&self, ctx: &Context) -> TypePtr<VectorType> {
         use pliron::r#type::Typed;
-        let ty = self.vector_operand(ctx).get_type(ctx);
+        let ty = self.get_operand_vector(ctx).get_type(ctx);
         TypePtr::<VectorType>::from_ptr(ty, ctx)
             .expect("ExtractElementOp vector operand type is not a VectorType")
-    }
-
-    /// Get the vector operand of the ExtractElementOp.
-    pub fn vector_operand(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(0)
-    }
-
-    /// Get the index operand of the ExtractElementOp.
-    pub fn index_operand(&self, ctx: &Context) -> Value {
-        self.get_operation().deref(ctx).get_operand(1)
     }
 }
 

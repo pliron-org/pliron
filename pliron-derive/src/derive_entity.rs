@@ -26,6 +26,60 @@ impl Parse for AttributeSpec {
     }
 }
 
+/// Operand specification for pliron operations.
+/// Name is mandatory (`_` can be used to skip getter generation), type is optional.
+#[derive(Clone)]
+struct OperandSpec {
+    name: Option<Ident>,
+    ty: Option<Type>,
+}
+
+impl Parse for OperandSpec {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = if input.peek(Token![_]) {
+            input.parse::<Token![_]>()?;
+            None
+        } else {
+            Some(input.parse()?)
+        };
+
+        let ty = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+
+        Ok(OperandSpec { name, ty })
+    }
+}
+
+/// Result specification for pliron operations.
+/// Name is mandatory (`_` can be used to skip getter generation), type is optional.
+#[derive(Clone)]
+struct ResultSpec {
+    name: Option<Ident>,
+    ty: Option<Type>,
+}
+
+impl Parse for ResultSpec {
+    fn parse(input: ParseStream) -> syn::Result<Self> {
+        let name = if input.peek(Token![_]) {
+            input.parse::<Token![_]>()?;
+            None
+        } else {
+            Some(input.parse()?)
+        };
+        let ty = if input.peek(Token![:]) {
+            input.parse::<Token![:]>()?;
+            Some(input.parse()?)
+        } else {
+            None
+        };
+        Ok(ResultSpec { ty, name })
+    }
+}
+
 /// Format specification for pliron entities
 #[derive(Clone)]
 enum FormatSpec {
@@ -42,6 +96,8 @@ struct EntityConfig {
     format: Option<FormatSpec>,
     interfaces: Option<Vec<Type>>,
     attributes: Option<Vec<AttributeSpec>>,
+    operands: Option<Vec<OperandSpec>>,
+    results: Option<Vec<ResultSpec>>,
     verifier: Option<LitStr>,
     generate_get: Option<bool>,
 }
@@ -83,6 +139,20 @@ impl Parse for EntityConfig {
                             let attributes: Punctuated<AttributeSpec, Token![,]> =
                                 content.parse_terminated(AttributeSpec::parse, Token![,])?;
                             config.attributes = Some(attributes.into_iter().collect());
+                        }
+                        "operands" => {
+                            let content;
+                            syn::parenthesized!(content in input);
+                            let operands: Punctuated<OperandSpec, Token![,]> =
+                                content.parse_terminated(OperandSpec::parse, Token![,])?;
+                            config.operands = Some(operands.into_iter().collect());
+                        }
+                        "results" => {
+                            let content;
+                            syn::parenthesized!(content in input);
+                            let results: Punctuated<ResultSpec, Token![,]> =
+                                content.parse_terminated(ResultSpec::parse, Token![,])?;
+                            config.results = Some(results.into_iter().collect());
                         }
                         "verifier" => {
                             let verifier: LitStr = input.parse()?;
@@ -177,6 +247,20 @@ pub(crate) fn pliron_type(
         ));
     }
 
+    if config.operands.is_some() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "operands is not supported for types",
+        ));
+    }
+
+    if config.results.is_some() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "results is not supported for types",
+        ));
+    }
+
     let mut expanded = quote! { #input_tokens };
 
     // Add derive_type_get if requested
@@ -249,6 +333,20 @@ pub(crate) fn pliron_attr(
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
             "interfaces is not supported for attributes",
+        ));
+    }
+
+    if config.operands.is_some() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "operands is not supported for attributes",
+        ));
+    }
+
+    if config.results.is_some() {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "results is not supported for attributes",
         ));
     }
 
@@ -330,6 +428,44 @@ pub(crate) fn pliron_op(
         });
         expanded = quote! {
             #[::pliron::derive::derive_attr_get_set(#(#attr_list),*)]
+            #expanded
+        };
+    }
+
+    // Add operands if specified.
+    if let Some(operands) = &config.operands
+        && !operands.is_empty()
+    {
+        let operand_list = operands.iter().map(|operand| {
+            let ty = &operand.ty;
+            match (&operand.name, ty) {
+                (Some(name), Some(ty)) => quote! { #name : #ty },
+                (Some(name), None) => quote! { #name },
+                (None, Some(ty)) => quote! { _ : #ty },
+                (None, None) => quote! { _ },
+            }
+        });
+        expanded = quote! {
+            #[::pliron::derive::operands(#(#operand_list),*)]
+            #expanded
+        };
+    }
+
+    // Add results if specified.
+    if let Some(results) = &config.results
+        && !results.is_empty()
+    {
+        let result_list = results.iter().map(|result| {
+            let ty = &result.ty;
+            match (&result.name, ty) {
+                (Some(name), Some(ty)) => quote! { #name : #ty },
+                (Some(name), None) => quote! { #name },
+                (None, Some(ty)) => quote! { _ : #ty },
+                (None, None) => quote! { _ },
+            }
+        });
+        expanded = quote! {
+            #[::pliron::derive::results(#(#result_list),*)]
             #expanded
         };
     }
@@ -780,6 +916,102 @@ mod tests {
             struct FullType {
                 field: u32,
             }
+        "##]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn pliron_op_with_operands() {
+        let args = quote! {
+            name = "test.bin_op",
+            operands = (lhs: IntegerType, _, rhs, _: PointerType),
+            verifier = "succ"
+        };
+        let input = quote! {
+            struct BinOp;
+        };
+        let result = pliron_op(args, input).unwrap();
+        let f = syn::parse2::<syn::File>(result).unwrap();
+        let got = prettyplease::unparse(&f);
+
+        expect![[r##"
+            #[::pliron::derive::verify_succ]
+            #[::pliron::derive::def_op("test.bin_op")]
+            #[::pliron::derive::operands(lhs:IntegerType, _, rhs, _:PointerType)]
+            struct BinOp;
+        "##]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn pliron_op_with_results() {
+        let args = quote! {
+            name = "test.ret_op",
+            results = (out: IntegerType, _, _: UnitType),
+            verifier = "succ"
+        };
+        let input = quote! {
+            struct RetOp;
+        };
+        let result = pliron_op(args, input).unwrap();
+        let f = syn::parse2::<syn::File>(result).unwrap();
+        let got = prettyplease::unparse(&f);
+
+        expect![[r##"
+            #[::pliron::derive::verify_succ]
+            #[::pliron::derive::def_op("test.ret_op")]
+            #[::pliron::derive::results(out:IntegerType, _, _:UnitType)]
+            struct RetOp;
+        "##]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn pliron_op_with_named_results_field() {
+        let args = quote! {
+            name = "test.named_results_op",
+            results = (named_result: IntegerType),
+            verifier = "succ"
+        };
+        let input = quote! {
+            struct NamedResultsOp;
+        };
+        let result = pliron_op(args, input).unwrap();
+        let f = syn::parse2::<syn::File>(result).unwrap();
+        let got = prettyplease::unparse(&f);
+
+        expect![[r##"
+            #[::pliron::derive::verify_succ]
+            #[::pliron::derive::def_op("test.named_results_op")]
+            #[::pliron::derive::results(named_result:IntegerType)]
+            struct NamedResultsOp;
+        "##]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn pliron_op_with_operands_and_results() {
+        let args = quote! {
+            name = "test.full_op",
+            interfaces = [OneOpdInterface],
+            operands = (input: IntegerType),
+            results = (output: IntegerType),
+            verifier = "succ"
+        };
+        let input = quote! {
+            struct FullOp;
+        };
+        let result = pliron_op(args, input).unwrap();
+        let f = syn::parse2::<syn::File>(result).unwrap();
+        let got = prettyplease::unparse(&f);
+
+        expect![[r##"
+            #[::pliron::derive::verify_succ]
+            #[::pliron::derive::def_op("test.full_op")]
+            #[::pliron::derive::results(output:IntegerType)]
+            #[::pliron::derive::operands(input:IntegerType)]
+            #[::pliron::derive::derive_op_interface_impl(OneOpdInterface)]
+            struct FullOp;
         "##]]
         .assert_eq(&got);
     }
