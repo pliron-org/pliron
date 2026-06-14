@@ -262,6 +262,70 @@ pub fn derive_attr_get_set(args: TokenStream, input: TokenStream) -> TokenStream
     to_token_stream(derive_op::derive_attr_get_set(args, input))
 }
 
+/// Derive getter methods and / or operand type interfaces for operation operands.
+///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `operands` field expands
+///         to this macro.
+///
+/// The arguments are a comma-separated list where each entry is:
+/// - `name` or `name: Type` for a named operand getter `get_operand_<name>()`.
+/// - `_` or `_: Type` to skip getter generation for that position.
+///
+/// When `Type` is provided, this macro derives
+/// [OperandNOfType](../pliron/builtin/op_interfaces/trait.OperandNOfType.html)
+/// for the corresponding operand index.
+///
+/// The op is allowed to have more operands than those specified in the macro arguments.
+/// They just won't have getters or type interfaces generated for them.
+///
+/// ```
+/// use pliron::derive::{def_op, format_op, operands, verify_succ};
+/// use pliron::builtin::types::{IntegerType, UnitType};
+///
+/// #[verify_succ]
+/// #[def_op("dialect.with_operands")]
+/// #[format_op]
+/// #[operands(lhs: IntegerType, _, rhs, _: UnitType)]
+/// pub struct WithOperandsOp {}
+/// ```
+#[proc_macro_attribute]
+pub fn operands(args: TokenStream, input: TokenStream) -> TokenStream {
+    to_token_stream(derive_op::operands(args, input))
+}
+
+/// Derive getter methods and / or result type interfaces for operation results.
+///
+/// *Note*: It is suggested to use the [pliron_op] macro instead of using this macro directly.
+///         The documention here is useful though, because [pliron_op]'s `results` field expands
+///         to this macro.
+///
+/// The arguments are a comma-separated list where each entry is:
+/// - `name` or `name: Type` for a named result getter `get_result_<name>()`.
+/// - `_` or `_: Type` to skip getter generation for that position.
+///
+/// When `Type` is provided, this macro derives
+/// [ResultNOfType](../pliron/builtin/op_interfaces/trait.ResultNOfType.html)
+/// for the corresponding result index.
+///
+/// The op is allowed to have more results than those specified in the macro arguments.
+/// They just won't have getters or type interfaces generated for them.
+///
+/// ```
+/// use pliron::derive::{def_op, format_op, results, verify_succ};
+/// use pliron::builtin::types::{IntegerType, UnitType};
+///
+/// #[verify_succ]
+/// #[def_op("dialect.with_results")]
+/// #[format_op]
+/// #[results(out: IntegerType, _: UnitType)]
+/// pub struct WithResultsOp {}
+/// ```
+#[proc_macro_attribute]
+pub fn results(args: TokenStream, input: TokenStream) -> TokenStream {
+    to_token_stream(derive_op::results(args, input))
+}
+
 /// Derive [Printable](../pliron/printable/trait.Printable.html) and
 /// [Parsable](../pliron/parsable/trait.Parsable.html) for Rust types.
 /// Use this is for types other than `Op`, `Type` and `Attribute`s.
@@ -688,6 +752,10 @@ pub fn pliron_attr(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   Expands to [derive_op_interface_impl].
 /// - `attributes = (attr_name: AttrType, ...)`: List of attributes with their types (optional).\
 ///   Expands to [derive_attr_get_set], generating getter and setter methods.
+/// - `operands = (name, name: Type, _, _: Type, ...)`: List of operand specs (optional).\
+///   Expands to [operands].
+/// - `results = (name, name: Type, _, _: Type, ...)`: List of result specs (optional).\
+///   Expands to [results].
 /// - `verifier = "succ"`: Verifier implementation, currently only "succ" is supported (optional).\
 ///   Expands to [macro@verify_succ].
 ///
@@ -715,7 +783,7 @@ pub fn pliron_attr(args: TokenStream, input: TokenStream) -> TokenStream {
 /// struct IfOp;
 /// ```
 ///
-/// ### Operation with attributes:
+/// ### Operation with specified attributes:
 /// ```
 /// use pliron::derive::pliron_op;
 /// use pliron::builtin::attributes::{UnitAttr, IntegerAttr};
@@ -729,8 +797,33 @@ pub fn pliron_attr(args: TokenStream, input: TokenStream) -> TokenStream {
 /// struct CallOp;
 /// ```
 ///
-/// The `attributes` parameter generates getter and setter methods for each attribute,
-/// equivalent to using `#[derive_attr_get_set(...)]`.
+/// ### Operation with specified operands:
+/// ```
+/// use pliron::derive::pliron_op;
+/// use pliron::builtin::types::{IntegerType, UnitType};
+///
+/// #[pliron_op(
+///     name = "dialect.with_operands",
+///     format,
+///     operands = (lhs: IntegerType, _, rhs, _: UnitType),
+///     verifier = "succ"
+/// )]
+/// struct WithOperandsOp;
+/// ```
+///
+/// ### Operation with specified results:
+/// ```
+/// use pliron::derive::pliron_op;
+/// use pliron::builtin::types::{IntegerType, UnitType};
+///
+/// #[pliron_op(
+///     name = "dialect.with_results",
+///     format,
+///     results = (out: IntegerType, _: UnitType),
+///     verifier = "succ"
+/// )]
+/// struct WithResultsOp;
+/// ```
 #[proc_macro_attribute]
 pub fn pliron_op(args: TokenStream, input: TokenStream) -> TokenStream {
     to_token_stream(derive_entity::pliron_op(args, input))
