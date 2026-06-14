@@ -507,7 +507,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             };
             Ok(quote! {
                 let succ = self.get_operation().deref(ctx).get_successor(#index);
-                let succ_name = "^".to_string() + &succ.unique_name(ctx);
+                let succ_name = ::pliron::alloc::string::ToString::to_string("^") + &succ.unique_name(ctx);
                 ::pliron::printable::Printable::fmt(&succ_name, ctx, state, fmt)?;
             })
         } else if d.name == "successors" {
@@ -526,7 +526,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let sep = directive_to_list_separator(sep, true, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
-                let succs = op.successors().map(|succ| "^".to_string() + &succ.unique_name(ctx));
+                let succs = op.successors().map(|succ| ::pliron::alloc::string::ToString::to_string("^") + &succ.unique_name(ctx));
                 let succs = ::pliron::irfmt::printers::iter_with_sep(succs, #sep);
                 ::pliron::printable::Printable::fmt(&succs, ctx, state, fmt)?;
             })
@@ -703,8 +703,10 @@ trait ParsableBuilder<State: Default> {
             assert!(!r#enum.variants.is_empty(), "Enum has no variants");
             let variant_name_parsed = quote! {
                 let variant_name_parsed =
-                    ::pliron::identifier::Identifier::parser(()).
-                    parse_stream(state_stream).into_result()?.0.to_string();
+                    ::pliron::alloc::string::ToString::to_string(
+                        &::pliron::identifier::Identifier::parser(()).
+                            parse_stream(state_stream).into_result()?.0
+                    );
             };
 
             let mut match_arms = quote! {};
