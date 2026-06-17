@@ -53,6 +53,25 @@ impl APInt {
         APInt { value }
     }
 
+    /// Add `self` and `rhs`, reporting whether the (truncating) result overflowed.
+    /// They must have the same bitwidth.
+    ///
+    /// Returns `(result, unsigned_overflow_occured, signed_overflow_occured)`
+    pub fn add_overflow(&self, rhs: &APInt) -> (APInt, bool, bool) {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::add_overflow: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let mut value = Awi::zero(NonZero::new(self.bw()).expect("self has zero bitwidth"));
+        let (unsigned_overflow, signed_overflow) = value
+            .cin_sum_(false, &self.value, &rhs.value)
+            .expect("APInt::add_overflow: bitwidth mismatch");
+        (APInt { value }, unsigned_overflow, signed_overflow)
+    }
+
     /// Subtract `rhs` from `self`. They must have the same bitwidth.
     pub fn sub(&self, rhs: &APInt) -> APInt {
         assert_eq!(
@@ -69,6 +88,36 @@ impl APInt {
         APInt { value }
     }
 
+    /// Subtract `rhs` from `self`, reporting whether the (truncating) result
+    /// overflowed. They must have the same bitwidth.
+    ///
+    /// Returns `(result, unsigned_overflow_occured, signed_overflow_occured)`.
+    pub fn sub_overflow(&self, rhs: &APInt) -> (APInt, bool, bool) {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::sub_overflow: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        // Below, I use `n` to denote the bitwidth.
+        // Two's complement: `self - rhs ≡ self + (~rhs) + 1  (mod 2^n)`.
+        let mut not_rhs = rhs.value.clone();
+        not_rhs.not_();
+        let mut value = Awi::zero(NonZero::new(self.bw()).expect("self has zero bitwidth"));
+        let (carry_out, signed_overflow) = value
+            .cin_sum_(true, &self.value, &not_rhs)
+            .expect("APInt::sub_overflow: bitwidth mismatch");
+        // Signed overflow occurs when the true mathematical value of `self - rhs``
+        // is not in `[−2^(n−1), 2^(n−1)−1]`. This matches addition's signed overflow.
+        //
+        // Unsigned overflow occurs when `self < rhs`.
+        // Computed as an integer, `self + (~rhs) + 1 = (self - rhs) + 2^n`, so
+        // `carry_out == true` iff `(self - rhs) + 2^n >= 2^n`` iff `self >= rhs`.
+        // Hence unsigned overflow is !carry_out.
+        (APInt { value }, !carry_out, signed_overflow)
+    }
+
     /// Multiply `self` and `rhs`. They must have the same bitwidth.
     pub fn mul(&self, rhs: &APInt) -> APInt {
         assert_eq!(
@@ -83,6 +132,42 @@ impl APInt {
             .mul_add_(&self.value, &rhs.value)
             .expect("APInt::mul: bitwidth mismatch");
         APInt { value }
+    }
+
+    /// Multiply `self` and `rhs`, reporting whether the (truncating) result
+    /// overflowed. They must have the same bitwidth.
+    ///
+    /// Returns `(result, unsigned_overflow_occured, signed_overflow_occured)`.
+    pub fn mul_overflow(&self, rhs: &APInt) -> (APInt, bool, bool) {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::mul_overflow: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let bw = NonZero::new(self.bw()).expect("self has zero bitwidth");
+        let dbw = NonZero::new(self.bw() * 2).expect("self has zero bitwidth");
+
+        let mut ulhs = Awi::zero(dbw);
+        ulhs.zero_resize_(&self.value);
+        let mut urhs = Awi::zero(dbw);
+        urhs.zero_resize_(&rhs.value);
+        let mut uprod = Awi::zero(dbw);
+        uprod.arb_umul_add_(&ulhs, &urhs);
+        let mut utrunc = Awi::zero(bw);
+        let unsigned_overflow = utrunc.zero_resize_(&uprod);
+
+        let mut slhs = Awi::zero(dbw);
+        slhs.sign_resize_(&self.value);
+        let mut srhs = Awi::zero(dbw);
+        srhs.sign_resize_(&rhs.value);
+        let mut sprod = Awi::zero(dbw);
+        sprod.arb_imul_add_(&mut slhs, &mut srhs);
+        let mut strunc = Awi::zero(bw);
+        let signed_overflow = strunc.sign_resize_(&sprod);
+
+        (self.mul(rhs), unsigned_overflow, signed_overflow)
     }
 
     /// Left-shift `self` by `rhs` bits. They must have the same bitwidth.
@@ -103,6 +188,51 @@ impl APInt {
             value.zero_();
         }
         APInt { value }
+    }
+
+    /// Left-shift `self` by `rhs` bits, reporting whether the result
+    /// overflowed. They must have the same bitwidth, and the shift amount `rhs`
+    /// must be less than the bitwidth (a shift amount `>=` the bitwidth is
+    /// undefined for `shl` and must be ruled out by the caller).
+    ///
+    /// Returns `(result, unsigned_overflow_occured, signed_overflow_occured)`,
+    /// where the result is the shifted value, `unsigned_overflow_occured` is true
+    /// if any bit shifted off the top was set (so the shift is not invertible by a
+    /// logical right shift), and `signed_overflow_occured` is true if the bits
+    /// shifted off the top together with the result's new sign bit are not all
+    /// equal to the original sign bit (so the shift is not invertible by an
+    /// arithmetic right shift). These match LLVM's `nuw` and `nsw` poison
+    /// conditions for `shl`, respectively.
+    pub fn shl_overflow(&self, rhs: &APInt) -> (APInt, bool, bool) {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::shl_overflow: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let shamt = rhs.to_usize();
+        assert!(
+            shamt < self.bw(),
+            "APInt::shl_overflow: shift amount {} >= bitwidth {}",
+            shamt,
+            self.bw()
+        );
+        let result = self.shl(rhs);
+
+        let mut ushifted_back = result.value.clone();
+        ushifted_back
+            .lshr_(shamt)
+            .expect("shift amount checked against bitwidth above");
+        let unsigned_overflow = ushifted_back != self.value;
+
+        let mut sshifted_back = result.value.clone();
+        sshifted_back
+            .ashr_(shamt)
+            .expect("shift amount checked against bitwidth above");
+        let signed_overflow = sshifted_back != self.value;
+
+        (result, unsigned_overflow, signed_overflow)
     }
 
     /// Unsigned-divide `self` by `rhs`. They must have the same bitwidth.
