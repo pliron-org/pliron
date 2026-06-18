@@ -12,7 +12,7 @@ use crate::{
     irfmt::parsers::int_parser,
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
-    r#type::{Type, TypeObj, TypePtr},
+    r#type::{Type, TypeObj, TypedHandle},
     utils::apfloat::{self, GetSemantics, Semantics},
 };
 
@@ -36,7 +36,7 @@ impl IntegerType {
         ctx: &Context,
         width: u32,
         signedness: Signedness,
-    ) -> Option<TypePtr<Self>> {
+    ) -> Option<TypedHandle<Self>> {
         Type::get_instance(IntegerType { width, signedness }, ctx)
     }
 
@@ -68,7 +68,7 @@ impl IntegerType {
 
 impl Parsable for IntegerType {
     type Arg = ();
-    type Parsed = TypePtr<Self>;
+    type Parsed = TypedHandle<Self>;
     fn parse<'a>(
         state_stream: &mut StateStream<'a>,
         _arg: Self::Arg,
@@ -132,7 +132,7 @@ impl FunctionType {
         ctx: &Context,
         inputs: Vec<Ptr<TypeObj>>,
         results: Vec<Ptr<TypeObj>>,
-    ) -> Option<TypePtr<Self>> {
+    ) -> Option<TypedHandle<Self>> {
         Type::get_instance(FunctionType { inputs, results }, ctx)
     }
 }

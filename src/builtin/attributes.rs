@@ -28,7 +28,7 @@ use crate::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
-    r#type::{TypeObj, TypePtr, Typed},
+    r#type::{TypeObj, Typed, TypedHandle},
     utils::{
         apfloat::{self, double_to_f64, f32_to_single, f64_to_double, single_to_f32},
         apint::APInt,
@@ -140,7 +140,7 @@ impl From<bool> for BoolAttr {
 #[pliron_attr(name = "builtin.integer")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct IntegerAttr {
-    ty: TypePtr<IntegerType>,
+    ty: TypedHandle<IntegerType>,
     val: APInt,
 }
 
@@ -177,7 +177,7 @@ impl Verify for IntegerAttr {
 
 impl IntegerAttr {
     /// Create a new [IntegerAttr].
-    pub fn new(ty: TypePtr<IntegerType>, val: APInt) -> Self {
+    pub fn new(ty: TypedHandle<IntegerType>, val: APInt) -> Self {
         IntegerAttr { ty, val }
     }
 
@@ -187,7 +187,7 @@ impl IntegerAttr {
     }
 
     /// Get the type of the attribute.
-    pub fn get_type(&self) -> TypePtr<IntegerType> {
+    pub fn get_type(&self) -> TypedHandle<IntegerType> {
         self.ty
     }
 }

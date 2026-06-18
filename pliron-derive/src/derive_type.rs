@@ -220,7 +220,7 @@ fn derive_type_get_impl(ident: &syn::Ident, fields: &syn::Fields) -> TokenStream
                 /// Get the singleton instance.
                 pub fn get(
                     ctx: &::pliron::context::Context
-                ) -> ::pliron::r#type::TypePtr<Self> {
+                ) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::get_instance(
                         Self {},
                         ctx,
@@ -238,7 +238,7 @@ fn derive_type_get_impl(ident: &syn::Ident, fields: &syn::Fields) -> TokenStream
                 pub fn get(
                     ctx: &mut ::pliron::context::Context,
                     #field_params
-                ) -> ::pliron::r#type::TypePtr<Self> {
+                ) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::register_instance(
                         #struct_construction,
                         ctx,
@@ -490,7 +490,7 @@ mod tests {
             pub struct UnitType;
             impl UnitType {
                 /// Get the singleton instance.
-                pub fn get(ctx: &::pliron::context::Context) -> ::pliron::r#type::TypePtr<Self> {
+                pub fn get(ctx: &::pliron::context::Context) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::get_instance(Self {}, ctx)
                         .expect("UnitType singleton not instantiated")
                 }
@@ -526,7 +526,7 @@ mod tests {
                     elem_ty: Ptr<TypeObj>,
                     num_elems: u32,
                     kind: VectorTypeKind,
-                ) -> ::pliron::r#type::TypePtr<Self> {
+                ) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::register_instance(
                         VectorType {
                             elem_ty,
@@ -560,7 +560,7 @@ mod tests {
                     field_0: u32,
                     field_1: String,
                     field_2: bool,
-                ) -> ::pliron::r#type::TypePtr<Self> {
+                ) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::register_instance(
                         TupleType(field_0, field_1, field_2),
                         ctx,

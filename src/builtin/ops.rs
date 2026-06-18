@@ -35,7 +35,7 @@ use crate::{
     printable::{self, Printable, indented_nl},
     region::Region,
     result::Result,
-    r#type::{TypeObj, TypePtr, Typed},
+    r#type::{TypeObj, Typed, TypedHandle},
     verify_err,
 };
 use pliron::derive::{op_interface_impl, pliron_op};
@@ -166,7 +166,7 @@ pub struct FuncOp;
 impl FuncOp {
     /// Create a new [FuncOp].
     /// The returned function has a single region with an empty `entry` block.
-    pub fn new(ctx: &mut Context, name: Identifier, ty: TypePtr<FunctionType>) -> Self {
+    pub fn new(ctx: &mut Context, name: Identifier, ty: TypedHandle<FunctionType>) -> Self {
         let ty_attr = TypeAttr::new(ty.into());
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
 

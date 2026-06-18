@@ -372,12 +372,12 @@ pub fn results(args: TokenStream, input: TokenStream) -> TokenStream {
 /// 3. An example for an enum (custom format strings are allowed for the variants only).
 /// ```
 /// use pliron::derive::format;
-/// use pliron::{builtin::types::IntegerType, r#type::TypePtr};
+/// use pliron::{builtin::types::IntegerType, r#type::TypedHandle};
 /// #[format]
 /// enum Enum {
-///     A(TypePtr<IntegerType>),
+///     A(TypedHandle<IntegerType>),
 ///     B {
-///         one: TypePtr<IntegerType>,
+///         one: TypedHandle<IntegerType>,
 ///         two: u64,
 ///     },
 ///     C,

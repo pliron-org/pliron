@@ -1593,7 +1593,7 @@ struct DeriveTypeParsable;
 
 impl ParsableBuilder<()> for DeriveTypeParsable {
     fn build_assoc_type_parsed(_input: &FmtInput, _state: &mut ()) -> Result<TokenStream> {
-        Ok(quote! { ::pliron::r#type::TypePtr<Self> })
+        Ok(quote! { ::pliron::r#type::TypedHandle<Self> })
     }
 
     fn build_final_ret_value(_input: &FmtInput, _state: &mut ()) -> TokenStream {

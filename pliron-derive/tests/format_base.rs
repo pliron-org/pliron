@@ -6,7 +6,7 @@ use pliron::{
     location,
     parsable::{self, Parsable, state_stream_from_iterator},
     printable::Printable,
-    r#type::TypePtr,
+    r#type::TypedHandle,
 };
 use pliron_derive::format;
 
@@ -14,7 +14,7 @@ mod common;
 
 #[format]
 struct IntWrapper {
-    inner: TypePtr<IntegerType>,
+    inner: TypedHandle<IntegerType>,
 }
 
 #[test]
@@ -38,7 +38,7 @@ fn int_wrapper() {
 
 #[format("`BubbleWrap` `[` $inner `]`")]
 struct IntWrapperCustom {
-    inner: TypePtr<IntegerType>,
+    inner: TypedHandle<IntegerType>,
 }
 
 #[test]
@@ -63,7 +63,7 @@ fn int_wrapper_custom() {
 
 #[format]
 struct DoubleWrap {
-    one: TypePtr<IntegerType>,
+    one: TypedHandle<IntegerType>,
     two: IntWrapper,
 }
 
@@ -96,9 +96,9 @@ fn double_wrap() {
 #[format]
 enum Enum {
     /// Some comment
-    A(TypePtr<IntegerType>),
+    A(TypedHandle<IntegerType>),
     B {
-        one: TypePtr<IntegerType>,
+        one: TypedHandle<IntegerType>,
         two: IntWrapper,
     },
     C,

@@ -40,7 +40,7 @@ use pliron::{
     region::Region,
     result::{Error, ErrorKind, Result},
     symbol_table::SymbolTableCollection,
-    r#type::{TypeObj, TypePtr, type_cast, type_impls},
+    r#type::{TypeObj, TypedHandle, type_cast, type_impls},
     utils::vec_exns::VecExtns,
     value::Value,
     verify_err, verify_error,
@@ -1196,7 +1196,7 @@ impl Verify for SwitchOp {
         }
 
         let condition_ty = pliron::r#type::Typed::get_type(&op.get_operand(0), ctx);
-        let condition_ty = TypePtr::<IntegerType>::from_ptr(condition_ty, ctx)?;
+        let condition_ty = TypedHandle::<IntegerType>::from_ptr(condition_ty, ctx)?;
 
         if let Some(case_value) = case_values.0.first() {
             // Ensure that the case value type matches the condition type.
@@ -1811,7 +1811,7 @@ impl CallOp {
     pub fn new(
         ctx: &mut Context,
         callee: CallOpCallable,
-        callee_ty: TypePtr<FuncType>,
+        callee_ty: TypedHandle<FuncType>,
         mut args: Vec<Value>,
     ) -> Self {
         let res_ty = callee_ty.deref(ctx).result_type();
@@ -2001,7 +2001,7 @@ impl Parsable for CallOp {
         let callee_parser = direct_callee.or(indirect_callee);
         let fastmath_flags_parser = optional(FastmathFlagsAttr::parser(()));
         let args_parser = delimited_list_parser('(', ')', ',', ssa_opd_parser());
-        let ty_parser = spaced(combine::token(':')).with(TypePtr::<FuncType>::parser(()));
+        let ty_parser = spaced(combine::token(':')).with(TypedHandle::<FuncType>::parser(()));
 
         let mut final_parser = spaced(callee_parser)
             .and(spaced(fastmath_flags_parser))
@@ -3269,9 +3269,9 @@ impl InsertElementOp {
     }
 
     /// Get the vector type of the InsertElementOp.
-    pub fn vector_type(&self, ctx: &Context) -> TypePtr<VectorType> {
+    pub fn vector_type(&self, ctx: &Context) -> TypedHandle<VectorType> {
         let ty = self.get_operation().deref(ctx).get_type(0);
-        TypePtr::<VectorType>::from_ptr(ty, ctx)
+        TypedHandle::<VectorType>::from_ptr(ty, ctx)
             .expect("InsertElementOp result type is not a VectorType")
     }
 }
@@ -3346,10 +3346,10 @@ impl ExtractElementOp {
     }
 
     /// Get the vector type of the ExtractElementOp.
-    pub fn vector_type(&self, ctx: &Context) -> TypePtr<VectorType> {
+    pub fn vector_type(&self, ctx: &Context) -> TypedHandle<VectorType> {
         use pliron::r#type::Typed;
         let ty = self.get_operand_vector(ctx).get_type(ctx);
-        TypePtr::<VectorType>::from_ptr(ty, ctx)
+        TypedHandle::<VectorType>::from_ptr(ty, ctx)
             .expect("ExtractElementOp vector operand type is not a VectorType")
     }
 }
@@ -3743,8 +3743,8 @@ impl Verify for FCmpOp {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
-        let res_ty: TypePtr<IntegerType> =
-            TypePtr::from_ptr(self.result_type(ctx), ctx).map_err(|mut err| {
+        let res_ty: TypedHandle<IntegerType> = TypedHandle::from_ptr(self.result_type(ctx), ctx)
+            .map_err(|mut err| {
                 err.set_loc(loc.clone());
                 err
             })?;
@@ -3790,7 +3790,7 @@ impl CallIntrinsicOp {
     pub fn new(
         ctx: &mut Context,
         intrinsic_name: StringAttr,
-        intrinsic_type: TypePtr<FuncType>,
+        intrinsic_type: TypedHandle<FuncType>,
         operands: Vec<Value>,
     ) -> Self {
         let res_ty = intrinsic_type.deref(ctx).result_type();
@@ -3871,7 +3871,7 @@ impl Parsable for CallIntrinsicOp {
         let (iname, fmf, operands, ftype) = parser.parse_stream(state_stream).into_result()?.0;
 
         let ctx = &mut state_stream.state.ctx;
-        let intr_ty = TypePtr::<FuncType>::from_ptr(ftype, ctx).map_err(|mut err| {
+        let intr_ty = TypedHandle::<FuncType>::from_ptr(ftype, ctx).map_err(|mut err| {
             err.set_loc(pos);
             err
         })?;
@@ -3910,7 +3910,7 @@ impl Verify for CallIntrinsicOp {
 
         let Some(ty) = self
             .get_attr_llvm_intrinsic_type(ctx)
-            .and_then(|ty| TypePtr::<FuncType>::from_ptr(ty.get_type(ctx), ctx).ok())
+            .and_then(|ty| TypedHandle::<FuncType>::from_ptr(ty.get_type(ctx), ctx).ok())
         else {
             return verify_err!(
                 self.loc(ctx),
@@ -4021,7 +4021,7 @@ pub struct FuncOp;
 
 impl FuncOp {
     /// Create a new empty [FuncOp].
-    pub fn new(ctx: &mut Context, name: Identifier, ty: TypePtr<FuncType>) -> Self {
+    pub fn new(ctx: &mut Context, name: Identifier, ty: TypedHandle<FuncType>) -> Self {
         let ty_attr = TypeAttr::new(ty.into());
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
         let opop = FuncOp { op };
@@ -4032,11 +4032,11 @@ impl FuncOp {
     }
 
     /// Get the function signature (type).
-    pub fn get_type(&self, ctx: &Context) -> TypePtr<FuncType> {
+    pub fn get_type(&self, ctx: &Context) -> TypedHandle<FuncType> {
         let ty = attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_llvm_func_type(ctx).unwrap())
             .unwrap()
             .get_type(ctx);
-        TypePtr::from_ptr(ty, ctx).unwrap()
+        TypedHandle::from_ptr(ty, ctx).unwrap()
     }
 
     /// Get the entry block (if it exists) of this function.

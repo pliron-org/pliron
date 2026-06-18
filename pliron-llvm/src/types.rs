@@ -16,7 +16,7 @@ use pliron::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, ListSeparator, Printable},
     result::Result,
-    r#type::{Type, TypeObj, TypePtr},
+    r#type::{Type, TypeObj, TypedHandle},
     verify_err_noloc,
 };
 use thiserror::Error;
@@ -55,7 +55,7 @@ impl StructType {
         ctx: &mut Context,
         name: Identifier,
         fields: Option<Vec<Ptr<TypeObj>>>,
-    ) -> Result<TypePtr<Self>> {
+    ) -> Result<TypedHandle<Self>> {
         let self_ptr = Type::register_instance(
             StructType {
                 name: Some(name.clone()),
@@ -85,7 +85,7 @@ impl StructType {
 
     /// Get or create a new unnamed (anonymous) struct.
     /// These are finalized upon creation, and uniqued based on the fields.
-    pub fn get_unnamed(ctx: &mut Context, fields: Vec<Ptr<TypeObj>>) -> TypePtr<Self> {
+    pub fn get_unnamed(ctx: &mut Context, fields: Vec<Ptr<TypeObj>>) -> TypedHandle<Self> {
         Type::register_instance(
             StructType {
                 name: None,
@@ -96,7 +96,7 @@ impl StructType {
     }
 
     /// If a named struct already exists, get a pointer to it.
-    pub fn get_existing_named(ctx: &Context, name: &Identifier) -> Option<TypePtr<Self>> {
+    pub fn get_existing_named(ctx: &Context, name: &Identifier) -> Option<TypedHandle<Self>> {
         Type::get_instance(
             StructType {
                 name: Some(name.clone()),
@@ -108,7 +108,10 @@ impl StructType {
     }
 
     /// If an unnamed struct already exists, get a pointer to it.
-    pub fn get_existing_unnamed(ctx: &Context, fields: Vec<Ptr<TypeObj>>) -> Option<TypePtr<Self>> {
+    pub fn get_existing_unnamed(
+        ctx: &Context,
+        fields: Vec<Ptr<TypeObj>>,
+    ) -> Option<TypedHandle<Self>> {
         Type::get_instance(
             StructType {
                 name: None,
@@ -250,7 +253,7 @@ impl PartialEq for StructType {
 
 impl Parsable for StructType {
     type Arg = ();
-    type Parsed = TypePtr<Self>;
+    type Parsed = TypedHandle<Self>;
 
     fn parse<'a>(
         state_stream: &mut StateStream<'a>,
@@ -445,7 +448,7 @@ mod tests {
         parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
         printable::{self, Printable},
         result::Result,
-        r#type::{Type, TypeObj, TypePtr},
+        r#type::{Type, TypeObj, TypedHandle},
     };
 
     #[test]
@@ -509,7 +512,7 @@ mod tests {
 
     impl TypedPointerType {
         /// Get, if it already exists, a pointer type.
-        pub fn get_existing(ctx: &Context, to: Ptr<TypeObj>) -> Option<TypePtr<Self>> {
+        pub fn get_existing(ctx: &Context, to: Ptr<TypeObj>) -> Option<TypedHandle<Self>> {
             Type::get_instance(TypedPointerType { to }, ctx)
         }
 
@@ -532,7 +535,7 @@ mod tests {
 
     impl Parsable for TypedPointerType {
         type Arg = ();
-        type Parsed = TypePtr<Self>;
+        type Parsed = TypedHandle<Self>;
 
         fn parse<'a>(
             state_stream: &mut StateStream<'a>,
