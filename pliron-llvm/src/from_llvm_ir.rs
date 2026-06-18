@@ -440,7 +440,7 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
         LLVMValueKind::LLVMConstantIntValueKind => {
             // TODO: Zero extend or sign extend?
             let u64 = llvm_const_int_get_zext_value(val);
-            let int_ty = TypedHandle::<IntegerType>::from_ptr(ty, ctx)?;
+            let int_ty = TypedHandle::<IntegerType>::from_handle(ty, ctx)?;
             let width = int_ty.deref(ctx).width() as usize;
             if width == 0 {
                 return input_err_noloc!(ConversionErr::ZeroWidthIntConst);
@@ -683,7 +683,7 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             }
             // Starting with an Undef value, we insert elements, for each element.
             let undef_op = UndefOp::new(ctx, ty);
-            let ty_int32 = TypedHandle::<IntegerType>::from_ptr(
+            let ty_int32 = TypedHandle::<IntegerType>::from_handle(
                 IntegerType::get(ctx, 32, Signedness::Signless).into(),
                 ctx,
             )?;
@@ -887,7 +887,7 @@ fn convert_call(
 
     let callee_ty = llvm_get_called_function_type(inst);
     let callee_ty: TypedHandle<FuncType> =
-        convert_type(ctx, cctx, callee_ty).and_then(|ty| TypedHandle::from_ptr(ty, ctx))?;
+        convert_type(ctx, cctx, callee_ty).and_then(|ty| TypedHandle::from_handle(ty, ctx))?;
 
     let fmf: Option<FastmathFlagsAttr> = if llvm_can_value_use_fast_math_flags(inst) {
         // Not all calls can have fast-math flags.
@@ -1466,7 +1466,7 @@ fn convert_function(
     let llvm_name = llvm_get_value_name(function).expect("Expected function to have a name");
     let name = cctx.id_legaliser.legalise(&llvm_name);
     let fn_ty = convert_type(ctx, cctx, llvm_global_get_value_type(function))?;
-    let fn_ty = TypedHandle::from_ptr(fn_ty, ctx)?;
+    let fn_ty = TypedHandle::from_handle(fn_ty, ctx)?;
     // Create a new FuncOp.
     let m_func = FuncOp::new(ctx, name.clone(), fn_ty);
 

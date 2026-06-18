@@ -103,7 +103,7 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
     fn eq_type(&self, other: &dyn Type) -> bool;
 
     /// Get a copyable handle to this type.
-    // Unlike in [ArenaObj]s, we do not store a self pointer inside the object itself
+    // Unlike in [ArenaObj]s, we do not store a self handle inside the object itself
     // because that can upset taking automatic hashes of the object.
     fn get_self_handle(&self, ctx: &Context) -> TypeHandle {
         let is = |other: &TypeObj| self.eq_type(&**other.0.borrow());
@@ -164,7 +164,7 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
         let ptr_parser: TypeParserFn = Box::new(|&()| {
             combine::parser(move |parsable_state: &mut StateStream<'_>| {
                 Self::parse(parsable_state, ())
-                    .map(|(typtr, r)| -> (TypeHandle, _) { (typtr.to_ptr(), r) })
+                    .map(|(typtr, r)| -> (TypeHandle, _) { (typtr.to_handle(), r) })
             })
             .boxed()
         });
@@ -435,26 +435,26 @@ impl<T: Type> TypedHandle<T> {
     }
 
     /// Create a new [TypedHandle] from a [TypeHandle].
-    pub fn from_ptr(ptr: TypeHandle, ctx: &Context) -> Result<TypedHandle<T>> {
-        if ptr.deref(ctx).is::<T>() {
-            Ok(TypedHandle(ptr, PhantomData::<T>))
+    pub fn from_handle(handle: TypeHandle, ctx: &Context) -> Result<TypedHandle<T>> {
+        if handle.deref(ctx).is::<T>() {
+            Ok(TypedHandle(handle, PhantomData::<T>))
         } else {
             arg_err_noloc!(TypedHandleErr {
                 expected: T::get_type_id_static().disp(ctx).to_string(),
-                provided: ptr.disp(ctx).to_string()
+                provided: handle.disp(ctx).to_string()
             })
         }
     }
 
-    /// Erase the static rust type.
-    pub fn to_ptr(&self) -> TypeHandle {
+    /// Erase the static Rust type and return the underlying [TypeHandle].
+    pub fn to_handle(&self) -> TypeHandle {
         self.0
     }
 }
 
 impl<T: Type> From<TypedHandle<T>> for TypeHandle {
     fn from(value: TypedHandle<T>) -> Self {
-        value.to_ptr()
+        value.to_handle()
     }
 }
 

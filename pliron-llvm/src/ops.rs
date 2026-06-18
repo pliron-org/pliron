@@ -1196,7 +1196,7 @@ impl Verify for SwitchOp {
         }
 
         let condition_ty = pliron::r#type::Typed::get_type(&op.get_operand(0), ctx);
-        let condition_ty = TypedHandle::<IntegerType>::from_ptr(condition_ty, ctx)?;
+        let condition_ty = TypedHandle::<IntegerType>::from_handle(condition_ty, ctx)?;
 
         if let Some(case_value) = case_values.0.first() {
             // Ensure that the case value type matches the condition type.
@@ -1886,7 +1886,7 @@ impl SymbolUserOpInterface for CallOp {
                 };
                 let func_op_ty = func_op.get_type(ctx);
 
-                if func_op_ty.to_ptr() != self.callee_type(ctx) {
+                if func_op_ty.to_handle() != self.callee_type(ctx) {
                     return verify_err!(
                         self.loc(ctx),
                         SymbolUserOpVerifyErr::FuncTypeErr(format!(
@@ -3271,7 +3271,7 @@ impl InsertElementOp {
     /// Get the vector type of the InsertElementOp.
     pub fn vector_type(&self, ctx: &Context) -> TypedHandle<VectorType> {
         let ty = self.get_operation().deref(ctx).get_type(0);
-        TypedHandle::<VectorType>::from_ptr(ty, ctx)
+        TypedHandle::<VectorType>::from_handle(ty, ctx)
             .expect("InsertElementOp result type is not a VectorType")
     }
 }
@@ -3349,7 +3349,7 @@ impl ExtractElementOp {
     pub fn vector_type(&self, ctx: &Context) -> TypedHandle<VectorType> {
         use pliron::r#type::Typed;
         let ty = self.get_operand_vector(ctx).get_type(ctx);
-        TypedHandle::<VectorType>::from_ptr(ty, ctx)
+        TypedHandle::<VectorType>::from_handle(ty, ctx)
             .expect("ExtractElementOp vector operand type is not a VectorType")
     }
 }
@@ -3743,7 +3743,7 @@ impl Verify for FCmpOp {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
-        let res_ty: TypedHandle<IntegerType> = TypedHandle::from_ptr(self.result_type(ctx), ctx)
+        let res_ty: TypedHandle<IntegerType> = TypedHandle::from_handle(self.result_type(ctx), ctx)
             .map_err(|mut err| {
                 err.set_loc(loc.clone());
                 err
@@ -3871,7 +3871,7 @@ impl Parsable for CallIntrinsicOp {
         let (iname, fmf, operands, ftype) = parser.parse_stream(state_stream).into_result()?.0;
 
         let ctx = &mut state_stream.state.ctx;
-        let intr_ty = TypedHandle::<FuncType>::from_ptr(ftype, ctx).map_err(|mut err| {
+        let intr_ty = TypedHandle::<FuncType>::from_handle(ftype, ctx).map_err(|mut err| {
             err.set_loc(pos);
             err
         })?;
@@ -3910,7 +3910,7 @@ impl Verify for CallIntrinsicOp {
 
         let Some(ty) = self
             .get_attr_llvm_intrinsic_type(ctx)
-            .and_then(|ty| TypedHandle::<FuncType>::from_ptr(ty.get_type(ctx), ctx).ok())
+            .and_then(|ty| TypedHandle::<FuncType>::from_handle(ty.get_type(ctx), ctx).ok())
         else {
             return verify_err!(
                 self.loc(ctx),
@@ -4036,7 +4036,7 @@ impl FuncOp {
         let ty = attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_llvm_func_type(ctx).unwrap())
             .unwrap()
             .get_type(ctx);
-        TypedHandle::from_ptr(ty, ctx).unwrap()
+        TypedHandle::from_handle(ty, ctx).unwrap()
     }
 
     /// Get the entry block (if it exists) of this function.

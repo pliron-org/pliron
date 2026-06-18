@@ -65,7 +65,7 @@ impl StructType {
             ctx,
         );
         // Verify that we created a new or equivalent existing type.
-        let mut self_ref = self_ptr.to_ptr().deref_mut(ctx);
+        let mut self_ref = self_ptr.to_handle().deref_mut(ctx);
         let self_ref = self_ref.downcast_mut::<StructType>().unwrap();
         assert!(self_ref.name.as_ref().unwrap() == &name);
         if let Some(fields) = fields {
@@ -95,7 +95,7 @@ impl StructType {
         )
     }
 
-    /// If a named struct already exists, get a pointer to it.
+    /// If a named struct already exists, get a handle to it.
     pub fn get_existing_named(ctx: &Context, name: &Identifier) -> Option<TypedHandle<Self>> {
         Type::get_instance(
             StructType {
@@ -107,7 +107,7 @@ impl StructType {
         )
     }
 
-    /// If an unnamed struct already exists, get a pointer to it.
+    /// If an unnamed struct already exists, get a handle to it.
     pub fn get_existing_unnamed(
         ctx: &Context,
         fields: Vec<TypeHandle>,
@@ -511,7 +511,7 @@ mod tests {
     }
 
     impl TypedPointerType {
-        /// Get, if it already exists, a pointer type.
+        /// Get, if it already exists, a handle to this typed pointer type.
         pub fn get_existing(ctx: &Context, to: TypeHandle) -> Option<TypedHandle<Self>> {
             Type::get_instance(TypedPointerType { to }, ctx)
         }
@@ -732,7 +732,7 @@ mod tests {
         let res = type_parser().and(eof()).parse(state_stream).unwrap().0.0;
 
         let void_ty = VoidType::get(&ctx);
-        assert!(res == FuncType::get(&ctx, void_ty.to_ptr(), vec![si32.into()], false).into());
+        assert!(res == FuncType::get(&ctx, void_ty.to_handle(), vec![si32.into()], false).into());
         assert_eq!(input, &res.disp(&ctx).to_string());
     }
 }
