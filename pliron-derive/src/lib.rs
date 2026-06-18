@@ -82,9 +82,9 @@ pub fn def_type(args: TokenStream, input: TokenStream) -> TokenStream {
 ///         The documention here is useful though, because [pliron_type]'s `generate_get` field
 ///         expands to this macro.
 ///
-/// This macro generates appropriate get methods based on the struct's fields:
-/// - For unit structs: generates a singleton `get(ctx: &Context)` method
-/// - For structs with fields (named or tuple): generates a `get(ctx: &mut Context, ...)` method
+/// This macro generates a `get` method that returns a uniqued instance of the type.
+/// For unit structs (no fields), it takes only a `Context` parameter.
+/// For structs with fields, it takes a `Context` parameter plus a parameter for each field.
 ///
 /// ## Examples
 ///
@@ -104,7 +104,7 @@ pub fn def_type(args: TokenStream, input: TokenStream) -> TokenStream {
 /// }
 ///
 /// // Usage of the auto-generated get method:
-/// # fn example(ctx: &mut Context) {
+/// # fn example(ctx: &Context) {
 /// let vector_type = VectorType::get(ctx, 42, 8); // get(ctx, elem_ty, num_elems)
 /// # }
 /// ```
@@ -122,7 +122,7 @@ pub fn def_type(args: TokenStream, input: TokenStream) -> TokenStream {
 /// pub struct TupleType(u32, String, bool);
 ///
 /// // Usage of the auto-generated get method:
-/// # fn example(ctx: &mut Context) {
+/// # fn example(ctx: &Context) {
 /// let tuple_type = TupleType::get(ctx, 42, "hello".to_string(), true); // get(ctx, field_0, field_1, field_2)
 /// # }
 /// ```
@@ -135,11 +135,11 @@ pub fn def_type(args: TokenStream, input: TokenStream) -> TokenStream {
 /// #[verify_succ]
 /// #[def_type("my_dialect.unit_type")]
 /// #[format_type]
-/// #[derive_type_get]  // Auto-generates singleton get method
+/// #[derive_type_get]  // Auto-generates get method
 /// #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 /// pub struct UnitType;
 ///
-/// // Usage of the auto-generated singleton get method:
+/// // Usage of the auto-generated get method:
 /// # fn example(ctx: &Context) {
 /// let unit_type = UnitType::get(ctx); // get(ctx) - no additional parameters
 /// # }
