@@ -12,7 +12,7 @@ use rustc_hash::FxHasher;
 
 use crate::{
     deps::hash::{FxHashMap, hash_map::Entry},
-    utils::arrayna::Arrayna,
+    utils::once_vec::OnceVec,
 };
 
 /// Computes the hash of a rust value and its rust type.
@@ -58,7 +58,7 @@ pub type UniqueStoreIs<'a, T> = &'a dyn Fn(&T) -> bool;
 /// Store unique copy of objects.
 pub(crate) struct UniqueStore<T: 'static> {
     /// The actual store, owning the objects.
-    pub(crate) unique_store: Arrayna<T>,
+    pub(crate) unique_store: OnceVec<T>,
     /// A hash index into the store.
     unique_stores_map: RefCell<FxHashMap<TypeValueHash, Vec<usize>>>,
 }
