@@ -81,10 +81,9 @@ impl<T, const N: usize> OnceVec<T, N> {
                 .collect::<Box<[OnceCell<T>]>>()
         });
 
-        assert!(
-            chunk[offset].set(value).is_ok(),
-            "OnceVec internal error: slot already initialized"
-        );
+        chunk[offset]
+            .set(value)
+            .unwrap_or_else(|_| panic!("OnceVec internal error: slot already initialized"));
         self.len.set(index + 1);
         index
     }
