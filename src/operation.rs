@@ -36,7 +36,7 @@ use crate::{
     printable::{self, Printable},
     region::Region,
     result::Result,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     utils::vec_exns::VecExtns,
     value::{DefNode, DefTrait, DefUseParticipant, DefiningEntity, Use, UseNode, Value},
     verify_err, verify_error,
@@ -49,12 +49,12 @@ pub(crate) struct OpResult {
     /// Unique ID of this value in [Context].
     pub(crate) val_uid: u64,
     /// [Type](crate::type::Type) of this operation result.
-    pub(crate) ty: Ptr<TypeObj>,
+    pub(crate) ty: TypeHandle,
 }
 
 impl OpResult {
     /// Create a new OpResult with the given type and a new unique value ID from the context.
-    pub(crate) fn new(ctx: &Context, ty: Ptr<TypeObj>) -> OpResult {
+    pub(crate) fn new(ctx: &Context, ty: TypeHandle) -> OpResult {
         OpResult {
             def: DefNode::new(),
             val_uid: ctx.get_new_value_uid(),
@@ -63,12 +63,12 @@ impl OpResult {
     }
 
     /// Get the [Type](crate::type::Type) of this operation result.
-    pub(crate) fn get_type(&self) -> Ptr<TypeObj> {
+    pub(crate) fn get_type(&self) -> TypeHandle {
         self.ty
     }
 
     /// Set the [Type](crate::type::Type) of this operation result.
-    pub(crate) fn set_type(&mut self, ty: Ptr<TypeObj>) {
+    pub(crate) fn set_type(&mut self, ty: TypeHandle) {
         self.ty = ty;
     }
 
@@ -82,7 +82,7 @@ impl OpResult {
 }
 
 impl Typed for OpResult {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.get_type()
     }
 }
@@ -163,7 +163,7 @@ impl Operation {
     pub fn new(
         ctx: &mut Context,
         concrete_op: ConcreteOpInfo,
-        result_types: Vec<Ptr<TypeObj>>,
+        result_types: Vec<TypeHandle>,
         operands: Vec<Value>,
         successors: Vec<Ptr<BasicBlock>>,
         num_regions: usize,
@@ -237,7 +237,7 @@ impl Operation {
     }
 
     /// Add a result to the end of the result list, returning its index.
-    pub fn push_result(this: Ptr<Self>, ctx: &Context, ty: Ptr<TypeObj>) -> usize {
+    pub fn push_result(this: Ptr<Self>, ctx: &Context, ty: TypeHandle) -> usize {
         let new_result = OpResult::new(ctx, ty);
         this.deref_mut(ctx).results.push_back(new_result)
     }
@@ -256,7 +256,7 @@ impl Operation {
 
     /// Insert a new result at `res_idx`, shifting existing results, from `res_idx`, to the right.
     /// Panics on invalid index.
-    pub fn insert_result(this: Ptr<Self>, ctx: &Context, res_idx: usize, ty: Ptr<TypeObj>) {
+    pub fn insert_result(this: Ptr<Self>, ctx: &Context, res_idx: usize, ty: TypeHandle) {
         let new_res = OpResult::new(ctx, ty);
         this.deref_mut(ctx).results.insert(res_idx, new_res);
         debug_info::insert_operation_result_name(ctx, this, res_idx, None);
@@ -295,12 +295,12 @@ impl Operation {
     }
 
     /// Get type of the idx'th result. Panics on invalid index.
-    pub fn get_type(&self, idx: usize) -> Ptr<TypeObj> {
+    pub fn get_type(&self, idx: usize) -> TypeHandle {
         self.results[idx].ty
     }
 
     /// Get an iterator over the result types of this operation.
-    pub fn result_types(&self) -> impl Iterator<Item = Ptr<TypeObj>> + Clone + '_ {
+    pub fn result_types(&self) -> impl Iterator<Item = TypeHandle> + Clone + '_ {
         self.results.iter().map(|res| res.ty)
     }
 
@@ -668,7 +668,7 @@ impl<T: DefUseParticipant + Named> Printable for Operand<T> {
 }
 
 impl<T: DefUseParticipant + Typed> Typed for Operand<T> {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         self.r#use.get_def().get_type(ctx)
     }
 }

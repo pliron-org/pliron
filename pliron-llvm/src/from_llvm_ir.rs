@@ -32,7 +32,7 @@ use pliron::{
     op::Op,
     operation::Operation,
     result::Result,
-    r#type::{Type, TypeObj, TypedHandle, type_cast},
+    r#type::{Type, TypeHandle, TypedHandle, type_cast},
     utils::apint::APInt,
     value::Value,
 };
@@ -118,12 +118,12 @@ fn convert_type(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
     ty: LLVMType,
-) -> Result<Ptr<TypeObj>> {
+) -> Result<TypeHandle> {
     if let Some(cached) = cctx.type_cache.get(&ty) {
         return Ok(*cached);
     }
     let kind = llvm_get_type_kind(ty);
-    let converted_ty: Result<Ptr<TypeObj>> = match kind {
+    let converted_ty: Result<TypeHandle> = match kind {
         LLVMTypeKind::LLVMArrayTypeKind => {
             let (element_ty, len) = (llvm_get_element_type(ty), llvm_get_array_length2(ty));
             let elem = convert_type(ctx, cctx, element_ty)?;
@@ -263,7 +263,7 @@ struct ConversionContext {
     /// A map from LLVM's basic blocks to plirons'.
     block_map: FxHashMap<LLVMBasicBlock, Ptr<BasicBlock>>,
     /// Cache already converted types.
-    type_cache: FxHashMap<LLVMType, Ptr<TypeObj>>,
+    type_cache: FxHashMap<LLVMType, TypeHandle>,
     /// Insertion point for constants in the entry block.
     constants_inserter: Option<IRInserter<DummyListener>>,
     /// Identifier legaliser
@@ -455,7 +455,7 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             let (fp64, lost_info) = llvm_const_real_get_double(val);
             assert!(!lost_info, "Lost information when converting FP constant");
             let val_attr: AttrObj = {
-                let float_ty = &**ty.deref(ctx);
+                let float_ty = &*ty.deref(ctx);
                 let Some(float_ty_attr): Option<&dyn FloatAttrBuilder> = type_cast(float_ty) else {
                     return input_err_noloc!(ConversionErr::FloatConstNotFloatType);
                 };

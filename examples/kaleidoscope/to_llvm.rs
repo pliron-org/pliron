@@ -46,7 +46,7 @@ use pliron::{
     op::{Op, op_cast, op_impls},
     operation::Operation,
     result::Result,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     utils::apint::APInt,
     value::Value,
 };
@@ -290,7 +290,7 @@ impl ToLLVMDialect for KalCallOp {
         let args: Vec<Value> = (0..n_args)
             .map(|i| self.get_operation().deref(ctx).get_operand(i))
             .collect();
-        let arg_types: Vec<Ptr<TypeObj>> = (0..n_args).map(|_| i64_ty.into()).collect();
+        let arg_types: Vec<TypeHandle> = (0..n_args).map(|_| i64_ty.into()).collect();
         let llvm_func_ty = FuncType::get(ctx, i64_ty.into(), arg_types, false);
         let llvm_call = LlvmCallOp::new(
             ctx,
@@ -537,7 +537,7 @@ fn lower_func_op_to_llvm(
 
     // All args are i64, and the return type is i64.
     let n_args = func_op.get_entry_block(ctx).deref(ctx).get_num_arguments();
-    let arg_types: Vec<Ptr<TypeObj>> = (0..n_args).map(|_| i64_ty.into()).collect();
+    let arg_types: Vec<TypeHandle> = (0..n_args).map(|_| i64_ty.into()).collect();
     let llvm_func_ty = FuncType::get(ctx, i64_ty.into(), arg_types, false);
     let llvm_func_op = pliron_llvm::ops::FuncOp::new(ctx, func_name, llvm_func_ty);
     let llvm_func_op_ptr = llvm_func_op.get_operation();

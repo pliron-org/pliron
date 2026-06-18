@@ -16,7 +16,7 @@ use pliron::{
     },
     combine::{Parser, stream::position::SourcePosition},
     common_traits::Verify,
-    context::{Context, Ptr},
+    context::Context,
     derive::{
         attr_interface, attr_interface_impl, op_interface, op_interface_impl, pliron_attr,
         pliron_op, pliron_type, type_interface, type_interface_impl,
@@ -30,7 +30,7 @@ use pliron::{
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
     storage_uniquer::TypeValueHash,
-    r#type::{Type, TypeObj, type_cast, verify_type},
+    r#type::{Type, TypeHandle, type_cast, verify_type},
     utils::trait_cast::any_to_trait,
     verify_err,
 };
@@ -345,12 +345,12 @@ impl TestAttrInterfaceX for IntegerAttr {}
 #[pliron_attr(name = "test.my_attr", format = "`<` $ty `>`", verifier = "succ")]
 #[derive(PartialEq, Clone, Debug, Hash)]
 struct MyAttr {
-    ty: Ptr<TypeObj>,
+    ty: TypeHandle,
 }
 
 #[attr_interface_impl]
 impl TypedAttrInterface for MyAttr {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.ty
     }
 }
@@ -887,7 +887,7 @@ fn test_no_inbuilt_verify2() -> Result<()> {
 )]
 #[derive(PartialEq, Clone, Debug, Hash)]
 pub struct OutlineTestAttr {
-    pub ty: Ptr<TypeObj>,
+    pub ty: TypeHandle,
 }
 
 #[attr_interface_impl]
@@ -929,7 +929,7 @@ fn test_outline_attr() -> Result<()> {
 )]
 #[derive(PartialEq, Clone, Debug, Hash)]
 pub struct OulinePrintOnceTestAttr {
-    pub ty: Ptr<TypeObj>,
+    pub ty: TypeHandle,
 }
 
 #[attr_interface_impl]

@@ -21,7 +21,7 @@ use pliron::{
     op::Op,
     operation::Operation,
     result::Result,
-    r#type::Typed,
+    r#type::{TypeHandle, Typed},
 };
 
 use pliron::derive::pliron_op;
@@ -300,17 +300,13 @@ impl DialectConversion for ConsumerOnlyConversion {
         Operation::get_op::<ConsumerOp>(op, ctx).is_some()
     }
 
-    fn can_convert_type(&self, ctx: &Context, ty: Ptr<pliron::r#type::TypeObj>) -> bool {
+    fn can_convert_type(&self, ctx: &Context, ty: TypeHandle) -> bool {
         ty.deref(ctx)
             .downcast_ref::<IntegerType>()
             .is_some_and(|int_ty| int_ty.width() > 16)
     }
 
-    fn convert_type(
-        &mut self,
-        ctx: &mut Context,
-        ty: Ptr<pliron::r#type::TypeObj>,
-    ) -> Result<Ptr<pliron::r#type::TypeObj>> {
+    fn convert_type(&mut self, ctx: &mut Context, ty: TypeHandle) -> Result<TypeHandle> {
         let width = ty
             .deref(ctx)
             .downcast_ref::<IntegerType>()
@@ -357,17 +353,13 @@ impl DialectConversion for ForwardOnlyConversion {
         Operation::get_op::<ForwardToSuccOp>(op, ctx).is_some()
     }
 
-    fn can_convert_type(&self, ctx: &Context, ty: Ptr<pliron::r#type::TypeObj>) -> bool {
+    fn can_convert_type(&self, ctx: &Context, ty: TypeHandle) -> bool {
         ty.deref(ctx)
             .downcast_ref::<IntegerType>()
             .is_some_and(|int_ty| int_ty.width() > 16)
     }
 
-    fn convert_type(
-        &mut self,
-        ctx: &mut Context,
-        ty: Ptr<pliron::r#type::TypeObj>,
-    ) -> Result<Ptr<pliron::r#type::TypeObj>> {
+    fn convert_type(&mut self, ctx: &mut Context, ty: TypeHandle) -> Result<TypeHandle> {
         let width = ty
             .deref(ctx)
             .downcast_ref::<IntegerType>()

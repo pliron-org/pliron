@@ -28,7 +28,7 @@ use crate::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
-    r#type::{TypeObj, Typed, TypedHandle},
+    r#type::{TypeHandle, Typed, TypedHandle},
     utils::{
         apfloat::{self, double_to_f64, f32_to_single, f64_to_double, single_to_f32},
         apint::APInt,
@@ -230,14 +230,14 @@ impl Parsable for IntegerAttr {
 }
 
 impl Typed for IntegerAttr {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.ty.into()
     }
 }
 
 #[attr_interface_impl]
 impl TypedAttrInterface for IntegerAttr {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.ty.into()
     }
 }
@@ -263,7 +263,7 @@ impl Hash for FPHalfAttr {
 
 #[attr_interface_impl]
 impl TypedAttrInterface for FPHalfAttr {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         FP16Type::get(ctx).into()
     }
 }
@@ -318,7 +318,7 @@ impl Hash for FPSingleAttr {
 
 #[attr_interface_impl]
 impl TypedAttrInterface for FPSingleAttr {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         FP32Type::get(ctx).into()
     }
 }
@@ -373,7 +373,7 @@ impl Hash for FPDoubleAttr {
 
 #[attr_interface_impl]
 impl TypedAttrInterface for FPDoubleAttr {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         FP64Type::get(ctx).into()
     }
 }
@@ -499,23 +499,23 @@ impl UnitAttr {
 /// Same as MLIR's [TypeAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#typeattr).
 #[pliron_attr(name = "builtin.type", format = "$0", verifier = "succ")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-pub struct TypeAttr(Ptr<TypeObj>);
+pub struct TypeAttr(TypeHandle);
 
 impl TypeAttr {
-    pub fn new(ty: Ptr<TypeObj>) -> Self {
+    pub fn new(ty: TypeHandle) -> Self {
         TypeAttr(ty)
     }
 }
 
 impl Typed for TypeAttr {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
     }
 }
 
 #[attr_interface_impl]
 impl TypedAttrInterface for TypeAttr {
-    fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
     }
 }
@@ -559,7 +559,7 @@ mod tests {
     fn test_integer_attributes() {
         let mut ctx = Context::new();
 
-        let i64_ty = IntegerType::get(&mut ctx, 64, Signedness::Signed);
+        let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
 
         let int64_0_ptr: AttrObj = IntegerAttr::new(i64_ty, APInt::from_i64(0, bw(64))).into();
         let int64_1_ptr: AttrObj = IntegerAttr::new(i64_ty, APInt::from_i64(15, bw(64))).into();
@@ -706,7 +706,7 @@ mod tests {
     fn test_type_attributes() {
         let mut ctx = Context::new();
 
-        let ty = IntegerType::get(&mut ctx, 64, Signedness::Signed).into();
+        let ty = IntegerType::get(&ctx, 64, Signedness::Signed).into();
         let ty_attr: AttrObj = TypeAttr::new(ty).into();
 
         let ty_interface = attr_cast::<dyn TypedAttrInterface>(&*ty_attr).unwrap();

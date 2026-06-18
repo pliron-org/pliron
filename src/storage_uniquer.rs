@@ -11,8 +11,8 @@ use core::{
 use rustc_hash::FxHasher;
 
 use crate::{
-    context::{Arena, ArenaIndex},
     deps::hash::{FxHashMap, hash_map::Entry},
+    utils::arrayna::Arrayna,
 };
 
 /// Computes the hash of a rust value and its rust type.
@@ -58,9 +58,9 @@ pub type UniqueStoreIs<'a, T> = &'a dyn Fn(&T) -> bool;
 /// Store unique copy of objects.
 pub(crate) struct UniqueStore<T: 'static> {
     /// The actual store, owning the objects.
-    pub(crate) unique_store: Arena<T>,
+    pub(crate) unique_store: Arrayna<T>,
     /// A hash index into the store.
-    pub(crate) unique_stores_map: FxHashMap<TypeValueHash, Vec<ArenaIndex>>,
+    unique_stores_map: RefCell<FxHashMap<TypeValueHash, Vec<usize>>>,
 }
 
 impl<T: 'static> Default for UniqueStore<T> {
@@ -78,27 +78,27 @@ impl<T: 'static> UniqueStore<T> {
     /// Consumes the provided argument either way.
     /// Returns [ArenaIndex] into [Self::unique_store] of the unique copy.
     pub(crate) fn get_or_create_unique(
-        &mut self,
+        &self,
         t: T,
         hash: TypeValueHash,
         eq: UniqueStoreEq<T>,
-    ) -> ArenaIndex {
-        match self.unique_stores_map.entry(hash) {
+    ) -> usize {
+        match self.unique_stores_map.borrow_mut().entry(hash) {
             Entry::Occupied(mut possible_matches) => {
                 let index_opt = possible_matches.get().iter().find_map(|index| {
-                    let iref = &*self.unique_store.get(*index).unwrap().borrow();
+                    let iref = &self.unique_store.get(*index).unwrap();
                     if eq(&t, iref) { Some(*index) } else { None }
                 });
                 if let Some(index) = index_opt {
                     index
                 } else {
-                    let index = self.unique_store.insert(RefCell::new(t));
+                    let index = self.unique_store.push(t);
                     possible_matches.get_mut().push(index);
                     index
                 }
             }
             Entry::Vacant(slot) => {
-                let new_index = self.unique_store.insert(RefCell::new(t));
+                let new_index = self.unique_store.push(t);
                 slot.insert(vec![new_index]);
                 new_index
             }
@@ -106,12 +106,13 @@ impl<T: 'static> UniqueStore<T> {
     }
 
     /// Get index to the stored object that satisfies `hash` and `is`.
-    pub(crate) fn get(&self, hash: TypeValueHash, is: UniqueStoreIs<T>) -> Option<ArenaIndex> {
+    pub(crate) fn get(&self, hash: TypeValueHash, is: UniqueStoreIs<T>) -> Option<usize> {
         self.unique_stores_map
+            .borrow()
             .get(&hash)
             .and_then(|mv| {
                 mv.iter()
-                    .find(|other| is(&*self.unique_store.get(**other).unwrap().borrow()))
+                    .find(|other| is(self.unique_store.get(**other).unwrap()))
             })
             .copied()
     }
@@ -136,7 +137,7 @@ mod tests {
     }
     #[test]
     fn test_unique_store() {
-        let mut u32_store = UniqueStore::<u32>::default();
+        let u32_store = UniqueStore::<u32>::default();
         let u32_0_idx = u32_store.get_or_create_unique(0, TypeValueHash::new(&0u32), &u32::eq);
         let u32_1_idx = u32_store.get_or_create_unique(1, TypeValueHash::new(&1u32), &u32::eq);
         let u32_0_1_idx = u32_store.get_or_create_unique(0, TypeValueHash::new(&0u32), &u32::eq);

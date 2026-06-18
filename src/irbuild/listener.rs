@@ -9,7 +9,7 @@ use crate::{
     linked_list::{ContainsLinkedList as _, LinkedList},
     operation::Operation,
     region::Region,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     value::Value,
 };
 
@@ -32,8 +32,8 @@ pub trait RewriteListener: InsertionListener {
         &mut self,
         ctx: &Context,
         value: Value,
-        old_type: Ptr<TypeObj>,
-        new_type: Ptr<TypeObj>,
+        old_type: TypeHandle,
+        new_type: TypeHandle,
     );
     /// Notify that a block is about to be erased.
     fn notify_block_erasure(&mut self, ctx: &Context, block: Ptr<BasicBlock>);
@@ -69,8 +69,8 @@ impl RewriteListener for DummyListener {
         &mut self,
         _ctx: &Context,
         _value: Value,
-        _old_type: Ptr<TypeObj>,
-        _new_type: Ptr<TypeObj>,
+        _old_type: TypeHandle,
+        _new_type: TypeHandle,
     ) {
     }
 }
@@ -83,13 +83,13 @@ pub enum RecorderEvent {
     ErasedOperation(Ptr<Operation>),
     ReplacedValueUses {
         old_value: Value,
-        old_type: Ptr<TypeObj>,
+        old_type: TypeHandle,
         new_value: Value,
     },
     ValueTypeChanged {
         value: Value,
-        old_type: Ptr<TypeObj>,
-        new_type: Ptr<TypeObj>,
+        old_type: TypeHandle,
+        new_type: TypeHandle,
     },
     ErasedBlock(Ptr<BasicBlock>),
     ErasedRegion(Ptr<Region>),
@@ -135,8 +135,8 @@ impl RewriteListener for Recorder {
         &mut self,
         _ctx: &Context,
         value: Value,
-        old_type: Ptr<TypeObj>,
-        new_type: Ptr<TypeObj>,
+        old_type: TypeHandle,
+        new_type: TypeHandle,
     ) {
         self.events.push(RecorderEvent::ValueTypeChanged {
             value,

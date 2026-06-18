@@ -331,7 +331,7 @@ mod tests {
     #[test]
     fn test_block_arg_name() -> Result<()> {
         let mut ctx = Context::new();
-        let i64_ty = IntegerType::get(&mut ctx, 64, Signedness::Signed);
+        let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
         let block = BasicBlock::new(
             &mut ctx,
             Some("entry".try_into().unwrap()),
@@ -345,7 +345,7 @@ mod tests {
     #[test]
     fn test_op_result_name_insert_remove_shift() {
         let mut ctx = Context::new();
-        let i64_ty = IntegerType::get(&mut ctx, 64, Signedness::Signed);
+        let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
         let op = Operation::new(
             &mut ctx,
             ZeroOp::get_concrete_op_info(),
@@ -447,7 +447,7 @@ mod tests {
     #[test]
     fn test_block_arg_name_insert_remove_shift() {
         let mut ctx = Context::new();
-        let i64_ty = IntegerType::get(&mut ctx, 64, Signedness::Signed);
+        let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
         let block = BasicBlock::new(
             &mut ctx,
             Some("entry".try_into().unwrap()),

@@ -1,13 +1,10 @@
 //! Store, in [Context], a single unique copy of any object.
 
-use core::{any::Any, cell::Ref, hash::Hash, marker::PhantomData};
+use core::{any::Any, hash::Hash, marker::PhantomData};
 
 use alloc::boxed::Box;
 
-use crate::{
-    context::{ArenaIndex, Context},
-    storage_uniquer::TypeValueHash,
-};
+use crate::{context::Context, storage_uniquer::TypeValueHash};
 
 /// [Box]ed [Any], used for unique storage.
 pub(crate) struct UniquedAny(Box<dyn Any>);
@@ -15,7 +12,7 @@ pub(crate) struct UniquedAny(Box<dyn Any>);
 /// A handle to the stored unique copy of an object.
 #[derive(PartialEq, Eq, Debug)]
 pub struct UniquedKey<T> {
-    index: ArenaIndex,
+    index: usize,
     _dummy: PhantomData<T>,
 }
 
@@ -47,17 +44,14 @@ pub fn save<T: Any + Hash + Eq>(ctx: &mut Context, t: T) -> UniquedKey<T> {
 }
 
 /// Given a handle to a stored unique copy of an object, get a reference to the object itself.
-pub fn get<T: Any + Hash + Eq>(ctx: &Context, key: UniquedKey<T>) -> Ref<'_, T> {
-    let r = ctx
-        .uniqued_any_store
+pub fn get<T: Any + Hash + Eq>(ctx: &Context, key: UniquedKey<T>) -> &T {
+    ctx.uniqued_any_store
         .unique_store
         .get(key.index)
         .expect("Key not found in uniqued store")
-        .borrow();
-    Ref::map(r, |ua| {
-        ua.0.downcast_ref::<T>()
-            .expect("Type mismatch in UniquedAny retrieval")
-    })
+        .0
+        .downcast_ref::<T>()
+        .expect("Type mismatch in uniqued store")
 }
 
 #[cfg(test)]

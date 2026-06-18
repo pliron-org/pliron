@@ -13,11 +13,11 @@ use pliron::{
         },
         types::{IntegerType, Signedness, UnitType},
     },
-    context::{Context, Ptr},
+    context::Context,
     op::{Op, op_impls, verify_op},
     operation::Operation,
     result::{Error, ErrorKind, Result},
-    r#type::TypeObj,
+    r#type::TypeHandle,
     utils::apint::APInt,
     value::Value,
 };
@@ -37,7 +37,7 @@ use pliron_derive::{
 struct ValueProducerOp;
 
 impl ValueProducerOp {
-    fn new(ctx: &mut Context, ty: Ptr<TypeObj>) -> Self {
+    fn new(ctx: &mut Context, ty: TypeHandle) -> Self {
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -74,8 +74,8 @@ impl NamedGetterOp {
         lhs: Value,
         mid: Value,
         rhs: Value,
-        out_ty: Ptr<TypeObj>,
-        aux_ty: Ptr<TypeObj>,
+        out_ty: TypeHandle,
+        aux_ty: TypeHandle,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -100,7 +100,7 @@ impl NamedGetterOp {
 struct TypedChecksOp;
 
 impl TypedChecksOp {
-    fn new(ctx: &mut Context, arg: Value, res_ty: Ptr<TypeObj>) -> Self {
+    fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -123,7 +123,7 @@ impl TypedChecksOp {
 struct UntypedNamedOp;
 
 impl UntypedNamedOp {
-    fn new(ctx: &mut Context, arg: Value, res_ty: Ptr<TypeObj>) -> Self {
+    fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -147,7 +147,7 @@ impl UntypedNamedOp {
 struct SkipUntypedOp;
 
 impl SkipUntypedOp {
-    fn new(ctx: &mut Context, arg: Value, res_ty: Ptr<TypeObj>) -> Self {
+    fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -176,9 +176,9 @@ impl MixedSkipUntypedOp {
         op0: Value,
         op1: Value,
         op2: Value,
-        res0_ty: Ptr<TypeObj>,
-        res1_ty: Ptr<TypeObj>,
-        res2_ty: Ptr<TypeObj>,
+        res0_ty: TypeHandle,
+        res1_ty: TypeHandle,
+        res2_ty: TypeHandle,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -200,8 +200,8 @@ impl MixedSkipUntypedOp {
 fn named_operand_and_result_getters_work() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let unit_ty: Ptr<TypeObj> = UnitType::get(ctx).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let unit_ty: TypeHandle = UnitType::get(ctx).into();
 
     let lhs = ValueProducerOp::new(ctx, int_ty).result(ctx);
     let mid = ValueProducerOp::new(ctx, int_ty).result(ctx);
@@ -233,8 +233,8 @@ fn named_operand_and_result_getters_work() -> Result<()> {
 fn operand_type_interface_verification_fails() {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let unit_ty: Ptr<TypeObj> = UnitType::get(ctx).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let unit_ty: TypeHandle = UnitType::get(ctx).into();
 
     // Feed a UnitType value where IntegerType is expected by operand 0.
     let wrong_operand = ValueProducerOp::new(ctx, unit_ty).result(ctx);
@@ -255,8 +255,8 @@ fn operand_type_interface_verification_fails() {
 fn result_type_interface_verification_fails() {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let unit_ty: Ptr<TypeObj> = UnitType::get(ctx).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let unit_ty: TypeHandle = UnitType::get(ctx).into();
 
     // Feed a UnitType where IntegerType is expected as result 0.
     let operand = ValueProducerOp::new(ctx, int_ty).result(ctx);
@@ -277,7 +277,7 @@ fn result_type_interface_verification_fails() {
 fn untyped_named_entries_generate_getters_without_type_interfaces() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
 
     let arg = ValueProducerOp::new(ctx, int_ty).result(ctx);
     let op = UntypedNamedOp::new(ctx, arg, int_ty);
@@ -300,7 +300,7 @@ fn untyped_named_entries_generate_getters_without_type_interfaces() -> Result<()
 fn skip_untyped_entries_have_no_type_interfaces() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
 
     let arg = ValueProducerOp::new(ctx, int_ty).result(ctx);
     let op = SkipUntypedOp::new(ctx, arg, int_ty);
@@ -317,8 +317,8 @@ fn skip_untyped_entries_have_no_type_interfaces() -> Result<()> {
 fn mixed_skip_and_untyped_entries_map_indices_correctly() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let int_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let unit_ty: Ptr<TypeObj> = UnitType::get(ctx).into();
+    let int_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let unit_ty: TypeHandle = UnitType::get(ctx).into();
 
     let op0 = ValueProducerOp::new(ctx, unit_ty).result(ctx);
     let op1 = ValueProducerOp::new(ctx, int_ty).result(ctx);

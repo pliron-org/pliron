@@ -6,12 +6,12 @@ use pliron::{
         op_interfaces::{OneResultInterface, SymbolTableInterface},
         types::{IntegerType, Signedness},
     },
-    context::{Context, Ptr},
+    context::Context,
     identifier::Identifier,
     irbuild::inserter::Inserter,
     result::Result,
     symbol_table::SymbolTableCollection,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     value::Value,
 };
 
@@ -37,8 +37,8 @@ pub fn lookup_or_insert_function(
     symbol_table_collection: &mut SymbolTableCollection,
     symbol_table_op: Box<dyn SymbolTableInterface>,
     name: Identifier,
-    return_type: Ptr<TypeObj>,
-    param_types: Vec<Ptr<TypeObj>>,
+    return_type: TypeHandle,
+    param_types: Vec<TypeHandle>,
     is_var_arg: bool,
 ) -> Result<FuncOp> {
     let loc = symbol_table_op.loc(ctx);
@@ -62,7 +62,7 @@ pub fn lookup_or_insert_function(
 }
 
 /// Get the type used to represet size
-pub fn get_size_type(ctx: &mut Context) -> Ptr<TypeObj> {
+pub fn get_size_type(ctx: &mut Context) -> TypeHandle {
     IntegerType::get(ctx, 64, Signedness::Signless).into()
 }
 
@@ -109,7 +109,7 @@ pub fn lookup_or_create_free_fn(
 pub fn compute_type_size_in_bytes(
     ctx: &mut Context,
     inserter: &mut dyn Inserter,
-    ty: Ptr<TypeObj>,
+    ty: TypeHandle,
 ) -> Value {
     // This is LLVM's expansion for sizeof
     // (as per a comment in MLIR's `ConvertToLLVMPattern::getSizeInBytes`)
@@ -202,7 +202,7 @@ mod tests {
 
         // Create a main function
         let return_type = get_size_type(&mut ctx);
-        let func_ty = FuncType::get(&mut ctx, return_type, vec![], false);
+        let func_ty = FuncType::get(&ctx, return_type, vec![], false);
         let main_fn = FuncOp::new(&mut ctx, "main".try_into().unwrap(), func_ty);
         main_fn
             .get_operation()

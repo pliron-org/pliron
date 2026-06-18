@@ -28,7 +28,7 @@ use crate::{
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
     result::Result,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     verify_err, verify_error,
 };
 
@@ -267,7 +267,7 @@ impl Value {
     }
 
     /// Set this value's type.
-    pub fn set_type(&self, ctx: &Context, ty: Ptr<TypeObj>) {
+    pub fn set_type(&self, ctx: &Context, ty: TypeHandle) {
         let index = self.find_index(ctx);
         match self.defining_entity {
             DefiningEntity::Op(op) => op.deref_mut(ctx).results[index].set_type(ty),
@@ -300,7 +300,7 @@ impl Verify for Value {
 }
 
 impl Typed for Value {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         let index = self.find_index(ctx);
         match self.defining_entity {
             DefiningEntity::Op(op) => op.deref(ctx).results[index].get_type(),
@@ -594,7 +594,7 @@ impl<T: UseTrait> Use<T> {
 }
 
 impl Typed for Use<Value> {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         self.get_def(ctx).get_type(ctx)
     }
 }

@@ -35,7 +35,7 @@ use crate::{
     printable::{self, Printable, indented_nl},
     region::Region,
     result::Result,
-    r#type::{TypeObj, Typed, TypedHandle},
+    r#type::{TypeHandle, Typed, TypedHandle},
     verify_err,
 };
 use pliron::derive::{op_interface_impl, pliron_op};
@@ -184,7 +184,7 @@ impl FuncOp {
     }
 
     /// Get the function signature (type).
-    pub fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    pub fn get_type(&self, ctx: &Context) -> TypeHandle {
         attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_func_type(ctx).unwrap())
             .unwrap()
             .get_type(ctx)
@@ -197,7 +197,7 @@ impl FuncOp {
 }
 
 impl Typed for FuncOp {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         self.get_type(ctx)
     }
 }

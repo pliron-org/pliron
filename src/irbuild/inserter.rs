@@ -13,7 +13,7 @@ use crate::{
     operation::Operation,
     printable::{self, Printable},
     region::Region,
-    r#type::TypeObj,
+    r#type::TypeHandle,
 };
 
 /// Insertion point specification for inserting [Operation]s using [IRInserter].
@@ -173,7 +173,7 @@ pub trait Inserter {
         ctx: &mut Context,
         insertion_point: BlockInsertionPoint,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock>;
 
     /// Gets the current insertion point.
@@ -399,7 +399,7 @@ impl<L: InsertionListener> Inserter for IRInserter<L> {
         ctx: &mut Context,
         insertion_point: BlockInsertionPoint,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock> {
         let block = BasicBlock::new(ctx, label, arg_types);
         self.insert_block(ctx, insertion_point, block);
@@ -491,7 +491,7 @@ impl<'a> Inserter for ScopedInserter<'a> {
         ctx: &mut Context,
         insertion_point: BlockInsertionPoint,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock> {
         self.inserter
             .create_block(ctx, insertion_point, label, arg_types)

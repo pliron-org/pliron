@@ -18,7 +18,7 @@ use pliron::{
     operation::Operation,
     parsable::{self, state_stream_from_iterator},
     printable::Printable,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     value::Value,
 };
 use pliron_llvm::{
@@ -35,7 +35,7 @@ use pliron_llvm::{
 /// types, let `build` add ops to that block, then assert the whole module
 /// round-trips through the parser unchanged.
 fn assert_op_roundtrips(
-    make_arg_types: impl FnOnce(&mut Context) -> Vec<Ptr<TypeObj>>,
+    make_arg_types: impl FnOnce(&mut Context) -> Vec<TypeHandle>,
     build: impl FnOnce(&mut Context, Ptr<BasicBlock>, &[Value]),
     expected: &[&str],
 ) {
@@ -77,7 +77,7 @@ fn assert_op_roundtrips(
         .expect("printed IR should re-parse");
 }
 
-fn i32_ty(ctx: &mut Context) -> Ptr<TypeObj> {
+fn i32_ty(ctx: &mut Context) -> TypeHandle {
     IntegerType::get(ctx, 32, Signedness::Signless).into()
 }
 

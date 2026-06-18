@@ -24,7 +24,7 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     value::Value,
 };
 
@@ -163,7 +163,7 @@ pub struct LoadOp;
 
 impl LoadOp {
     /// Create a new [LoadOp]
-    pub fn new(ctx: &mut Context, ptr: Value, res_ty: Ptr<TypeObj>) -> Self {
+    pub fn new(ctx: &mut Context, ptr: Value, res_ty: TypeHandle) -> Self {
         LoadOp {
             op: Operation::new(
                 ctx,

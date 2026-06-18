@@ -28,7 +28,7 @@ use crate::{
     pass_manager::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     value::Value,
 };
 
@@ -38,7 +38,7 @@ pub struct AllocInfo {
     /// Pointer to the allocated memory.
     pub ptr: Value,
     /// Type of the allocated memory.
-    pub ty: Ptr<TypeObj>,
+    pub ty: TypeHandle,
 }
 
 /// A promotable memory allocation implements this interface

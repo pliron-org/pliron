@@ -17,7 +17,7 @@ use crate::{
     op::Op,
     operation::Operation,
     region::Region,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     value::Value,
 };
 
@@ -80,7 +80,7 @@ pub trait Rewriter: Inserter {
     );
 
     /// Change the type of a [Value].
-    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: Ptr<TypeObj>);
+    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: TypeHandle);
 
     /// Has the IR been modified via this rewriter?
     fn is_modified(&self) -> bool;
@@ -168,7 +168,7 @@ impl<L: RewriteListener> Inserter for IRRewriter<L> {
         ctx: &mut Context,
         insertion_point: BlockInsertionPoint,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock> {
         self.inserter
             .create_block(ctx, insertion_point, label, arg_types)
@@ -386,7 +386,7 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
         }
     }
 
-    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: Ptr<TypeObj>) {
+    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: TypeHandle) {
         let old_type = value.get_type(ctx);
         if old_type == new_type {
             return;
@@ -480,7 +480,7 @@ impl<'a> Inserter for ScopedRewriter<'a> {
         ctx: &mut Context,
         insertion_point: BlockInsertionPoint,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock> {
         self.rewriter
             .create_block(ctx, insertion_point, label, arg_types)
@@ -573,7 +573,7 @@ impl<'a> Rewriter for ScopedRewriter<'a> {
             .inline_region(ctx, src_region, dest_insertion_point)
     }
 
-    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: Ptr<TypeObj>) {
+    fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: TypeHandle) {
         self.rewriter.set_value_type(ctx, value, new_type)
     }
 

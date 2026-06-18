@@ -25,7 +25,7 @@ use crate::{
     region::Region,
     result::Result,
     symbol_table::{SymbolTableCollection, walk_symbol_table},
-    r#type::{Type, TypeObj, Typed, type_impls},
+    r#type::{Type, TypeHandle, Typed, type_impls},
     value::Value,
     verify_err, verify_error,
 };
@@ -749,7 +749,7 @@ pub trait OneResultInterface: NResultsInterface<1> {
     }
 
     /// Get the type of the single result defined by this [Op].
-    fn result_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn result_type(&self, ctx: &Context) -> TypeHandle {
         self.get_operation().deref(ctx).get_type(0)
     }
 
@@ -844,7 +844,7 @@ pub trait OneOpdInterface: NOpdsInterface<1> {
     }
 
     /// Get the type of the single operand used by this [Op].
-    fn operand_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn operand_type(&self, ctx: &Context) -> TypeHandle {
         self.get_operand(ctx).get_type(ctx)
     }
 
@@ -882,7 +882,7 @@ pub struct SameOperandsTypeVerifyErr;
 #[op_interface]
 pub trait SameOperandsType: AtLeastNOpdsInterface<1> {
     /// Get the common type of the operands.
-    fn operand_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn operand_type(&self, ctx: &Context) -> TypeHandle {
         self.get_operation().deref(ctx).get_operand(0).get_type(ctx)
     }
 
@@ -980,7 +980,7 @@ pub struct SameResultsTypeVerifyErr;
 #[op_interface]
 pub trait SameResultsType: AtLeastNResultsInterface<1> {
     /// Get the common type of the results.
-    fn result_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn result_type(&self, ctx: &Context) -> TypeHandle {
         self.get_operation().deref(ctx).get_result(0).get_type(ctx)
     }
 
@@ -1075,7 +1075,7 @@ pub struct SameOperandsAndResultTypeVerifyErr;
 #[op_interface]
 pub trait SameOperandsAndResultType: SameOperandsType + SameResultsType {
     /// Get the common type of results / operands.
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         self.result_type(ctx)
     }
 
@@ -1135,7 +1135,7 @@ pub trait CallOpInterface {
         let Some(callee_type_attr) = op.attributes.get::<TypeAttr>(&ATTR_KEY_CALLEE_TYPE) else {
             return verify_err!(op.loc(), CallOpInterfaceErr::CalleeTypeAttrNotFoundErr);
         };
-        if !type_impls::<dyn FunctionTypeInterface>(&**callee_type_attr.get_type(ctx).deref(ctx)) {
+        if !type_impls::<dyn FunctionTypeInterface>(&*callee_type_attr.get_type(ctx).deref(ctx)) {
             return verify_err!(op.loc(), CallOpInterfaceErr::CalleeTypeAttrIncorrectTypeErr);
         }
         Ok(())
@@ -1150,7 +1150,7 @@ pub trait CallOpInterface {
     fn args(&self, ctx: &Context) -> Vec<Value>;
 
     /// Type of the callee
-    fn callee_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn callee_type(&self, ctx: &Context) -> TypeHandle {
         let self_op = self.get_operation().deref(ctx);
         self_op
             .attributes
@@ -1160,7 +1160,7 @@ pub trait CallOpInterface {
     }
 
     /// Set callee type
-    fn set_callee_type(&self, ctx: &mut Context, callee_ty: Ptr<TypeObj>) {
+    fn set_callee_type(&self, ctx: &mut Context, callee_ty: TypeHandle) {
         let mut self_op = self.get_operation().deref_mut(ctx);
         let ty_attr = TypeAttr::new(callee_ty);
         self_op

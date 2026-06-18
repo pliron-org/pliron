@@ -19,7 +19,7 @@ use pliron::{
     operation::Operation,
     region::Region,
     result::Result,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     utils::apint::APInt,
     value::Value,
     verify_err,
@@ -105,7 +105,7 @@ impl DeclOp {
     /// Creates a new `DeclOp` with the specified variable type.
     /// The op result is always a pointer slot, and the variable type
     /// is stored in the `var_type` attribute.
-    pub fn new(ctx: &mut Context, var_ty: Ptr<TypeObj>) -> Self {
+    pub fn new(ctx: &mut Context, var_ty: TypeHandle) -> Self {
         let ptr_ty = PointerType::get(ctx, 0).into();
         let op = Operation::new(
             ctx,
@@ -120,7 +120,7 @@ impl DeclOp {
         op
     }
 
-    pub fn variable_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    pub fn variable_type(&self, ctx: &Context) -> TypeHandle {
         self.get_attr_var_type(ctx)
             .expect("DeclOp must carry var_type")
             .get_type(ctx)
@@ -143,7 +143,7 @@ pub struct LoadOp;
 // ANCHOR_END: load_op_decl
 
 impl LoadOp {
-    pub fn new(ctx: &mut Context, slot: Value, result_ty: Ptr<TypeObj>) -> Self {
+    pub fn new(ctx: &mut Context, slot: Value, result_ty: TypeHandle) -> Self {
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -412,7 +412,7 @@ impl CallOp {
         ctx: &mut Context,
         callee: IdentifierAttr,
         args: Vec<Value>,
-        result_ty: Ptr<TypeObj>,
+        result_ty: TypeHandle,
     ) -> Self {
         let op = Operation::new(
             ctx,

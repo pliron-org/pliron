@@ -236,7 +236,7 @@ fn derive_type_get_impl(ident: &syn::Ident, fields: &syn::Fields) -> TokenStream
             impl #ident {
                 /// Get or create a new instance.
                 pub fn get(
-                    ctx: &mut ::pliron::context::Context,
+                    ctx: &::pliron::context::Context,
                     #field_params
                 ) -> ::pliron::r#type::TypedHandle<Self> {
                     ::pliron::r#type::Type::register_instance(
@@ -504,7 +504,7 @@ mod tests {
         let args = quote! {};
         let input = quote! {
             pub struct VectorType {
-                elem_ty: Ptr<TypeObj>,
+                elem_ty: TypeHandle,
                 num_elems: u32,
                 kind: VectorTypeKind,
             }
@@ -515,15 +515,15 @@ mod tests {
 
         expect![[r#"
             pub struct VectorType {
-                elem_ty: Ptr<TypeObj>,
+                elem_ty: TypeHandle,
                 num_elems: u32,
                 kind: VectorTypeKind,
             }
             impl VectorType {
                 /// Get or create a new instance.
                 pub fn get(
-                    ctx: &mut ::pliron::context::Context,
-                    elem_ty: Ptr<TypeObj>,
+                    ctx: &::pliron::context::Context,
+                    elem_ty: TypeHandle,
                     num_elems: u32,
                     kind: VectorTypeKind,
                 ) -> ::pliron::r#type::TypedHandle<Self> {
@@ -556,7 +556,7 @@ mod tests {
             impl TupleType {
                 /// Get or create a new instance.
                 pub fn get(
-                    ctx: &mut ::pliron::context::Context,
+                    ctx: &::pliron::context::Context,
                     field_0: u32,
                     field_1: String,
                     field_2: bool,

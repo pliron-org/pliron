@@ -23,7 +23,7 @@ use crate::{
     operation::{OpDbg, Operation},
     printable::{ListSeparator, Printable},
     result::Result,
-    r#type::{Type, TypeObj, Typed},
+    r#type::{Type, TypeHandle, Typed},
     value::{DefiningEntity, Value},
 };
 
@@ -37,7 +37,7 @@ pub type DialectConversionRewriter = IRRewriter<Recorder>;
 /// rather than just the current type. The most recent type before conversion,
 /// for each operand, is the last entry.
 #[derive(Clone, Default)]
-pub struct OperandsInfo(Vec<(Value, Vec<Ptr<TypeObj>>)>);
+pub struct OperandsInfo(Vec<(Value, Vec<TypeHandle>)>);
 
 impl Printable for OperandsInfo {
     fn fmt(
@@ -65,7 +65,7 @@ impl Printable for OperandsInfo {
 }
 
 impl OperandsInfo {
-    pub fn new(operands: Vec<(Value, Vec<Ptr<TypeObj>>)>) -> Self {
+    pub fn new(operands: Vec<(Value, Vec<TypeHandle>)>) -> Self {
         Self(operands)
     }
 
@@ -87,7 +87,7 @@ impl OperandsInfo {
     }
 
     /// Lookup the most recent type (excluding current) recorded for an operand, if any.
-    pub fn lookup_most_recent_type(&self, opd: Value) -> Option<Ptr<TypeObj>> {
+    pub fn lookup_most_recent_type(&self, opd: Value) -> Option<TypeHandle> {
         self.0
             .iter()
             .find(|(operand, _)| *operand == opd)
@@ -96,7 +96,7 @@ impl OperandsInfo {
 
     /// Lookup the full history of types (excluding current) recorded for an operand,
     /// ordered from oldest to newest.
-    pub fn lookup_operand_history(&self, opd: Value) -> Vec<Ptr<TypeObj>> {
+    pub fn lookup_operand_history(&self, opd: Value) -> Vec<TypeHandle> {
         self.0
             .iter()
             .find(|(operand, _)| *operand == opd)
@@ -111,12 +111,12 @@ pub trait DialectConversion {
     fn can_convert_op(&self, ctx: &Context, op: Ptr<Operation>) -> bool;
 
     /// Should this type be converted?
-    fn can_convert_type(&self, _ctx: &Context, _ty: Ptr<TypeObj>) -> bool {
+    fn can_convert_type(&self, _ctx: &Context, _ty: TypeHandle) -> bool {
         false
     }
 
     /// Convert the type and return the converted type.
-    fn convert_type(&mut self, _ctx: &mut Context, ty: Ptr<TypeObj>) -> Result<Ptr<TypeObj>> {
+    fn convert_type(&mut self, _ctx: &mut Context, ty: TypeHandle) -> Result<TypeHandle> {
         Ok(ty)
     }
 
@@ -178,7 +178,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         rewriter: DialectConversionRewriter,
         worklist: VecDeque<Ptr<Operation>>,
         op_states: FxHashMap<Ptr<Operation>, OpState>,
-        previous_types: FxHashMap<Value, Vec<Ptr<TypeObj>>>,
+        previous_types: FxHashMap<Value, Vec<TypeHandle>>,
     }
 
     impl<'a, C: DialectConversion> Driver<'a, C> {
@@ -267,10 +267,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             );
         }
 
-        fn append_type_history(
-            existing: &mut Vec<Ptr<TypeObj>>,
-            mut additional: Vec<Ptr<TypeObj>>,
-        ) {
+        fn append_type_history(existing: &mut Vec<TypeHandle>, mut additional: Vec<TypeHandle>) {
             for ty in additional.drain(..) {
                 if !existing.contains(&ty) {
                     existing.push(ty);
@@ -281,7 +278,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         fn record_value_replacement(
             &mut self,
             old_value: Value,
-            old_type: Ptr<TypeObj>,
+            old_type: TypeHandle,
             new_value: Value,
         ) {
             let mut history = self.previous_types.remove(&old_value).unwrap_or_default();
@@ -290,7 +287,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             Self::append_type_history(existing, history);
         }
 
-        fn record_type_change(&mut self, value: Value, old_type: Ptr<TypeObj>) {
+        fn record_type_change(&mut self, value: Value, old_type: TypeHandle) {
             let existing = self.previous_types.entry(value).or_default();
             Self::append_type_history(existing, vec![old_type]);
         }

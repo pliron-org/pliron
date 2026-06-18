@@ -30,7 +30,7 @@ use pliron::{
     parsable::{self, state_stream_from_iterator},
     printable::Printable,
     result::Result,
-    r#type::TypeObj,
+    r#type::TypeHandle,
 };
 
 #[cfg(target_family = "wasm")]
@@ -390,8 +390,8 @@ fn test_operand_push_pop_insert_remove() -> Result<()> {
 fn test_result_push_pop_insert_remove() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let i64_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let i32_ty: Ptr<TypeObj> = IntegerType::get(ctx, 32, Signedness::Signed).into();
+    let i64_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let i32_ty: TypeHandle = IntegerType::get(ctx, 32, Signedness::Signed).into();
 
     // Create a DualDefOp with two i64 results.
     let op = Operation::new(
@@ -530,8 +530,8 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
 fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let i64_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let i32_ty: Ptr<TypeObj> = IntegerType::get(ctx, 32, Signedness::Signed).into();
+    let i64_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let i32_ty: TypeHandle = IntegerType::get(ctx, 32, Signedness::Signed).into();
 
     // Create a block with two i64 arguments.
     let block = BasicBlock::new(ctx, None, vec![i64_ty, i64_ty]);
@@ -652,8 +652,8 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
 fn test_result_index_tracking_with_uses() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let i64_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let i32_ty: Ptr<TypeObj> = IntegerType::get(ctx, 32, Signedness::Signed).into();
+    let i64_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let i32_ty: TypeHandle = IntegerType::get(ctx, 32, Signedness::Signed).into();
 
     // Create a DualDefOp with two i64 results: r0 at index 0, r1 at index 1.
     let dual_op = Operation::new(
@@ -724,8 +724,8 @@ fn test_result_index_tracking_with_uses() -> Result<()> {
 fn test_block_arg_index_tracking_with_uses() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let i64_ty: Ptr<TypeObj> = IntegerType::get(ctx, 64, Signedness::Signed).into();
-    let i32_ty: Ptr<TypeObj> = IntegerType::get(ctx, 32, Signedness::Signed).into();
+    let i64_ty: TypeHandle = IntegerType::get(ctx, 64, Signedness::Signed).into();
+    let i32_ty: TypeHandle = IntegerType::get(ctx, 32, Signedness::Signed).into();
 
     // Create a block with two i64 arguments: a0 at index 0, a1 at index 1.
     let block = BasicBlock::new(ctx, None, vec![i64_ty, i64_ty]);

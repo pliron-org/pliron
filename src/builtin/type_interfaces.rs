@@ -1,7 +1,7 @@
 use crate::{
-    context::{Context, Ptr},
+    context::Context,
     result::Result,
-    r#type::{Type, TypeObj},
+    r#type::{Type, TypeHandle},
     utils::apfloat::Semantics,
 };
 use alloc::vec::Vec;
@@ -24,9 +24,9 @@ pub trait FloatTypeInterface {
 #[type_interface]
 pub trait FunctionTypeInterface {
     /// Returns the argument types of the function type.
-    fn arg_types(&self) -> Vec<Ptr<TypeObj>>;
+    fn arg_types(&self) -> Vec<TypeHandle>;
     /// Returns the result types of the function type.
-    fn res_types(&self) -> Vec<Ptr<TypeObj>>;
+    fn res_types(&self) -> Vec<TypeHandle>;
     fn verify(_ty: &dyn Type, _ctx: &Context) -> Result<()>
     where
         Self: Sized,

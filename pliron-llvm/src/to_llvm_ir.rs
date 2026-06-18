@@ -32,7 +32,7 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    r#type::{Type, TypeObj, Typed, type_cast},
+    r#type::{Type, TypeHandle, Typed, type_cast},
     utils::apint::APInt,
     value::{DefiningEntity, Value},
 };
@@ -105,7 +105,7 @@ pub struct ConversionContext<'a> {
     // A map from pliron StructTypes to LLVM StructTypes.
     structs_map: FxHashMap<Identifier, LLVMType>,
     // Type cache to avoid redundant conversions.
-    type_cache: FxHashMap<Ptr<TypeObj>, LLVMType>,
+    type_cache: FxHashMap<TypeHandle, LLVMType>,
     // The active LLVM builder.
     builder: LLVMBuilder,
     // Scratch builder in a scratch function for attempting to evaluate constants.
@@ -443,12 +443,12 @@ pub fn convert_type(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
     cctx: &mut ConversionContext,
-    ty: Ptr<TypeObj>,
+    ty: TypeHandle,
 ) -> Result<LLVMType> {
     if let Some(cached) = cctx.type_cache.get(&ty) {
         return Ok(*cached);
     }
-    if let Some(converter) = type_cast::<dyn ToLLVMType>(&**ty.deref(ctx)) {
+    if let Some(converter) = type_cast::<dyn ToLLVMType>(&*ty.deref(ctx)) {
         let llvm_ty = converter.convert(ctx, llvm_ctx, cctx)?;
         cctx.type_cache.insert(ty, llvm_ty);
         return Ok(llvm_ty);

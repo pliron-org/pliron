@@ -6,7 +6,7 @@ use crate::{
     operation::Operation,
     result::Result,
     storage_uniquer::TypeValueHash,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd},
 };
 use alloc::boxed::Box;
@@ -17,7 +17,7 @@ use pliron::derive::attr_interface;
 #[attr_interface]
 pub trait TypedAttrInterface {
     /// Get this attribute's type.
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj>;
+    fn get_type(&self, ctx: &Context) -> TypeHandle;
 
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where

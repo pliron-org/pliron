@@ -1,12 +1,12 @@
 //! LLVM Dialect for [pliron]
 
 use pliron::{
-    context::{Context, Ptr},
+    context::Context,
     derive::{op_interface, type_interface},
     irbuild::dialect_conversion::{DialectConversionRewriter, OperandsInfo},
     op::Op,
     result::Result,
-    r#type::{Type, TypeObj},
+    r#type::{Type, TypeHandle},
 };
 
 pub mod attributes;
@@ -43,7 +43,7 @@ pub trait ToLLVMDialect {
 }
 
 /// A function pointer type for the [ToLLVMType] interface.
-pub type ToLLVMTypeFn = fn(self_ty: Ptr<TypeObj>, &mut Context) -> Result<Ptr<TypeObj>>;
+pub type ToLLVMTypeFn = fn(self_ty: TypeHandle, &mut Context) -> Result<TypeHandle>;
 
 /// Interface for converting to an LLVM type.
 #[type_interface]

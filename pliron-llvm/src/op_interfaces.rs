@@ -19,12 +19,12 @@ use pliron::{
         op_interfaces::{OneResultInterface, SameOperandsAndResultType},
         types::{IntegerType, Signedness},
     },
-    context::{Context, Ptr},
+    context::Context,
     location::Located,
     op::{Op, op_cast},
     operation::Operation,
     result::Result,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     value::Value,
     verify_err,
 };
@@ -186,7 +186,7 @@ pub trait FloatBinArithOp: BinArithOp {
         }
 
         let ty = ty.deref(ctx);
-        if type_cast::<dyn FloatTypeInterface>(&**ty).is_none() {
+        if type_cast::<dyn FloatTypeInterface>(&*ty).is_none() {
             return verify_err!(op.loc(ctx), FloatBinArithOpErr);
         }
         Ok(())
@@ -326,7 +326,7 @@ pub struct PointerTypeResultVerifyErr;
 #[op_interface]
 pub trait PointerTypeResult: OneResultInterface + ResultNOfType<0, PointerType> {
     /// Get the pointee type of the result pointer.
-    fn result_pointee_type(&self, ctx: &Context) -> Ptr<TypeObj>;
+    fn result_pointee_type(&self, ctx: &Context) -> TypeHandle;
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
@@ -351,7 +351,7 @@ pub trait CastOpInterface:
     OneResultInterface + OneOpdInterface + NResultsInterface<1> + NOpdsInterface<1>
 {
     /// Create a new cast operation given the operand.
-    fn new(ctx: &mut Context, operand: Value, res_type: Ptr<TypeObj>) -> Self
+    fn new(ctx: &mut Context, operand: Value, res_type: TypeHandle) -> Self
     where
         Self: Sized,
     {
@@ -380,7 +380,7 @@ pub trait CastOpWithNNegInterface:
     CastOpInterface + NNegFlag + NResultsInterface<1> + NOpdsInterface<1>
 {
     /// Create a new cast operation with nneg flag
-    fn new_with_nneg(ctx: &mut Context, operand: Value, res_type: Ptr<TypeObj>, nneg: bool) -> Self
+    fn new_with_nneg(ctx: &mut Context, operand: Value, res_type: TypeHandle, nneg: bool) -> Self
     where
         Self: Sized,
     {

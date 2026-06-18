@@ -18,7 +18,7 @@ use crate::{
     operation::Operation,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     result::Result,
-    r#type::TypeObj,
+    r#type::TypeHandle,
     value::Value,
 };
 
@@ -60,8 +60,8 @@ pub fn location<'a>() -> Box<dyn Parser<StateStream<'a>, Output = Location, Part
 
 /// A parser combinator to parse [TypeId](crate::type::TypeId) followed by the type's contents.
 pub fn type_parser<'a>()
--> Box<dyn Parser<StateStream<'a>, Output = Ptr<TypeObj>, PartialState = ()> + 'a> {
-    Ptr::<TypeObj>::parser(())
+-> Box<dyn Parser<StateStream<'a>, Output = TypeHandle, PartialState = ()> + 'a> {
+    TypeHandle::parser(())
 }
 
 /// A parser to parse any Rust integer type.

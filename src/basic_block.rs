@@ -29,7 +29,7 @@ use crate::{
     printable::{self, ListSeparator, Printable, indented_nl},
     region::Region,
     result::Result,
-    r#type::{TypeObj, Typed},
+    r#type::{TypeHandle, Typed},
     utils::vec_exns::VecExtns,
     value::{DefNode, DefiningEntity, Value},
     verify_err, verify_error,
@@ -42,12 +42,12 @@ pub(crate) struct BlockArgument {
     /// Unique ID of this value in [Context].
     pub(crate) val_uid: u64,
     /// The [Type](crate::type::Type) of this argument.
-    pub(crate) ty: Ptr<TypeObj>,
+    pub(crate) ty: TypeHandle,
 }
 
 impl BlockArgument {
     /// Create a new block argument with the given type and a fresh value UID.
-    pub(crate) fn new(ctx: &Context, ty: Ptr<TypeObj>) -> Self {
+    pub(crate) fn new(ctx: &Context, ty: TypeHandle) -> Self {
         Self {
             def: DefNode::new(),
             val_uid: ctx.get_new_value_uid(),
@@ -56,12 +56,12 @@ impl BlockArgument {
     }
 
     /// Get the [Type](crate::type::Type) of this argument.
-    pub(crate) fn get_type(&self, _ctx: &Context) -> Ptr<TypeObj> {
+    pub(crate) fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.ty
     }
 
     /// Set the [Type](crate::type::Type) of this argument.
-    pub(crate) fn set_type(&mut self, _ctx: &Context, ty: Ptr<TypeObj>) {
+    pub(crate) fn set_type(&mut self, _ctx: &Context, ty: TypeHandle) {
         self.ty = ty;
     }
 
@@ -75,7 +75,7 @@ impl BlockArgument {
 }
 
 impl Typed for BlockArgument {
-    fn get_type(&self, ctx: &Context) -> Ptr<TypeObj> {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
         self.get_type(ctx)
     }
 }
@@ -127,7 +127,7 @@ impl BasicBlock {
     pub fn new(
         ctx: &mut Context,
         label: Option<Identifier>,
-        arg_types: Vec<Ptr<TypeObj>>,
+        arg_types: Vec<TypeHandle>,
     ) -> Ptr<BasicBlock> {
         let f = |self_ptr: Ptr<BasicBlock>| BasicBlock {
             self_ptr,
@@ -184,7 +184,7 @@ impl BasicBlock {
     }
 
     /// Add an argument to the end of the argument list, returning its index.
-    pub fn push_argument(block: Ptr<BasicBlock>, ctx: &Context, ty: Ptr<TypeObj>) -> usize {
+    pub fn push_argument(block: Ptr<BasicBlock>, ctx: &Context, ty: TypeHandle) -> usize {
         let new_block_arg = BlockArgument::new(ctx, ty);
         block.deref_mut(ctx).args.push_back(new_block_arg)
     }
@@ -203,12 +203,7 @@ impl BasicBlock {
 
     /// Insert a new argument at `arg_idx`, shifting existing arguments, from `arg_idx`, to the right.
     /// Panics on invalid index.
-    pub fn insert_argument(
-        block: Ptr<BasicBlock>,
-        ctx: &Context,
-        arg_idx: usize,
-        ty: Ptr<TypeObj>,
-    ) {
+    pub fn insert_argument(block: Ptr<BasicBlock>, ctx: &Context, arg_idx: usize, ty: TypeHandle) {
         let new_block_arg = BlockArgument::new(ctx, ty);
         block.deref_mut(ctx).args.insert(arg_idx, new_block_arg);
         debug_info::insert_block_arg_name(ctx, block, arg_idx, None);
