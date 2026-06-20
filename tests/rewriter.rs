@@ -1,4 +1,5 @@
 use core::panic;
+use std::{cell::RefCell, rc::Rc};
 
 use crate::common::{ReturnOp, const_ret_in_mod};
 use common::ConstantOp;
@@ -14,10 +15,15 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::{Context, Ptr},
+    graph::walkers::{
+        WALKCONFIG_POSTORDER_REVERSE, WALKCONFIG_PREORDER_FORWARD, WALKCONFIG_PREORDER_REVERSE,
+    },
     identifier::Identifier,
     irbuild::{
         inserter::{BlockInsertionPoint, Inserter, OpInsertionPoint},
-        match_rewrite::{MatchRewrite, MatchRewriter, apply_match_rewrite},
+        match_rewrite::{
+            EnqueueOrder, MatchRewrite, MatchRewriter, RewriterOrder, apply_match_rewrite,
+        },
         rewriter::{Rewriter, ScopedRewriter},
     },
     op::{Op, verify_op},
@@ -33,6 +39,103 @@ use pliron::derive::{pliron_op, pliron_type};
 use wasm_bindgen_test::*;
 
 mod common;
+
+fn assert_rewrite_sequence_for_order(
+    collect: pliron::graph::walkers::WalkConfig,
+    enque: EnqueueOrder,
+    expected_sequence: &[u64],
+) -> Result<()> {
+    let ctx = &mut Context::new();
+    let (module_op, _func_op, const0_op, ret_op) = const_ret_in_mod(ctx).unwrap();
+
+    // Add one more constant so initial collect order differences are observable.
+    let extra_const_op = ConstantOp::new(ctx, 1).get_operation();
+    extra_const_op.insert_before(ctx, ret_op.get_operation());
+
+    // Keep the original constant alive so replacing it remains meaningful.
+    assert!(const0_op.get_result(ctx).num_uses(ctx) > 0);
+
+    let seen = Rc::new(RefCell::new(Vec::<u64>::new()));
+
+    struct RecordAndBumpUntil3 {
+        seen: Rc<RefCell<Vec<u64>>>,
+    }
+
+    impl MatchRewrite for RecordAndBumpUntil3 {
+        fn r#match(&mut self, ctx: &Context, op: Ptr<Operation>) -> bool {
+            if let Some(const_op) = Operation::get_op::<ConstantOp>(op, ctx) {
+                return const_op
+                    .get_value(ctx)
+                    .downcast_ref::<IntegerAttr>()
+                    .is_some_and(|int_attr| int_attr.value().to_u64() < 3);
+            }
+            false
+        }
+
+        fn rewrite(
+            &mut self,
+            ctx: &mut Context,
+            rewriter: &mut MatchRewriter,
+            op: Ptr<Operation>,
+        ) -> Result<()> {
+            let value_attr = Operation::get_op::<ConstantOp>(op, ctx)
+                .unwrap()
+                .get_value(ctx);
+            let Some(int_attr) = value_attr.downcast_ref::<IntegerAttr>() else {
+                panic!("Expected ConstantOp to hold IntegerAttr");
+            };
+
+            let cur_val = int_attr.value().to_u64();
+            self.seen.borrow_mut().push(cur_val);
+
+            let next_const = ConstantOp::new(ctx, cur_val + 1).get_operation();
+            rewriter.insert_operation(ctx, next_const);
+            rewriter.replace_operation(ctx, op, next_const);
+            Ok(())
+        }
+    }
+
+    apply_match_rewrite(
+        ctx,
+        RecordAndBumpUntil3 { seen: seen.clone() },
+        RewriterOrder { collect, enque },
+        module_op.get_operation(),
+    )?;
+    verify_op(&module_op, ctx)?;
+
+    assert_eq!(&*seen.borrow(), expected_sequence);
+    Ok(())
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn apply_match_rewrite_preorder_forward_enque_front_ordering() -> Result<()> {
+    assert_rewrite_sequence_for_order(
+        WALKCONFIG_PREORDER_FORWARD,
+        EnqueueOrder::EnqueFront,
+        &[0, 1, 2, 1, 2],
+    )
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn apply_match_rewrite_preorder_reverse_enque_back_ordering() -> Result<()> {
+    assert_rewrite_sequence_for_order(
+        WALKCONFIG_PREORDER_REVERSE,
+        EnqueueOrder::EnqueBack,
+        &[1, 0, 2, 1, 2],
+    )
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn apply_match_rewrite_postorder_reverse_enque_front_ordering() -> Result<()> {
+    assert_rewrite_sequence_for_order(
+        WALKCONFIG_POSTORDER_REVERSE,
+        EnqueueOrder::EnqueFront,
+        &[1, 2, 0, 1, 2],
+    )
+}
 
 // Testing replacing all uses of c0 with c1.
 #[test]
@@ -93,7 +196,15 @@ fn replace_c0_with_c1() -> Result<()> {
 
     // Collect and rewrite must replace constant 0 with constant 1,
     // and then constant 1 with constant 2.
-    apply_match_rewrite(ctx, ReplaceC0WithC1, module_op.get_operation())?;
+    apply_match_rewrite(
+        ctx,
+        ReplaceC0WithC1,
+        RewriterOrder {
+            collect: WALKCONFIG_PREORDER_FORWARD,
+            enque: EnqueueOrder::EnqueBack,
+        },
+        module_op.get_operation(),
+    )?;
     verify_op(&module_op, ctx)?;
 
     let printed = format!("{}", module_op.disp(ctx));
@@ -228,7 +339,15 @@ fn scoped_rewriter_test() -> Result<()> {
         }
     }
 
-    apply_match_rewrite(ctx, ConstToGlobal, module_op.get_operation())?;
+    apply_match_rewrite(
+        ctx,
+        ConstToGlobal,
+        RewriterOrder {
+            collect: WALKCONFIG_PREORDER_FORWARD,
+            enque: EnqueueOrder::EnqueBack,
+        },
+        module_op.get_operation(),
+    )?;
     verify_op(&module_op, ctx)?;
 
     let printed = format!("{}", module_op.disp(ctx));
@@ -286,7 +405,15 @@ fn erase_func_with_const_zero() -> Result<()> {
         }
     }
 
-    apply_match_rewrite(ctx, EraseFunc, module_op.get_operation())?;
+    apply_match_rewrite(
+        ctx,
+        EraseFunc,
+        RewriterOrder {
+            collect: WALKCONFIG_PREORDER_FORWARD,
+            enque: EnqueueOrder::EnqueBack,
+        },
+        module_op.get_operation(),
+    )?;
     verify_op(&module_op, ctx)?;
 
     let printed = format!("{}", module_op.disp(ctx));
@@ -354,7 +481,15 @@ fn split_block_after_const_zero() -> Result<()> {
         }
     }
 
-    apply_match_rewrite(ctx, SplitBlockAfterConstZero, module_op.get_operation())?;
+    apply_match_rewrite(
+        ctx,
+        SplitBlockAfterConstZero,
+        RewriterOrder {
+            collect: WALKCONFIG_PREORDER_FORWARD,
+            enque: EnqueueOrder::EnqueBack,
+        },
+        module_op.get_operation(),
+    )?;
     verify_op(&module_op, ctx)?;
 
     let printed = format!("{}", module_op.disp(ctx));
@@ -422,6 +557,10 @@ fn inline_region_on_const_zero() -> Result<()> {
     apply_match_rewrite(
         ctx,
         InlineRegionOnConstZero(func_op1),
+        RewriterOrder {
+            collect: WALKCONFIG_PREORDER_FORWARD,
+            enque: EnqueueOrder::EnqueBack,
+        },
         module_op2.get_operation(),
     )?;
     verify_op(&module_op1, ctx)?;
