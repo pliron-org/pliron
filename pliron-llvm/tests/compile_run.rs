@@ -15,18 +15,13 @@ use pliron::{
     init_env_logger_for_tests, location,
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
-    opts::{
-        constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
-        simplify_cfg::SimplifyCFGPass,
-    },
     parsable::{self, state_stream_from_iterator},
-    pass_manager::{AnalysisManager, OpPass, OpPassManager, Pass, PassGroup, PassManager},
+    pass_manager::{AnalysisManager, OpPassManager, Pass, PassManager},
     printable::Printable,
 };
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMModule, llvm_print_module_to_string},
-    ops::FuncOp,
     to_llvm_ir,
 };
 use tempfile::tempdir;
@@ -219,10 +214,7 @@ fn test_llvm_ir_via_pliron(input_file: &str, opts: impl Pass, expected_output: i
 
 fn create_opt_pass_manager() -> OpPassManager<ModuleOp> {
     let mut pass_manager = OpPassManager::<ModuleOp>::default();
-    pass_manager.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
-    pass_manager.add_pass(OpPass::<SCCPPass, FuncOp>::default());
-    pass_manager.add_pass(OpPass::<SimplifyCFGPass, FuncOp>::default());
-    pass_manager.add_pass(OpPass::<DCEPass, FuncOp>::default());
+    pliron_llvm::append_o1_passes(&mut pass_manager);
     pass_manager
 }
 

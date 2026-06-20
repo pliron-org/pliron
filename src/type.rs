@@ -330,7 +330,7 @@ impl TypeHandle {
     }
 
     /// Get a mutable reference to the underlying [Type] object.
-    /// This is only used when building recursive types, and the caller must ensure
+    /// This is useful when building recursive types, and the caller must ensure
     /// that the mutation does not change the hash-relevant contents of the type.
     pub fn deref_mut<'a>(&self, ctx: &'a Context) -> RefMut<'a, dyn Type> {
         RefMut::map(

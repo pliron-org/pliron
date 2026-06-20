@@ -40,7 +40,7 @@ struct Cli {
 
     /// Optimization passes to run in order (comma-separated)
     ///
-    /// Example: --opts mem2reg,dce
+    /// Example: --opts mem2reg,dce,o1
     #[arg(long = "opts", value_name = "PASS1,PASS2", value_delimiter = ',')]
     opts: Option<Vec<OptPass>>,
 }
@@ -51,6 +51,7 @@ enum OptPass {
     Dce,
     Sccp,
     SimplifyCfg,
+    O1,
 }
 
 impl FromStr for OptPass {
@@ -62,6 +63,7 @@ impl FromStr for OptPass {
             "dce" => Ok(OptPass::Dce),
             "sccp" => Ok(OptPass::Sccp),
             "simplify-cfg" => Ok(OptPass::SimplifyCfg),
+            "o1" => Ok(OptPass::O1),
             other => Err(format!(
                 "unknown optimization pass '{other}'. Available passes: mem2reg, dce, sccp"
             )),
@@ -85,6 +87,9 @@ fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -
             }
             OptPass::SimplifyCfg => {
                 pass_manager.add_pass(OpPass::<SimplifyCFGPass, FuncOp>::default());
+            }
+            OptPass::O1 => {
+                pliron_llvm::append_o1_passes(&mut pass_manager);
             }
         }
     }

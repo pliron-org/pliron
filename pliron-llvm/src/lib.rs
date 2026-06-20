@@ -1,10 +1,16 @@
 //! LLVM Dialect for [pliron]
 
 use pliron::{
+    builtin::ops::{FuncOp, ModuleOp},
     context::Context,
     derive::{op_interface, type_interface},
     irbuild::dialect_conversion::{DialectConversionRewriter, OperandsInfo},
     op::Op,
+    opts::{
+        constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
+        simplify_cfg::SimplifyCFGPass,
+    },
+    pass_manager::{OpPass, OpPassManager, PassGroup},
     result::Result,
     r#type::{Type, TypeHandle},
 };
@@ -60,4 +66,12 @@ pub trait ToLLVMType {
     {
         Ok(())
     }
+}
+
+/// Append -O1 passes to the given pass manager.
+pub fn append_o1_passes(pm: &mut OpPassManager<ModuleOp>) {
+    pm.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
+    pm.add_pass(OpPass::<SCCPPass, FuncOp>::default());
+    pm.add_pass(OpPass::<SimplifyCFGPass, FuncOp>::default());
+    pm.add_pass(OpPass::<DCEPass, FuncOp>::default());
 }
