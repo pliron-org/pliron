@@ -27,6 +27,8 @@ use pliron::{
     value::Value,
 };
 
+use crate::attributes::IntegerOverflowFlagsAttr;
+use crate::op_interfaces::IntBinArithOpWithOverflowFlag;
 use crate::{
     op_interfaces::PointerTypeResult,
     ops::{
@@ -227,6 +229,35 @@ fn get_int_bin_operands(operand_attrs: &[Option<AttrObj>]) -> Option<(IntegerAtt
     Some((lhs_int.clone(), rhs_int.clone()))
 }
 
+/// Constant fold this binary integer operation, taking integer overflow flags
+/// into account.
+///
+/// `operand_attrs` contains `Some(attr)` for operands inferred constant
+/// and `None` for operands not inferred constant.
+///
+/// `flags` contains the llvm integer overflow flags associated with this operation
+///
+/// `combine` computes the wrapped result together with whether the operation
+/// unsigned- and signed-overflowed (the two booleans, in that order). The
+///
+/// Returns a singleton vector containing the folded result, or `None` if folding
+/// is not possible.
+fn check_fold_int_bin_op_with_overflow(
+    operand_attrs: &[Option<AttrObj>],
+    flags: IntegerOverflowFlagsAttr,
+    combine: impl Fn(&APInt, &APInt) -> (APInt, bool, bool),
+) -> Vec<Option<AttrObj>> {
+    let Some((lhs, rhs)) = get_int_bin_operands(operand_attrs) else {
+        return vec![None];
+    };
+    let (res, unsigned_overflow, signed_overflow) = combine(&lhs.value(), &rhs.value());
+    if (flags.nsw && signed_overflow) || (flags.nuw && unsigned_overflow) {
+        return vec![None];
+    }
+    let res = Box::new(IntegerAttr::new(lhs.get_type(), res)) as AttrObj;
+    vec![Some(res)]
+}
+
 /// Constant fold this binary integer operation into a singleton vector
 /// containing its result type if folding is successful, or None otherwise.
 fn check_fold_int_bin_op(
@@ -245,8 +276,12 @@ fn check_fold_int_bin_op(
 
 #[op_interface_impl]
 impl ConstFoldInterface for AddOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op(ops, APInt::add)
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_bin_op_with_overflow(
+            ops,
+            self.integer_overflow_flag(ctx),
+            APInt::add_overflow,
+        )
     }
     fn fold_in_place(
         &self,
@@ -260,8 +295,12 @@ impl ConstFoldInterface for AddOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for SubOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op(ops, APInt::sub)
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_bin_op_with_overflow(
+            ops,
+            self.integer_overflow_flag(ctx),
+            APInt::sub_overflow,
+        )
     }
     fn fold_in_place(
         &self,
@@ -275,8 +314,12 @@ impl ConstFoldInterface for SubOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for MulOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op(ops, APInt::mul)
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_bin_op_with_overflow(
+            ops,
+            self.integer_overflow_flag(ctx),
+            APInt::mul_overflow,
+        )
     }
     fn fold_in_place(
         &self,
@@ -290,14 +333,18 @@ impl ConstFoldInterface for MulOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for ShlOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         match get_int_bin_operands(ops) {
             Some((lhs, rhs)) => {
                 let shamt = rhs.value();
                 let lhs_bw: usize = lhs.value().bw();
                 let lhs_bw: APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
                 if shamt.ult(&lhs_bw) {
-                    check_fold_int_bin_op(ops, APInt::shl)
+                    check_fold_int_bin_op_with_overflow(
+                        ops,
+                        self.integer_overflow_flag(ctx),
+                        APInt::shl_overflow,
+                    )
                 } else {
                     vec![None]
                 }

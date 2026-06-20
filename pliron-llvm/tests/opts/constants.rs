@@ -1,0 +1,513 @@
+//! Test that llvm operations implement the constant folding interfaces
+//! [ConstFoldInterface] and [BranchOpFoldInterface] correctly
+
+use pliron::{
+    combine::Parser,
+    context::Context,
+    init_env_logger_for_tests,
+    irbuild::IRStatus,
+    irfmt::parsers::spaced,
+    operation::{Operation, verify_operation},
+    opts::constants::sccp::sccp,
+    parsable::{self, state_stream_from_iterator},
+    printable::Printable,
+    result::Result,
+};
+
+// Linking the crate registers the LLVM dialect
+use pliron_llvm as _;
+
+fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String, String)> {
+    init_env_logger_for_tests!();
+    let ctx = &mut Context::new();
+    let state_stream = state_stream_from_iterator(
+        input.chars(),
+        parsable::State::new(ctx, pliron::location::Source::InMemory),
+    );
+    let op = spaced(Operation::top_level_parser())
+        .parse(state_stream)
+        .expect("textual LLVM IR should parse")
+        .0;
+
+    let before = op.disp(ctx).to_string();
+    log::trace!("Before SCCP:\n{}", before);
+    verify_operation(op, ctx)?;
+
+    let status = sccp(op, ctx)?;
+
+    let after = op.disp(ctx).to_string();
+    log::trace!("After SCCP:\n{}", after);
+    verify_operation(op, ctx)?;
+    Ok((status, before, after))
+}
+
+// ---------------------------------------------------------------------------
+// llvm.add
+// ---------------------------------------------------------------------------
+
+#[test]
+fn add_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<7: i64>"));
+    Ok(())
+}
+
+#[test]
+fn add_wraps_on_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <127: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i8;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<128: i8>"));
+    Ok(())
+}
+
+#[test]
+fn add_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        c = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        sum = llvm.add x, c <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn add_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <127: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        sum = llvm.add a, b <{nsw=true,nuw=false}> : builtin.integer i8;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn add_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        sum = llvm.add a, b <{nsw=false,nuw=true}> : builtin.integer i8;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn add_nsw_still_folds_without_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8;
+        sum = llvm.add a, b <{nsw=true,nuw=true}> : builtin.integer i8;
+        llvm.return sum
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<7: i8>"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.sub
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sub_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        diff = llvm.sub a, b <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<6: i64>"));
+    Ok(())
+}
+
+#[test]
+fn sub_wraps_on_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        diff = llvm.sub a, b <{nsw=false,nuw=false}> : builtin.integer i8;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<255: i8>"));
+    Ok(())
+}
+
+#[test]
+fn sub_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        c = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        diff = llvm.sub x, c <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn sub_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
+    // The bit pattern for 128 (10000000) is -128 read as signed two's complement.
+    // Its true difference -128 - 1 == -129 does not fit in i8's signed range
+    // [-128, 127], so this signed-overflows and `nsw` is violated.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        diff = llvm.sub a, b <{nsw=true,nuw=false}> : builtin.integer i8;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn sub_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        diff = llvm.sub a, b <{nsw=false,nuw=true}> : builtin.integer i8;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn sub_nsw_still_folds_without_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8;
+        diff = llvm.sub a, b <{nsw=true,nuw=true}> : builtin.integer i8;
+        llvm.return diff
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<6: i8>"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.mul
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mul_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <6: i64>> : builtin.integer i64;
+        prod = llvm.mul a, b <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<30: i64>"));
+    Ok(())
+}
+
+#[test]
+fn mul_wraps_on_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <100: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        prod = llvm.mul a, b <{nsw=false,nuw=false}> : builtin.integer i8;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<44: i8>"));
+    Ok(())
+}
+
+#[test]
+fn mul_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        c = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+        prod = llvm.mul x, c <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn mul_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
+    // 100 * 2 == 200 does not fit the signed range [-128, 127], so `nsw` is
+    // violated.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <100: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <2: i8>> : builtin.integer i8;
+        prod = llvm.mul a, b <{nsw=true,nuw=false}> : builtin.integer i8;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn mul_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <200: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <2: i8>> : builtin.integer i8;
+        prod = llvm.mul a, b <{nsw=false,nuw=true}> : builtin.integer i8;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn mul_nsw_still_folds_without_overflow() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8;
+        prod = llvm.mul a, b <{nsw=true,nuw=true}> : builtin.integer i8;
+        llvm.return prod
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<30: i8>"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.shl
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shl_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        shifted = llvm.shl a, b <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<8: i64>"));
+    Ok(())
+}
+
+/// Without flags, `llvm.shl` discards the bits shifted off the top, just like
+/// LLVM's `shl`.
+#[test]
+fn shl_wraps_on_overflow() -> Result<()> {
+    // 00000011 << 7 shifts bit 0 to bit 7 and drops bit 1 off the top,
+    // giving 10000000, or 128 in decimal
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8;
+        shifted = llvm.shl a, b <{nsw=false,nuw=false}> : builtin.integer i8;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<128: i8>"));
+    Ok(())
+}
+
+/// A shift amount `>=` the bitwidth is undefined for `shl`; SCCP must not fold
+/// it regardless of flags.
+#[test]
+fn shl_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8;
+        shifted = llvm.shl a, b <{nsw=false,nuw=false}> : builtin.integer i8;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn shl_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        c = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64;
+        shifted = llvm.shl x, c <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// `llvm.shl nuw` must not fold when a set bit is shifted off the top.
+#[test]
+fn shl_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
+    // The bit pattern for 255 is 11111111. 11111111 << 1 shifts a set bit off the
+    // top, so `nuw` is violated.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        shifted = llvm.shl a, b <{nsw=false,nuw=true}> : builtin.integer i8;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// `llvm.shl nsw` must not fold when the shift changes the sign, even if no set
+/// bit is shifted off the top.
+#[test]
+fn shl_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
+    // The bit pattern for 64 is 01000000. 01000000 << 1 == 10000000, which flips the sign from + to -.
+    // Only a 0 bit is shifted off the top, so `nuw` is satisfied, but `nsw` is
+    // violated.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <64: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        shifted = llvm.shl a, b <{nsw=true,nuw=false}> : builtin.integer i8;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// A set overflow flag must not block folding when the shift does not actually
+/// overflow.
+#[test]
+fn shl_nsw_nuw_still_folds_without_overflow() -> Result<()> {
+    // i8: 1 << 3 == 8, with no bits shifted off the top and no sign change.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        shifted = llvm.shl a, b <{nsw=true,nuw=true}> : builtin.integer i8;
+        llvm.return shifted
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<8: i8>"));
+    Ok(())
+}
