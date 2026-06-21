@@ -34,6 +34,7 @@ pliron-derive = { path = "./pliron-derive", version = "0" }
 awint.workspace = true
 rustc_apfloat.workspace = true
 slotmap = "1"
+once_vec = "0"
 downcast-rs = "2"
 rustc-hash.workspace = true
 thiserror.workspace = true

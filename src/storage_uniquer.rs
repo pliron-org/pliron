@@ -8,12 +8,10 @@ use core::{
     cell::RefCell,
     hash::{Hash, Hasher},
 };
+use once_vec::OnceVec;
 use rustc_hash::FxHasher;
 
-use crate::{
-    deps::hash::{FxHashMap, hash_map::Entry},
-    utils::once_vec::OnceVec,
-};
+use crate::deps::hash::{FxHashMap, hash_map::Entry};
 
 /// Computes the hash of a rust value and its rust type.
 /// ```rust
