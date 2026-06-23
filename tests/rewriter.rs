@@ -1,8 +1,6 @@
-use core::panic;
-use std::{cell::RefCell, rc::Rc};
-
 use crate::common::{ReturnOp, const_ret_in_mod};
 use common::ConstantOp;
+use core::panic;
 use expect_test::expect;
 use pliron::{
     builtin::{
@@ -55,10 +53,8 @@ fn assert_rewrite_sequence_for_order(
     // Keep the original constant alive so replacing it remains meaningful.
     assert!(const0_op.get_result(ctx).num_uses(ctx) > 0);
 
-    let seen = Rc::new(RefCell::new(Vec::<u64>::new()));
-
     struct RecordAndBumpUntil3 {
-        seen: Rc<RefCell<Vec<u64>>>,
+        seen: Vec<u64>,
     }
 
     impl MatchRewrite for RecordAndBumpUntil3 {
@@ -86,7 +82,7 @@ fn assert_rewrite_sequence_for_order(
             };
 
             let cur_val = int_attr.value().to_u64();
-            self.seen.borrow_mut().push(cur_val);
+            self.seen.push(cur_val);
 
             let next_const = ConstantOp::new(ctx, cur_val + 1).get_operation();
             rewriter.insert_operation(ctx, next_const);
@@ -95,15 +91,16 @@ fn assert_rewrite_sequence_for_order(
         }
     }
 
+    let mut matcher = RecordAndBumpUntil3 { seen: Vec::new() };
     apply_match_rewrite(
         ctx,
-        RecordAndBumpUntil3 { seen: seen.clone() },
+        &mut matcher,
         RewriterOrder { collect, enque },
         module_op.get_operation(),
     )?;
     verify_op(&module_op, ctx)?;
 
-    assert_eq!(&*seen.borrow(), expected_sequence);
+    assert_eq!(&matcher.seen, expected_sequence);
     Ok(())
 }
 
@@ -196,9 +193,10 @@ fn replace_c0_with_c1() -> Result<()> {
 
     // Collect and rewrite must replace constant 0 with constant 1,
     // and then constant 1 with constant 2.
+    let mut matcher = ReplaceC0WithC1;
     apply_match_rewrite(
         ctx,
-        ReplaceC0WithC1,
+        &mut matcher,
         RewriterOrder {
             collect: WALKCONFIG_PREORDER_FORWARD,
             enque: EnqueueOrder::EnqueBack,
@@ -339,9 +337,10 @@ fn scoped_rewriter_test() -> Result<()> {
         }
     }
 
+    let mut matcher = ConstToGlobal;
     apply_match_rewrite(
         ctx,
-        ConstToGlobal,
+        &mut matcher,
         RewriterOrder {
             collect: WALKCONFIG_PREORDER_FORWARD,
             enque: EnqueueOrder::EnqueBack,
@@ -405,9 +404,10 @@ fn erase_func_with_const_zero() -> Result<()> {
         }
     }
 
+    let mut matcher = EraseFunc;
     apply_match_rewrite(
         ctx,
-        EraseFunc,
+        &mut matcher,
         RewriterOrder {
             collect: WALKCONFIG_PREORDER_FORWARD,
             enque: EnqueueOrder::EnqueBack,
@@ -481,9 +481,10 @@ fn split_block_after_const_zero() -> Result<()> {
         }
     }
 
+    let mut matcher = SplitBlockAfterConstZero;
     apply_match_rewrite(
         ctx,
-        SplitBlockAfterConstZero,
+        &mut matcher,
         RewriterOrder {
             collect: WALKCONFIG_PREORDER_FORWARD,
             enque: EnqueueOrder::EnqueBack,
@@ -554,9 +555,10 @@ fn inline_region_on_const_zero() -> Result<()> {
         }
     }
 
+    let mut matcher = InlineRegionOnConstZero(func_op1);
     apply_match_rewrite(
         ctx,
-        InlineRegionOnConstZero(func_op1),
+        &mut matcher,
         RewriterOrder {
             collect: WALKCONFIG_PREORDER_FORWARD,
             enque: EnqueueOrder::EnqueBack,

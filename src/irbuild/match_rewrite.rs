@@ -53,7 +53,7 @@ pub struct RewriterOrder {
 /// and then applies a rewrite to them.
 pub fn apply_match_rewrite<M: MatchRewrite>(
     ctx: &mut Context,
-    mut match_rewrite: M,
+    match_rewrite: &mut M,
     order: RewriterOrder,
     op: Ptr<Operation>,
 ) -> Result<IRStatus> {
@@ -65,7 +65,7 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         to_rewrite: &'a mut VecDeque<Ptr<Operation>>,
     }
     let mut state = WalkerState {
-        match_rewrite: &mut match_rewrite,
+        match_rewrite,
         to_rewrite: &mut to_rewrite,
     };
     // A callback for the walker.
