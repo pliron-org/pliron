@@ -6,11 +6,9 @@ use alloc::{
 use thiserror::Error;
 
 use crate::{
-    attribute::{AttrObj, AttributeDict, attr_cast, attr_impls},
+    attribute::{AttrObj, AttributeDict, attr_cast},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::FloatAttr,
-        attributes::IntegerAttr,
         op_interfaces::{
             ATTR_KEY_SYM_NAME, NRegionsInterface, NResultsInterface, NoTerminatorInterface,
             RegionKind, RegionKindInterface,
@@ -300,7 +298,8 @@ impl Verify for FuncOp {
     name = "builtin.constant",
     format = "`<` $builtin_constant_value `>` ` : ` type($0)",
     interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
-    attributes = (builtin_constant_value)
+    attributes = (builtin_constant_value),
+    verifier = "succ"
 )]
 pub struct ConstantOp;
 
@@ -326,24 +325,6 @@ impl ConstantOp {
         let op = ConstantOp { op };
         op.set_attr_builtin_constant_value(ctx, value);
         op
-    }
-}
-
-#[derive(Error, Debug)]
-#[error("{}: Unexpected type", ConstantOp::get_opid_static())]
-pub enum ConstantOpVerifyErr {
-    #[error("ConstantOp must have either an integer or a float value")]
-    InvalidValue,
-}
-
-impl Verify for ConstantOp {
-    fn verify(&self, ctx: &Context) -> Result<()> {
-        let loc = self.loc(ctx);
-        let value = self.get_value(ctx);
-        if !(value.is::<IntegerAttr>() || attr_impls::<dyn FloatAttr>(&*value)) {
-            return verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
-        }
-        Ok(())
     }
 }
 
