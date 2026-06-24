@@ -332,11 +332,12 @@ impl PrintableBuilder<()> for DeriveBasePrintable {
         if d.name == "opt" {
             let err = Err(syn::Error::new_spanned(
                 input.ident.clone(),
-                "The `opt` directive takes a single variable argument referring
-                            to a struct or tuple field with type Option"
+                "The `opt` directive takes one mandatory variable argument referring
+                            to a struct or tuple field with type Option. Optional
+                            `label` and `delimiters` directives can be provided"
                     .to_string(),
             ));
-            if d.args.len() != 1 {
+            if d.args.is_empty() || d.args.len() > 3 {
                 return err;
             }
             let FmtData::Struct(ref r#struct) = input.data else {
@@ -344,10 +345,17 @@ impl PrintableBuilder<()> for DeriveBasePrintable {
             };
 
             let name = var_name_from_elem(&d.args[0], r#struct.is_enum_variant, err)?;
+            let DeriveOptDirectiveArgs { label, delimiters } =
+                parse_opt_directive_args(&d.args[1..], input)?;
+
+            let label = label.map(|l| l + " : ").unwrap_or_default();
+            let (starting_delimiter, ending_delimiter) = delimiters.unwrap_or_default();
 
             Ok(quote! {
                 if let Some(val) = #name {
+                    write!(fmt, "{}{}", #starting_delimiter, #label)?;
                     ::pliron::printable::Printable::fmt(val, ctx, state, fmt)?;
+                    write!(fmt, "{}", #ending_delimiter)?;
                 }
             })
         } else if d.name == "vec" {
@@ -857,11 +865,12 @@ trait ParsableBuilder<State: Default> {
         if d.name == "opt" {
             let err = Err(syn::Error::new_spanned(
                 input.ident.clone(),
-                "The `opt` directive takes a single variable argument referring
-                            to a struct or tuple field with type Option"
+                "The `opt` directive takes one mandatory variable argument referring
+                            to a struct or tuple field with type Option. Optional
+                            `label` and `delimiters` directives can be provided"
                     .to_string(),
             ));
-            if d.args.len() != 1 {
+            if d.args.is_empty() || d.args.len() > 3 {
                 return err;
             }
             let FmtData::Struct(ref r#struct) = input.data else {
@@ -896,9 +905,36 @@ trait ParsableBuilder<State: Default> {
                     return err;
                 }
             };
+            let DeriveOptDirectiveArgs { label, delimiters } =
+                parse_opt_directive_args(&d.args[1..], input)?;
             let inner_ty = get_inner_type_option_vec(ty)?;
+
+            let value_parser = quote! {
+                <#inner_ty>::parser(())
+            };
+            let labelled_parser = if let Some(label) = &label {
+                quote! {
+                    (::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#label))
+                        .skip(::pliron::combine::parser::char::char(':').skip(::pliron::combine::parser::char::spaces())))
+                        .with(#value_parser)
+                }
+            } else {
+                value_parser
+            };
+            let delimited_labelled_parser = if let Some((open, close)) = &delimiters {
+                quote! {
+                    ::pliron::combine::parser::sequence::between(
+                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#open)),
+                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#close)),
+                        #labelled_parser
+                    )
+                }
+            } else {
+                labelled_parser
+            };
+
             Ok(quote! {
-                let #name = ::pliron::combine::parser::choice::optional(<#inner_ty>::parser(()))
+                let #name = ::pliron::combine::parser::choice::optional(#delimited_labelled_parser)
                     .parse_stream(state_stream).into_result()?.0;
             })
         } else if d.name == "vec" {
@@ -1603,6 +1639,98 @@ impl ParsableBuilder<()> for DeriveTypeParsable {
     }
 }
 
+/// Parse `label` and `delimiters` directives from arguments.
+/// Parsed label and delimiters from directive arguments.
+struct LabelDelimiters {
+    label: Option<String>,
+    delimiters: Option<(String, String)>,
+}
+
+/// Parse `label` and `delimiters` directives from arguments.
+/// Used by both `opt` and `attr`/`opt_attr` directive handlers.
+fn parse_label_and_delimiters(
+    args: &[Elem],
+    input: &FmtInput,
+    context: &str, // e.g., "opt" or "attr"
+) -> Result<LabelDelimiters> {
+    let mut label = None;
+    let mut delimiters = None;
+
+    for arg in args {
+        let err_arg = Err(syn::Error::new_spanned(
+            input.ident.clone(),
+            format!("Unexpected argument to `{}` directive", context),
+        ));
+        let Elem::Directive(directive) = arg else {
+            return err_arg;
+        };
+        if directive.name == "label" {
+            let err_args = Err(syn::Error::new_spanned(
+                input.ident.clone(),
+                "The `label` directive takes a single named variable argument".to_string(),
+            ));
+            if directive.args.len() != 1 {
+                return err_args;
+            }
+            let Elem::Var(Var {
+                name: label_var, ..
+            }) = &directive.args[0]
+            else {
+                return err_args;
+            };
+            if label.is_some() {
+                return Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    format!(
+                        "The `label` directive can be specified only once in `{}`",
+                        context
+                    ),
+                ));
+            }
+            label = Some(label_var.clone());
+        } else if directive.name == "delimiters" {
+            let err_args = Err(syn::Error::new_spanned(
+                input.ident.clone(),
+                "The `delimiters` directive takes two literal arguments".to_string(),
+            ));
+            if directive.args.len() != 2 {
+                return err_args;
+            }
+            let Elem::Lit(Lit { lit: open_lit, .. }) = &directive.args[0] else {
+                return err_args;
+            };
+            let Elem::Lit(Lit { lit: close_lit, .. }) = &directive.args[1] else {
+                return err_args;
+            };
+            if delimiters.is_some() {
+                return Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    format!(
+                        "The `delimiters` directive can be specified only once in `{}`",
+                        context
+                    ),
+                ));
+            }
+            delimiters = Some((open_lit.clone(), close_lit.clone()));
+        } else {
+            return err_arg;
+        }
+    }
+
+    Ok(LabelDelimiters { label, delimiters })
+}
+
+/// Optional arguments for the `opt` directive.
+struct DeriveOptDirectiveArgs {
+    label: Option<String>,
+    delimiters: Option<(String, String)>,
+}
+
+fn parse_opt_directive_args(args: &[Elem], input: &FmtInput) -> Result<DeriveOptDirectiveArgs> {
+    let LabelDelimiters { label, delimiters } = parse_label_and_delimiters(args, input, "opt")?;
+    Ok(DeriveOptDirectiveArgs { label, delimiters })
+}
+
 /// Arguments for the `attr` and `opt_attr` directives.
 struct DeriveAttrDirectiveArgs {
     attr_dict_key: String,
@@ -1637,9 +1765,7 @@ fn parse_attr_directive_args(d: &Directive, input: &FmtInput) -> Result<DeriveAt
     let attr_type =
         match args.next().unwrap() {
             Elem::Var(Var { name, .. }) => name.clone(),
-            Elem::Lit(lit) => {
-                lit.lit.clone()
-            }
+            Elem::Lit(lit) => lit.lit.clone(),
             _ =>
                 return Err(syn::Error::new_spanned(
                     input.ident.clone(),
@@ -1647,60 +1773,10 @@ fn parse_attr_directive_args(d: &Directive, input: &FmtInput) -> Result<DeriveAt
                 ))
         };
 
-    let mut label = None;
-    let mut delimiters = None;
-
-    let mut process_arg = |arg: &Elem| -> Result<()> {
-        let err_arg = Err(syn::Error::new_spanned(
-            input.ident.clone(),
-            "Unexpected argument to `attr` directive".to_string(),
-        ));
-        let Elem::Directive(directive) = arg else {
-            return err_arg;
-        };
-        if directive.name == "label" {
-            let err_args = Err(syn::Error::new_spanned(
-                input.ident.clone(),
-                "The `label` directive takes a single named variable argument".to_string(),
-            ));
-            if directive.args.len() != 1 {
-                return err_args;
-            }
-            let Elem::Var(Var {
-                name: label_var, ..
-            }) = &directive.args[0]
-            else {
-                return err_args;
-            };
-            label = Some(label_var.clone());
-        } else if directive.name == "delimiters" {
-            let err_args = Err(syn::Error::new_spanned(
-                input.ident.clone(),
-                "The `delimiters` directive takes two literal arguments".to_string(),
-            ));
-            if directive.args.len() != 2 {
-                return err_args;
-            }
-            let Elem::Lit(Lit { lit: open_lit, .. }) = &directive.args[0] else {
-                return err_args;
-            };
-            let Elem::Lit(Lit { lit: close_lit, .. }) = &directive.args[1] else {
-                return err_args;
-            };
-            delimiters = Some((open_lit.clone(), close_lit.clone()));
-        } else {
-            return err_arg;
-        }
-        Ok(())
-    };
-
-    // Process 3rd and 4th arguments if present.
-    if let Some(arg) = args.next() {
-        process_arg(arg)?;
-    }
-    if let Some(arg) = args.next() {
-        process_arg(arg)?;
-    }
+    // Collect remaining optional arguments and parse label/delimiters from them
+    let remaining_args: Vec<Elem> = args.cloned().collect();
+    let LabelDelimiters { label, delimiters } =
+        parse_label_and_delimiters(&remaining_args, input, "attr")?;
 
     let attr_type = syn::parse_str::<syn::Type>(&attr_type)?;
     Ok(DeriveAttrDirectiveArgs {
