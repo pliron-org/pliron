@@ -190,6 +190,45 @@ impl APInt {
         APInt { value }
     }
 
+    /// Logically (unsigned) right-shift `self` by `rhs` bits. They must have the
+    /// same bitwidth. If the shift amount is greater than or equal to the
+    /// bitwidth, the result is zero.
+    pub fn lshr(&self, rhs: &APInt) -> APInt {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::lshr: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let shamt = rhs.to_usize();
+        let mut value = self.value.clone();
+        if value.lshr_(shamt).is_none() {
+            // Shift amount >= bitwidth: every bit is shifted out.
+            value.zero_();
+        }
+        APInt { value }
+    }
+
+    /// Arithmetically (signed) right-shift `self` by `rhs` bits. They must have
+    /// the same bitwidth. If the shift amount is greater than or equal to the
+    /// bitwidth, the result is the sign bit replicated across all bits.
+    pub fn ashr(&self, rhs: &APInt) -> APInt {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::ashr: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        let shamt = rhs.to_usize().min(self.bw() - 1);
+        let mut value = self.value.clone();
+        value
+            .ashr_(shamt)
+            .expect("shift amount clamped below bitwidth above");
+        APInt { value }
+    }
+
     /// Left-shift `self` by `rhs` bits, reporting whether the result
     /// overflowed. They must have the same bitwidth, and the shift amount `rhs`
     /// must be less than the bitwidth (a shift amount `>=` the bitwidth is
@@ -307,6 +346,31 @@ impl APInt {
         let mut div = rhs.value.clone();
         Bits::idivide(&mut quo, &mut rem, &mut duo, &mut div).unwrap();
         APInt { value: rem }
+    }
+
+    /// Bitwise AND of `self` and `rhs`. They must have the same bitwidth.
+    pub fn and(&self, rhs: &APInt) -> APInt {
+        let mut value = self.value.clone();
+        value
+            .and_(&rhs.value)
+            .expect("APInt::and: bitwidth mismatch");
+        APInt { value }
+    }
+
+    /// Bitwise OR of `self` and `rhs`. They must have the same bitwidth.
+    pub fn or(&self, rhs: &APInt) -> APInt {
+        let mut value = self.value.clone();
+        value.or_(&rhs.value).expect("APInt::or: bitwidth mismatch");
+        APInt { value }
+    }
+
+    /// Bitwise XOR of `self` and `rhs`. They must have the same bitwidth.
+    pub fn xor(&self, rhs: &APInt) -> APInt {
+        let mut value = self.value.clone();
+        value
+            .xor_(&rhs.value)
+            .expect("APInt::xor: bitwidth mismatch");
+        APInt { value }
     }
 
     /// Unsigned less-than comparison. They must have the same bitwidth.
@@ -839,26 +903,64 @@ mod tests {
     }
 
     #[test]
+    fn test_lshr() {
+        let width = bw(4);
+
+        let res = APInt::from_u8(8, width).lshr(&APInt::from_u8(2, width));
+        assert_eq!(res.to_u8(), 2);
+
+        let res = APInt::from_u8(5, width).lshr(&APInt::zero(width));
+        assert_eq!(res.to_u8(), 5);
+
+        let res = APInt::from_u8(0b1000, width).lshr(&APInt::from_u8(1, width));
+        assert_eq!(res.to_u8(), 0b0100);
+
+        let res = APInt::from_u8(0xf, width).lshr(&APInt::from_u8(4, width));
+        assert!(res.is_zero());
+
+        let res = APInt::from_u8(0xf, width).lshr(&APInt::from_u8(7, width));
+        assert!(res.is_zero());
+    }
+
+    #[test]
+    fn test_ashr() {
+        let width = bw(4);
+
+        let res = APInt::from_i8(6, width).ashr(&APInt::from_u8(1, width));
+        assert_eq!(res.to_i8(), 3);
+
+        let res = APInt::from_i8(-3, width).ashr(&APInt::zero(width));
+        assert_eq!(res.to_i8(), -3);
+
+        let res = APInt::from_i8(-8, width).ashr(&APInt::from_u8(1, width));
+        assert_eq!(res.to_i8(), -4);
+
+        // Shift amount >= bitwidth replicates the sign bit across all bits:
+        // a negative value yields all-ones (-1), ...
+        let res = APInt::from_i8(-8, width).ashr(&APInt::from_u8(4, width));
+        assert_eq!(res.to_i8(), -1);
+
+        // ... and a non-negative value yields 0.
+        let res = APInt::from_i8(7, width).ashr(&APInt::from_u8(7, width));
+        assert!(res.is_zero());
+    }
+
+    #[test]
     fn test_udiv() {
         let width = bw(4);
 
-        // Exact division.
         let res = APInt::from_u8(12, width).udiv(&APInt::from_u8(4, width));
         assert_eq!(res.to_u8(), 3);
 
-        // Truncating (floor) division.
         let res = APInt::from_u8(13, width).udiv(&APInt::from_u8(4, width));
         assert_eq!(res.to_u8(), 3);
 
-        // Unsigned: the top bit is magnitude, not sign. 0xf == 15, not -1.
         let res = APInt::from_u8(0xf, width).udiv(&APInt::from_u8(2, width));
         assert_eq!(res.to_u8(), 7);
 
-        // Dividing by one is the identity.
         let res = APInt::from_u8(9, width).udiv(&APInt::uone(width));
         assert_eq!(res.to_u8(), 9);
 
-        // Divisor larger than dividend yields zero.
         let res = APInt::from_u8(3, width).udiv(&APInt::from_u8(5, width));
         assert!(res.is_zero());
     }
@@ -1024,5 +1126,72 @@ mod tests {
     fn test_srem_by_zero_panics() {
         let width = bw(4);
         let _ = APInt::from_i8(7, width).srem(&APInt::zero(width));
+    }
+
+    #[test]
+    fn test_and() {
+        let width = bw(4);
+        assert_eq!(
+            APInt::from_u8(0b1100, width)
+                .and(&APInt::from_u8(0b1010, width))
+                .to_u8(),
+            0b1000
+        );
+        assert_eq!(
+            APInt::from_u8(0b1011, width)
+                .and(&APInt::umax(width))
+                .to_u8(),
+            0b1011
+        );
+        assert!(
+            APInt::from_u8(0b1011, width)
+                .and(&APInt::zero(width))
+                .is_zero()
+        );
+    }
+
+    #[test]
+    fn test_or() {
+        let width = bw(4);
+        assert_eq!(
+            APInt::from_u8(0b1100, width)
+                .or(&APInt::from_u8(0b1010, width))
+                .to_u8(),
+            0b1110
+        );
+        assert_eq!(
+            APInt::from_u8(0b1011, width)
+                .or(&APInt::zero(width))
+                .to_u8(),
+            0b1011
+        );
+        assert_eq!(
+            APInt::from_u8(0b1011, width)
+                .or(&APInt::umax(width))
+                .to_u8(),
+            0b1111
+        );
+    }
+
+    #[test]
+    fn test_xor() {
+        let width = bw(4);
+        assert_eq!(
+            APInt::from_u8(0b1100, width)
+                .xor(&APInt::from_u8(0b1010, width))
+                .to_u8(),
+            0b0110
+        );
+        assert!(
+            APInt::from_u8(0b1011, width)
+                .xor(&APInt::from_u8(0b1011, width))
+                .is_zero()
+        );
+        assert_eq!(
+            APInt::from_u8(0b1011, width)
+                .xor(&APInt::umax(width))
+                .to_u8(),
+            0b0100
+        );
     }
 }
