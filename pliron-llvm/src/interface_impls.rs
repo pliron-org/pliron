@@ -258,6 +258,17 @@ fn check_fold_int_bin_op_with_overflow(
     vec![Some(res)]
 }
 
+/// Returns `true` if signed-dividing/remaindering `lhs` by `rhs` is undefined
+/// behavior in LLVM, and so must not be constant folded. The two cases are
+/// division by zero, and the signed overflow `INT_MIN / -1` (true quotient
+/// `INT_MAX + 1`, not representable), whose result LLVM leaves as poison and
+/// whose hardware behavior diverges (x86 traps, AArch64 wraps).
+fn is_signed_div_ub(lhs: &APInt, rhs: &APInt) -> bool {
+    let bw = NonZero::new(rhs.bw()).expect("operand has zero bitwidth");
+    // `-1` is the all-ones bit pattern, i.e. the unsigned max.
+    rhs.is_zero() || (*lhs == APInt::imin(bw) && *rhs == APInt::umax(bw))
+}
+
 /// Constant fold this binary integer operation into a singleton vector
 /// containing its result type if folding is successful, or None otherwise.
 fn check_fold_int_bin_op(
@@ -384,7 +395,7 @@ impl ConstFoldInterface for UDivOp {
 impl ConstFoldInterface for SDivOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         match get_int_bin_operands(ops) {
-            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
             _ => check_fold_int_bin_op(ops, APInt::sdiv),
         }
     }
@@ -420,8 +431,135 @@ impl ConstFoldInterface for URemOp {
 impl ConstFoldInterface for SRemOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         match get_int_bin_operands(ops) {
-            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+            Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
             _ => check_fold_int_bin_op(ops, APInt::srem),
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for AndOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        assert!(ops.len() == 2);
+        for op in ops.iter().flatten() {
+            let int = op
+                .downcast_ref::<IntegerAttr>()
+                .expect("invalid operand type: typecheck before optimizing");
+            if int.value().is_zero() {
+                let zero = APInt::zero(NonZero::new(int.value().bw()).expect("zero bitwidth"));
+                let res = Box::new(IntegerAttr::new(int.get_type(), zero)) as AttrObj;
+                return vec![Some(res)];
+            }
+        }
+        check_fold_int_bin_op(ops, APInt::and)
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for OrOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        assert!(ops.len() == 2);
+        for op in ops.iter().flatten() {
+            let int = op
+                .downcast_ref::<IntegerAttr>()
+                .expect("invalid operand type: typecheck before optimizing");
+            let bw = NonZero::new(int.value().bw()).expect("zero bitwidth");
+            if int.value() == APInt::umax(bw) {
+                let all_ones = APInt::umax(bw);
+                let res = Box::new(IntegerAttr::new(int.get_type(), all_ones)) as AttrObj;
+                return vec![Some(res)];
+            }
+        }
+        check_fold_int_bin_op(ops, APInt::or)
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for XorOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_bin_op(ops, APInt::xor)
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for LShrOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
+        // must not be folded.
+        match get_int_bin_operands(ops) {
+            Some((lhs, rhs)) => {
+                let lhs_bw = lhs.value().bw();
+                let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                if rhs.value().ult(&lhs_bw) {
+                    check_fold_int_bin_op(ops, APInt::lshr)
+                } else {
+                    vec![None]
+                }
+            }
+            None => vec![None],
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for AShrOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
+        // must not be folded.
+        match get_int_bin_operands(ops) {
+            Some((lhs, rhs)) => {
+                let lhs_bw = lhs.value().bw();
+                let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                if rhs.value().ult(&lhs_bw) {
+                    check_fold_int_bin_op(ops, APInt::ashr)
+                } else {
+                    vec![None]
+                }
+            }
+            None => vec![None],
         }
     }
     fn fold_in_place(
