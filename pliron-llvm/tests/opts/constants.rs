@@ -511,3 +511,442 @@ fn shl_nsw_nuw_still_folds_without_overflow() -> Result<()> {
     assert!(after.contains("<8: i8>"));
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// llvm.sdiv
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sdiv_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <2: i8>> : builtin.integer i8;
+        q = llvm.sdiv a, b : builtin.integer i8;
+        llvm.return q
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<3: i8>"));
+    Ok(())
+}
+
+#[test]
+fn sdiv_does_not_fold_on_division_by_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        q = llvm.sdiv a, b : builtin.integer i8;
+        llvm.return q
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// `INT_MIN / -1` overflows (true quotient `INT_MAX + 1`); LLVM leaves it
+/// poison, so we must not fold it.
+#[test]
+fn sdiv_does_not_fold_on_signed_overflow() -> Result<()> {
+    // i8: INT_MIN is 128 unsigned, -1 is 255 unsigned.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        q = llvm.sdiv a, b : builtin.integer i8;
+        llvm.return q
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.srem
+// ---------------------------------------------------------------------------
+
+#[test]
+fn srem_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        r = llvm.srem a, b : builtin.integer i8;
+        llvm.return r
+      }
+    "#;
+
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i8>"));
+    Ok(())
+}
+
+#[test]
+fn srem_does_not_fold_on_division_by_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        r = llvm.srem a, b : builtin.integer i8;
+        llvm.return r
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn srem_does_not_fold_on_signed_overflow() -> Result<()> {
+    // i8: INT_MIN is 128 unsigned, -1 is 255 unsigned.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        r = llvm.srem a, b : builtin.integer i8;
+        llvm.return r
+      }
+    "#;
+
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.udiv (unsigned: no signed-overflow case, only div-by-zero)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn udiv_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8;
+        q = llvm.udiv a, b : builtin.integer i8;
+        llvm.return q
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<3: i8>"));
+    Ok(())
+}
+
+#[test]
+fn udiv_does_not_fold_on_division_by_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        q = llvm.udiv a, b : builtin.integer i8;
+        llvm.return q
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.urem (unsigned: no signed-overflow case, only div-by-zero)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn urem_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8;
+        r = llvm.urem a, b : builtin.integer i8;
+        llvm.return r
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i8>"));
+    Ok(())
+}
+
+#[test]
+fn urem_does_not_fold_on_division_by_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        r = llvm.urem a, b : builtin.integer i8;
+        llvm.return r
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.and
+// ---------------------------------------------------------------------------
+
+#[test]
+fn and_folds_two_constants() -> Result<()> {
+    // 0b1100 & 0b1010 == 0b1000 == 8.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.and a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<8: i8>"));
+    Ok(())
+}
+
+#[test]
+fn and_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.and x, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn and_folds_to_zero_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 (builtin.integer i1) variadic = false> [] {
+        ^entry(x: builtin.integer i1):
+        z = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        c = llvm.and x, z : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(after.matches("<0: i1>").count(), 2);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.or
+// ---------------------------------------------------------------------------
+
+#[test]
+fn or_folds_two_constants() -> Result<()> {
+    // 0b1100 | 0b1010 == 0b1110 == 14.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.or a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<14: i8>"));
+    Ok(())
+}
+
+#[test]
+fn or_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.or x, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn or_folds_to_one_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 (builtin.integer i1) variadic = false> [] {
+        ^entry(x: builtin.integer i1):
+        one = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        c = llvm.or x, one : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(after.matches("<1: i1>").count(), 2);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.xor
+// ---------------------------------------------------------------------------
+
+#[test]
+fn xor_folds_two_constants() -> Result<()> {
+    // 0b1100 ^ 0b1010 == 0b0110 == 6.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.xor a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<6: i8>"));
+    Ok(())
+}
+
+#[test]
+fn xor_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8;
+        c = llvm.xor x, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.lshr
+// ---------------------------------------------------------------------------
+
+#[test]
+fn lshr_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        c = llvm.lshr a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<64: i8>"));
+    Ok(())
+}
+
+#[test]
+fn lshr_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        c = llvm.lshr x, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn lshr_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8;
+        c = llvm.lshr a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.ashr
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ashr_folds_two_constants() -> Result<()> {
+    // Arithmetic shift copies the sign bit: 128 is -128 signed, -128 >> 1 ==
+    // -64, which is 192 unsigned.
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        c = llvm.ashr a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<192: i8>"));
+    Ok(())
+}
+
+#[test]
+fn ashr_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        c = llvm.ashr x, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn ashr_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8;
+        c = llvm.ashr a, b : builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
