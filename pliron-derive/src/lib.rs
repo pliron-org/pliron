@@ -328,15 +328,26 @@ pub fn results(args: TokenStream, input: TokenStream) -> TokenStream {
 
 /// Derive [Printable](../pliron/printable/trait.Printable.html) and
 /// [Parsable](../pliron/parsable/trait.Parsable.html) for Rust types.
-/// Use this is for types other than `Op`, `Type` and `Attribute`s.
+/// Use this for types other than `Op`, `Type` and `Attribute`s.
+///
+/// A format string can be specified as an argument to the macro, to customize the syntax.
+/// Without a format string, the default syntax is used. For enums, no format string is allowed
+/// on the enum itself, but it is allowed on its variants.
+///
+/// Primarily, the following two are used to refer to fields in a struct or tuple:
 ///   1. A named variable `$name` specifies a named struct field.
 ///   2. An unnamed variable `$i` specifies the i'th field of a tuple struct.
 ///
 /// Struct (or tuple) fields that are either [Option] or [Vec] (or an array) must to be specified
-/// using the `opt` and `vec` directives respectively. The `opt` directive takes one argument,
-/// a variable specifying the field name with type `Option`. The `vec` directive takes two
-/// arguments, the first is a variable specifying the field name with type `Vec` (or array)
-/// and the second is another directive to specify a
+/// using the `opt` and `vec` directives respectively (i.e., a format string is mandatory).
+///
+/// The `opt` directive takes one mandatory argument, a variable specifying the field name with
+/// type `Option`. It also supports optional `label` and `delimiters` directives:
+/// 1. `label($name)`: uses `name :` as a prefix for the optional value.
+/// 2. `delimiters(`open`, `close`)`: wraps the optional value with the given delimiters.
+///
+/// The `vec` directive takes two arguments, the first is a variable specifying the field name
+/// with type `Vec` (or array) and the second is another directive to specify a
 /// [ListSeparator](../pliron/printable/enum.ListSeparator.html).
 ///
 /// The following directives are supported:
@@ -408,6 +419,14 @@ pub fn results(args: TokenStream, input: TokenStream) -> TokenStream {
 ///     T: Printable + Parsable<Arg = (), Parsed = T>,
 /// {
 ///     value: T,
+/// }
+/// ```
+/// 6. An example with an optional field using `label` and `delimiters` in `opt`:
+/// ```
+/// use pliron::derive::format;
+/// #[format("`<` opt($a, label($value), delimiters(`(`, `)`)) `>`")]
+/// struct OptionalField {
+///    a: Option<u64>,
 /// }
 /// ```
 #[proc_macro_attribute]

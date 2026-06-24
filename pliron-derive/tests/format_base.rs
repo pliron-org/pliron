@@ -389,6 +389,117 @@ fn optional_field() {
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
+#[format("opt($a, label($value), delimiters(`(`, `)`))")]
+struct OptionalFieldWithLabelAndDelimiters {
+    a: Option<u64>,
+}
+
+#[test]
+fn optional_field_with_label_and_delimiters() {
+    let ctx = &mut Context::new();
+    let test_ty = OptionalFieldWithLabelAndDelimiters { a: Some(42) };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("(value : 42)", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithLabelAndDelimiters::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithLabelAndDelimiters parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+
+    let test_ty = OptionalFieldWithLabelAndDelimiters { a: None };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithLabelAndDelimiters::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithLabelAndDelimiters parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+}
+
+#[format("opt($a, delimiters(`(`, `)`))")]
+struct OptionalFieldWithDelimitersOnly {
+    a: Option<u64>,
+}
+
+#[test]
+fn optional_field_with_delimiters_only() {
+    let ctx = &mut Context::new();
+    let test_ty = OptionalFieldWithDelimitersOnly { a: Some(42) };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("(42)", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithDelimitersOnly::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithDelimitersOnly parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+
+    let test_ty = OptionalFieldWithDelimitersOnly { a: None };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithDelimitersOnly::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithDelimitersOnly parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+}
+
+#[format("opt($a, label($value))")]
+struct OptionalFieldWithLabelOnly {
+    a: Option<u64>,
+}
+
+#[test]
+fn optional_field_with_label_only() {
+    let ctx = &mut Context::new();
+    let test_ty = OptionalFieldWithLabelOnly { a: Some(42) };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("value : 42", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithLabelOnly::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithLabelOnly parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+
+    let test_ty = OptionalFieldWithLabelOnly { a: None };
+
+    let printed = test_ty.disp(ctx).to_string();
+    assert_eq!("", &printed);
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+    let (res, _) = OptionalFieldWithLabelOnly::parser(())
+        .parse(state_stream)
+        .expect("OptionalFieldWithLabelOnly parser failed");
+    assert_eq!(res.disp(ctx).to_string(), printed);
+}
+
 #[format("`<` vec($a, Char(`,`)) `>`")]
 struct VecField {
     a: Vec<u64>,
