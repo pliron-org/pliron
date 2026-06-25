@@ -514,10 +514,8 @@ impl Operation {
         self.regions.iter().cloned()
     }
 
-    /// The [ConcreteOpInfo] needed to reconstruct an operation of this op's
-    /// concrete kind. Used by IR cloning ([crate::irbuild::cloning]) to rebuild
-    /// an operation of the same kind via [Operation::new]. `ConcreteOpInfo` is
-    /// crate-internal, so this accessor is too.
+    /// Get [ConcreteOpInfo], useful for creating a [new](Operation::new) operation
+    /// of the same kind.
     pub(crate) fn concrete_op_info(&self) -> ConcreteOpInfo {
         self.concrete_op
     }

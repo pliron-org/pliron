@@ -26,8 +26,8 @@ use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
     irbuild::{
-        inserter::{BlockInsertionPoint, OpInsertionPoint},
-        rewriter::Rewriter,
+        inserter::{BlockInsertionPoint, Inserter, OpInsertionPoint},
+        rewriter::{Rewriter, ScopedRewriter},
     },
     linked_list::ContainsLinkedList,
     location::Located,
@@ -134,7 +134,7 @@ pub fn clone_operation(
 ///
 /// The returned op is **unlinked**.
 fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping) -> Ptr<Operation> {
-    let (concrete_op, result_types, successors, num_regions, attributes, loc) = {
+    let (concrete_op, result_types, successors, num_operands, num_regions, attributes, loc) = {
         let op_ref = op.deref(ctx);
         let successors: Vec<Ptr<BasicBlock>> = op_ref
             .successors()
@@ -144,6 +144,7 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
             op_ref.concrete_op_info(),
             op_ref.result_types().collect::<Vec<_>>(),
             successors,
+            op_ref.get_num_operands(),
             op_ref.num_regions(),
             op_ref.attributes.clone(),
             op_ref.loc(),
@@ -155,7 +156,7 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
         ctx,
         concrete_op,
         result_types,
-        Vec::new(),
+        Vec::with_capacity(num_operands),
         successors,
         num_regions,
     );
@@ -216,8 +217,10 @@ fn fill_operation(
 }
 
 /// Clone every block of `src_region` into `dest_region`, appended at its end,
-/// remapping through `mapper`. The block order is irrelevant; see
-/// [clone_blocks_into].
+/// remapping through `mapper`.
+///
+/// New blocks and ops are inserted through `rewriter`, so any listener it carries is notified.
+/// `rewriter`'s insertion point is saved on entry and restored on return.
 pub fn clone_region_into(
     src_region: Ptr<Region>,
     dest_region: Ptr<Region>,
@@ -230,33 +233,26 @@ pub fn clone_region_into(
 }
 
 /// Clone `blocks` (and their operations) into `dest_region`, appended at its end
-/// in the given order, remapping through `mapper`. New blocks and ops are
-/// inserted through `rewriter`, so any listener it carries is notified.
+/// in the given order, remapping through `mapper`.
 ///
-/// Cloning is **three-phase**, so the result does not depend on the order of
-/// `blocks`:
-///
-/// 1. Create every clone block and its block arguments, and record them.
-/// 2. Create every clone op as a *shell* (correct results and successors, but no
-///    operands and empty regions), and record each op and its results.
-/// 3. Wire each clone op's operands and clone its nested regions.
-///
-/// Because every block, block argument and op result is recorded (phases 1-2)
-/// before any operand or successor is wired (phase 3), a reference that points
-/// "forward" in `blocks` -- a branch to a later block, a back-edge, or an
-/// operand whose def is cloned later -- still resolves to its clone. Values and
-/// blocks absent from `mapper` are left unchanged
-/// ([IrMapping::lookup_value_or_default]), so uses of values defined outside
-/// `blocks` keep pointing at the originals.
-///
+/// New blocks and ops are inserted through `rewriter`, so any listener it carries is notified.
 /// `rewriter`'s insertion point is saved on entry and restored on return.
-///
-/// Op and block attributes (op result names, block debug info, block argument
-/// names) are copied, and so is the block label. The label is a block's
-/// `given_name`; pliron derives each block's `unique_name` by suffixing a fresh
-/// per-block id, so cloning one block several times (an unrolled loop body, say)
-/// still yields distinct blocks while keeping the original's label, which makes
-/// the cloned IR easier to read.
+//
+// Cloning is **three-phase**, so the result does not depend on the order of
+// `blocks`:
+//
+// 1. Create every clone block and its block arguments, and record them.
+// 2. Create every clone op as a *shell* (correct results and successors, but no
+//    operands and empty regions), and record each op and its results.
+// 3. Wire each clone op's operands and clone its nested regions.
+//
+// Because every block, block argument and op result is recorded (phases 1-2)
+// before any operand or successor is wired (phase 3), a reference that points
+// "forward" in `blocks` -- a branch to a later block, a back-edge, or an
+// operand whose def is cloned later -- still resolves to its clone. Values and
+// blocks absent from `mapper` are left unchanged
+// ([IrMapping::lookup_value_or_default]), so uses of values defined outside
+// `blocks` keep pointing at the originals.
 pub fn clone_blocks_into(
     blocks: &[Ptr<BasicBlock>],
     dest_region: Ptr<Region>,
@@ -264,7 +260,7 @@ pub fn clone_blocks_into(
     rewriter: &mut dyn Rewriter,
     mapper: &mut IrMapping,
 ) {
-    let saved_insertion_point = rewriter.get_insertion_point();
+    let mut rewriter = ScopedRewriter::new(rewriter, OpInsertionPoint::Unset);
 
     // Phase 1: create the clone blocks and their arguments, and record them.
     for &src_block in blocks {
@@ -316,9 +312,7 @@ pub fn clone_blocks_into(
     for &src_block in blocks {
         let ops: Vec<Ptr<Operation>> = src_block.deref(ctx).iter(ctx).collect();
         for src_op in ops {
-            fill_operation(src_op, ctx, rewriter, mapper);
+            fill_operation(src_op, ctx, &mut rewriter, mapper);
         }
     }
-
-    rewriter.set_insertion_point(saved_insertion_point);
 }
