@@ -292,7 +292,7 @@ pub struct SCCPPass;
 
 impl Pass for SCCPPass {
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         _analyses: &mut AnalysisManager,

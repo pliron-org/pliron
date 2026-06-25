@@ -7,7 +7,9 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     context::{Context, Ptr},
-    graph::walkers::{IRNode, WalkConfig, uninterruptible::immutable::walk_op},
+    graph::walkers::{
+        IRNode, WALKCONFIG_PREORDER_FORWARD, WalkConfig, uninterruptible::immutable::walk_op,
+    },
     irbuild::{
         IRStatus,
         inserter::{Inserter, OpInsertionPoint},
@@ -15,6 +17,7 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     operation::Operation,
+    pass_manager::{AnalysisManager, Pass, PassResult},
     result::Result,
 };
 
@@ -47,6 +50,12 @@ pub struct RewriterOrder {
     pub collect: WalkConfig,
     /// Order of enqueuing new operations that match.
     pub enque: EnqueueOrder,
+}
+
+impl Default for RewriterOrder {
+    fn default() -> Self {
+        REWRITER_ORDER_DEFAULT
+    }
 }
 
 /// Collects all operations (recursively) that match a given pattern
@@ -143,4 +152,52 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         listener.clear();
     }
     Ok(rewriter.is_modified().into())
+}
+
+/// Default order for collecting and enqueuing operations.
+pub const REWRITER_ORDER_DEFAULT: RewriterOrder = RewriterOrder {
+    collect: WALKCONFIG_PREORDER_FORWARD,
+    enque: EnqueueOrder::EnqueBack,
+};
+
+/// Make [MatchRewrite] into a [Pass]
+pub struct PassWrapper<M: MatchRewrite> {
+    pub name: &'static str,
+    pub match_rewrite: M,
+    pub rewrite_order: RewriterOrder,
+}
+
+impl<M: MatchRewrite> PassWrapper<M> {
+    /// Create a new [PassWrapper] with the given name and [MatchRewrite].
+    pub fn new(name: &'static str, match_rewrite: M) -> Self {
+        Self {
+            name,
+            match_rewrite,
+            rewrite_order: REWRITER_ORDER_DEFAULT,
+        }
+    }
+
+    /// Set the rewrite order for the pass.
+    pub fn set_rewrite_order(mut self, order: RewriterOrder) -> Self {
+        self.rewrite_order = order;
+        self
+    }
+}
+
+impl<M: MatchRewrite> Pass for PassWrapper<M> {
+    fn run(
+        &mut self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        _analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_result = PassResult::default();
+        pass_result.ir_changed |=
+            apply_match_rewrite(ctx, &mut self.match_rewrite, REWRITER_ORDER_DEFAULT, op)?;
+        Ok(pass_result)
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
 }

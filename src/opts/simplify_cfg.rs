@@ -361,7 +361,7 @@ pub struct SimplifyCFGPass;
 
 impl Pass for SimplifyCFGPass {
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         _analyses: &mut AnalysisManager,

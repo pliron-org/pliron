@@ -21,6 +21,7 @@ use crate::{
     irfmt::printers::list_with_sep,
     op::op_impls,
     operation::{OpDbg, Operation},
+    pass_manager::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
     r#type::{Type, TypeHandle, Typed},
@@ -477,4 +478,33 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
     let mut driver = Driver::new(conversion);
     driver.run(ctx, op)?;
     Ok(driver.rewriter.is_modified().into())
+}
+
+/// Make [DialectConversion] into a [Pass]
+pub struct PassWrapper<C: DialectConversion> {
+    pub name: &'static str,
+    pub conversion: C,
+}
+
+impl<C: DialectConversion> PassWrapper<C> {
+    pub fn new(name: &'static str, conversion: C) -> Self {
+        Self { name, conversion }
+    }
+}
+
+impl<C: DialectConversion> Pass for PassWrapper<C> {
+    fn name(&self) -> &'static str {
+        self.name
+    }
+
+    fn run(
+        &mut self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        _analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_result = PassResult::default();
+        pass_result.ir_changed |= apply_dialect_conversion(ctx, &mut self.conversion, op)?;
+        Ok(pass_result)
+    }
 }
