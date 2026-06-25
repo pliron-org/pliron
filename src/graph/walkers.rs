@@ -64,6 +64,12 @@ pub struct WalkConfig {
     pub blocks_in_region: (Order, Direction),
 }
 
+impl Default for WalkConfig {
+    fn default() -> Self {
+        WALKCONFIG_PREORDER_FORWARD
+    }
+}
+
 /// The walker calls the callback for any of these IR entities.
 pub enum IRNode {
     Operation(Ptr<Operation>),
