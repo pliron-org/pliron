@@ -15,6 +15,7 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     operation::Operation,
+    pass_manager::{AnalysisManager, Pass, PassResult},
     result::Result,
 };
 
@@ -36,12 +37,15 @@ pub trait MatchRewrite {
 }
 
 /// Should new operations that match be enqueued to the front or back of the queue?
+#[derive(Clone, Copy, Debug, Default)]
 pub enum EnqueueOrder {
     EnqueFront,
+    #[default]
     EnqueBack,
 }
 
 /// Configuration for the order of collecting and enqueuing operations.
+#[derive(Clone, Debug, Default)]
 pub struct RewriterOrder {
     /// Order of initial collection of operations.
     pub collect: WalkConfig,
@@ -143,4 +147,46 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         listener.clear();
     }
     Ok(rewriter.is_modified().into())
+}
+
+/// Make [MatchRewrite] into a [Pass]
+pub struct PassWrapper<M: MatchRewrite> {
+    pub name: &'static str,
+    pub match_rewrite: M,
+    pub rewrite_order: RewriterOrder,
+}
+
+impl<M: MatchRewrite> PassWrapper<M> {
+    /// Create a new [PassWrapper] with the given name and [MatchRewrite].
+    pub fn new(name: &'static str, match_rewrite: M) -> Self {
+        Self {
+            name,
+            match_rewrite,
+            rewrite_order: RewriterOrder::default(),
+        }
+    }
+
+    /// Set the rewrite order for the pass.
+    pub fn set_rewrite_order(mut self, order: RewriterOrder) -> Self {
+        self.rewrite_order = order;
+        self
+    }
+}
+
+impl<M: MatchRewrite> Pass for PassWrapper<M> {
+    fn run(
+        &mut self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        _analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_result = PassResult::default();
+        pass_result.ir_changed |=
+            apply_match_rewrite(ctx, &mut self.match_rewrite, self.rewrite_order.clone(), op)?;
+        Ok(pass_result)
+    }
+
+    fn name(&self) -> &str {
+        self.name
+    }
 }

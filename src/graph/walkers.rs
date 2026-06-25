@@ -55,6 +55,7 @@ pub enum Direction {
 }
 
 /// For an IR walk, specify the order of visiting different kinds of nodes.
+#[derive(Clone, Debug)]
 pub struct WalkConfig {
     /// Order of processing [Region]s in an [Operation].
     pub regions_in_op: (Order, Direction),
@@ -62,6 +63,12 @@ pub struct WalkConfig {
     pub ops_in_block: (Order, Direction),
     ///Order of processing [BasicBlock]s in a [Region]
     pub blocks_in_region: (Order, Direction),
+}
+
+impl Default for WalkConfig {
+    fn default() -> Self {
+        WALKCONFIG_PREORDER_FORWARD
+    }
 }
 
 /// The walker calls the callback for any of these IR entities.

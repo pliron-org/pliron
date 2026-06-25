@@ -84,7 +84,7 @@ static RESOURCES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
 /// Test an LLVM-IR file by executing it and comparing the output.
 /// The input file is `input_file`, which contains LLVM IR / Bitcode.
 /// The expected output is `expected_output`.
-fn test_llvm_ir_via_pliron(input_file: &str, opts: impl Pass, expected_output: i32) {
+fn test_llvm_ir_via_pliron(input_file: &str, mut opts: impl Pass, expected_output: i32) {
     let llvm_context = LLVMContext::default();
     let module = match LLVMModule::from_ir_in_file(&llvm_context, input_file) {
         Ok(module) => module,

@@ -43,7 +43,7 @@
 //!     fn name(&self) -> &str { "noop" }
 //!
 //!     fn run(
-//!         &self,
+//!         &mut self,
 //!         _op: pliron::context::Ptr<Operation>,
 //!         _ctx: &mut Context,
 //!         _analyses: &mut AnalysisManager,
@@ -87,7 +87,7 @@
 //!     fn name(&self) -> &str { "my_func_pass" }
 //!
 //!     fn run(
-//!         &self,
+//!         &mut self,
 //!         _op: pliron::context::Ptr<Operation>,
 //!         _ctx: &mut Context,
 //!         _analyses: &mut AnalysisManager,
@@ -133,7 +133,7 @@
 //!     fn name(&self) -> &str { "uses_my_analysis" }
 //!
 //!     fn run(
-//!         &self,
+//!         &mut self,
 //!         op: pliron::context::Ptr<Operation>,
 //!         ctx: &mut Context,
 //!         analyses: &mut AnalysisManager,
@@ -189,7 +189,7 @@ pub trait Pass {
     fn name(&self) -> &str;
     /// Run the pass and return whether the IR changed and which analyses are preserved.
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         analyses: &mut AnalysisManager,
@@ -214,7 +214,7 @@ impl Pass for PassManager {
     }
 
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         analyses: &mut AnalysisManager,
@@ -229,7 +229,7 @@ impl Pass for PassManager {
             for block in blocks {
                 let ops = block.deref(ctx).iter(ctx).collect::<Vec<_>>();
                 for nested_op in ops {
-                    for pass in &self.passes {
+                    for pass in &mut self.passes {
                         let res = pass.run(nested_op, ctx, analyses)?;
                         pass_res.ir_changed |= res.ir_changed;
                         // Invalidate analyses that are not preserved.
@@ -319,7 +319,7 @@ impl<P: Pass, G: Guard> Pass for GuardedPass<P, G> {
     }
 
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         analyses: &mut AnalysisManager,

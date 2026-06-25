@@ -634,7 +634,7 @@ impl Pass for Mem2RegPass {
     }
 
     fn run(
-        &self,
+        &mut self,
         op: Ptr<Operation>,
         ctx: &mut Context,
         analyses: &mut AnalysisManager,
