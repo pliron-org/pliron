@@ -16,7 +16,11 @@ use pliron::{
     context::{Context, Ptr},
     derive::pliron_op,
     identifier::Identifier,
-    irbuild::cloning::{IrMapping, clone_blocks_into, clone_operation},
+    irbuild::{
+        cloning::{IrMapping, clone_blocks_into, clone_operation},
+        listener::{DummyListener, Recorder, RecorderEvent},
+        rewriter::IRRewriter,
+    },
     op::Op,
     operation::{Operation, verify_operation},
     result::Result,
@@ -54,7 +58,8 @@ fn clone_function_remaps_operands() -> Result<()> {
     let (_module, func, const_op, ret_op) = const_ret_in_mod(ctx)?;
 
     let mut mapper = IrMapping::new();
-    let cloned_func = clone_operation(func.get_operation(), ctx, &mut mapper);
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    let cloned_func = clone_operation(func.get_operation(), ctx, &mut rewriter, &mut mapper);
 
     // The clone is a distinct operation, recorded in the mapping.
     assert_ne!(cloned_func, func.get_operation());
@@ -91,8 +96,19 @@ fn clone_is_independent_per_mapping() -> Result<()> {
     let ctx = &mut Context::new();
     let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
 
-    let first = clone_operation(func.get_operation(), ctx, &mut IrMapping::new());
-    let second = clone_operation(func.get_operation(), ctx, &mut IrMapping::new());
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    let first = clone_operation(
+        func.get_operation(),
+        ctx,
+        &mut rewriter,
+        &mut IrMapping::new(),
+    );
+    let second = clone_operation(
+        func.get_operation(),
+        ctx,
+        &mut rewriter,
+        &mut IrMapping::new(),
+    );
 
     assert_ne!(first, func.get_operation());
     assert_ne!(second, func.get_operation());
@@ -151,9 +167,11 @@ fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     );
     br.insert_at_back(block_a, ctx);
 
-    // Clone both blocks (A before B, i.e. reverse-post-order) into the region.
+    // Clone both blocks into the region. The order is irrelevant (the clone is
+    // three-phase), but pass them A-before-B here.
     let mut mapper = IrMapping::new();
-    clone_blocks_into(&[block_a, block_b], region, ctx, &mut mapper);
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    clone_blocks_into(&[block_a, block_b], region, ctx, &mut rewriter, &mut mapper);
 
     let a2 = mapper.lookup_block(block_a).expect("A should be mapped");
     let b2 = mapper.lookup_block(block_b).expect("B should be mapped");
@@ -227,7 +245,8 @@ fn clone_blocks_resolves_back_edge() -> Result<()> {
     .insert_at_back(block_b, ctx);
 
     let mut mapper = IrMapping::new();
-    clone_blocks_into(&[block_a, block_b], region, ctx, &mut mapper);
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    clone_blocks_into(&[block_a, block_b], region, ctx, &mut rewriter, &mut mapper);
 
     let a2 = mapper.lookup_block(block_a).expect("A should be mapped");
     let b2 = mapper.lookup_block(block_b).expect("B should be mapped");
@@ -237,6 +256,108 @@ fn clone_blocks_resolves_back_edge() -> Result<()> {
     let b2_term = b2.deref(ctx).get_terminator(ctx).expect("B' terminator");
     assert_eq!(sole_successor(ctx, a2_term), b2);
     assert_eq!(sole_successor(ctx, b2_term), a2);
+
+    Ok(())
+}
+
+/// The clone is **order-independent** for op results too, not just block
+/// arguments and branches: even when blocks are given in a non-dominance order
+/// (a use listed before its def), a cross-block op-result operand still resolves
+/// to the clone, not the original. Build
+///
+/// ```text
+///   A:   c = const 7;  br -> B
+///   B:   return c
+/// ```
+///
+/// and clone both blocks in the order `[B, A]` (B, the use, before A, the def).
+/// A single-pass clone would wire B's `return` to A's *original* constant
+/// (silently leaving the clone pointing into the source IR); the three-phase
+/// clone records the cloned constant before wiring any operand, so it resolves
+/// to the clone.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn clone_blocks_resolves_op_result_forward_ref_in_any_order() -> Result<()> {
+    let ctx = &mut Context::new();
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+
+    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
+    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    module.append_operation(ctx, func.get_operation(), 0);
+    let region = func.get_region(ctx);
+
+    // A defines the constant and branches to B; B returns it. `c` is an op result
+    // in A used by an op in B (a cross-block use, legal because A dominates B).
+    let block_a = func.get_entry_block(ctx);
+    let c = ConstantOp::new(ctx, 7);
+    c.get_operation().insert_at_back(block_a, ctx);
+    let c_val = c.get_result(ctx);
+    let block_b = BasicBlock::new(ctx, None, vec![]);
+    block_b.insert_at_back(region, ctx);
+    Operation::new(
+        ctx,
+        BranchOp::get_concrete_op_info(),
+        vec![],
+        vec![],
+        vec![block_b],
+        0,
+    )
+    .insert_at_back(block_a, ctx);
+    ReturnOp::new(ctx, c_val)
+        .get_operation()
+        .insert_at_back(block_b, ctx);
+
+    // Pass the blocks in the "wrong" (non-dominance) order: B before A.
+    let mut mapper = IrMapping::new();
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    clone_blocks_into(&[block_b, block_a], region, ctx, &mut rewriter, &mut mapper);
+
+    let c2 = mapper
+        .lookup_value(c_val)
+        .expect("constant result should be mapped");
+    assert_ne!(c2, c_val, "the constant must be cloned to a fresh value");
+
+    let b2 = mapper.lookup_block(block_b).expect("B should be mapped");
+    let b2_term = b2.deref(ctx).get_terminator(ctx).expect("B' terminator");
+    // B's clone returns the *cloned* constant, not A's original.
+    assert_eq!(b2_term.deref(ctx).get_operand(0), c2);
+    assert_ne!(b2_term.deref(ctx).get_operand(0), c_val);
+
+    Ok(())
+}
+
+/// Cloning inserts the new blocks and ops through the rewriter, so a listener it
+/// carries is notified for each one. A raw linked-list insertion would bypass
+/// the listener entirely. Clone a single block `c = const 7; return c` with a
+/// recording rewriter and check it saw one inserted block and two inserted ops.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn clone_blocks_notifies_rewriter_listener() -> Result<()> {
+    let ctx = &mut Context::new();
+
+    let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
+    let region = func.get_region(ctx);
+    let src = func.get_entry_block(ctx);
+
+    let mut mapper = IrMapping::new();
+    let mut rewriter = IRRewriter::<Recorder>::default();
+    clone_blocks_into(&[src], region, ctx, &mut rewriter, &mut mapper);
+
+    let mut inserted_blocks = 0;
+    let mut inserted_ops = 0;
+    for event in &rewriter.get_listener().events {
+        match event {
+            RecorderEvent::InsertedBlock(_) => inserted_blocks += 1,
+            RecorderEvent::InsertedOperation(_) => inserted_ops += 1,
+            other => panic!("unexpected event during cloning: {other:?}"),
+        }
+    }
+    assert_eq!(inserted_blocks, 1, "one cloned block should be notified");
+    assert_eq!(
+        inserted_ops, 2,
+        "both cloned ops (constant + return) should be notified"
+    );
 
     Ok(())
 }
@@ -279,7 +400,8 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
 
     // Clone ONLY B; the constant `c` lives in A, outside the cloned set.
     let mut mapper = IrMapping::new();
-    clone_blocks_into(&[block_b], region, ctx, &mut mapper);
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    clone_blocks_into(&[block_b], region, ctx, &mut rewriter, &mut mapper);
 
     let b2 = mapper.lookup_block(block_b).expect("B should be mapped");
     let b2_term = b2.deref(ctx).get_terminator(ctx).expect("B' terminator");
@@ -320,7 +442,8 @@ fn clone_blocks_copies_block_label_and_attributes() -> Result<()> {
     );
 
     let mut mapper = IrMapping::new();
-    clone_blocks_into(&[src], region, ctx, &mut mapper);
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    clone_blocks_into(&[src], region, ctx, &mut rewriter, &mut mapper);
     let clone = mapper.lookup_block(src).expect("block should be mapped");
 
     let clone_ref = clone.deref(ctx);
