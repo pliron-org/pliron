@@ -7,7 +7,7 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     context::{Context, Ptr},
-    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
+    graph::walkers::{IRNode, WalkConfig, uninterruptible::immutable::walk_op},
     irbuild::{
         IRStatus,
         inserter::{Inserter, OpInsertionPoint},
@@ -35,11 +35,26 @@ pub trait MatchRewrite {
     ) -> Result<()>;
 }
 
+/// Should new operations that match be enqueued to the front or back of the queue?
+pub enum EnqueueOrder {
+    EnqueFront,
+    EnqueBack,
+}
+
+/// Configuration for the order of collecting and enqueuing operations.
+pub struct RewriterOrder {
+    /// Order of initial collection of operations.
+    pub collect: WalkConfig,
+    /// Order of enqueuing new operations that match.
+    pub enque: EnqueueOrder,
+}
+
 /// Collects all operations (recursively) that match a given pattern
 /// and then applies a rewrite to them.
 pub fn apply_match_rewrite<M: MatchRewrite>(
     ctx: &mut Context,
-    mut match_rewrite: M,
+    match_rewrite: &mut M,
+    order: RewriterOrder,
     op: Ptr<Operation>,
 ) -> Result<IRStatus> {
     let mut to_rewrite = VecDeque::new();
@@ -50,7 +65,7 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         to_rewrite: &'a mut VecDeque<Ptr<Operation>>,
     }
     let mut state = WalkerState {
-        match_rewrite: &mut match_rewrite,
+        match_rewrite,
         to_rewrite: &mut to_rewrite,
     };
     // A callback for the walker.
@@ -62,13 +77,7 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         }
     }
     // Walk the operation tree.
-    walk_op(
-        ctx,
-        &mut state,
-        &WALKCONFIG_PREORDER_FORWARD,
-        op,
-        walker_callback,
-    );
+    walk_op(ctx, &mut state, &order.collect, op, walker_callback);
 
     let mut erased = FxHashSet::<Ptr<Operation>>::default();
     let mut rewriter = MatchRewriter::default();
@@ -98,7 +107,10 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
                 RecorderEvent::InsertedOperation(new_op) => {
                     // Check if the newly inserted operation also matches.
                     if !erased.contains(new_op) && match_rewrite.r#match(ctx, *new_op) {
-                        to_rewrite.push_back(*new_op);
+                        match order.enque {
+                            EnqueueOrder::EnqueFront => to_rewrite.push_front(*new_op),
+                            EnqueueOrder::EnqueBack => to_rewrite.push_back(*new_op),
+                        }
                     }
                 }
                 RecorderEvent::ReplacedValueUses { .. } => {
