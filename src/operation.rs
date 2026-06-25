@@ -514,6 +514,12 @@ impl Operation {
         self.regions.iter().cloned()
     }
 
+    /// Get [ConcreteOpInfo], useful for creating a [new](Operation::new) operation
+    /// of the same kind.
+    pub(crate) fn concrete_op_info(&self) -> ConcreteOpInfo {
+        self.concrete_op
+    }
+
     /// Drop all uses that this operation holds.
     pub fn drop_all_uses(ptr: Ptr<Self>, ctx: &Context) {
         // The operands cease to be a use of their definitions.
