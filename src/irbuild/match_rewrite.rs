@@ -7,9 +7,7 @@ use rustc_hash::FxHashSet;
 
 use crate::{
     context::{Context, Ptr},
-    graph::walkers::{
-        IRNode, WALKCONFIG_PREORDER_FORWARD, WalkConfig, uninterruptible::immutable::walk_op,
-    },
+    graph::walkers::{IRNode, WalkConfig, uninterruptible::immutable::walk_op},
     irbuild::{
         IRStatus,
         inserter::{Inserter, OpInsertionPoint},
@@ -39,23 +37,20 @@ pub trait MatchRewrite {
 }
 
 /// Should new operations that match be enqueued to the front or back of the queue?
+#[derive(Clone, Copy, Debug, Default)]
 pub enum EnqueueOrder {
     EnqueFront,
+    #[default]
     EnqueBack,
 }
 
 /// Configuration for the order of collecting and enqueuing operations.
+#[derive(Clone, Debug, Default)]
 pub struct RewriterOrder {
     /// Order of initial collection of operations.
     pub collect: WalkConfig,
     /// Order of enqueuing new operations that match.
     pub enque: EnqueueOrder,
-}
-
-impl Default for RewriterOrder {
-    fn default() -> Self {
-        REWRITER_ORDER_DEFAULT
-    }
 }
 
 /// Collects all operations (recursively) that match a given pattern
@@ -154,12 +149,6 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
     Ok(rewriter.is_modified().into())
 }
 
-/// Default order for collecting and enqueuing operations.
-pub const REWRITER_ORDER_DEFAULT: RewriterOrder = RewriterOrder {
-    collect: WALKCONFIG_PREORDER_FORWARD,
-    enque: EnqueueOrder::EnqueBack,
-};
-
 /// Make [MatchRewrite] into a [Pass]
 pub struct PassWrapper<M: MatchRewrite> {
     pub name: &'static str,
@@ -173,7 +162,7 @@ impl<M: MatchRewrite> PassWrapper<M> {
         Self {
             name,
             match_rewrite,
-            rewrite_order: REWRITER_ORDER_DEFAULT,
+            rewrite_order: RewriterOrder::default(),
         }
     }
 
@@ -193,7 +182,7 @@ impl<M: MatchRewrite> Pass for PassWrapper<M> {
     ) -> Result<PassResult> {
         let mut pass_result = PassResult::default();
         pass_result.ir_changed |=
-            apply_match_rewrite(ctx, &mut self.match_rewrite, REWRITER_ORDER_DEFAULT, op)?;
+            apply_match_rewrite(ctx, &mut self.match_rewrite, self.rewrite_order.clone(), op)?;
         Ok(pass_result)
     }
 

@@ -55,6 +55,7 @@ pub enum Direction {
 }
 
 /// For an IR walk, specify the order of visiting different kinds of nodes.
+#[derive(Clone, Debug)]
 pub struct WalkConfig {
     /// Order of processing [Region]s in an [Operation].
     pub regions_in_op: (Order, Direction),
