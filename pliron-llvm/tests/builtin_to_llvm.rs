@@ -1,5 +1,7 @@
 //! Tests for dialect conversion from builtin to LLVM ops.
 
+#![cfg(feature = "llvm-sys")]
+
 use expect_test::expect;
 
 use pliron::{
