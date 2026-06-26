@@ -4,7 +4,7 @@ use alloc::{format, string::String, vec, vec::Vec};
 use thiserror::Error;
 
 use crate::{
-    attribute::AttributeDict,
+    attribute::{AttributeDict, verify_attr},
     builtin::op_interfaces::{IsTerminatorInterface, NoTerminatorInterface},
     combine::{
         optional,
@@ -398,6 +398,10 @@ impl Verify for BasicBlock {
         {
             verify_err!(self.loc(), BasicBlockVerifyErr::MissingTerminator(label))?;
         }
+        self.attributes
+            .0
+            .values()
+            .try_for_each(|attr| verify_attr(&**attr, ctx))?;
         // Check that every use is of this block.
         for r#use in self.self_ptr.uses(ctx) {
             if r#use.get_def(ctx) != self.self_ptr {
