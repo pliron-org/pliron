@@ -73,9 +73,6 @@ pub struct Context {
     pub aux_data: SlotMap<AuxDataIndex, Box<dyn Any>>,
     /// A dictionary with keys mapping to an index in [Self::aux_data].
     pub aux_data_map: FxHashMap<Identifier, AuxDataIndex>,
-
-    #[cfg(test)]
-    pub(crate) linked_list_store: crate::linked_list::tests::LinkedListTestArena,
 }
 
 impl Context {
@@ -118,9 +115,6 @@ impl Default for Context {
             uniqued_any_store: UniqueStore::default(),
             aux_data: SlotMap::with_key(),
             aux_data_map: FxHashMap::default(),
-
-            #[cfg(test)]
-            linked_list_store: crate::linked_list::tests::LinkedListTestArena::default(),
         };
 
         // Verify that all dictionary keys are unique.

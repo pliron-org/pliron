@@ -1,4 +1,5 @@
 //! Provide linked-list operations for `Ptr<T: LinkedList>`.
+
 use crate::context::{Context, Ptr, private::ArenaObj};
 
 /// The setter methods on [LinkedList] and [ContainsLinkedList]
@@ -316,8 +317,11 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use core::cell::OnceCell;
+    use std::{boxed::Box, thread_local};
+
     use super::*;
-    use crate::context::{Arena, Context, Ptr, private::ArenaObj};
+    use crate::context::{Arena, AuxDataIndex, Context, Ptr, private::ArenaObj};
     use alloc::{vec, vec::Vec};
 
     #[derive(PartialEq)]
@@ -328,13 +332,25 @@ pub(crate) mod tests {
         parent: Option<Ptr<LLRoot>>,
         self_ptr: Ptr<LLNode>,
     }
+
+    thread_local! {
+        static TEST_ARENA_INDEX: OnceCell<AuxDataIndex> = const { OnceCell::new() };
+    }
+
     impl ArenaObj for LLNode {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            &ctx.linked_list_store.nodes
+            &ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+                .downcast_ref::<LinkedListTestArena>()
+                .expect("linked_list_store is not LinkedListTestArena")
+                .nodes
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.linked_list_store.nodes
+            &mut ctx.aux_data
+                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            .downcast_mut::<LinkedListTestArena>()
+            .expect("linked_list_store is not LinkedListTestArena")
+            .nodes
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
@@ -406,11 +422,18 @@ pub(crate) mod tests {
 
     impl ArenaObj for LLRoot {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            &ctx.linked_list_store.containers
+            &ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+                .downcast_ref::<LinkedListTestArena>()
+                .expect("linked_list_store is not LinkedListTestArena")
+                .containers
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.linked_list_store.containers
+            &mut ctx.aux_data
+                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            .downcast_mut::<LinkedListTestArena>()
+            .expect("linked_list_store is not LinkedListTestArena")
+            .containers
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
@@ -474,9 +497,19 @@ pub(crate) mod tests {
         );
     }
 
+    fn add_arena_to_context(ctx: &mut Context) {
+        let arena = LinkedListTestArena::default();
+        let index = ctx.aux_data.insert(Box::new(arena));
+        TEST_ARENA_INDEX.with(|cell| {
+            cell.set(index)
+                .expect("ARENA_INDEX should not be set more than once");
+        });
+    }
+
     #[test]
     fn success() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root = LLRoot::empty(ctx);
 
         let n1 = LLNode::new(ctx, 1);
@@ -529,6 +562,7 @@ pub(crate) mod tests {
     #[should_panic(expected = "must be unlinked before relinking")]
     fn reinsert_panic() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root = LLRoot::empty(ctx);
 
         let n1 = LLNode::new(ctx, 1);
@@ -541,6 +575,7 @@ pub(crate) mod tests {
     #[should_panic(expected = "Attempt to remove unlinked node")]
     fn uninserted_remove_panic() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let n1 = LLNode::new(ctx, 1);
         // Removing an unlinked node must cause panic.
         n1.unlink(ctx);
@@ -550,6 +585,7 @@ pub(crate) mod tests {
     #[should_panic(expected = "Attempt to remove unlinked node")]
     fn reremove_panic() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root = LLRoot::empty(ctx);
 
         let n1 = LLNode::new(ctx, 1);
@@ -563,6 +599,7 @@ pub(crate) mod tests {
     #[should_panic(expected = " Mark node itself is unlinked")]
     fn insert_after_unlinked_panic() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
 
         let n1 = LLNode::new(ctx, 1);
         let n2 = LLNode::new(ctx, 2);
@@ -574,6 +611,7 @@ pub(crate) mod tests {
     #[should_panic(expected = " Mark node itself is unlinked")]
     fn insert_before_unlinked_panic() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
 
         let n1 = LLNode::new(ctx, 1);
         let n2 = LLNode::new(ctx, 2);
@@ -584,6 +622,7 @@ pub(crate) mod tests {
     #[test]
     fn test_clear_linked_list() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root = LLRoot::empty(ctx);
 
         let n1 = LLNode::new(ctx, 1);
@@ -599,6 +638,7 @@ pub(crate) mod tests {
     #[test]
     fn test_append_linked_list() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root1 = LLRoot::empty(ctx);
         let root2 = LLRoot::empty(ctx);
 
@@ -626,6 +666,7 @@ pub(crate) mod tests {
     #[test]
     fn test_append_empty_to_nonempty() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root1 = LLRoot::empty(ctx);
         let root2 = LLRoot::empty(ctx);
 
@@ -640,6 +681,7 @@ pub(crate) mod tests {
     #[test]
     fn test_append_nonempty_to_empty() {
         let ctx = &mut Context::default();
+        add_arena_to_context(ctx);
         let root1 = LLRoot::empty(ctx);
         let root2 = LLRoot::empty(ctx);
 
