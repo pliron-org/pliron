@@ -286,8 +286,8 @@ impl Verify for FuncOp {
     }
 }
 
-/// Numeric (integer or floating point) constant.
-/// See MLIR's [llvm.mlir.constant](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirconstant-llvmconstantop).
+/// An operation that always produces the same runtime value.
+/// This constant value is specified as an attribute, which can be of any type.
 ///
 /// ### Results:
 ///

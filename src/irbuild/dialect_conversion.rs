@@ -482,8 +482,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
 
 /// Make [DialectConversion] into a [Pass]
 pub struct PassWrapper<C: DialectConversion> {
-    pub name: &'static str,
-    pub conversion: C,
+    name: &'static str,
+    conversion: C,
 }
 
 impl<C: DialectConversion> PassWrapper<C> {

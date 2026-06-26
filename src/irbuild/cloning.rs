@@ -264,13 +264,14 @@ pub fn clone_blocks_into(
 
     // Phase 1: create the clone blocks and their arguments, and record them.
     for &src_block in blocks {
-        let (arg_types, label, attrs) = {
+        let (arg_types, label, attrs, loc) = {
             let block_ref = src_block.deref(ctx);
             let arg_types: Vec<_> = block_ref.arguments().map(|arg| arg.get_type(ctx)).collect();
             (
                 arg_types,
                 block_ref.label.clone(),
                 block_ref.attributes.clone(),
+                block_ref.loc(),
             )
         };
         let new_block = rewriter.create_block(
@@ -279,10 +280,12 @@ pub fn clone_blocks_into(
             label,
             arg_types,
         );
-        // `create_block` takes only the label and argument types, so the rest of
-        // the block's attributes (debug info, argument names, ...) are copied
-        // here, mirroring how op attributes are cloned.
-        new_block.deref_mut(ctx).attributes = attrs;
+
+        {
+            let mut new_ref = new_block.deref_mut(ctx);
+            new_ref.attributes = attrs;
+            new_ref.set_loc(loc);
+        }
 
         let old_args: Vec<Value> = src_block.deref(ctx).arguments().collect();
         let new_args: Vec<Value> = new_block.deref(ctx).arguments().collect();

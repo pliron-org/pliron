@@ -65,7 +65,7 @@ impl FromStr for OptPass {
             "simplify-cfg" => Ok(OptPass::SimplifyCfg),
             "o1" => Ok(OptPass::O1),
             other => Err(format!(
-                "unknown optimization pass '{other}'. Available passes: mem2reg, dce, sccp"
+                "unknown optimization pass '{other}'. Available passes: mem2reg, dce, sccp, simplify-cfg, o1"
             )),
         }
     }

@@ -2,8 +2,8 @@
 //!
 //! This module provides:
 //! 1. [`Pass`]: A transformation that runs on an operation.
-//! 2. [`PassManager`]: Runs a pipeline of nested passes on each immediately
-//!    nested operation.
+//! 2. [`PassManager`]: Runs a pipeline of nested passes on itself and
+//!    each immediately nested operation.
 //! 3. [`GuardedPass`], [`OpPass`], and [`OpInterfacePass`]: Wrappers that
 //!    constrain where a pass is allowed to run.
 //! 4. [`Analysis`] and [`AnalysisManager`]: Provides analyses caching with
@@ -203,7 +203,7 @@ pub trait PassGroup: Pass {
 
 #[derive(Default)]
 /// A [Pass] that manages its [PassGroup].
-/// i.e., it runs the passes in the group on each immediately nested operation.
+/// i.e., it runs the passes in the group on itself and each immediately nested operation.
 pub struct PassManager {
     passes: Vec<Box<dyn Pass>>,
 }
@@ -222,6 +222,14 @@ impl Pass for PassManager {
         use crate::linked_list::ContainsLinkedList;
 
         let mut pass_res = PassResult::default();
+
+        // Run each pass in the group on the current operation.
+        for pass in &mut self.passes {
+            let res = pass.run(op, ctx, analyses)?;
+            pass_res.ir_changed |= res.ir_changed;
+            // Invalidate analyses that are not preserved.
+            analyses.retain_preserved(&res);
+        }
 
         let regions = op.deref(ctx).regions().collect::<Vec<_>>();
         for region in regions {
@@ -311,6 +319,12 @@ impl<T: ?Sized + OpInterfaceMarker + 'static> Guard for OpInterfaceGuard<T> {
 pub struct GuardedPass<P: Pass, G: Guard> {
     pass: P,
     guard: G,
+}
+
+impl<P: Pass, G: Guard> GuardedPass<P, G> {
+    pub fn new(pass: P, guard: G) -> Self {
+        Self { pass, guard }
+    }
 }
 
 impl<P: Pass, G: Guard> Pass for GuardedPass<P, G> {

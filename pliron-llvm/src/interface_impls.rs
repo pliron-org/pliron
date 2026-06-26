@@ -27,10 +27,9 @@ use pliron::{
     value::Value,
 };
 
-use crate::attributes::IntegerOverflowFlagsAttr;
-use crate::op_interfaces::IntBinArithOpWithOverflowFlag;
 use crate::{
-    op_interfaces::PointerTypeResult,
+    attributes::IntegerOverflowFlagsAttr,
+    op_interfaces::{IntBinArithOpWithOverflowFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ExtractElementOp,
         ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp,

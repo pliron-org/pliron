@@ -206,12 +206,12 @@ impl SccpState {
         log::trace!(
             "Merging block state {} into block {}",
             incoming.disp(ctx),
-            block.given_name(ctx).unwrap()
+            block.unique_name(ctx)
         );
         if !BlockState::leq(&old, &new) {
             log::trace!(
                 "Deflated state of {} to {}",
-                block.given_name(ctx).unwrap(),
+                block.unique_name(ctx),
                 new.disp(ctx)
             );
             self.block_states.insert(block, new);

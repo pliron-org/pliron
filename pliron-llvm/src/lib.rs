@@ -1,7 +1,7 @@
 //! LLVM Dialect for [pliron]
 
 use pliron::{
-    builtin::ops::{FuncOp, ModuleOp},
+    builtin::ops::ModuleOp,
     context::Context,
     derive::{op_interface, type_interface},
     irbuild::dialect_conversion::{DialectConversionRewriter, OperandsInfo},
@@ -15,7 +15,10 @@ use pliron::{
     r#type::{Type, TypeHandle},
 };
 
+use crate::ops::FuncOp;
+
 pub mod attributes;
+pub mod builtin_to_llvm;
 pub mod function_call_utils;
 pub mod interface_impls;
 pub mod op_interfaces;

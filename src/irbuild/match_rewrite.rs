@@ -151,9 +151,9 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
 
 /// Make [MatchRewrite] into a [Pass]
 pub struct PassWrapper<M: MatchRewrite> {
-    pub name: &'static str,
-    pub match_rewrite: M,
-    pub rewrite_order: RewriterOrder,
+    name: &'static str,
+    match_rewrite: M,
+    rewrite_order: RewriterOrder,
 }
 
 impl<M: MatchRewrite> PassWrapper<M> {

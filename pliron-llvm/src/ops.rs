@@ -2,10 +2,10 @@
 
 use pliron::{
     arg_err_noloc,
-    attribute::{AttrObj, AttributeDict, attr_cast},
+    attribute::{AttrObj, AttributeDict, attr_cast, attr_impls},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::TypedAttrInterface,
+        attr_interfaces::{FloatAttr, TypedAttrInterface},
         attributes::{BoolAttr, IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{
             self, ATTR_KEY_SYM_NAME, AtLeastNOpdsInterface, AtLeastNResultsInterface,
@@ -2069,6 +2069,69 @@ impl Verify for CallOp {
             );
         }
 
+        Ok(())
+    }
+}
+
+/// Constant value operation for the LLVM dialect.
+/// Similar to MLIR's [llvm.mlir.constant](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirconstant-llvmconstantop).
+///
+/// This operation represents a constant value that must be an integer or float attribute.
+/// Unlike `builtin.constant` which supports any attribute type, `llvm.constant` enforces
+/// that the value must be either an integer or float.
+///
+/// ### Results:
+///
+/// | result | description |
+/// |-----|-------|
+/// | `result` | integer or float type |
+#[pliron_op(
+    name = "llvm.constant",
+    format = "`<` $llvm_constant_value `>` ` : ` type($0)",
+    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    attributes = (llvm_constant_value),
+)]
+pub struct ConstantOp;
+
+impl ConstantOp {
+    /// Get the constant value that this Op defines.
+    pub fn get_value(&self, ctx: &Context) -> AttrObj {
+        self.get_attr_llvm_constant_value(ctx).unwrap().clone()
+    }
+
+    /// Create a new [ConstantOp].
+    pub fn new(ctx: &mut Context, value: AttrObj) -> Self {
+        let result_type = attr_cast::<dyn TypedAttrInterface>(&*value)
+            .expect("ConstantOp const value must provide TypedAttrInterface")
+            .get_type(ctx);
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![result_type],
+            vec![],
+            vec![],
+            0,
+        );
+        let op = ConstantOp { op };
+        op.set_attr_llvm_constant_value(ctx, value);
+        op
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("{}: Unexpected type", ConstantOp::get_opid_static())]
+pub enum ConstantOpVerifyErr {
+    #[error("ConstantOp must have either an integer or a float value")]
+    InvalidValue,
+}
+
+impl Verify for ConstantOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        let value = self.get_value(ctx);
+        if !(value.is::<IntegerAttr>() || attr_impls::<dyn FloatAttr>(&*value)) {
+            return verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
+        }
         Ok(())
     }
 }
