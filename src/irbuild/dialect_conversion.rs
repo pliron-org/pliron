@@ -21,7 +21,7 @@ use crate::{
     irfmt::printers::list_with_sep,
     op::op_impls,
     operation::{OpDbg, Operation},
-    pass_manager::{AnalysisManager, Pass, PassResult},
+    pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
     r#type::{Type, TypeHandle, Typed},

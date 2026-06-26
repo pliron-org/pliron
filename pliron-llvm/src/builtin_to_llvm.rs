@@ -18,7 +18,7 @@ use pliron::{
     },
     op::{Op, op_impls},
     operation::Operation,
-    pass_manager::{GuardedPass, OpGuard, OpPass, Pass, PassResult},
+    pass::{GuardedPass, OpGuard, OpPass, Pass, PassResult},
     region::Region,
     result::{Error, ErrorKind, Result},
     r#type::{TypeHandle, TypedHandle, type_cast},
@@ -170,17 +170,17 @@ pub fn convert_builtin_to_llvm(ctx: &mut Context, module: ModuleOp) -> Result<Pa
     builtin_to_llvm_pass().run(
         module.get_operation(),
         ctx,
-        &mut pliron::pass_manager::AnalysisManager::default(),
+        &mut pliron::pass::AnalysisManager::default(),
     )
 }
 
 /// A [ModuleOp] pass that applies the builtin to LLVM dialect conversion
 /// on every [Operation] in the module.
 pub fn builtin_to_llvm_pass()
--> OpPass<dialect_conversion::PassWrapper<BuiltinToLLVMConversion>, ModuleOp> {
+-> OpPass<ModuleOp, dialect_conversion::PassWrapper<BuiltinToLLVMConversion>> {
     let pass = dialect_conversion::PassWrapper::<BuiltinToLLVMConversion>::new(
         "builtin_to_llvm",
         BuiltinToLLVMConversion,
     );
-    GuardedPass::new(pass, OpGuard::<ModuleOp>::default())
+    GuardedPass::new(OpGuard::<ModuleOp>::default(), pass)
 }

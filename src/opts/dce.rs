@@ -34,7 +34,7 @@ use crate::{
     },
     op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
-    pass_manager::{AnalysisManager, Pass, PassResult},
+    pass::{AnalysisManager, Pass, PassResult},
     printable::Printable,
     result::Result,
     value::{DefiningEntity, Value},

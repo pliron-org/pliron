@@ -11,7 +11,7 @@ use pliron::{
     operation::{Operation, verify_operation},
     opts::mem2reg::{AllocInfo, PromotableOpInterface, PromotableOpKind, mem2reg},
     parsable::{self, state_stream_from_iterator},
-    pass_manager::AnalysisManager,
+    pass::AnalysisManager,
     printable::Printable,
     result::Result,
 };

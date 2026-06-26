@@ -9,7 +9,7 @@ use crate::{
         strictly_precedes_in_block, traversals,
     },
     operation::Operation,
-    pass_manager::{Analysis, AnalysisManager},
+    pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
     value::{DefiningEntity, Value},

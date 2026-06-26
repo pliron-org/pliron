@@ -25,7 +25,7 @@ use crate::{
     linked_list::ContainsLinkedList,
     op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
-    pass_manager::{AnalysisManager, Pass, PassResult},
+    pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
     r#type::TypeHandle,

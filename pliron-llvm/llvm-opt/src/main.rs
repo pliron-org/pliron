@@ -11,7 +11,7 @@ use pliron::{
         constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
         simplify_cfg::SimplifyCFGPass,
     },
-    pass_manager::{self, OpPass, OpPassManager, Pass, PassGroup},
+    pass::{AnalysisManager, NestedOpsPass, OpPass, Pass, Passes},
     printable::Printable,
     result::Result,
     verify_error_noloc,
@@ -72,29 +72,33 @@ impl FromStr for OptPass {
 }
 
 fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -> Result<()> {
-    let mut pass_manager = OpPassManager::<ModuleOp>::default();
+    let mut passes = OpPass::<ModuleOp, Passes>::default();
 
     for opt in opts {
         match opt {
             OptPass::Mem2Reg => {
-                pass_manager.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
+                let mem2reg_pass = OpPass::<FuncOp, Mem2RegPass>::default();
+                passes.add_pass(NestedOpsPass::new(mem2reg_pass));
             }
             OptPass::Dce => {
-                pass_manager.add_pass(OpPass::<DCEPass, FuncOp>::default());
+                let dce_pass = OpPass::<FuncOp, DCEPass>::default();
+                passes.add_pass(NestedOpsPass::new(dce_pass));
             }
             OptPass::Sccp => {
-                pass_manager.add_pass(OpPass::<SCCPPass, FuncOp>::default());
+                let sccp_pass = OpPass::<FuncOp, SCCPPass>::default();
+                passes.add_pass(NestedOpsPass::new(sccp_pass));
             }
             OptPass::SimplifyCfg => {
-                pass_manager.add_pass(OpPass::<SimplifyCFGPass, FuncOp>::default());
+                let simplify_cfg_pass = OpPass::<FuncOp, SimplifyCFGPass>::default();
+                passes.add_pass(NestedOpsPass::new(simplify_cfg_pass));
             }
             OptPass::O1 => {
-                pliron_llvm::append_o1_passes(&mut pass_manager);
+                pliron_llvm::append_o1_passes(&mut passes);
             }
         }
     }
 
-    pass_manager.run(module, ctx, &mut pass_manager::AnalysisManager::default())?;
+    passes.run(module, ctx, &mut AnalysisManager::default())?;
 
     Ok(())
 }
