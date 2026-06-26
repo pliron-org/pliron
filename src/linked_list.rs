@@ -317,11 +317,13 @@ where
 
 #[cfg(test)]
 pub(crate) mod tests {
-    use core::cell::OnceCell;
-    use std::{boxed::Box, thread_local};
+    use alloc::boxed::Box;
 
     use super::*;
-    use crate::context::{Arena, AuxDataIndex, Context, Ptr, private::ArenaObj};
+    use crate::{
+        context::{Arena, Context, Ptr, private::ArenaObj},
+        dict_key,
+    };
     use alloc::{vec, vec::Vec};
 
     #[derive(PartialEq)]
@@ -333,24 +335,23 @@ pub(crate) mod tests {
         self_ptr: Ptr<LLNode>,
     }
 
-    thread_local! {
-        static TEST_ARENA_INDEX: OnceCell<AuxDataIndex> = const { OnceCell::new() };
-    }
+    dict_key!(LINKED_LIST_TEST_STORE, "linked_list_test_store");
 
     impl ArenaObj for LLNode {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            &ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            &ctx.aux_data[index]
                 .downcast_ref::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")
                 .nodes
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.aux_data
-                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
-            .downcast_mut::<LinkedListTestArena>()
-            .expect("linked_list_store is not LinkedListTestArena")
-            .nodes
+            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            &mut ctx.aux_data[index]
+                .downcast_mut::<LinkedListTestArena>()
+                .expect("linked_list_store is not LinkedListTestArena")
+                .nodes
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
@@ -422,18 +423,19 @@ pub(crate) mod tests {
 
     impl ArenaObj for LLRoot {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            &ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            &ctx.aux_data[index]
                 .downcast_ref::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")
                 .containers
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.aux_data
-                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
-            .downcast_mut::<LinkedListTestArena>()
-            .expect("linked_list_store is not LinkedListTestArena")
-            .containers
+            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            &mut ctx.aux_data[index]
+                .downcast_mut::<LinkedListTestArena>()
+                .expect("linked_list_store is not LinkedListTestArena")
+                .containers
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
@@ -500,10 +502,8 @@ pub(crate) mod tests {
     fn add_arena_to_context(ctx: &mut Context) {
         let arena = LinkedListTestArena::default();
         let index = ctx.aux_data.insert(Box::new(arena));
-        TEST_ARENA_INDEX.with(|cell| {
-            cell.set(index)
-                .expect("ARENA_INDEX should not be set more than once");
-        });
+        ctx.aux_data_map
+            .insert(LINKED_LIST_TEST_STORE.clone(), index);
     }
 
     #[test]
