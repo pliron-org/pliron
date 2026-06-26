@@ -346,10 +346,11 @@ pub(crate) mod tests {
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
-                .downcast_mut::<LinkedListTestArena>()
-                .expect("linked_list_store is not LinkedListTestArena")
-                .nodes
+            &mut ctx.aux_data
+                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            .downcast_mut::<LinkedListTestArena>()
+            .expect("linked_list_store is not LinkedListTestArena")
+            .nodes
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
@@ -428,10 +429,11 @@ pub(crate) mod tests {
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            &mut ctx.aux_data[TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
-                .downcast_mut::<LinkedListTestArena>()
-                .expect("linked_list_store is not LinkedListTestArena")
-                .containers
+            &mut ctx.aux_data
+                [TEST_ARENA_INDEX.with(|cell| *cell.get().expect("ARENA_INDEX not set"))]
+            .downcast_mut::<LinkedListTestArena>()
+            .expect("linked_list_store is not LinkedListTestArena")
+            .containers
         }
 
         fn get_self_ptr(&self, _ctx: &Context) -> Ptr<Self> {
