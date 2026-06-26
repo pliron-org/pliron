@@ -15,7 +15,7 @@ use pliron::{
     pass::{AnalysisManager, OpPass, Pass, Passes},
     result::Result,
 };
-use pliron_llvm::{builtin_to_llvm, llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
 
 fn run_conversion_pipeline(input: &str) -> Result<String> {
     init_env_logger_for_tests!();
@@ -33,11 +33,9 @@ fn run_conversion_pipeline(input: &str) -> Result<String> {
 
     verify_operation(op, ctx)?;
 
-    // Run O1 passes and then convert the module to LLVM dialect.
+    // Run O1 passes (which also includes the builtin to LLVM conversion pass) on the module
     let mut passes = OpPass::<ModuleOp, Passes>::default();
     pliron_llvm::append_o1_passes(&mut passes);
-    let builtin_to_llvm_pass = builtin_to_llvm::builtin_to_llvm_pass();
-    passes.add_pass(builtin_to_llvm_pass);
     passes.run(op, ctx, &mut AnalysisManager::default())?;
 
     verify_operation(op, ctx)?;

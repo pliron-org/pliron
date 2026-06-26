@@ -227,7 +227,7 @@ impl Pass for Passes {
     ) -> Result<PassResult> {
         let mut pass_res = PassResult::default();
 
-        // Run each pass in the group on the current operation.
+        // Run each pass in the list on the current operation.
         for pass in &mut self.passes {
             let res = pass.run(op, ctx, analyses)?;
             pass_res.ir_changed |= res.ir_changed;
