@@ -12,10 +12,10 @@ use pliron::{
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
     parsable::{self, state_stream_from_iterator},
-    pass_manager::{AnalysisManager, OpPassManager, Pass, PassManager},
+    pass::{AnalysisManager, OpPass, Pass, Passes},
     result::Result,
 };
-use pliron_llvm::{builtin_to_llvm, llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
 
 fn run_conversion_pipeline(input: &str) -> Result<String> {
     init_env_logger_for_tests!();
@@ -33,15 +33,10 @@ fn run_conversion_pipeline(input: &str) -> Result<String> {
 
     verify_operation(op, ctx)?;
 
-    let mut o1_passes = OpPassManager::<ModuleOp>::default();
-    pliron_llvm::append_o1_passes(&mut o1_passes);
-    let builtin_to_llvm_pass = builtin_to_llvm::builtin_to_llvm_pass();
-
-    // Run a nested O1 pipeline and a builtin to LLVM conversion pass on the module operation.
-    let mut pm = PassManager::default();
-    pm.add_pass(o1_passes);
-    pm.add_pass(builtin_to_llvm_pass);
-    pm.run(op, ctx, &mut AnalysisManager::default())?;
+    // Run O1 passes (which also includes the builtin to LLVM conversion pass) on the module
+    let mut passes = OpPass::<ModuleOp, Passes>::default();
+    pliron_llvm::append_o1_passes(&mut passes);
+    passes.run(op, ctx, &mut AnalysisManager::default())?;
 
     verify_operation(op, ctx)?;
 

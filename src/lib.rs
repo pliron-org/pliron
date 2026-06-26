@@ -48,7 +48,7 @@ pub mod op;
 pub mod operation;
 pub mod opts;
 pub mod parsable;
-pub mod pass_manager;
+pub mod pass;
 pub mod printable;
 pub mod region;
 pub mod result;

@@ -15,7 +15,7 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     operation::Operation,
-    pass_manager::{AnalysisManager, Pass, PassResult},
+    pass::{AnalysisManager, Pass, PassResult},
     result::Result,
 };
 

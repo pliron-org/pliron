@@ -1,12 +1,18 @@
-//! A pass manager and analysis framework.
+//! A framework to run passes and manage analyses.
+//!
+//! The design is centered around the [Pass] trait and aims to be
+//! flexible and composable. Passes can be combined into pipelines,
+//! and analyses can be cached and invalidated between passes.
 //!
 //! This module provides:
 //! 1. [`Pass`]: A transformation that runs on an operation.
-//! 2. [`PassManager`]: Runs a pipeline of nested passes on itself and
-//!    each immediately nested operation.
-//! 3. [`GuardedPass`], [`OpPass`], and [`OpInterfacePass`]: Wrappers that
+//! 2. [`Passes`]: Runs a sequence of [Pass]es on the provided operation,
+//!    managing invalidation of analyses between passes.
+//! 3. [`NestedOpsPass`]: Runs a provided [Pass] on each immediately nested operation,
+//!    managing invalidation of analyses between runs.
+//! 4. [`GuardedPass`], [`OpPass`], and [`OpInterfacePass`]: Wrappers that
 //!    constrain where a pass is allowed to run.
-//! 4. [`Analysis`] and [`AnalysisManager`]: Provides analyses caching with
+//! 5. [`Analysis`] and [`AnalysisManager`]: Provides analyses caching with
 //!    preservation and invalidation support.
 //!
 //! # Usage
@@ -31,7 +37,7 @@
 //! use pliron::{
 //!     context::Context,
 //!     operation::Operation,
-//!     pass_manager::{AnalysisManager, Pass, PassResult, PassManager},
+//!     pass::{AnalysisManager, Pass, PassResult, Passes},
 //!     result::Result,
 //!     irbuild::IRStatus,
 //! };
@@ -58,24 +64,25 @@
 //!     root: pliron::context::Ptr<Operation>,
 //!     ctx: &mut Context,
 //! ) -> Result<()> {
-//!     let mut pm = PassManager::default();
-//!     pm.add_pass(NoOpPass);
-//!     let _ = pm.run(root, ctx, &mut AnalysisManager::default())?;
+//!     let mut passes = Passes::default();
+//!     passes.add_pass(NoOpPass);
+//!     let res = passes.run(root, ctx, &mut AnalysisManager::default())?;
+//!     assert!(matches!(res.ir_changed, IRStatus::Unchanged));
 //!     Ok(())
 //! }
 //! ```
 //!
 //! ## Example: Restrict a pass to a specific op kind.
-//! [OpPassManager] is a convenient wrapper around [GuardedPass] that allows
-//! you to run a pass only on operations of a specific [Op]. Similarly, [OpPass]
-//! allows you to run any pass on operations of a specific [Op].
+//! [GuardedPass] is a [Pass] wrapper restricting the run to specific operations.
+//! [OpPass] is a [GuardedPass] that restricts the run to a specific [Op].
+//! [NestedOpsPass] is a [Pass] that runs a provided [Pass] on each immediately nested operation.
 //!
 //! ```rust
 //! use pliron::{
 //!     context::Context,
 //!     irbuild::IRStatus,
 //!     operation::Operation,
-//!     pass_manager::{AnalysisManager, PassGroup, OpPass, OpPassManager, Pass, PassResult},
+//!     pass::{AnalysisManager, NestedOpsPass, Passes, OpPass, Pass, PassResult},
 //!     result::Result,
 //! };
 //! use pliron::builtin::ops::{FuncOp, ModuleOp};
@@ -99,9 +106,10 @@
 //! }
 //!
 //! // Run a pass manager only when the root op is ModuleOp.
-//! let mut module_pm = OpPassManager::<ModuleOp>::default();
+//! let mut passes = OpPass::<ModuleOp, Passes>::default();
 //! // Add a pass that runs only on nested FuncOp operations.
-//! module_pm.add_pass(OpPass::<MyFuncPass, FuncOp>::default());
+//! let nested_pass = NestedOpsPass::new(OpPass::<FuncOp, MyFuncPass>::default());
+//! passes.add_pass(nested_pass);
 //! ```
 //!
 //! ## Example: Analysis caching and preservation
@@ -110,7 +118,7 @@
 //! use pliron::{
 //!     context::Context,
 //!     operation::Operation,
-//!     pass_manager::{Analysis, AnalysisManager, Pass, PassResult},
+//!     pass::{Analysis, AnalysisManager, Pass, PassResult},
 //!     result::Result,
 //! };
 //!
@@ -148,7 +156,10 @@
 //! }
 //! ```
 
-use core::cell::{Ref, RefCell, RefMut};
+use core::{
+    cell::{Ref, RefCell, RefMut},
+    ops::{Deref, DerefMut},
+};
 
 use alloc::{boxed::Box, vec::Vec};
 use downcast_rs::{Downcast, impl_downcast};
@@ -180,8 +191,8 @@ impl PassResult {
     }
 }
 
-/// A pass is any code that runs on an [Operation].
-/// Typically a transformation or a nested pass manager.
+/// A pass is any code that runs on the provided [Operation].
+/// Typically a transformation or (nested) passes.
 ///
 /// Transformations must not modify the IR outside of the [Operation] they are applied to.
 pub trait Pass {
@@ -196,21 +207,59 @@ pub trait Pass {
     ) -> Result<PassResult>;
 }
 
-/// A [Pass] that contains a group of nested passes.
-pub trait PassGroup: Pass {
-    fn add_pass(&mut self, pass: impl Pass + 'static);
-}
-
 #[derive(Default)]
-/// A [Pass] that manages its [PassGroup].
-/// i.e., it runs the passes in the group on itself and each immediately nested operation.
-pub struct PassManager {
+/// Runs a sequence of [Pass]es on the provided [Operation].
+/// Manages invalidation of analyses between passes.
+pub struct Passes {
     passes: Vec<Box<dyn Pass>>,
 }
 
-impl Pass for PassManager {
+impl Pass for Passes {
     fn name(&self) -> &str {
-        "pass_manager"
+        "passes"
+    }
+
+    fn run(
+        &mut self,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        analyses: &mut AnalysisManager,
+    ) -> Result<PassResult> {
+        let mut pass_res = PassResult::default();
+
+        // Run each pass in the list on the current operation.
+        for pass in &mut self.passes {
+            let res = pass.run(op, ctx, analyses)?;
+            pass_res.ir_changed |= res.ir_changed;
+            // Invalidate analyses that are not preserved.
+            analyses.retain_preserved(&res);
+        }
+
+        // Since we invalidate analyses after each pass,
+        // all remaining analyses are preserved.
+        let preserved_analyses = analyses.list_analyses();
+        pass_res.preserved_analyses = preserved_analyses;
+
+        Ok(pass_res)
+    }
+}
+
+impl Passes {
+    /// Add a [Pass] to the list of passes to run.
+    pub fn add_pass(&mut self, pass: impl Pass + 'static) {
+        self.passes.push(Box::new(pass));
+    }
+}
+
+/// Runs a provided [Pass] on each immediately nested [Operation].
+/// Manages invalidation of analyses between runs.
+pub struct NestedOpsPass {
+    pass: Box<dyn Pass>,
+}
+
+impl Pass for NestedOpsPass {
+    fn name(&self) -> &str {
+        "nested_ops_pass"
     }
 
     fn run(
@@ -223,26 +272,16 @@ impl Pass for PassManager {
 
         let mut pass_res = PassResult::default();
 
-        // Run each pass in the group on the current operation.
-        for pass in &mut self.passes {
-            let res = pass.run(op, ctx, analyses)?;
-            pass_res.ir_changed |= res.ir_changed;
-            // Invalidate analyses that are not preserved.
-            analyses.retain_preserved(&res);
-        }
-
         let regions = op.deref(ctx).regions().collect::<Vec<_>>();
         for region in regions {
             let blocks = region.deref(ctx).iter(ctx).collect::<Vec<_>>();
             for block in blocks {
                 let ops = block.deref(ctx).iter(ctx).collect::<Vec<_>>();
                 for nested_op in ops {
-                    for pass in &mut self.passes {
-                        let res = pass.run(nested_op, ctx, analyses)?;
-                        pass_res.ir_changed |= res.ir_changed;
-                        // Invalidate analyses that are not preserved.
-                        analyses.retain_preserved(&res);
-                    }
+                    let res = self.pass.run(nested_op, ctx, analyses)?;
+                    pass_res.ir_changed |= res.ir_changed;
+                    // Invalidate analyses that are not preserved.
+                    analyses.retain_preserved(&res);
                 }
             }
         }
@@ -256,16 +295,11 @@ impl Pass for PassManager {
     }
 }
 
-impl PassManager {
-    /// Add a [Pass] to the pipeline.
-    pub fn add_pass(&mut self, pass: impl Pass + 'static) {
-        self.passes.push(Box::new(pass));
-    }
-}
-
-impl PassGroup for PassManager {
-    fn add_pass(&mut self, pass: impl Pass + 'static) {
-        self.add_pass(pass);
+impl NestedOpsPass {
+    pub fn new(pass: impl Pass + 'static) -> Self {
+        Self {
+            pass: Box::new(pass),
+        }
     }
 }
 
@@ -316,18 +350,18 @@ impl<T: ?Sized + OpInterfaceMarker + 'static> Guard for OpInterfaceGuard<T> {
 
 /// Adds a [Guard] to a [Pass], making it run only on [Operation]s that the [Guard] allows.
 #[derive(Default)]
-pub struct GuardedPass<P: Pass, G: Guard> {
-    pass: P,
+pub struct GuardedPass<G: Guard, P: Pass> {
     guard: G,
+    pass: P,
 }
 
-impl<P: Pass, G: Guard> GuardedPass<P, G> {
-    pub fn new(pass: P, guard: G) -> Self {
-        Self { pass, guard }
+impl<G: Guard, P: Pass> GuardedPass<G, P> {
+    pub fn new(guard: G, pass: P) -> Self {
+        Self { guard, pass }
     }
 }
 
-impl<P: Pass, G: Guard> Pass for GuardedPass<P, G> {
+impl<G: Guard, P: Pass> Pass for GuardedPass<G, P> {
     fn name(&self) -> &str {
         self.pass.name()
     }
@@ -346,23 +380,25 @@ impl<P: Pass, G: Guard> Pass for GuardedPass<P, G> {
     }
 }
 
-impl<P: Pass + PassGroup, G: Guard> PassGroup for GuardedPass<P, G> {
-    fn add_pass(&mut self, pass: impl Pass + 'static) {
-        self.pass.add_pass(pass);
+impl<G: Guard, P: Pass> Deref for GuardedPass<G, P> {
+    type Target = P;
+
+    fn deref(&self) -> &Self::Target {
+        &self.pass
+    }
+}
+
+impl<G: Guard, P: Pass> DerefMut for GuardedPass<G, P> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.pass
     }
 }
 
 /// A [GuardedPass] that allows [Operation]s of a specific [Op].
-pub type OpPass<P, T> = GuardedPass<P, OpGuard<T>>;
+pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
-pub type OpInterfacePass<P, T> = GuardedPass<P, OpInterfaceGuard<T>>;
-
-/// A [PassManager] that runs on [Operation]s of a specific [Op].
-pub type OpPassManager<T> = OpPass<PassManager, T>;
-
-/// A [PassManager] that runs on [Operation]s that implement a specific `OpInterface`.
-pub type OpInterfacePassManager<T> = OpInterfacePass<PassManager, T>;
+pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
 /// An analysis is any code that computes information
 /// about an [Operation] without modifying the IR.

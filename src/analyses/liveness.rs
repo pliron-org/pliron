@@ -19,7 +19,7 @@ use crate::{
     },
     irbuild::inserter::OpInsertionPoint,
     linked_list::{ContainsLinkedList, LinkedList},
-    pass_manager::{Analysis, AnalysisManager},
+    pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
     value::{DefiningEntity, Value},
@@ -697,7 +697,7 @@ mod tests {
         irbuild::inserter::OpInsertionPoint,
         op::Op,
         operation::Operation,
-        pass_manager::AnalysisManager,
+        pass::AnalysisManager,
         region::Region,
         value::Value,
     };

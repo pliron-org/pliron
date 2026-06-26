@@ -10,12 +10,12 @@ use pliron::{
         constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
         simplify_cfg::SimplifyCFGPass,
     },
-    pass_manager::{OpPass, OpPassManager, PassGroup},
+    pass::{NestedOpsPass, OpPass, Passes},
     result::Result,
     r#type::{Type, TypeHandle},
 };
 
-use crate::ops::FuncOp;
+use crate::{builtin_to_llvm::builtin_to_llvm_pass, ops::FuncOp};
 
 pub mod attributes;
 pub mod builtin_to_llvm;
@@ -71,10 +71,15 @@ pub trait ToLLVMType {
     }
 }
 
-/// Append -O1 passes to the given pass manager.
-pub fn append_o1_passes(pm: &mut OpPassManager<ModuleOp>) {
-    pm.add_pass(OpPass::<Mem2RegPass, FuncOp>::default());
-    pm.add_pass(OpPass::<SCCPPass, FuncOp>::default());
-    pm.add_pass(OpPass::<SimplifyCFGPass, FuncOp>::default());
-    pm.add_pass(OpPass::<DCEPass, FuncOp>::default());
+/// Append -O1 passes to the given list of passes.
+pub fn append_o1_passes(module_passes: &mut OpPass<ModuleOp, Passes>) {
+    let mut passes = Passes::default();
+    passes.add_pass(OpPass::<FuncOp, Mem2RegPass>::default());
+    passes.add_pass(OpPass::<FuncOp, SCCPPass>::default());
+    passes.add_pass(OpPass::<FuncOp, SimplifyCFGPass>::default());
+    passes.add_pass(OpPass::<FuncOp, DCEPass>::default());
+
+    module_passes.add_pass(NestedOpsPass::new(passes));
+    // Optimizations may introduce builtin ops that need to be converted to LLVM ops
+    module_passes.add_pass(builtin_to_llvm_pass());
 }

@@ -16,7 +16,7 @@ use pliron::{
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
     parsable::{self, state_stream_from_iterator},
-    pass_manager::{AnalysisManager, OpPassManager, Pass, PassManager},
+    pass::{AnalysisManager, OpPass, Pass, Passes},
     printable::Printable,
 };
 use pliron_llvm::{
@@ -212,10 +212,10 @@ fn test_llvm_ir_via_pliron(input_file: &str, mut opts: impl Pass, expected_outpu
     );
 }
 
-fn create_opt_pass_manager() -> OpPassManager<ModuleOp> {
-    let mut pass_manager = OpPassManager::<ModuleOp>::default();
-    pliron_llvm::append_o1_passes(&mut pass_manager);
-    pass_manager
+fn create_opt_pass_manager() -> impl Pass {
+    let mut passes = OpPass::<ModuleOp, Passes>::default();
+    pliron_llvm::append_o1_passes(&mut passes);
+    passes
 }
 
 /// Test simple-loop by compiling simple-loop.ll via pliron.
@@ -224,7 +224,7 @@ fn test_simple_loop() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("simple-loop.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         15,
     );
 
@@ -255,7 +255,7 @@ fn test_select() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("select.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         100,
     );
 }
@@ -266,7 +266,7 @@ fn test_switch() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("switch.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         68,
     );
 }
@@ -277,7 +277,7 @@ fn test_consts() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("consts.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         203,
     );
 }
@@ -288,7 +288,7 @@ fn test_globals() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("globals.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         59,
     );
 }
@@ -299,7 +299,7 @@ fn test_casts() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("casts.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         88,
     );
 }
@@ -310,7 +310,7 @@ fn test_fib() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("fib.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         3,
     );
     test_llvm_ir_via_pliron(
@@ -326,7 +326,7 @@ fn test_fib_mem2reg() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("fib.mem2reg.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         5,
     );
 }
@@ -337,7 +337,7 @@ fn test_fpops() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("fpops.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         45,
     );
 }
@@ -348,7 +348,7 @@ fn test_intrinsics() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("intrinsics.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         66,
     );
 }
@@ -362,7 +362,7 @@ fn test_va_arg() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("va_arg.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         75,
     );
 }
@@ -373,7 +373,7 @@ fn test_indirect_call() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("indirect_call.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         84,
     );
 }
@@ -384,7 +384,7 @@ fn test_vector_ops() {
     init_env_logger_for_tests!();
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("vector_ops.ll").to_str().unwrap(),
-        PassManager::default(),
+        Passes::default(),
         0,
     );
 }

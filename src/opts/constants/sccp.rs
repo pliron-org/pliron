@@ -49,7 +49,7 @@ use crate::{
     op::op_cast,
     operation::{OpDbg, Operation},
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
-    pass_manager::{AnalysisManager, Pass, PassResult},
+    pass::{AnalysisManager, Pass, PassResult},
     result::Result,
     value::Value,
 };
