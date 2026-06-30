@@ -1292,6 +1292,52 @@ fn fneg_folds_nan() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn fneg_nnan_does_not_fold_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        c = llvm.fneg <NNAN> a : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fneg_ninf_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fneg <NINF> a : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fneg_nnan_still_folds_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fneg <NNAN> a : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("-2.5"));
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // llvm.fadd
 // ---------------------------------------------------------------------------
@@ -1390,6 +1436,55 @@ fn fadd_folds_nan() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn fadd_ninf_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        c = llvm.fadd <NINF> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fadd_nnan_does_not_fold_nan_result() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single -Inf> : builtin.fp32;
+        c = llvm.fadd <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fadd_nnan_still_folds_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fadd <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 6.5> : builtin.fp32"));
+    Ok(())
+}
+
 // ---------------------------------------------------------------------------
 // llvm.fsub
 // ---------------------------------------------------------------------------
@@ -1485,5 +1580,21 @@ fn fsub_folds_nan() -> Result<()> {
         after.matches("<builtin.single NaN> : builtin.fp32").count(),
         2
     );
+    Ok(())
+}
+
+#[test]
+fn fsub_nnan_does_not_fold_nan_result() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fsub <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
