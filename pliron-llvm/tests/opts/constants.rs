@@ -950,3 +950,232 @@ fn ashr_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// llvm.icmp
+// ---------------------------------------------------------------------------
+
+#[test]
+fn icmp_eq_folds_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        c = llvm.icmp a <EQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn icmp_eq_folds_to_false() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8;
+        c = llvm.icmp a <EQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+/// 0xff is -1 signed, so `slt 0` is true.
+#[test]
+fn icmp_signed_predicate_treats_high_bit_as_negative() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        c = llvm.icmp a <SLT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+/// 0xff is 255 unsigned, so `ult 0` is false (the same operands compare
+/// oppositely to the signed predicate above).
+#[test]
+fn icmp_unsigned_predicate_treats_high_bit_as_large() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
+        c = llvm.icmp a <ULT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+#[test]
+fn icmp_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        b = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        c = llvm.icmp x <EQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.sext
+// ---------------------------------------------------------------------------
+
+#[test]
+fn sext_folds_non_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        c = llvm.sext a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<5: i16>"));
+    Ok(())
+}
+
+/// A negative value replicates the sign bit:
+/// -1 (i8, 0xff) -> -1 (i16, 0xffff == 65535 unsigned).
+#[test]
+fn sext_folds_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        c = llvm.sext a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<65535: i16>"));
+    Ok(())
+}
+
+#[test]
+fn sext_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        c = llvm.sext x to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.zext
+// ---------------------------------------------------------------------------
+
+/// A non-negative value extends with zeros: 5 (i8) -> 5 (i16).
+#[test]
+fn zext_folds_non_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        c = llvm.zext <nneg=false> a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<5: i16>"));
+    Ok(())
+}
+
+/// The high bit is not replicated: 255 (i8, 0xff) zero-extends to 255 (i16),
+/// not 65535 as `sext` would produce.
+#[test]
+fn zext_folds_high_bit_set_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        c = llvm.zext <nneg=false> a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<255: i16>"));
+    Ok(())
+}
+
+/// `zext nneg` of a value whose sign bit is set (255 == -1 signed) is poison,
+/// so it must not be folded to a concrete value.
+#[test]
+fn zext_nneg_does_not_fold_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        c = llvm.zext <nneg=true> a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// `zext nneg` still folds when the operand really is non-negative.
+#[test]
+fn zext_nneg_folds_non_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8;
+        c = llvm.zext <nneg=true> a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<5: i16>"));
+    Ok(())
+}
+
+#[test]
+fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 (builtin.integer i8) variadic = false> [] {
+        ^entry(x: builtin.integer i8):
+        c = llvm.zext <nneg=false> x to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}

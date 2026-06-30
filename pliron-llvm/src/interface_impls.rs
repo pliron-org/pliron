@@ -10,6 +10,7 @@ use pliron::{
     builtin::{
         attributes::IntegerAttr,
         op_interfaces::{BranchOpInterface, OneResultInterface},
+        types::{IntegerType, Signedness},
     },
     context::{Context, Ptr},
     derive::op_interface_impl,
@@ -23,13 +24,13 @@ use pliron::{
         },
     },
     result::Result,
-    utils::apint::APInt,
+    utils::apint::{APInt, bw},
     value::Value,
 };
 
 use crate::{
-    attributes::IntegerOverflowFlagsAttr,
-    op_interfaces::{IntBinArithOpWithOverflowFlag, PointerTypeResult},
+    attributes::{ICmpPredicateAttr, IntegerOverflowFlagsAttr},
+    op_interfaces::{IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ExtractElementOp,
         ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp,
@@ -266,6 +267,23 @@ fn is_signed_div_ub(lhs: &APInt, rhs: &APInt) -> bool {
     let bw = NonZero::new(rhs.bw()).expect("operand has zero bitwidth");
     // `-1` is the all-ones bit pattern, i.e. the unsigned max.
     rhs.is_zero() || (*lhs == APInt::imin(bw) && *rhs == APInt::umax(bw))
+}
+
+/// Evaluate an integer comparison `lhs <pred> rhs`. `lhs` and `rhs` must have
+/// the same bitwidth.
+fn eval_icmp(pred: &ICmpPredicateAttr, lhs: &APInt, rhs: &APInt) -> bool {
+    match pred {
+        ICmpPredicateAttr::EQ => lhs == rhs,
+        ICmpPredicateAttr::NE => lhs != rhs,
+        ICmpPredicateAttr::SLT => lhs.slt(rhs),
+        ICmpPredicateAttr::SLE => lhs.sle(rhs),
+        ICmpPredicateAttr::SGT => lhs.sgt(rhs),
+        ICmpPredicateAttr::SGE => lhs.sge(rhs),
+        ICmpPredicateAttr::ULT => lhs.ult(rhs),
+        ICmpPredicateAttr::ULE => lhs.ule(rhs),
+        ICmpPredicateAttr::UGT => lhs.ugt(rhs),
+        ICmpPredicateAttr::UGE => lhs.uge(rhs),
+    }
 }
 
 /// Constant fold this binary integer operation into a singleton vector
@@ -560,6 +578,106 @@ impl ConstFoldInterface for AShrOp {
             }
             None => vec![None],
         }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ICmpOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let Some((lhs, rhs)) = get_int_bin_operands(ops) else {
+            return vec![None];
+        };
+        let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
+        let bool_ty = IntegerType::get_existing(ctx, 1, Signedness::Signless)
+            .expect("i1 type must exist: it is the result type of this op");
+        let res = Box::new(IntegerAttr::new(
+            bool_ty,
+            APInt::from_u8(result as u8, bw(1)),
+        )) as AttrObj;
+        vec![Some(res)]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SExtOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(operand)] = ops else {
+            return vec![None];
+        };
+        let operand = operand
+            .downcast_ref::<IntegerAttr>()
+            .expect("invalid operand type: typecheck before optimizing");
+        let res_ty = self.result_type(ctx);
+        let dest_width = res_ty
+            .deref(ctx)
+            .downcast_ref::<IntegerType>()
+            .expect("sext result must be an integer type")
+            .width();
+        let dest_ty = IntegerType::get_existing(ctx, dest_width, Signedness::Signless)
+            .expect("result type must exist: it is the result type of this op");
+        let extended = operand
+            .value()
+            .sext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
+        let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
+        vec![Some(res)]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ZExtOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(operand)] = ops else {
+            return vec![None];
+        };
+        let operand = operand
+            .downcast_ref::<IntegerAttr>()
+            .expect("invalid operand type: typecheck before optimizing");
+        // `zext nneg` asserts the operand is non-negative; if it isn't, the
+        // result is poison, so we must not fold it to a concrete value.
+        let value = operand.value();
+        if self.nneg(ctx)
+            && value.slt(&APInt::zero(
+                NonZero::new(value.bw()).expect("operand has zero bitwidth"),
+            ))
+        {
+            return vec![None];
+        }
+        let res_ty = self.result_type(ctx);
+        let dest_width = res_ty
+            .deref(ctx)
+            .downcast_ref::<IntegerType>()
+            .expect("zext result must be an integer type")
+            .width();
+        let dest_ty = IntegerType::get_existing(ctx, dest_width, Signedness::Signless)
+            .expect("result type must exist: it is the result type of this op");
+        let extended =
+            value.zext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
+        let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
+        vec![Some(res)]
     }
     fn fold_in_place(
         &self,

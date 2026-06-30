@@ -229,6 +229,23 @@ impl APInt {
         APInt { value }
     }
 
+    /// Sign-extend (or truncate) `self` to `width` bits. When `width` is larger
+    /// than the current bitwidth, the sign bit is replicated into the new high
+    /// bits.
+    pub fn sext(&self, width: NonZero<usize>) -> APInt {
+        let mut value = Awi::zero(width);
+        value.sign_resize_(&self.value);
+        APInt { value }
+    }
+
+    /// Zero-extend (or truncate) `self` to `width` bits. When `width` is larger
+    /// than the current bitwidth, the new high bits are filled with zeros.
+    pub fn zext(&self, width: NonZero<usize>) -> APInt {
+        let mut value = Awi::zero(width);
+        value.zero_resize_(&self.value);
+        APInt { value }
+    }
+
     /// Left-shift `self` by `rhs` bits, reporting whether the result
     /// overflowed. They must have the same bitwidth, and the shift amount `rhs`
     /// must be less than the bitwidth (a shift amount `>=` the bitwidth is
@@ -385,6 +402,106 @@ impl APInt {
         self.value
             .ult(&rhs.value)
             .expect("APInt::ult: bitwidth mismatch")
+    }
+
+    /// Unsigned less-than-or-equal comparison. They must have the same bitwidth.
+    pub fn ule(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::ule: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .ule(&rhs.value)
+            .expect("APInt::ule: bitwidth mismatch")
+    }
+
+    /// Unsigned greater-than comparison. They must have the same bitwidth.
+    pub fn ugt(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::ugt: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .ugt(&rhs.value)
+            .expect("APInt::ugt: bitwidth mismatch")
+    }
+
+    /// Unsigned greater-than-or-equal comparison. They must have the same
+    /// bitwidth.
+    pub fn uge(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::uge: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .uge(&rhs.value)
+            .expect("APInt::uge: bitwidth mismatch")
+    }
+
+    /// Signed less-than comparison. They must have the same bitwidth.
+    pub fn slt(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::slt: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .ilt(&rhs.value)
+            .expect("APInt::slt: bitwidth mismatch")
+    }
+
+    /// Signed less-than-or-equal comparison. They must have the same bitwidth.
+    pub fn sle(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::sle: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .ile(&rhs.value)
+            .expect("APInt::sle: bitwidth mismatch")
+    }
+
+    /// Signed greater-than comparison. They must have the same bitwidth.
+    pub fn sgt(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::sgt: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .igt(&rhs.value)
+            .expect("APInt::sgt: bitwidth mismatch")
+    }
+
+    /// Signed greater-than-or-equal comparison. They must have the same
+    /// bitwidth.
+    pub fn sge(&self, rhs: &APInt) -> bool {
+        assert_eq!(
+            self.bw(),
+            rhs.bw(),
+            "APInt::sge: bitwidth mismatch ({} vs {})",
+            self.bw(),
+            rhs.bw()
+        );
+        self.value
+            .ige(&rhs.value)
+            .expect("APInt::sge: bitwidth mismatch")
     }
 
     /// Get unsigned max value
@@ -946,6 +1063,41 @@ mod tests {
     }
 
     #[test]
+    fn test_sext() {
+        // A non-negative value extends with zeros: 5 (i4) -> 5 (i8).
+        let res = APInt::from_i8(5, bw(4)).sext(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_i8(), 5);
+
+        // A negative value replicates the sign bit: -1 (i4) -> -1 (i8) == 0xff.
+        let res = APInt::from_i8(-1, bw(4)).sext(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_i8(), -1);
+        assert_eq!(res.to_u8(), 0xff);
+
+        // -3 (i4, 0b1101) sign-extends to -3 (i8, 0b11111101).
+        let res = APInt::from_i8(-3, bw(4)).sext(bw(8));
+        assert_eq!(res.to_i8(), -3);
+    }
+
+    #[test]
+    fn test_zext() {
+        // A non-negative value extends with zeros: 5 (i4) -> 5 (i8).
+        let res = APInt::from_i8(5, bw(4)).zext(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_u8(), 5);
+
+        // The sign bit is not replicated: -1 (i4, 0xf) -> 15 (i8), not -1.
+        let res = APInt::from_i8(-1, bw(4)).zext(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_u8(), 15);
+
+        // -3 (i4, 0b1101 == 13 unsigned) zero-extends to 13 (i8).
+        let res = APInt::from_i8(-3, bw(4)).zext(bw(8));
+        assert_eq!(res.to_u8(), 13);
+    }
+
+    #[test]
     fn test_udiv() {
         let width = bw(4);
 
@@ -973,19 +1125,37 @@ mod tests {
     }
 
     #[test]
-    fn test_ult() {
+    fn test_unsigned_cmp() {
         let width = bw(4);
+        let one = APInt::from_u8(1, width);
+        let four = APInt::from_u8(4, width);
+        let four2 = APInt::from_u8(4, width);
 
-        // Strictly less / greater.
-        assert!(APInt::from_u8(3, width).ult(&APInt::from_u8(5, width)));
-        assert!(!APInt::from_u8(5, width).ult(&APInt::from_u8(3, width)));
+        assert!(one.ult(&four) && !four.ult(&four2) && !four.ult(&one));
+        assert!(one.ule(&four) && four.ule(&four2) && !four.ule(&one));
+        assert!(four.ugt(&one) && !one.ugt(&four) && !four.ugt(&four2));
+        assert!(four.uge(&one) && four.uge(&four2) && !one.uge(&four));
 
-        // Equal values are not less-than.
-        assert!(!APInt::from_u8(4, width).ult(&APInt::from_u8(4, width)));
+        // 0xf == 15 is the largest under the unsigned interpretation.
+        let high = APInt::from_u8(0xf, width);
+        assert!(high.ugt(&four) && high.uge(&four) && !high.ule(&four));
+    }
 
-        // Unsigned interpretation: 0xf == 15 is the largest, not -1.
-        assert!(APInt::from_u8(1, width).ult(&APInt::from_u8(0xf, width)));
-        assert!(!APInt::from_u8(0xf, width).ult(&APInt::from_u8(1, width)));
+    #[test]
+    fn test_signed_cmp() {
+        let width = bw(4);
+        let neg_one = APInt::from_i8(-1, width);
+        let one = APInt::from_i8(1, width);
+        let neg_one2 = APInt::from_i8(-1, width);
+
+        assert!(neg_one.slt(&one) && !one.slt(&neg_one));
+        assert!(neg_one.sle(&one) && neg_one.sle(&neg_one2) && !one.sle(&neg_one));
+        assert!(one.sgt(&neg_one) && !neg_one.sgt(&one));
+        assert!(one.sge(&neg_one) && neg_one.sge(&neg_one2) && !neg_one.sge(&one));
+
+        // The same bit pattern compares oppositely signed vs unsigned: -1 is the
+        // smallest signed value but the largest unsigned (0xf).
+        assert!(neg_one.slt(&one) && neg_one.ugt(&one));
     }
 
     #[test]
