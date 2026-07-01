@@ -95,14 +95,14 @@ pub fn float_parse<'a, T: Float>(
     _arg: (),
 ) -> ParseResult<'a, T> {
     // Parse characters allowed in a float literal.
-    // Digits, decimal point, exponent, and sign.
+    // Digits, decimal point, exponent, and sign, plus the letters and
+    // that appear in the special values `+Inf`, `-Inf`, and `NaN`.
 
     let loc = state_stream.loc();
 
     let mut allowed_chars = combine::many1::<String, _, _>(
-        char::digit()
-            .or(char::char('E'))
-            .or(char::char('e'))
+        char::letter()
+            .or(char::digit())
             .or(char::char('+'))
             .or(char::char('-'))
             .or(char::char('.')),
@@ -901,6 +901,42 @@ mod tests {
         for v in values {
             print_and_parse(v, &mut Context::default())
         }
+        Ok(())
+    }
+
+    /// The printed forms of infinity (`+Inf`/`-Inf`) must round-trip through the
+    /// parser.
+    #[test]
+    fn test_single_print_parse_infinity() -> Result<(), ParseError> {
+        let ctx = &mut Context::default();
+        print_and_parse(Single::from_str("+Inf")?, ctx);
+        print_and_parse(Single::from_str("-Inf")?, ctx);
+        Ok(())
+    }
+
+    /// NaN prints as `NaN`, which must parse back to a NaN. NaN is not equal to
+    /// itself, so this checks the category rather than using `print_and_parse`.
+    #[test]
+    fn test_single_print_parse_nan() -> Result<(), ParseError> {
+        use rustc_apfloat::Float;
+
+        let ctx = &mut Context::default();
+        let nan = Single::from_str("NaN")?;
+        let s = nan.disp(ctx).to_string();
+        let parsed = {
+            let mut state_stream = state_stream_from_iterator(
+                s.chars(),
+                parsable::State::new(ctx, location::Source::InMemory),
+            );
+            Single::parse(&mut state_stream, ())
+                .unwrap_or_else(|e| panic!("{}\nError parsing {}", e.into_inner().error, s))
+                .0
+        };
+        assert!(
+            parsed.is_nan(),
+            "Failed to round-trip NaN, got {}",
+            parsed.disp(ctx)
+        );
         Ok(())
     }
 

@@ -3623,7 +3623,7 @@ pub enum SelectOpVerifyErr {
 /// | `res` | float |
 #[pliron_op(
     name = "llvm.fneg",
-    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) $0 ` : ` type($0)",
+    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         OneOpdInterface,

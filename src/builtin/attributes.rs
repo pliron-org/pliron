@@ -403,6 +403,30 @@ impl FloatAttr for FPDoubleAttr {
     }
 }
 
+#[attr_interface_impl]
+impl MaterializableAttr for FPHalfAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
+        const_op.get_operation()
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for FPSingleAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
+        const_op.get_operation()
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for FPDoubleAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
+        const_op.get_operation()
+    }
+}
+
 /// An attribute that is a dictionary of other attributes.
 /// Similar to MLIR's [DictionaryAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#dictionaryattr),
 #[pliron_attr(name = "builtin.dict", verifier = "succ")]

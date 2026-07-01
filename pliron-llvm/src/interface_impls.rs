@@ -5,9 +5,10 @@ use thiserror::Error;
 
 use pliron::{
     arg_err,
-    attribute::AttrObj,
+    attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
+        attr_interfaces::FloatAttr,
         attributes::IntegerAttr,
         op_interfaces::{BranchOpInterface, OneResultInterface},
         types::{IntegerType, Signedness},
@@ -29,8 +30,8 @@ use pliron::{
 };
 
 use crate::{
-    attributes::{ICmpPredicateAttr, IntegerOverflowFlagsAttr},
-    op_interfaces::{IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
+    attributes::{FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr},
+    op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ExtractElementOp,
         ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp,
@@ -299,6 +300,38 @@ fn check_fold_int_bin_op(
         lhs.get_type(),
         combine(&lhs.value(), &rhs.value()),
     )) as AttrObj;
+    vec![Some(res)]
+}
+
+/// Returns `true` if the fast-math `flags` make a constant fold involving
+/// `values` (the operands together with the computed result) undefined
+/// behavior, so it must not be folded to a concrete value.
+fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -> bool {
+    let flags = flags.0;
+    (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
+        || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+/// Constant fold a binary floating-point operation into a singleton vector
+/// containing its result if both operands are constant, or None otherwise.
+fn check_fold_float_bin_op(
+    operand_attrs: &[Option<AttrObj>],
+    flags: FastmathFlagsAttr,
+    combine: impl Fn(&dyn FloatAttr, &dyn FloatAttr) -> Box<dyn FloatAttr>,
+) -> Vec<Option<AttrObj>> {
+    assert!(operand_attrs.len() == 2);
+    let [Some(lhs), Some(rhs)] = operand_attrs else {
+        return vec![None];
+    };
+    let lhs = attr_cast::<dyn FloatAttr>(&**lhs)
+        .expect("invalid operand type: typecheck before optimizing");
+    let rhs = attr_cast::<dyn FloatAttr>(&**rhs)
+        .expect("invalid operand type: typecheck before optimizing");
+    let res = combine(lhs, rhs);
+    if fast_math_forbids_fold(flags, &[lhs, rhs, &*res]) {
+        return vec![None];
+    }
+    let res = pliron::dyn_clone::clone_box(&*res as &dyn Attribute);
     vec![Some(res)]
 }
 
@@ -678,6 +711,67 @@ impl ConstFoldInterface for ZExtOp {
             value.zext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
         let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
         vec![Some(res)]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FNegOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(operand)] = ops else {
+            return vec![None];
+        };
+        let float_val = attr_cast::<dyn FloatAttr>(&**operand)
+            .expect("invalid operand type: typecheck before optimizing");
+        let negated = float_val.neg();
+        // Negation cannot create or destroy NaN/Inf, so checking the operand
+        // covers the result too.
+        if fast_math_forbids_fold(self.fast_math_flags(ctx), &[float_val]) {
+            return vec![None];
+        }
+        let res = pliron::dyn_clone::clone_box(&*negated as &dyn Attribute);
+        vec![Some(res)]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FAddOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+            lhs.add(rhs).value
+        })
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FSubOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+            lhs.sub(rhs).value
+        })
     }
     fn fold_in_place(
         &self,
