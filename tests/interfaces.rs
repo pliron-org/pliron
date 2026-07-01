@@ -988,7 +988,7 @@ fn test_outline_printonce_attr() -> Result<()> {
                 c0_v2 = test.constant builtin.integer <0: si64> !0;
                 v0 = test.constant builtin.integer <42: si64> !1;
                 v1 = test.constant builtin.integer <44: si64> !2;
-                test.return c0_v2
+                builtin.return c0_v2
             }
         }
 
@@ -1030,7 +1030,7 @@ fn test_outline_printonce_attr() -> Result<()> {
                 c0_v3 = test.constant builtin.integer <0: si64> !2;
                 v0_v4 = test.constant builtin.integer <42: si64> !3;
                 v1_v5 = test.constant builtin.integer <44: si64> !4;
-                test.return c0_v3 !5
+                builtin.return c0_v3 !5
             } !6
         } !7
 
@@ -1122,7 +1122,7 @@ fn test_outline_attr_on_block() -> Result<()> {
             {
               ^entry_block2v1() !0:
                 c0_v0 = test.constant builtin.integer <0: si64> !1;
-                test.return c0_v0
+                builtin.return c0_v0
             }
         }
 
@@ -1155,7 +1155,7 @@ fn test_outline_attr_on_block() -> Result<()> {
             {
               ^entry_block2v1_block3v1() !1:
                 c0_v1 = test.constant builtin.integer <0: si64> !2;
-                test.return c0_v1 !3
+                builtin.return c0_v1 !3
             } !4
         } !5
 

@@ -10,8 +10,8 @@ use crate::{
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{
-            ATTR_KEY_SYM_NAME, NRegionsInterface, NResultsInterface, NoTerminatorInterface,
-            RegionKind, RegionKindInterface,
+            ATTR_KEY_SYM_NAME, IsTerminatorInterface, NRegionsInterface, NResultsInterface,
+            NoTerminatorInterface, RegionKind, RegionKindInterface,
         },
         ops::func_op_attr_names::ATTR_KEY_FUNC_TYPE,
         type_interfaces::FunctionTypeInterface,
@@ -34,6 +34,7 @@ use crate::{
     region::Region,
     result::Result,
     r#type::{TypeHandle, Typed, TypedHandle},
+    value::Value,
     verify_err,
 };
 use pliron::derive::{op_interface_impl, pliron_op};
@@ -283,6 +284,67 @@ impl Verify for FuncOp {
             return verify_err!(op.loc(), FuncOpTypeErr);
         }
         Ok(())
+    }
+}
+
+/// An undrealized conversion from one set of types to antoher
+/// See MLIR's [UnrealizedConversionCastOp](https://mlir.llvm.org/docs/Dialects/Builtin/#builtinunrealized_conversion_cast-unrealizedconversioncastop)
+///
+#[pliron_op(
+    name = "builtin.unrealized_conversion_cast",
+    interfaces = [
+    ],
+    format = "`%`$0 ` -> ` type($0)",
+    verifier = "succ",
+)]
+pub struct UnrealizedConversionCastOp;
+
+impl UnrealizedConversionCastOp {
+    /// Create a new [UnrealizedConversionCastOp].
+    pub fn new(ctx: &mut Context, operands: Vec<Value>, result_types: Vec<TypeHandle>) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            result_types,
+            operands,
+            vec![],
+            0,
+        );
+        UnrealizedConversionCastOp { op }
+    }
+}
+
+/// A minimal void terminator suitable for `builtin.func` bodies.
+///
+/// Pliron's [`FuncOp`] requires its body block to end with a terminator
+/// ([`IsTerminatorInterface`]) but ships no return-style op of its own. This
+/// op fills that gap — no operands, no results, no semantics beyond
+/// "structural terminator". For functions that return values, dialects can
+/// supply their own typed return op; this one is for the void case (the
+/// common shape in tests and in dialects whose state-passing happens through
+/// other means, e.g. the qc dialect's reference semantics).
+///
+/// See MLIR's `func.return` for the typed analogue in the func dialect.
+#[pliron_op(
+    name = "builtin.return",
+    format = "operands(CharSpace(`,`))",
+    interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+    verifier = "succ",
+)]
+pub struct ReturnOp;
+
+impl ReturnOp {
+    /// Create a new [`ReturnOp`].
+    pub fn new(ctx: &mut Context, operands: Vec<Value>) -> Self {
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![],
+            operands,
+            vec![],
+            0,
+        );
+        ReturnOp { op }
     }
 }
 

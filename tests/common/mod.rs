@@ -4,8 +4,8 @@ use pliron::{
     builtin::{
         attributes::IntegerAttr,
         op_interfaces::{
-            IsTerminatorInterface, NOpdsInterface, NResultsInterface, NResultsVerifyErr,
-            OneResultInterface, SingleBlockRegionInterface,
+            NOpdsInterface, NResultsInterface, NResultsVerifyErr, OneResultInterface,
+            SingleBlockRegionInterface,
         },
         ops::{FuncOp, ModuleOp},
         types::{FunctionType, IntegerType, Signedness},
@@ -23,29 +23,9 @@ use pliron::{
     printable::{self, Printable},
     result::Result,
     utils::apint::APInt,
-    value::Value,
 };
 
-#[pliron_op(
-    name = "test.return",
-    format = "$0",
-    interfaces = [IsTerminatorInterface],
-    verifier = "succ",
-)]
-pub struct ReturnOp;
-impl ReturnOp {
-    pub fn new(ctx: &mut Context, value: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value],
-            vec![],
-            0,
-        );
-        ReturnOp { op }
-    }
-}
+pub use pliron::builtin::ops::ReturnOp;
 
 mod constant_op {
     use pliron::dict_key;
@@ -156,7 +136,7 @@ pub fn const_ret_in_mod(ctx: &mut Context) -> Result<(ModuleOp, FuncOp, Constant
     );
 
     // Return the constant.
-    let ret_op = ReturnOp::new(ctx, const_op.get_result(ctx));
+    let ret_op = ReturnOp::new(ctx, vec![const_op.get_result(ctx)]);
     ret_op.get_operation().insert_at_back(bb, ctx);
 
     verify_op(&module, ctx)?;

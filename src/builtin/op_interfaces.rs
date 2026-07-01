@@ -44,6 +44,59 @@ pub trait IsTerminatorInterface {
 }
 
 #[derive(Error, Debug)]
+pub enum HasTerminatorInterfaceVerifyErr {
+    #[error("Wrong Terminator OpType. Expected {0}, but found {1} at block")]
+    WrongTerminatorError(String, String),
+    #[error("No terminator found for op")]
+    NoTerminatorError,
+}
+#[op_interface]
+pub trait HasTerminatorInterface<T: Op + IsTerminatorInterface>: AtMostOneRegionInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let Some(region) = op_cast::<dyn AtMostOneRegionInterface>(op)
+            .expect("Trait system statically implies OneRegionInterface")
+            .get_region(ctx)
+        else {
+            return Ok(());
+        };
+
+        for block in region.deref(ctx).iter(ctx) {
+            let Some(tail_op) = block.deref(ctx).get_tail() else {
+                return verify_err!(
+                    op.loc(ctx),
+                    HasTerminatorInterfaceVerifyErr::NoTerminatorError
+                );
+            };
+
+            // `get_tail` yields a `Ptr<Operation>`; materialize an `Op` trait
+            // object so we can cast it to interfaces / concrete op types.
+            let tail_op = Operation::get_op_dyn(tail_op, ctx);
+
+            if op_cast::<dyn IsTerminatorInterface>(&*tail_op).is_none() {
+                return verify_err!(
+                    tail_op.loc(ctx),
+                    HasTerminatorInterfaceVerifyErr::NoTerminatorError
+                );
+            };
+
+            if !tail_op.is::<T>() {
+                return verify_err!(
+                    tail_op.loc(ctx),
+                    HasTerminatorInterfaceVerifyErr::WrongTerminatorError(
+                        T::get_opid_static().disp(ctx).to_string(),
+                        tail_op.get_opid().disp(ctx).to_string(),
+                    )
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum BranchOpInterfaceVerifyErr {
     #[error("Branch Op is passing {provided} arguments, but target block expects {expected}")]
     SuccessorOperandsMismatch { provided: usize, expected: usize },
