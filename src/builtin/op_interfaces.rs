@@ -64,33 +64,32 @@ pub trait HasTerminatorInterface<T: Op + IsTerminatorInterface>: AtMostOneRegion
         };
 
         for block in region.deref(ctx).iter(ctx) {
-            let Some(tail_op) = block.deref(ctx).get_tail() else {
-                return verify_err!(
-                    op.loc(ctx),
-                    HasTerminatorInterfaceVerifyErr::NoTerminatorError
-                );
-            };
-
             // `get_tail` yields a `Ptr<Operation>`; materialize an `Op` trait
             // object so we can cast it to interfaces / concrete op types.
+            let tail_op = block.deref(ctx).get_tail().ok_or_else(|| {
+                verify_error!(op.loc(ctx), HasTerminatorInterfaceVerifyErr::NoTerminatorError)
+            })?;
             let tail_op = Operation::get_op_dyn(tail_op, ctx);
 
-            if op_cast::<dyn IsTerminatorInterface>(&*tail_op).is_none() {
-                return verify_err!(
+
+            // if we have a block we need to have a terminator
+            op_cast::<dyn IsTerminatorInterface>(&*tail_op).ok_or_else(|| {
+                verify_error!(
                     tail_op.loc(ctx),
                     HasTerminatorInterfaceVerifyErr::NoTerminatorError
-                );
-            };
+                )
+            })?;
 
-            if !tail_op.is::<T>() {
-                return verify_err!(
+            // the terminator needs to be of an exact specific type
+            tail_op.is::<T>().then_some(()).ok_or_else(|| {
+                verify_error!(
                     tail_op.loc(ctx),
                     HasTerminatorInterfaceVerifyErr::WrongTerminatorError(
                         T::get_opid_static().disp(ctx).to_string(),
                         tail_op.get_opid().disp(ctx).to_string(),
                     )
-                );
-            }
+                )
+            })?;
         }
         Ok(())
     }
