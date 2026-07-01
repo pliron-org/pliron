@@ -117,7 +117,7 @@ pub(crate) fn interface_impl(
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]
             static INTERFACE_VERIFIER: ::pliron::deps::sync::LazyLock<(::core::any::TypeId, (#all_verifiers_fn_type))> =
                 ::pliron::deps::sync::LazyLock::new(|| {
-                    ::pliron::log::debug!(
+                    ::pliron::log::trace!(
                         target: "interface_registration",
                         "{}({:?}) for type {}({:?})",
                         ::core::any::type_name::<dyn #intr_name>(),

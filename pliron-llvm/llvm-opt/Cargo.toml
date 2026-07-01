@@ -16,7 +16,7 @@ license.workspace = true
 pliron = { path = "../../", version = "0" }
 pliron-llvm = { path = "../", version = "0" }
 clap.workspace = true
-log = { workspace = true, features = ["release_max_level_warn"] }
+log.workspace = true
 env_logger.workspace = true
 
 [dev-dependencies]

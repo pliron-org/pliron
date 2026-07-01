@@ -161,15 +161,18 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     context::{Context, Ptr},
+    deps::time::Timer,
+    identifier::Identifier,
     irbuild::IRStatus,
     op::{Op, OpInterfaceMarker, op_impls},
-    operation::Operation,
+    operation::{OpDbg, Operation, verify_operation},
+    printable::Printable,
     result::Result,
 };
 
@@ -198,6 +201,7 @@ impl PassResult {
 pub trait Pass {
     /// Name of the pass.
     fn name(&self) -> &str;
+
     /// Run the pass and return whether the IR changed and which analyses are preserved.
     fn run(
         &mut self,
@@ -205,6 +209,13 @@ pub trait Pass {
         ctx: &mut Context,
         analyses: &mut AnalysisManager,
     ) -> Result<PassResult>;
+
+    /// If this [Pass] contains, manages and runs other passes,
+    /// get [self] as a [PassManager].
+    /// Most passes do not qualify and must not override this method.
+    fn as_pass_manager(&mut self) -> Option<&mut dyn PassManager> {
+        None
+    }
 }
 
 #[derive(Default)]
@@ -242,6 +253,10 @@ impl Pass for Passes {
 
         Ok(pass_res)
     }
+
+    fn as_pass_manager(&mut self) -> Option<&mut dyn PassManager> {
+        Some(self)
+    }
 }
 
 impl Passes {
@@ -250,6 +265,8 @@ impl Passes {
         self.passes.push(Box::new(pass));
     }
 }
+
+impl PassManager for Passes {}
 
 /// Runs a provided [Pass] on each immediately nested [Operation].
 /// Manages invalidation of analyses between runs.
@@ -293,6 +310,10 @@ impl Pass for NestedOpsPass {
 
         Ok(pass_res)
     }
+
+    fn as_pass_manager(&mut self) -> Option<&mut dyn PassManager> {
+        Some(self)
+    }
 }
 
 impl NestedOpsPass {
@@ -302,6 +323,8 @@ impl NestedOpsPass {
         }
     }
 }
+
+impl PassManager for NestedOpsPass {}
 
 /// A `Guard` determines whether a [Pass] is applicable to a given [Operation].
 pub trait Guard {
@@ -361,9 +384,11 @@ impl<G: Guard, P: Pass> GuardedPass<G, P> {
     }
 }
 
+impl<G: Guard, P: Pass> PassManager for GuardedPass<G, P> {}
+
 impl<G: Guard, P: Pass> Pass for GuardedPass<G, P> {
     fn name(&self) -> &str {
-        self.pass.name()
+        "guarded_pass"
     }
 
     fn run(
@@ -373,10 +398,14 @@ impl<G: Guard, P: Pass> Pass for GuardedPass<G, P> {
         analyses: &mut AnalysisManager,
     ) -> Result<PassResult> {
         if self.guard.is_allowed(op, ctx) {
-            self.pass.run(op, ctx, analyses)
+            <Self as PassManager>::run_pass(&mut self.pass, op, ctx, analyses)
         } else {
             Ok(PassResult::default())
         }
+    }
+
+    fn as_pass_manager(&mut self) -> Option<&mut dyn PassManager> {
+        Some(self)
     }
 }
 
@@ -400,6 +429,159 @@ pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
 pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
+/// A [Pass] that contains, manages and runs other [Pass]es.
+/// The only requirement (that cannot be enforced by the type system)
+/// is that a [PassManager] [Pass] must run its contained [Passes] via
+/// [PassManager::run_pass].
+pub trait PassManager {
+    /// Run a [Pass], calling pre/post hooks for non-manager passes.
+    fn run_pass(
+        pass: &mut dyn Pass,
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        analyses: &mut AnalysisManager,
+    ) -> Result<PassResult>
+    where
+        Self: Sized,
+    {
+        let is_pass_manager = pass.as_pass_manager().is_some();
+        let config = analyses.pm_data().config();
+
+        let skip_pass = !is_pass_manager && config.skip_passes.contains(pass.name());
+        let pre_print_pass = !is_pass_manager
+            && (config.print_before_all || config.print_before.contains(pass.name()));
+        let post_print_pass = !is_pass_manager
+            && (config.print_after_all || config.print_after.contains(pass.name()));
+        let pre_verify_pass = !is_pass_manager
+            && (config.verify_before_all || config.verify_before.contains(pass.name()));
+        let post_verify_pass = !is_pass_manager
+            && (config.verify_after_all || config.verify_after.contains(pass.name()));
+        let should_time = !is_pass_manager
+            && (config.time_all_passes || config.time_passes.contains(pass.name()));
+
+        // Skip passes that are configured to be skipped, but only for non-manager passes.
+        if skip_pass {
+            log::debug!("Skipping pass {} on {}", pass.name(), OpDbg { op, ctx });
+            return Ok(PassResult::default());
+        }
+
+        if !is_pass_manager {
+            log::debug!("Running pass {} on {}", pass.name(), OpDbg { op, ctx });
+        }
+
+        if pre_print_pass {
+            log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
+        }
+        if pre_verify_pass {
+            verify_operation(op, ctx).inspect_err(|e| {
+                log::error!(
+                    "Verification failed before pass {} on {}:\n{}",
+                    pass.name(),
+                    OpDbg { op, ctx },
+                    e.disp(ctx)
+                );
+            })?;
+        }
+        let timer = Timer::start(should_time);
+        // Run the pass and get the result.
+        let result = pass.run(op, ctx, analyses);
+        if let Some(elapsed_ms) = timer.elapsed_ms() {
+            log::info!(
+                "Pass {} on {} completed in {:.3} ms",
+                pass.name(),
+                OpDbg { op, ctx },
+                elapsed_ms
+            );
+        }
+        if post_print_pass {
+            log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
+        }
+        if post_verify_pass {
+            verify_operation(op, ctx).inspect_err(|e| {
+                log::error!(
+                    "Verification failed after pass {} on {}:\n{}",
+                    pass.name(),
+                    OpDbg { op, ctx },
+                    e.disp(ctx)
+                );
+            })?;
+        }
+        result
+    }
+}
+
+/// [PassManager] configuration.
+#[derive(Default)]
+pub struct PMConfig {
+    /// If true, print the IR before running each pass.
+    pub print_before_all: bool,
+    /// If true, print the IR after running each pass.
+    pub print_after_all: bool,
+    /// Set of pass names for which to print the IR before execution.
+    pub print_before: FxHashSet<String>,
+    /// Set of pass names for which to print the IR after execution.
+    pub print_after: FxHashSet<String>,
+    /// If true, verify the IR before running each pass.
+    pub verify_before_all: bool,
+    /// If true, verify the IR after running each pass.
+    pub verify_after_all: bool,
+    /// Set of pass names for which to verify the IR before execution.
+    pub verify_before: FxHashSet<String>,
+    /// Set of pass names for which to verify the IR after execution.
+    pub verify_after: FxHashSet<String>,
+    /// If true, time the execution of each pass.
+    pub time_all_passes: bool,
+    /// Set of pass names for which to time the execution.
+    pub time_passes: FxHashSet<String>,
+    /// Set of pass names to skip execution.
+    pub skip_passes: FxHashSet<String>,
+    /// Custom configuration for extensibility.
+    pub custom_config: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+}
+
+/// Internal state maintained across [PassManager]s.
+/// For use by [PassManager] implementations and not by passes themselves.
+#[derive(Default)]
+pub struct PMState {
+    /// Statistics reported by passes, keyed by pass name.
+    /// These statistics are printed (as requested in [PMConfig])
+    /// at the end of a pass.
+    pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
+    /// Custom state for extensibility.
+    pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+}
+
+/// Common data across [PassManager]s stored in [AnalysisManager].
+#[derive(Default)]
+pub struct PMData {
+    /// Configuration for any [PassManager].
+    config: PMConfig,
+    /// Internal state across any [PassManager].
+    state: PMState,
+}
+
+impl PMData {
+    /// Get a reference to the [PMConfig].
+    pub fn config(&self) -> &PMConfig {
+        &self.config
+    }
+
+    /// Set [PMConfig]
+    pub fn set_config(&mut self, config: PMConfig) {
+        self.config = config;
+    }
+
+    /// Get a reference to the internal state.
+    pub fn state(&self) -> &PMState {
+        &self.state
+    }
+
+    /// Get a mutable reference to the internal state.
+    pub fn state_mut(&mut self) -> &mut PMState {
+        &mut self.state
+    }
+}
+
 /// An analysis is any code that computes information
 /// about an [Operation] without modifying the IR.
 pub trait Analysis: Downcast {
@@ -419,6 +601,9 @@ type AnalysisManagerKey = (core::any::TypeId, Ptr<Operation>);
 #[derive(Default)]
 /// A manager for analyses, responsible for caching and invalidating them.
 pub struct AnalysisManager {
+    /// Common data across [PassManager]s.
+    pub pm_data: PMData,
+    /// Cached analyses keyed by (TypeId of the analysis, Operation).
     analyses: FxHashMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
 }
 
@@ -499,5 +684,20 @@ impl AnalysisManager {
     /// Get a list of all analyses currently cached.
     fn list_analyses(&self) -> FxHashSet<core::any::TypeId> {
         self.analyses.keys().map(|(type_id, _)| *type_id).collect()
+    }
+
+    /// Set [PMConfig]
+    pub fn set_config(&mut self, config: PMConfig) {
+        self.pm_data.set_config(config);
+    }
+
+    /// Get a reference to pass manager related data
+    pub fn pm_data(&self) -> &PMData {
+        &self.pm_data
+    }
+
+    /// Get a mutable reference to pass manager related data
+    pub fn pm_data_mut(&mut self) -> &mut PMData {
+        &mut self.pm_data
     }
 }
