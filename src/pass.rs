@@ -167,13 +167,13 @@ use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     context::{Context, Ptr},
-    deps::time::Timer,
     identifier::Identifier,
     irbuild::IRStatus,
     op::{Op, OpInterfaceMarker, op_impls},
     operation::{OpDbg, Operation, verify_operation},
     printable::Printable,
     result::Result,
+    utils::timer::Timer,
 };
 
 #[derive(Default)]
@@ -482,15 +482,16 @@ pub trait PassManager {
                 );
             })?;
         }
-        let timer = Timer::start(should_time);
+        let timer = Timer::start();
         // Run the pass and get the result.
         let result = pass.run(op, ctx, analyses);
-        if let Some(elapsed_ms) = timer.elapsed_ms() {
+        if should_time {
+            let elapsed = timer.elapsed();
             log::info!(
-                "Pass {} on {} completed in {:.3} ms",
+                "Pass {} on {} completed in {:?}",
                 pass.name(),
                 OpDbg { op, ctx },
-                elapsed_ms
+                elapsed
             );
         }
         if post_print_pass {

@@ -6,3 +6,4 @@ pub mod apint;
 pub mod inventory;
 pub mod trait_cast;
 pub mod vec_exns;
+pub mod timer;

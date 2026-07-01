@@ -1,126 +1,118 @@
-pub mod sync {
-    #[cfg(not(feature = "std"))]
-    pub use spin::LazyLock;
-    #[cfg(feature = "std")]
-    pub use std::sync::LazyLock;
-}
+///! Provides dummy implementations of some std types when the `std` feature is disabled.
 
 #[cfg(feature = "std")]
-pub mod backtrace {
-    pub use std::backtrace::{Backtrace, BacktraceStatus};
+mod imp {
+    pub mod sync {
+        pub use std::sync::LazyLock;
+    }
+
+    pub mod backtrace {
+        pub use std::backtrace::{Backtrace, BacktraceStatus};
+    }
+
+    pub mod io {
+        pub use std::path::PathBuf;
+    }
+
+    pub mod time {
+        pub use std::time::Instant;
+    }
 }
 
 #[cfg(not(feature = "std"))]
-pub mod backtrace {
-    use core::fmt::{Debug, Display};
-
-    #[non_exhaustive]
-    #[derive(Debug, PartialEq, Eq)]
-    pub enum BacktraceStatus {
-        Unsupported,
-        Disabled,
-        Captured,
+mod imp {
+    pub mod sync {
+        pub use spin::LazyLock;
     }
 
-    pub struct Backtrace;
+    pub mod backtrace {
+        use core::fmt::{Debug, Display};
 
-    impl Debug for Backtrace {
-        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            f.write_str("<disabled>")
+        #[non_exhaustive]
+        #[derive(Debug, PartialEq, Eq)]
+        pub enum BacktraceStatus {
+            Unsupported,
+            Disabled,
+            Captured,
+        }
+
+        pub struct Backtrace;
+
+        impl Debug for Backtrace {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("<disabled>")
+            }
+        }
+
+        impl Display for Backtrace {
+            fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                f.write_str("disabled backtrace")
+            }
+        }
+
+        impl Backtrace {
+            pub fn capture() -> Self {
+                Self
+            }
+
+            pub fn status(&self) -> BacktraceStatus {
+                BacktraceStatus::Disabled
+            }
         }
     }
 
-    impl Display for Backtrace {
-        fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-            f.write_str("disabled backtrace")
+    pub mod io {
+        use alloc::string::String;
+        use core::ops::{Deref, DerefMut};
+
+        #[derive(PartialEq, Eq, Clone, Debug, Hash)]
+        pub struct PathBuf(String);
+
+        impl<T: Into<String>> From<T> for PathBuf {
+            fn from(value: T) -> Self {
+                PathBuf(value.into())
+            }
+        }
+
+        impl Deref for PathBuf {
+            type Target = String;
+
+            fn deref(&self) -> &Self::Target {
+                &self.0
+            }
+        }
+
+        impl DerefMut for PathBuf {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.0
+            }
+        }
+
+        impl PathBuf {
+            pub fn display(&self) -> &str {
+                &self.0
+            }
         }
     }
 
-    impl Backtrace {
-        pub fn capture() -> Self {
-            Self
-        }
+    pub mod time {
+        pub struct Instant;
+        impl Instant {
+            pub fn now() -> Self {
+                Self
+            }
 
-        pub fn status(&self) -> BacktraceStatus {
-            BacktraceStatus::Disabled
+            pub fn elapsed(&self) -> core::time::Duration {
+                core::time::Duration::from_secs(0)
+            }
         }
     }
 }
 
-#[cfg(feature = "std")]
-pub mod io {
-    pub use std::path::PathBuf;
-}
-
-#[cfg(not(feature = "std"))]
-pub mod io {
-    use alloc::string::String;
-    use core::ops::{Deref, DerefMut};
-
-    #[derive(PartialEq, Eq, Clone, Debug, Hash)]
-    pub struct PathBuf(String);
-
-    impl<T: Into<String>> From<T> for PathBuf {
-        fn from(value: T) -> Self {
-            PathBuf(value.into())
-        }
-    }
-
-    impl Deref for PathBuf {
-        type Target = String;
-
-        fn deref(&self) -> &Self::Target {
-            &self.0
-        }
-    }
-
-    impl DerefMut for PathBuf {
-        fn deref_mut(&mut self) -> &mut Self::Target {
-            &mut self.0
-        }
-    }
-
-    impl PathBuf {
-        pub fn display(&self) -> &str {
-            &self.0
-        }
-    }
-}
+pub use imp::{backtrace, io, sync, time};
 
 pub mod hash {
     pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
     pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
     pub use hashbrown::*;
-}
-
-#[cfg(feature = "std")]
-pub mod time {
-    pub struct Timer(Option<std::time::Instant>);
-
-    impl Timer {
-        pub fn start(enabled: bool) -> Self {
-            Self(enabled.then(std::time::Instant::now))
-        }
-
-        pub fn elapsed_ms(&self) -> Option<f64> {
-            self.0
-                .as_ref()
-                .map(|start_time| start_time.elapsed().as_secs_f64() * 1000.0)
-        }
-    }
-}
-
-#[cfg(not(feature = "std"))]
-pub mod time {
-    pub struct Timer;
-
-    impl Timer {
-        pub fn start(_enabled: bool) -> Self {
-            Self
-        }
-
-        pub fn elapsed_ms(&self) -> Option<f64> {
-            None
-        }
-    }
 }
