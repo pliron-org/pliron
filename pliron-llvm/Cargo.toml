@@ -16,13 +16,15 @@ default = ["llvm-sys"]
 
 [dependencies]
 pliron = { path = "../", version = "0" }
+
 thiserror.workspace = true
 rustc-hash.workspace = true
+log.workspace = true
+bitflags = { workspace = true, features = ["std"] }
+
 # When upgrading the LLVM version, change the LLVM versions in
 # `ci.yml` and the READMEs in `pliron-llvm` and `llvm-opt`.
 llvm-sys = { version = "221", optional = true }
-log.workspace = true
-bitflags = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
 expect-test.workspace = true

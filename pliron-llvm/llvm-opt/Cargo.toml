@@ -15,6 +15,7 @@ license.workspace = true
 [dependencies]
 pliron = { path = "../../", version = "0" }
 pliron-llvm = { path = "../", version = "0" }
+
 clap.workspace = true
 log.workspace = true
 env_logger.workspace = true

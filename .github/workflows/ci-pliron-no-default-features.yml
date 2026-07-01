@@ -42,6 +42,9 @@ jobs:
     - name: Test release pliron - no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron --no-default-features --release --verbose
 
+    - name: Documentation pliron - no default features
+      run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron --no-default-features --verbose
+
     - name: Test pliron-llvm with no_std pliron
       run: |
         cargo add -p pliron-llvm pliron --no-default-features
