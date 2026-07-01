@@ -1,7 +1,8 @@
-//! Provides dummy implementations of some std types when the `std` feature is disabled.
+//! All our `std` dependencies are used from re-exports here.
+//! Dummy implementations are provided for when `std` is disabled.
 
 #[cfg(feature = "std")]
-mod imp {
+mod r#impl {
     pub mod sync {
         pub use std::sync::LazyLock;
     }
@@ -26,7 +27,7 @@ mod imp {
 }
 
 #[cfg(not(feature = "std"))]
-mod imp {
+mod r#impl {
     pub mod sync {
         pub use spin::LazyLock;
     }
@@ -121,4 +122,4 @@ mod imp {
     }
 }
 
-pub use imp::{backtrace, hash, io, sync, time};
+pub use r#impl::{backtrace, hash, io, sync, time};
