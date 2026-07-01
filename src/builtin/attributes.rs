@@ -85,6 +85,18 @@ impl From<StringAttr> for String {
     }
 }
 
+impl StringAttr {
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl AsRef<str> for StringAttr {
+    fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
 impl Printable for StringAttr {
     fn fmt(
         &self,
@@ -528,6 +540,18 @@ pub struct TypeAttr(TypeHandle);
 impl TypeAttr {
     pub fn new(ty: TypeHandle) -> Self {
         TypeAttr(ty)
+    }
+}
+
+impl From<TypeHandle> for TypeAttr {
+    fn from(value: TypeHandle) -> Self {
+        TypeAttr(value)
+    }
+}
+
+impl From<TypeAttr> for TypeHandle {
+    fn from(value: TypeAttr) -> Self {
+        value.0
     }
 }
 
