@@ -474,7 +474,7 @@ pub trait PassManager {
         }
         if pre_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
-                log::debug!(
+                log::error!(
                     "Verification failed before pass {} on {}:\n{}",
                     pass.name(),
                     OpDbg { op, ctx },
@@ -498,7 +498,7 @@ pub trait PassManager {
         }
         if post_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
-                log::debug!(
+                log::error!(
                     "Verification failed after pass {} on {}:\n{}",
                     pass.name(),
                     OpDbg { op, ctx },
