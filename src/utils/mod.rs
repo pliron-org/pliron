@@ -4,6 +4,6 @@ pub mod apfloat;
 pub mod apint;
 #[cfg(target_family = "wasm")]
 pub mod inventory;
+pub mod timer;
 pub mod trait_cast;
 pub mod vec_exns;
-pub mod timer;
