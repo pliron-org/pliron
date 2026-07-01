@@ -11,7 +11,7 @@ use pliron::{
         constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
         simplify_cfg::SimplifyCFGPass,
     },
-    pass::{AnalysisManager, NestedOpsPass, OpPass, Pass, Passes},
+    pass::{AnalysisManager, NestedOpsPass, OpPass, PMConfig, Pass, Passes},
     printable::Printable,
     result::Result,
     verify_error_noloc,
@@ -43,6 +43,62 @@ struct Cli {
     /// Example: --opts mem2reg,dce,o1
     #[arg(long = "opts", value_name = "PASS1,PASS2", value_delimiter = ',')]
     opts: Option<Vec<OptPass>>,
+
+    /// Print IR before every pass
+    #[arg(long, default_value_t = false)]
+    pm_print_before_all: bool,
+
+    /// Print IR after every pass
+    #[arg(long, default_value_t = false)]
+    pm_print_after_all: bool,
+
+    /// Print IR before these passes (comma-separated)
+    ///
+    /// Example: --pm-print-before mem2reg,dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_print_before: Vec<String>,
+
+    /// Print IR after these passes (comma-separated)
+    ///
+    /// Example: --pm-print-after mem2reg,dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_print_after: Vec<String>,
+
+    /// Verify IR before every pass
+    #[arg(long, default_value_t = false)]
+    pm_verify_before_all: bool,
+
+    /// Verify IR after every pass
+    #[arg(long, default_value_t = false)]
+    pm_verify_after_all: bool,
+
+    /// Verify IR before these passes (comma-separated)
+    ///
+    /// Example: --pm-verify-before mem2reg,dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_verify_before: Vec<String>,
+
+    /// Verify IR after these passes (comma-separated)
+    ///
+    /// Example: --pm-verify-after mem2reg,dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_verify_after: Vec<String>,
+
+    /// Time every pass
+    #[arg(long, default_value_t = false)]
+    pm_time_all_passes: bool,
+
+    /// Time these passes (comma-separated)
+    ///
+    /// Example: --pm-time-passes mem2reg,dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_time_passes: Vec<String>,
+
+    /// Skip these passes (comma-separated)
+    ///
+    /// Example: --pm-skip-passes dce
+    #[arg(long, value_name = "PASS1,PASS2", value_delimiter = ',')]
+    pm_skip_passes: Vec<String>,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +127,49 @@ impl FromStr for OptPass {
     }
 }
 
-fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -> Result<()> {
+fn pm_config_from_cli(cli: &Cli) -> PMConfig {
+    let mut pm_config = PMConfig {
+        print_before_all: cli.pm_print_before_all,
+        print_after_all: cli.pm_print_after_all,
+        verify_before_all: cli.pm_verify_before_all,
+        verify_after_all: cli.pm_verify_after_all,
+        time_all_passes: cli.pm_time_all_passes,
+        ..PMConfig::default()
+    };
+
+    for pass_name in &cli.pm_print_before {
+        pm_config.print_before.insert(pass_name.clone());
+    }
+
+    for pass_name in &cli.pm_print_after {
+        pm_config.print_after.insert(pass_name.clone());
+    }
+
+    for pass_name in &cli.pm_verify_before {
+        pm_config.verify_before.insert(pass_name.clone());
+    }
+
+    for pass_name in &cli.pm_verify_after {
+        pm_config.verify_after.insert(pass_name.clone());
+    }
+
+    for pass_name in &cli.pm_time_passes {
+        pm_config.time_passes.insert(pass_name.clone());
+    }
+
+    for pass_name in &cli.pm_skip_passes {
+        pm_config.skip_passes.insert(pass_name.clone());
+    }
+
+    pm_config
+}
+
+fn run_opt_passes(
+    module: Ptr<Operation>,
+    opts: &[OptPass],
+    pm_config: PMConfig,
+    ctx: &mut Context,
+) -> Result<()> {
     let mut passes = OpPass::<ModuleOp, Passes>::default();
 
     for opt in opts {
@@ -98,7 +196,10 @@ fn run_opt_passes(module: Ptr<Operation>, opts: &[OptPass], ctx: &mut Context) -
         }
     }
 
-    passes.run(module, ctx, &mut AnalysisManager::default())?;
+    let mut analyses = AnalysisManager::default();
+    analyses.set_config(pm_config);
+
+    passes.run(module, ctx, &mut analyses)?;
 
     Ok(())
 }
@@ -111,21 +212,28 @@ fn run(cli: Cli, ctx: &mut Context) -> Result<()> {
         .map_err(|err| arg_error_noloc!("{}", err))?;
 
     let pliron_module = from_llvm_ir::convert_module(ctx, &module)?;
-    log::debug!(
-        "pliron IR parsed from LLVM-IR:\n{}",
-        pliron_module.disp(ctx)
-    );
-    verify_op(&pliron_module, ctx)?;
+    verify_op(&pliron_module, ctx).inspect_err(|_| {
+        log::debug!(
+            "Parsed pliron IR (verification failed):\n{}",
+            pliron_module.disp(ctx)
+        );
+    })?;
 
     if let Some(opts) = cli.opts.as_ref() {
-        run_opt_passes(pliron_module.get_operation(), opts, ctx)?;
+        run_opt_passes(
+            pliron_module.get_operation(),
+            opts,
+            pm_config_from_cli(&cli),
+            ctx,
+        )?;
     }
 
-    log::debug!(
-        "pliron IR after optimizations:\n{}",
-        pliron_module.disp(ctx)
-    );
-    verify_op(&pliron_module, ctx)?;
+    verify_op(&pliron_module, ctx).inspect_err(|_| {
+        log::debug!(
+            "pliron IR after optimizations (verification failed):\n{}",
+            pliron_module.disp(ctx)
+        );
+    })?;
 
     let module = to_llvm_ir::convert_module(ctx, &llvm_context, pliron_module)?;
     module

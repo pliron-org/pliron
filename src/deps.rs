@@ -92,3 +92,35 @@ pub mod hash {
     pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
     pub use hashbrown::*;
 }
+
+#[cfg(feature = "std")]
+pub mod time {
+    pub struct Timer(Option<std::time::Instant>);
+
+    impl Timer {
+        pub fn start(enabled: bool) -> Self {
+            Self(enabled.then(std::time::Instant::now))
+        }
+
+        pub fn elapsed_ms(&self) -> Option<f64> {
+            self.0
+                .as_ref()
+                .map(|start_time| start_time.elapsed().as_secs_f64() * 1000.0)
+        }
+    }
+}
+
+#[cfg(not(feature = "std"))]
+pub mod time {
+    pub struct Timer;
+
+    impl Timer {
+        pub fn start(_enabled: bool) -> Self {
+            Self
+        }
+
+        pub fn elapsed_ms(&self) -> Option<f64> {
+            None
+        }
+    }
+}
