@@ -152,7 +152,7 @@ fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     let block_b = BasicBlock::new(ctx, None, vec![i64_ty.into()]);
     block_b.insert_at_back(region, ctx);
     let b_arg = block_b.deref(ctx).get_argument(0);
-    ReturnOp::new(ctx, b_arg)
+    ReturnOp::new(ctx, vec![b_arg])
         .get_operation()
         .insert_at_back(block_b, ctx);
 
@@ -304,7 +304,7 @@ fn clone_blocks_resolves_op_result_forward_ref_in_any_order() -> Result<()> {
         0,
     )
     .insert_at_back(block_a, ctx);
-    ReturnOp::new(ctx, c_val)
+    ReturnOp::new(ctx, vec![c_val])
         .get_operation()
         .insert_at_back(block_b, ctx);
 
@@ -394,7 +394,7 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
         0,
     )
     .insert_at_back(block_a, ctx);
-    ReturnOp::new(ctx, c_val)
+    ReturnOp::new(ctx, vec![c_val])
         .get_operation()
         .insert_at_back(block_b, ctx);
 

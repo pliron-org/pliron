@@ -44,6 +44,57 @@ pub trait IsTerminatorInterface {
 }
 
 #[derive(Error, Debug)]
+pub enum HasTerminatorInterfaceVerifyErr {
+    #[error("Wrong Terminator OpType. Expected {0}, but found {1} at block")]
+    WrongTerminatorError(String, String),
+    #[error("No terminator found for op")]
+    NoTerminatorError,
+}
+#[op_interface]
+pub trait HasTerminatorInterface<T: Op + IsTerminatorInterface> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        // Every block of every region must end with a terminator of type `T`.
+        let regions: Vec<Ptr<Region>> = op.get_operation().deref(ctx).regions().collect();
+        for region in regions {
+            for block in region.deref(ctx).iter(ctx) {
+                // `get_tail` yields a `Ptr<Operation>`; materialize an `Op` trait
+                // object so we can cast it to interfaces / concrete op types.
+                let tail_op = block.deref(ctx).get_tail().ok_or_else(|| {
+                    verify_error!(
+                        op.loc(ctx),
+                        HasTerminatorInterfaceVerifyErr::NoTerminatorError
+                    )
+                })?;
+                let tail_op = Operation::get_op_dyn(tail_op, ctx);
+
+                // if we have a block we need to have a terminator
+                op_cast::<dyn IsTerminatorInterface>(&*tail_op).ok_or_else(|| {
+                    verify_error!(
+                        tail_op.loc(ctx),
+                        HasTerminatorInterfaceVerifyErr::NoTerminatorError
+                    )
+                })?;
+
+                // the terminator needs to be of an exact specific type
+                tail_op.is::<T>().then_some(()).ok_or_else(|| {
+                    verify_error!(
+                        tail_op.loc(ctx),
+                        HasTerminatorInterfaceVerifyErr::WrongTerminatorError(
+                            T::get_opid_static().disp(ctx).to_string(),
+                            tail_op.get_opid().disp(ctx).to_string(),
+                        )
+                    )
+                })?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
 pub enum BranchOpInterfaceVerifyErr {
     #[error("Branch Op is passing {provided} arguments, but target block expects {expected}")]
     SuccessorOperandsMismatch { provided: usize, expected: usize },

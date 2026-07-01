@@ -214,7 +214,7 @@ fn replace_c0_with_c1() -> Result<()> {
             {
               ^entry_block2v1():
                 v2 = test.constant builtin.integer <2: si64>;
-                test.return v2
+                builtin.return v2
             }
         }"#]]
     .assert_eq(&printed);
@@ -359,7 +359,7 @@ fn scoped_rewriter_test() -> Result<()> {
             {
               ^entry_block2v1():
                 v2 = test.load v1 ;
-                test.return v2
+                builtin.return v2
             }
         }"#]].assert_eq(&printed);
 
@@ -471,7 +471,7 @@ fn split_block_after_const_zero() -> Result<()> {
                 .replace_all_uses_with(ctx, &const1_result);
 
             // Add a return at the end of old block to return the const0_op's result
-            let ret = ReturnOp::new(ctx, const0_op.get_result(ctx)).get_operation();
+            let ret = ReturnOp::new(ctx, vec![const0_op.get_result(ctx)]).get_operation();
             {
                 ScopedRewriter::new(rewriter, OpInsertionPoint::AtBlockEnd(block))
                     .insert_operation(ctx, ret);
@@ -502,11 +502,11 @@ fn split_block_after_const_zero() -> Result<()> {
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
-                test.return c0_v0
+                builtin.return c0_v0
 
               ^entry_split_block3v1():
                 v1 = test.constant builtin.integer <1: si64>;
-                test.return v1
+                builtin.return v1
             }
         }"#]]
     .assert_eq(&printed);
@@ -577,11 +577,11 @@ fn inline_region_on_const_zero() -> Result<()> {
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
-                test.return c0_v0
+                builtin.return c0_v0
 
               ^entry_block4v1():
                 c0_v1 = test.constant builtin.integer <0: si64> !1;
-                test.return c0_v1
+                builtin.return c0_v1
             }
         }"#]]
     .assert_eq(&printed);
