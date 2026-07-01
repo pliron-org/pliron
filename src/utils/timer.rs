@@ -1,12 +1,14 @@
 //! A simple timer utility.
 
+use pliron::deps::time;
+
 /// A simple timer utility
-pub struct Timer(pliron::deps::time::Instant);
+pub struct Timer(time::Instant);
 
 impl Timer {
     /// Starts a new timer.
     pub fn start() -> Self {
-        Self(pliron::deps::time::Instant::now())
+        Self(time::Instant::now())
     }
 
     /// Returns the elapsed time since the timer was started.

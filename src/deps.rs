@@ -1,4 +1,4 @@
-///! Provides dummy implementations of some std types when the `std` feature is disabled.
+//! Provides dummy implementations of some std types when the `std` feature is disabled.
 
 #[cfg(feature = "std")]
 mod imp {
