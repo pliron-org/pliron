@@ -434,12 +434,25 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
         } else if d.name == "type" {
             let err = Err(syn::Error::new_spanned(
                     input.ident.clone(),
-                    "The `type` directive takes a single unnamed variable argument to specify the result index".to_string(),
+                    "The `type` directive takes a single unnamed variable argument to specify the result index, or the `operands` directive".to_string(),
                 ));
             if d.args.len() != 1 {
                 return err;
             }
-            if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
+            if let Elem::Directive(Directive { name, args, .. }) = &d.args[0]
+                && name == "operands"
+            {
+                let Elem::Directive(sep) = &args[0] else {
+                    return err;
+                };
+                let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+                Ok(quote! {
+                    let op = self.get_operation().deref(ctx);
+                    let operand_types = op.operands().map(|opd| ::pliron::r#type::Typed::get_type(&opd, ctx));
+                    let operand_types = ::pliron::irfmt::printers::iter_with_sep(operand_types, #sep);
+                    ::pliron::printable::Printable::fmt(&operand_types, ctx, state, fmt)?;
+                })
+            } else if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
                 Ok(quote! {
                     let res = self.get_operation().deref(ctx).get_type(#index);
                     ::pliron::printable::Printable::fmt(&res, ctx, state, fmt)?;
@@ -1352,7 +1365,19 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             if d.args.len() != 1 {
                 return err;
             }
-            if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
+            if let Elem::Directive(dir) = &d.args[0]
+                && dir.name == "operands"
+            {
+                let Elem::Directive(sep) = &dir.args[0] else {
+                    return err;
+                };
+                let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+                Ok(quote! {
+                    ::pliron::irfmt::parsers::list_parser(#sep, ::pliron::irfmt::parsers::type_parser())
+                        .parse_stream(state_stream)
+                        .into_result()?;
+                })
+            } else if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
                 let res_type = format_ident!("res_{}", index);
                 match state.result_types {
                     ElementSpec::Individual(ref mut result_types) => {
