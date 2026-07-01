@@ -335,7 +335,7 @@ pub(crate) fn derive_attr_get_set(
     let attr_name_const_decls = quote! {
         #[doc(hidden)]
         pub mod #module_name {
-            use ::pliron::deps::sync::LazyLock;
+            use ::pliron::std_deps::sync::LazyLock;
             use ::pliron::identifier::Identifier;
 
             #(#attr_name_const_decls)

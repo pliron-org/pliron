@@ -76,7 +76,7 @@ impl ToLLVMDialect for BuiltinConstantOp {
             return Err(Error {
                 kind: ErrorKind::InvalidInput,
                 // We reset the error origin to be from here
-                backtrace: pliron::deps::backtrace::Backtrace::capture(),
+                backtrace: pliron::std_deps::backtrace::Backtrace::capture(),
                 ..e
             });
         }

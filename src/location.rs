@@ -13,7 +13,7 @@ use crate::{
         token,
     },
     context::Context,
-    deps::io::PathBuf,
+    std_deps::io::PathBuf,
     impl_printable_for_display,
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},

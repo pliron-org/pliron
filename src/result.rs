@@ -106,7 +106,7 @@ use thiserror::Error;
 
 use crate::{
     context::Context,
-    deps::backtrace::{Backtrace, BacktraceStatus},
+    std_deps::backtrace::{Backtrace, BacktraceStatus},
     location::{Located, Location},
     printable::{Printable, State},
     utils::trait_cast::any_to_trait,
@@ -253,7 +253,7 @@ macro_rules! create_error {
             kind: $kind,
             err: $crate::alloc::boxed::Box::new($err),
             loc: $loc,
-            backtrace: $crate::deps::backtrace::Backtrace::capture(),
+            backtrace: $crate::std_deps::backtrace::Backtrace::capture(),
         }
     };
 }

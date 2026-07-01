@@ -1,6 +1,6 @@
 //! A simple timer utility.
 
-use pliron::deps::time;
+use pliron::std_deps::time;
 
 /// A simple timer utility
 pub struct Timer(time::Instant);

@@ -11,7 +11,7 @@ use crate::{
     common_traits::Named,
     context::{Context, Ptr},
     debug_info::set_block_arg_name,
-    deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
+    std_deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},

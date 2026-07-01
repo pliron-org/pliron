@@ -1282,7 +1282,7 @@ impl Verify for GetElementPtrOp {
             return Err(Error {
                 kind: ErrorKind::VerificationFailed,
                 // We reset the error origin to be from here
-                backtrace: pliron::deps::backtrace::Backtrace::capture(),
+                backtrace: pliron::std_deps::backtrace::Backtrace::capture(),
                 ..e
             });
         }
@@ -3135,7 +3135,7 @@ impl Verify for InsertValueOp {
                 // We reset the error type and error origin to be from here
                 return Err(Error {
                     kind: ErrorKind::VerificationFailed,
-                    backtrace: pliron::deps::backtrace::Backtrace::capture(),
+                    backtrace: pliron::std_deps::backtrace::Backtrace::capture(),
                     ..e
                 });
             }
@@ -3186,7 +3186,7 @@ impl Verify for ExtractValueOp {
                 // We reset the error type and error origin to be from here
                 return Err(Error {
                     kind: ErrorKind::VerificationFailed,
-                    backtrace: pliron::deps::backtrace::Backtrace::capture(),
+                    backtrace: pliron::std_deps::backtrace::Backtrace::capture(),
                     ..e
                 });
             }

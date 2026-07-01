@@ -40,7 +40,7 @@ use crate::{
     combine::{Parser, parser},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,

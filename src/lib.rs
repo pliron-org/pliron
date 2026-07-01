@@ -59,7 +59,7 @@ pub mod uniqued_any;
 pub mod utils;
 pub mod value;
 
-pub mod deps;
+pub mod std_deps;
 
 /// A macro to initialize `env_logger` for tests. Default logger level is set to "off".
 /// It sets `env_logger`'s test mode so that logs are captured by the test framework.

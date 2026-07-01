@@ -53,7 +53,7 @@ use crate::{
     combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -467,7 +467,7 @@ type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
-    use crate::deps::sync::LazyLock;
+    use crate::std_deps::sync::LazyLock;
 
     #[::pliron::linkme::distributed_slice]
     pub static ATTR_INTERFACE_VERIFIERS: [LazyLock<AttrInterfaceVerifierInfo>] = [..];

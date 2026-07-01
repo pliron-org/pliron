@@ -22,7 +22,7 @@ use crate::{
         },
     },
     context::{Context, Ptr},
-    deps::hash::{FxHashMap, hash_map::Entry},
+    std_deps::hash::{FxHashMap, hash_map::Entry},
     identifier::Identifier,
     input_err,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},

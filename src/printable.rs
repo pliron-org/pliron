@@ -8,7 +8,7 @@ use core::{
 };
 
 use crate::{
-    common_traits::RcShare, context::Context, deps::hash::FxHashMap, identifier::Identifier,
+    common_traits::RcShare, context::Context, std_deps::hash::FxHashMap, identifier::Identifier,
 };
 
 struct StateInner {
