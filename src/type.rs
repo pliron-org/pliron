@@ -40,7 +40,6 @@ use crate::{
     combine::{Parser, parser},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -49,6 +48,7 @@ use crate::{
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
+    std_deps::{hash::FxHashMap, sync::LazyLock},
     storage_uniquer::TypeValueHash,
 };
 

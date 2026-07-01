@@ -55,7 +55,6 @@ use crate::{
     },
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -72,6 +71,7 @@ use crate::{
     printable::{self, Printable},
     region::Region,
     result::Result,
+    std_deps::{hash::FxHashMap, sync::LazyLock},
     r#type::Typed,
 };
 

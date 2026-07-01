@@ -509,8 +509,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        std_deps::hash::HashSet,
         graph::{ControlFlowGraph, HasLabel},
+        std_deps::hash::HashSet,
     };
     use rustc_hash::FxHashSet;
 

@@ -53,7 +53,6 @@ use crate::{
     combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
@@ -65,6 +64,7 @@ use crate::{
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
+    std_deps::{hash::FxHashMap, sync::LazyLock},
 };
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].

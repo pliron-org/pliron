@@ -10,7 +10,6 @@ use alloc::{vec, vec::Vec};
 use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
-    std_deps::hash::{FxHashMap, FxHashSet},
     graph::{
         dominance::{DomInfo, DomTree},
         find_ancestor_block_of_block_in_region, find_ancestor_op_of_op_in_block,
@@ -22,6 +21,7 @@ use crate::{
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
+    std_deps::hash::{FxHashMap, FxHashSet},
     value::{DefiningEntity, Value},
 };
 

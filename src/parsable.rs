@@ -22,7 +22,6 @@ use crate::{
         },
     },
     context::{Context, Ptr},
-    std_deps::hash::{FxHashMap, hash_map::Entry},
     identifier::Identifier,
     input_err,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
@@ -30,6 +29,7 @@ use crate::{
     op::op_impls,
     operation::Operation,
     result::{self, Result},
+    std_deps::hash::{FxHashMap, hash_map::Entry},
     value::{DefiningEntity, Value},
 };
 

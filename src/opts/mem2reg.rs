@@ -11,7 +11,6 @@ use crate::{
     common_traits::Named,
     context::{Context, Ptr},
     debug_info::set_block_arg_name,
-    std_deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
@@ -28,6 +27,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
+    std_deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
     r#type::TypeHandle,
     value::Value,
 };

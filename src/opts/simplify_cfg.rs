@@ -24,7 +24,6 @@ use crate::{
     basic_block::BasicBlock,
     builtin::op_interfaces::BranchOpInterface,
     context::{Context, Ptr},
-    std_deps::hash::FxHashSet,
     graph::{
         HasLabel,
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
@@ -42,6 +41,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
+    std_deps::hash::FxHashSet,
     value::Value,
 };
 

@@ -13,7 +13,6 @@ use crate::{
         token,
     },
     context::Context,
-    std_deps::io::PathBuf,
     impl_printable_for_display,
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
@@ -21,6 +20,7 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
+    std_deps::io::PathBuf,
     uniqued_any::{self, UniquedKey},
 };
 

@@ -106,9 +106,9 @@ use thiserror::Error;
 
 use crate::{
     context::Context,
-    std_deps::backtrace::{Backtrace, BacktraceStatus},
     location::{Located, Location},
     printable::{Printable, State},
+    std_deps::backtrace::{Backtrace, BacktraceStatus},
     utils::trait_cast::any_to_trait,
 };
 
