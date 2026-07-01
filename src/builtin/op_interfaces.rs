@@ -414,6 +414,11 @@ pub trait NRegionsInterface<const N: usize> {
         }
         Ok(())
     }
+
+    /// Get the `i`'th region.
+    fn get_region_i(&self, ctx: &Context, i: usize) -> Ptr<Region> {
+        self.get_operation().deref(ctx).get_region(i)
+    }
 }
 
 /// [Op]s that have exactly one region.
@@ -683,6 +688,11 @@ pub trait NResultsInterface<const N: usize> {
         }
         Ok(())
     }
+
+    /// Get the `i`'th result
+    fn get_result_i(&self, ctx: &Context, i: usize) -> Value {
+        self.get_operation().deref(ctx).get_result(i)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -704,6 +714,7 @@ pub trait AtMostNResultsInterface<const N: usize> {
     }
 }
 
+/// An [Op] having at most one result.
 #[op_interface]
 pub trait OptionalResultInterface: AtMostNResultsInterface<1> {
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
@@ -714,7 +725,7 @@ pub trait OptionalResultInterface: AtMostNResultsInterface<1> {
     }
 
     /// Get the single result defined by this [Op], if any.
-    fn get_result(&self, ctx: &Context) -> Option<Value> {
+    fn get_result_opt(&self, ctx: &Context) -> Option<Value> {
         let self_op = self.get_operation().deref(ctx);
         (self_op.get_num_results() == 1).then(|| self_op.get_result(0))
     }
@@ -779,6 +790,11 @@ pub trait NOpdsInterface<const N: usize> {
         }
         Ok(())
     }
+
+    /// Get the `i`'th operand
+    fn get_operand_i(&self, ctx: &Context, i: usize) -> Value {
+        self.get_operation().deref(ctx).get_operand(i)
+    }
 }
 
 #[derive(Error, Debug)]
@@ -800,6 +816,7 @@ pub trait AtMostNOpdsInterface<const N: usize> {
     }
 }
 
+/// An [Op] having at most one operand.
 #[op_interface]
 pub trait OptionalOpdInterface: AtMostNOpdsInterface<1> {
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
@@ -809,7 +826,7 @@ pub trait OptionalOpdInterface: AtMostNOpdsInterface<1> {
         Ok(())
     }
 
-    fn get_operand(&self, ctx: &Context) -> Option<Value> {
+    fn get_operand_opt(&self, ctx: &Context) -> Option<Value> {
         let self_op = self.get_operation().deref(ctx);
         (self_op.get_num_operands() == 1).then(|| self_op.get_operand(0))
     }

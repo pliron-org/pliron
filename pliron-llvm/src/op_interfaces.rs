@@ -63,6 +63,22 @@ pub trait BinArithOp:
     {
         Ok(())
     }
+
+    /// Get the left-hand side operand of this binary arithmetic [Op].
+    fn lhs(&self, ctx: &Context) -> Value
+    where
+        Self: Sized,
+    {
+        self.get_operand_i(ctx, 0)
+    }
+
+    /// Get the right-hand side operand of this binary arithmetic [Op].
+    fn rhs(&self, ctx: &Context) -> Value
+    where
+        Self: Sized,
+    {
+        self.get_operand_i(ctx, 1)
+    }
 }
 
 #[derive(Error, Debug)]

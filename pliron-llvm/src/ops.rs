@@ -110,7 +110,7 @@ impl ReturnOp {
 
     /// Get the returned value, if it exists.
     pub fn retval(&self, ctx: &Context) -> Option<Value> {
-        self.get_operand(ctx)
+        self.get_operand_opt(ctx)
     }
 }
 
