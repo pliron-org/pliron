@@ -473,11 +473,12 @@ pub trait PassManager {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
         }
         if pre_verify_pass {
-            verify_operation(op, ctx).inspect_err(|_| {
+            verify_operation(op, ctx).inspect_err(|e| {
                 log::debug!(
-                    "IR before pass {} failed verification:\n{}",
+                    "Verification failed before pass {} on {}:\n{}",
                     pass.name(),
-                    op.disp(ctx)
+                    OpDbg { op, ctx },
+                    e.disp(ctx)
                 );
             })?;
         }
@@ -496,11 +497,12 @@ pub trait PassManager {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
         }
         if post_verify_pass {
-            verify_operation(op, ctx).inspect_err(|_| {
+            verify_operation(op, ctx).inspect_err(|e| {
                 log::debug!(
-                    "IR after pass {} failed verification:\n{}",
+                    "Verification failed after pass {} on {}:\n{}",
                     pass.name(),
-                    op.disp(ctx)
+                    OpDbg { op, ctx },
+                    e.disp(ctx)
                 );
             })?;
         }
