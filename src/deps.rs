@@ -17,6 +17,12 @@ mod imp {
     pub mod time {
         pub use std::time::Instant;
     }
+
+    pub mod hash {
+        pub use std::collections::{HashMap, HashSet, hash_map, hash_set};
+        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
+        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
+    }
 }
 
 #[cfg(not(feature = "std"))]
@@ -107,12 +113,12 @@ mod imp {
             }
         }
     }
+
+    pub mod hash {
+        pub use hashbrown::{HashMap, HashSet, hash_map, hash_set};
+        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
+        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
+    }
 }
 
-pub use imp::{backtrace, io, sync, time};
-
-pub mod hash {
-    pub type FxHashMap<K, V> = hashbrown::HashMap<K, V, rustc_hash::FxBuildHasher>;
-    pub type FxHashSet<V> = hashbrown::HashSet<V, rustc_hash::FxBuildHasher>;
-    pub use hashbrown::*;
-}
+pub use imp::{backtrace, hash, io, sync, time};
