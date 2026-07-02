@@ -434,7 +434,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
         } else if d.name == "type" {
             let err = Err(syn::Error::new_spanned(
                     input.ident.clone(),
-                    "The `type` directive takes a single unnamed variable argument to specify the result index".to_string(),
+                    "The `type` directive takes a single unnamed variable argument to specify the result index, or the `operands` directive".to_string(),
                 ));
             if d.args.len() != 1 {
                 return err;
@@ -443,6 +443,22 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 Ok(quote! {
                     let res = self.get_operation().deref(ctx).get_type(#index);
                     ::pliron::printable::Printable::fmt(&res, ctx, state, fmt)?;
+                })
+            } else {
+                err
+            }
+        } else if d.name == "opdtype" {
+            let err = Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    "The `opdtype` directive takes a single unnamed variable argument to specify the result index, or the `operands` directive".to_string(),
+                ));
+            if d.args.len() != 1 {
+                return err;
+            }
+            if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
+                Ok(quote! {
+                    let opd = ::pliron::r#type::Typed::get_type(&self.get_operation().deref(ctx).get_operand(#index), ctx);
+                    ::pliron::printable::Printable::fmt(&opd, ctx, state, fmt)?;
                 })
             } else {
                 err
@@ -597,6 +613,26 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 let types = op.result_types();
                 let types = ::pliron::irfmt::printers::iter_with_sep(types, #sep);
                 ::pliron::printable::Printable::fmt(&types, ctx, state, fmt)?;
+            })
+        } else if d.name == "opdtypes" {
+            let err = Err(syn::Error::new_spanned(
+                input.ident.clone(),
+                "The `opdtypes` directive takes a single argument to specify the separator.
+                    Refer to the documentation for details"
+                    .to_string(),
+            ));
+            if d.args.len() != 1 {
+                return err;
+            }
+            let Elem::Directive(sep) = &d.args[0] else {
+                return err;
+            };
+            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            Ok(quote! {
+                let op = self.get_operation().deref(ctx);
+                let operand_types = op.operands().map(|opd| ::pliron::r#type::Typed::get_type(&opd, ctx));
+                let operand_types = ::pliron::irfmt::printers::iter_with_sep(operand_types, #sep);
+                ::pliron::printable::Printable::fmt(&operand_types, ctx, state, fmt)?;
             })
         } else if d.name == "attr_dict" {
             Ok(quote! {
@@ -1038,6 +1074,7 @@ struct OpParserState {
     regions_temp_parent_op: Option<syn::Ident>,
     operands: ElementSpec<usize>,
     successors: ElementSpec<usize>,
+    operand_types: ElementSpec<usize>,
     result_types: ElementSpec<usize>,
     // The second element specifies attribtues that are specified as optional.
     attributes: (ElementSpec<String>, FxHashSet<String>),
@@ -1358,6 +1395,34 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             } else {
                 err
             }
+        } else if d.name == "opdtype" {
+            let err = Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    "The `type` directive takes a single unnamed variable argument to specify the result index".to_string(),
+                ));
+            if d.args.len() != 1 {
+                return err;
+            }
+            if let Elem::UnnamedVar(UnnamedVar { index, .. }) = &d.args[0] {
+                let opd_type = format_ident!("opd_{}", index);
+                match state.operand_types {
+                    ElementSpec::Individual(ref mut operand_types) => {
+                        operand_types.insert(*index, opd_type.clone());
+                    }
+                    ElementSpec::All(_) => {
+                        return Err(syn::Error::new_spanned(
+                            input.ident.clone(),
+                            "Cannot mix operand types directive with numbered operand types"
+                                .to_string(),
+                        ));
+                    }
+                }
+                Ok(quote! {
+                    ::pliron::irfmt::parsers::type_parser().parse_stream(state_stream).into_result()?.0;
+                })
+            } else {
+                err
+            }
         } else if d.name == "region" {
             let Some(Elem::UnnamedVar(UnnamedVar { index: reg_idx, .. })) = &d.args.first() else {
                 return Err(syn::Error::new_spanned(
@@ -1575,6 +1640,28 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                     .parse_stream(state_stream)
                     .into_result()?
                     .0;
+            })
+        } else if d.name == "opdtypes" {
+            let Some(Elem::Directive(sep)) = &d.args.first() else {
+                return Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    "The `opdtypes` directive takes a single argument to specify the separator.
+                    Refer to the documentation for details"
+                        .to_string(),
+                ));
+            };
+            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            if matches!(&state.operand_types, ElementSpec::Individual(operand_types) if !operand_types.is_empty())
+            {
+                return Err(syn::Error::new_spanned(
+                    input.ident.clone(),
+                    "Cannot mix operand types directive with numbered operand types".to_string(),
+                ));
+            }
+            Ok(quote! {
+                ::pliron::irfmt::parsers::list_parser(#sep, ::pliron::irfmt::parsers::type_parser())
+                    .parse_stream(state_stream)
+                    .into_result()?;
             })
         } else if d.name == "attr_dict" {
             let attr_sets_name = format_ident!("attr_sets");
