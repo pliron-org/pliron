@@ -455,10 +455,14 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   3. The "type" directive specifies that a type must be parsed. It takes one argument,
 ///      which is an unnamed variable `$i` with `i` specifying `result[i]`. This cannot be
 ///      combined with the "types" directive.
-///   4. The "region" directive specifies that a region must be parsed. It takes one argument,
+///   4. The "opdtype" directive specifies that an operand type should be printed. It takes one
+///      argument, which is an unnamed variable `$i` with `i` specifying `operands[i]`. This cannot
+///      be combined with the "opdtypes" directive. Note: Parsed operand types are currently ignored
+///      and not validated against the actual input operands.
+///   5. The "region" directive specifies that a region must be parsed. It takes one argument,
 ///      which is an unnamed variable `$i` with `i` specifying `region[i]`. This cannot be
 ///      combined with the "regions" directive.
-///   5. The <a name="attr"></a> "attr" directive can be used to specify attribute on an `Op` when
+///   6. The <a name="attr"></a> "attr" directive can be used to specify attribute on an `Op` when
 ///      the attribute's rust type is fixed at compile time. It takes two mandatory and two optional
 ///      arguments.
 ///
@@ -478,7 +482,7 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///      here (because the type is statically known, allowing us to be able to parse it),
 ///      thus allowing it to be more succinct. This cannot be combined with the [attr_dict](#attr_dict)
 ///      directive.
-///   6. The "succ" directive specifies an operation's successor. It takes one argument,
+///   7. The "succ" directive specifies an operation's successor. It takes one argument,
 ///      which is an unnamed variable `$i` with `i` specifying `successor[i]`.
 ///   7. The "operands" directive specifies all the operands of an operation. It takes one argument
 ///      which is a directive specifying the separator between operands. This cannot be combined
@@ -488,17 +492,17 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///        2. ``CharNewline(`c`)``: takes a single character argument that will be followed by a newline.
 ///        3. ``Char(`c`)``: takes a single character argument that will be used as separator.
 ///        4. ``CharSpace(`c`)``: takes a single character argument that will be followed by a space.
-///   8. The "successors" directive specifies all the successors of an operation. It takes one argument
+///   9. The "successors" directive specifies all the successors of an operation. It takes one argument
 ///      which is a directive specifying the separator between successors. The separator directive is
 ///      same as that for "operands" above. This cannot be combined with the "succ" directive.
-///   9. The "regions" directive specifies all the regions of an operation. It takes one argument
+///  10. The "regions" directive specifies all the regions of an operation. It takes one argument
 ///      which is a directive specifying the separator between regions. The separator directive is same
 ///      as that for "operands" above. This cannot be combined with the "region" directive.
-///  10. The <a name="attr_dict"></a> "attr_dict" directive specifies an
+///  11. The <a name="attr_dict"></a> "attr_dict" directive specifies an
 ///      [AttributeDict](../pliron/attribute/struct.AttributeDict.html).
 ///      It cannot be combined with any of [attr](#attr), [opt_attr](#opt_attr) directives or
 ///      a named variable (`$name`).
-///  11. The "types" directive specifies all the result types of an operation. It takes one argument
+///  12. The "types" directive specifies all the result types of an operation. It takes one argument
 ///      which is a directive specifying the separator between result types. The separator directive is
 ///      same as that for "operands" above. This cannot be combined with the "type" directive.
 ///  12. The "typesig" directive prints the full type signature of an operation as
