@@ -593,7 +593,7 @@ fn inline_region_on_const_zero() -> Result<()> {
           ^block3v1():
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-      
+              
             }
         }"#]]
     .assert_eq(&printed);
