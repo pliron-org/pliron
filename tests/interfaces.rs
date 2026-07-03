@@ -982,7 +982,7 @@ fn test_outline_printonce_attr() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v2 = test.constant builtin.integer <0: si64> !0;
@@ -1024,7 +1024,7 @@ fn test_outline_printonce_attr() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1_block4v1() !0:
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1_block3v1() !1:
                 c0_v3 = test.constant builtin.integer <0: si64> !2;
@@ -1118,7 +1118,7 @@ fn test_outline_attr_on_block() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1() !0:
                 c0_v0 = test.constant builtin.integer <0: si64> !1;
@@ -1151,7 +1151,7 @@ fn test_outline_attr_on_block() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1_block4v1() !0:
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1_block3v1() !1:
                 c0_v1 = test.constant builtin.integer <0: si64> !2;

@@ -118,7 +118,7 @@ fn replace_c0_with_c1_operand() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -141,7 +141,7 @@ fn replace_c0_with_c1_operand() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c1_v1 = test.constant builtin.integer <1: si64> !0;
@@ -196,7 +196,7 @@ fn test_replace_within_same_def_site() {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v2 = test.constant builtin.integer <0: si64> !0;
@@ -225,7 +225,7 @@ fn test_replace_within_same_def_site() {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v2 = test.constant builtin.integer <0: si64> !0;
@@ -959,7 +959,7 @@ fn print_simple() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1028,7 +1028,7 @@ fn parse_function_with_attrs() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
               [test_on_func_value: builtin.string "func_attr_value"]
             {
               ^entry_block2v1():
@@ -1056,7 +1056,7 @@ fn parse_function_with_attrs() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1_block4v1() !0:
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
               [test_on_func_value: builtin.string "func_attr_value"]
             {
               ^entry_block2v1_block3v1() !1:
@@ -1217,7 +1217,7 @@ fn test_preorder_forward_walk() {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1228,7 +1228,7 @@ fn test_preorder_forward_walk() {
         outlined_attributes:
         !0 = [builtin_debug_info = builtin.debug_info [c0]]
 
-        builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+        builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
         {
           ^entry_block2v1():
             c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1297,7 +1297,7 @@ fn walker_print() {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1308,7 +1308,7 @@ fn walker_print() {
         outlined_attributes:
         !0 = [builtin_debug_info = builtin.debug_info [c0]]
 
-        builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+        builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
         {
           ^entry_block2v1():
             c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1346,7 +1346,7 @@ fn test_postorder_forward_walk() {
     expect![[r#"
         c0_v0 = test.constant builtin.integer <0: si64> !0
         test.return c0_v0
-        builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+        builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
         {
           ^entry_block2v1():
             c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1355,7 +1355,7 @@ fn test_postorder_forward_walk() {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1564,7 +1564,7 @@ fn block_inline_attrs_print() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1() [block_test_attr: builtin.string "test_value"]:
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1643,7 +1643,7 @@ fn block_multiple_inline_attrs() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1() [attr1: builtin.string "value1", attr2: builtin.string "value2"]:
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -1690,7 +1690,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         builtin.module @bar 
         {
           ^block_0_0_block2v1() !0:
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block_1_0_block1v1() [block_attr: builtin.string "hello"] !1:
                 c0_op_2_0_res0_v0 = test.constant builtin.integer <0: si64> !2;
@@ -1727,7 +1727,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         builtin.module @bar 
         {
           ^block_0_0_block2v1_block2v1() !0:
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block_1_0_block1v1_block1v1() [block_attr: builtin.string "hello"] !1:
                 c0_op_2_0_res0_v0 = test.constant builtin.integer <0: si64> !2;

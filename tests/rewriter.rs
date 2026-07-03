@@ -210,7 +210,7 @@ fn replace_c0_with_c1() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 v2 = test.constant builtin.integer <2: si64>;
@@ -355,7 +355,7 @@ fn scoped_rewriter_test() -> Result<()> {
         {
           ^block1v1():
             v1 = test.global () [] [test_global_op_const_val: builtin.integer <0: si64>, sym_name: builtin.identifier global_0]: <() -> (test.ptr )>;
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 v2 = test.load v1 ;
@@ -498,7 +498,7 @@ fn split_block_after_const_zero() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -573,7 +573,7 @@ fn inline_region_on_const_zero() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
                 c0_v0 = test.constant builtin.integer <0: si64> !0;
@@ -591,9 +591,9 @@ fn inline_region_on_const_zero() -> Result<()> {
         builtin.module @bar 
         {
           ^block3v1():
-            builtin.func @foo: builtin.function <()->(builtin.integer si64)> 
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-              
+      
             }
         }"#]]
     .assert_eq(&printed);

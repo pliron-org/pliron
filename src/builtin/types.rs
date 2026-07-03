@@ -12,7 +12,7 @@ use crate::{
     irfmt::parsers::int_parser,
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
-    r#type::{Type, TypeHandle, TypedHandle},
+    r#type::{Type, TypeHandle, TypeSig, TypedHandle},
     utils::apfloat::{self, GetSemantics, Semantics},
 };
 
@@ -112,28 +112,27 @@ impl Printable for IntegerType {
 ///
 /// See MLIR's [FunctionType](https://mlir.llvm.org/docs/Dialects/Builtin/#functiontype).
 ///
-#[pliron_type(
-    name = "builtin.function",
-    format = "`<` `(` vec($inputs, CharSpace(`,`)) `)` `->` `(`vec($results, CharSpace(`,`)) `)` `>`",
-    generate_get = true,
-    verifier = "succ"
-)]
+#[pliron_type(name = "builtin.function", format = "`<` $0 `>`", verifier = "succ")]
 #[derive(Hash, PartialEq, Eq, Debug)]
-pub struct FunctionType {
-    /// Function arguments / inputs.
-    inputs: Vec<TypeHandle>,
-    /// Function results / outputs.
-    results: Vec<TypeHandle>,
-}
+pub struct FunctionType(TypeSig);
 
 impl FunctionType {
+    /// Get a Function type.
+    pub fn get(
+        ctx: &Context,
+        arguments: Vec<TypeHandle>,
+        results: Vec<TypeHandle>,
+    ) -> TypedHandle<Self> {
+        FunctionType::register_instance(FunctionType(TypeSig { arguments, results }), ctx)
+    }
+
     /// Get, if it already exists, a Function type.
     pub fn get_existing(
         ctx: &Context,
-        inputs: Vec<TypeHandle>,
+        arguments: Vec<TypeHandle>,
         results: Vec<TypeHandle>,
     ) -> Option<TypedHandle<Self>> {
-        Type::get_instance(FunctionType { inputs, results }, ctx)
+        Type::get_instance(FunctionType(TypeSig { arguments, results }), ctx)
     }
 }
 
@@ -141,12 +140,12 @@ impl FunctionType {
 impl FunctionTypeInterface for FunctionType {
     /// Get a reference to the function input / argument types.
     fn arg_types(&self) -> Vec<TypeHandle> {
-        self.inputs.clone()
+        self.0.arguments.clone()
     }
 
     /// Get a reference to the function result / output types.
     fn res_types(&self) -> Vec<TypeHandle> {
-        self.results.clone()
+        self.0.results.clone()
     }
 }
 

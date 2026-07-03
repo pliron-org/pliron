@@ -635,8 +635,9 @@ pub static TYPE_INTERFACE_VERIFIERS_MAP: LazyLock<
     FxHashMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(get_type_interface_verifiers()));
 
-/// A convenient struct to hold a type signature, i.e., a list of input types and a list of result types.
+/// A convenient struct to hold a type signature.
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 #[format("`(` vec($arguments, CharSpace(`,`)) `)` ` -> ` `(`vec($results, CharSpace(`,`)) `)`")]
 pub struct TypeSig {
     pub arguments: Vec<TypeHandle>,
