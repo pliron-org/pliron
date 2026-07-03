@@ -47,7 +47,6 @@ use thiserror::Error;
 
 use crate::{
     attribute::AttributeDict,
-    builtin::{type_interfaces::FunctionTypeInterface, types::FunctionType},
     combine::{
         Parser,
         parser::{self, char::spaces},
@@ -63,7 +62,7 @@ use crate::{
             block_opd_parser, delimited_list_parser, location, process_parsed_ssa_defs, spaced,
             ssa_opd_parser, zero_or_more_parser,
         },
-        printers::{functional_type, iter_with_sep},
+        printers::iter_with_sep,
     },
     location::{Located, Location},
     operation::{Operation, verify_operation},
@@ -72,7 +71,7 @@ use crate::{
     region::Region,
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
-    r#type::Typed,
+    r#type::{TypeSig, Typed},
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -379,10 +378,10 @@ pub fn canonical_syntax_print(
             .map(|succ| "^".to_string() + &succ.unique_name(ctx)),
         sep,
     );
-    let op_type = functional_type(
-        iter_with_sep(op.operands().map(|opd| opd.get_type(ctx)), sep),
-        iter_with_sep(op.results().map(|res| res.get_type(ctx)), sep),
-    );
+    let op_type = TypeSig {
+        arguments: op.operands().map(|opd| opd.get_type(ctx)).collect(),
+        results: op.results().map(|res| res.get_type(ctx)).collect(),
+    };
     let regions = iter_with_sep(op.regions(), printable::ListSeparator::Newline);
 
     if op.get_num_results() != 0 {
@@ -425,7 +424,12 @@ pub fn canonical_syntax_parse<'a, T: Op>(
         .and(spaces().with(delimited_list_parser('[', ']', ',', block_opd_parser())))
         .and(spaces().with(AttributeDict::parser(())))
         .skip(spaced(token(':')))
-        .and((location(), FunctionType::parser(())))
+        .and((
+            location(),
+            token('<')
+                .with(TypeSig::parser(()))
+                .skip(spaced(token('>'))),
+        ))
         .then(
             move |(((operands, successors), attr_dict), (fty_loc, fty))| {
                 let results = results.clone();
@@ -433,22 +437,20 @@ pub fn canonical_syntax_parse<'a, T: Op>(
                 combine::parser(move |parsable_state: &mut StateStream<'a>| {
                     let results = results.clone();
                     let ctx = &mut parsable_state.state.ctx;
-                    let results_types = fty.deref(ctx).res_types().to_vec();
-                    let operands_types = fty.deref(ctx).arg_types().to_vec();
-                    if results_types.len() != results.len() {
+                    if fty.results.len() != results.len() {
                         input_err!(
                             fty_loc.clone(),
                             CanonicalSyntaxParseError::ResultsMismatch {
-                                num_res_ty: results_types.len(),
+                                num_res_ty: fty.results.len(),
                                 num_res: results.len()
                             }
                         )?
                     }
-                    if operands.len() != operands_types.len() {
+                    if operands.len() != fty.arguments.len() {
                         input_err!(
                             fty_loc.clone(),
                             CanonicalSyntaxParseError::OperandsMismatch {
-                                num_opd_ty: operands_types.len(),
+                                num_opd_ty: fty.arguments.len(),
                                 num_opd: operands.len()
                             }
                         )?
@@ -456,7 +458,7 @@ pub fn canonical_syntax_parse<'a, T: Op>(
                     let opr = Operation::new(
                         ctx,
                         T::get_concrete_op_info(),
-                        results_types,
+                        fty.results.clone(),
                         operands.clone(),
                         successors.clone(),
                         0,

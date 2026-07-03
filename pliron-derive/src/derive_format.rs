@@ -607,18 +607,9 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             }
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
-                let operand_types = ::pliron::irfmt::printers::iter_with_sep(
-                    op.operands().map(|opd| ::pliron::r#type::Typed::get_type(&opd, ctx)),
-                    ::pliron::printable::ListSeparator::CharSpace(','),
-                );
-                let result_types = ::pliron::irfmt::printers::iter_with_sep(
-                    op.result_types(),
-                    ::pliron::printable::ListSeparator::CharSpace(','),
-                );
-                let typesig = ::pliron::irfmt::printers::functional_type(
-                    operand_types,
-                    result_types,
-                );
+                let arguments = op.operand_types(ctx).collect();
+                let results = op.result_types().collect();
+                let typesig = ::pliron::r#type::TypeSig { arguments, results };
                 ::pliron::printable::Printable::fmt(&typesig, ctx, state, fmt)?;
             })
         } else if d.name == "attr_dict" {
@@ -1541,27 +1532,10 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
             state.result_types = ElementSpec::All(result_types_var_name.clone());
             Ok(quote! {
-                let _operand_types = ::pliron::irfmt::parsers::delimited_list_parser(
-                    '(',
-                    ')',
-                    ',',
-                    ::pliron::irfmt::parsers::type_parser(),
-                )
-                .parse_stream(state_stream)
-                .into_result()?
-                .0;
-                ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string("->"))
-                    .parse_stream(state_stream)
-                    .into_result()?;
-                let #result_types_var_name = ::pliron::irfmt::parsers::delimited_list_parser(
-                    '(',
-                    ')',
-                    ',',
-                    ::pliron::irfmt::parsers::type_parser(),
-                )
-                .parse_stream(state_stream)
-                .into_result()?
-                .0;
+                let type_sig =
+                    ::pliron::r#type::TypeSig::parser(())
+                    .parse_stream(state_stream).into_result()?.0;
+                let #result_types_var_name = type_sig.results;
             })
         } else if d.name == "successors" {
             let Some(Elem::Directive(sep)) = &d.args.first() else {

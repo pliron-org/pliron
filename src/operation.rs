@@ -304,6 +304,14 @@ impl Operation {
         self.results.iter().map(|res| res.ty)
     }
 
+    /// Get an iterator over the operand types of this operation.
+    pub fn operand_types<'a>(
+        &'a self,
+        ctx: &'a Context,
+    ) -> impl Iterator<Item = TypeHandle> + Clone {
+        self.operands().map(|opd| opd.get_type(ctx))
+    }
+
     /// Get number of operands.
     pub fn get_num_operands(&self) -> usize {
         self.operands.len()

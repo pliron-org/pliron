@@ -72,20 +72,3 @@ pub fn enclosed<P: Printable>(left: &'static str, right: &'static str, p: P) -> 
         },
     )
 }
-
-/// Print a function type with inputs and results like `(i32, i32) -> (i64)`
-pub fn functional_type<'a>(
-    inputs: impl Printable + 'a,
-    results: impl Printable + 'a,
-) -> impl Printable + 'a {
-    PrinterFn(
-        move |ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>| {
-            write!(
-                f,
-                "({}) -> ({})",
-                inputs.print(ctx, state),
-                results.print(ctx, state)
-            )
-        },
-    )
-}
