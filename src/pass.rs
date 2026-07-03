@@ -14,6 +14,7 @@
 //!    constrain where a pass is allowed to run.
 //! 5. [`Analysis`] and [`AnalysisManager`]: Provides analyses caching with
 //!    preservation and invalidation support.
+//! 6. [`PMConfig`] provides configuration that can be set via the [AnalysisManager].
 //!
 //! # Usage
 //!

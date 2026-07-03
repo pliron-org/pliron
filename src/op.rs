@@ -392,7 +392,7 @@ pub fn canonical_syntax_print(
 
     write!(
         f,
-        "{} ({}) [{}] {}: {}",
+        "{} ({}) [{}] {}: <{}>",
         opid.disp(ctx),
         operands.disp(ctx),
         successors.disp(ctx),

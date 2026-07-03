@@ -481,7 +481,8 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///   6. The "succ" directive specifies an operation's successor. It takes one argument,
 ///      which is an unnamed variable `$i` with `i` specifying `successor[i]`.
 ///   7. The "operands" directive specifies all the operands of an operation. It takes one argument
-///      which is a directive specifying the separator between operands.
+///      which is a directive specifying the separator between operands. This cannot be combined
+///      with using unnamed variables `$i` to refer to operands.
 ///      The following directives are supported:
 ///        1. `NewLine`: takes no argument, and specifies a newline to be used as list separator.
 ///        2. ``CharNewline(`c`)``: takes a single character argument that will be followed by a newline.
@@ -500,7 +501,11 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///  11. The "types" directive specifies all the result types of an operation. It takes one argument
 ///      which is a directive specifying the separator between result types. The separator directive is
 ///      same as that for "operands" above. This cannot be combined with the "type" directive.
-///  12. The <a name="opt_attr"></a> "opt_attr" directive specifies an optional attribute on an `Op`.
+///  12. The "typesig" directive prints the full type signature of an operation as
+///      `(operand_types) -> (result_types)`. It takes no arguments. When parsing, the operand
+///      types are consumed and ignored; only the result types are used to build the operation.
+///      This cannot be combined with the "type" or "types" directives.
+///  13. The <a name="opt_attr"></a> "opt_attr" directive specifies an optional attribute on an `Op`.
 ///      It takes two or more arguments, which are same as those of the [attr](#attr) directive.
 ///      This cannot be combined with the [attr_dict](#attr_dict) directive.
 ///
