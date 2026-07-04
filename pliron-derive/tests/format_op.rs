@@ -309,7 +309,7 @@ fn opdtypes() {
         .expect("OneResultTwoOperands parser failed");
 
     expect![[r#"
-        builtin.func @testfunc: builtin.function <()->()> 
+        builtin.func @testfunc: builtin.function <() -> ()> 
         {
           ^entry_block1v1() !0:
             res0_v0 = test.one_result_zero_operands : builtin.integer si64 !1;
@@ -402,7 +402,7 @@ fn opdtype() {
         .expect("OneResultTwoOperands parser failed");
 
     expect![[r#"
-        builtin.func @testfunc: builtin.function <()->()> 
+        builtin.func @testfunc: builtin.function <() -> ()> 
         {
           ^entry_block1v1() !0:
             res0_v0 = test.one_result_zero_operands : builtin.integer si64 !1;
