@@ -2,7 +2,7 @@
 
 use core::panic;
 
-use alloc::vec::Vec;
+use alloc::{rc::Rc, vec::Vec};
 use pliron_derive::op_interface;
 
 use crate::{
@@ -501,25 +501,26 @@ fn rename_blocks(
     default_def_map: &mut FxHashMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
 ) -> Result<()> {
-    type RenameWorkItem = (Ptr<BasicBlock>, ReachingDefMap);
+    type RenameWorkItem = (Ptr<BasicBlock>, Rc<ReachingDefMap>);
     let mut worklist: Vec<RenameWorkItem> = Vec::new();
-    worklist.push((entry_block, reaching_def_map.clone()));
+    worklist.push((entry_block, Rc::new(reaching_def_map.clone())));
 
     while let Some((block, incoming_reaching_def_map)) = worklist.pop() {
         let outgoing_reaching_def_map = process_rename_block(
             ctx,
             block,
             new_phis_in_block,
-            &incoming_reaching_def_map,
+            incoming_reaching_def_map.as_ref(),
             default_def_map,
             alloc_candidates,
         )?;
+        let outgoing_reaching_def_map = Rc::new(outgoing_reaching_def_map);
 
         let mut children: Vec<Ptr<BasicBlock>> = dom_tree.children(&block).collect();
         // Reverse so pop() preserves the original child iteration order.
         children.reverse();
         for child in children {
-            worklist.push((child, outgoing_reaching_def_map.clone()));
+            worklist.push((child, Rc::clone(&outgoing_reaching_def_map)));
         }
     }
 
