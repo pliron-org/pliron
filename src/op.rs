@@ -419,6 +419,16 @@ pub fn canonical_syntax_parse<'a, T: Op>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
 ) -> ParseResult<'a, OpObj> {
+    canonical_syntax_parse_impl(state_stream, results, T::get_concrete_op_info())
+        .map(|(op, c)| (T::wrap_operation(op), c))
+}
+
+#[inline(never)]
+pub fn canonical_syntax_parse_impl<'a>(
+    state_stream: &mut StateStream<'a>,
+    results: Vec<(Identifier, Location)>,
+    concrete_op: ConcreteOpInfo,
+) -> ParseResult<'a, Ptr<Operation>> {
     // Results and opid have already been parsed. Continue after that.
     let mut without_regions = delimited_list_parser('(', ')', ',', ssa_opd_parser())
         .and(spaces().with(delimited_list_parser('[', ']', ',', block_opd_parser())))
@@ -457,7 +467,7 @@ pub fn canonical_syntax_parse<'a, T: Op>(
                     }
                     let opr = Operation::new(
                         ctx,
-                        T::get_concrete_op_info(),
+                        concrete_op,
                         fty.results.clone(),
                         operands.clone(),
                         successors.clone(),
@@ -474,7 +484,6 @@ pub fn canonical_syntax_parse<'a, T: Op>(
     zero_or_more_parser(Region::parser(op))
         .parse_stream(state_stream)
         .into_result()?;
-    let op = T::wrap_operation(op);
     Ok(op).into_parse_result()
 }
 
