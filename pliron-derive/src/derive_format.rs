@@ -450,7 +450,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
         } else if d.name == "opdtype" {
             let err = Err(syn::Error::new_spanned(
                     input.ident.clone(),
-                    "The `opdtype` directive takes a single unnamed variable argument to specify the result index".to_string(),
+                    "The `opdtype` directive takes a single unnamed variable argument to specify the operand index".to_string(),
                 ));
             if d.args.len() != 1 {
                 return err;
@@ -1411,9 +1411,10 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
         } else if d.name == "opdtype" {
             let err = Err(syn::Error::new_spanned(
-                    input.ident.clone(),
-                    "The `type` directive takes a single unnamed variable argument to specify the result index".to_string(),
-                ));
+                input.ident.clone(),
+                "The `opdtype` directive takes a single unnamed variable argument to specify the operand index"
+                    .to_string(),
+            ));
             if d.args.len() != 1 {
                 return err;
             }
