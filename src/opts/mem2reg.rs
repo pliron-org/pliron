@@ -372,28 +372,31 @@ fn note_erased_ops(recorder: &mut Recorder, erased: &mut FxHashSet<Ptr<Operation
     }
 }
 
-/// Rename uses of allocation pointers to SSA values via a dominator-tree walk,
-/// replacing loads/stores with reaching definitions and filling phi operands in
-/// successor branch operations.
-fn rename_block(
+/// For each promotable allocation pointer, stores the current reaching definition.
+type ReachingDefMap = FxHashMap<Value, Option<Value>>;
+
+/// Process one block during SSA rename for mem2reg.
+///
+/// Builds per-candidate reaching-definition stacks from the incoming map,
+/// applies promotion rewrites in the block, fills successor phi operands,
+/// and returns the updated outgoing reaching definition for each candidate.
+fn process_rename_block(
     ctx: &mut Context,
     block: Ptr<BasicBlock>,
-    dom_tree: &DomTree<Ptr<Region>, Context>,
     new_phis_in_block: &FxHashMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
-    reaching_def_map: &FxHashMap<Value, Vec<Value>>,
+    incoming_reaching_def_map: &ReachingDefMap,
     default_def_map: &mut FxHashMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
-) -> Result<()> {
-    // We only care about the top of the reaching definition stack for each candidate.
-    let mut reaching_def_map = reaching_def_map
+) -> Result<ReachingDefMap> {
+    let mut reaching_def_map = incoming_reaching_def_map
         .iter()
-        .map(|(&ptr, stack)| {
+        .map(|(&ptr, maybe_def)| {
             (ptr, {
-                let mut new_stack = Vec::new();
-                if let Some(&val) = stack.last() {
-                    new_stack.push(val);
+                let mut stack = Vec::new();
+                if let Some(def) = *maybe_def {
+                    stack.push(def);
                 }
-                new_stack
+                stack
             })
         })
         .collect::<FxHashMap<_, _>>();
@@ -478,23 +481,52 @@ fn rename_block(
         }
     }
 
-    // Recurse into dominated children.
-    for child in dom_tree.children(&block) {
-        rename_block(
+    let outgoing_reaching_def_map = reaching_def_map
+        .into_iter()
+        .map(|(ptr, stack)| (ptr, stack.last().copied()))
+        .collect();
+
+    Ok(outgoing_reaching_def_map)
+}
+
+/// Rename uses of allocation pointers to SSA values across the dominator tree,
+/// replacing loads/stores with reaching definitions and filling successor phi
+/// operands for each processed block.
+fn rename_blocks(
+    ctx: &mut Context,
+    entry_block: Ptr<BasicBlock>,
+    dom_tree: &DomTree<Ptr<Region>, Context>,
+    new_phis_in_block: &FxHashMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
+    reaching_def_map: &ReachingDefMap,
+    default_def_map: &mut FxHashMap<Value, Value>,
+    alloc_candidates: &[AllocCandidate],
+) -> Result<()> {
+    type RenameWorkItem = (Ptr<BasicBlock>, ReachingDefMap);
+    let mut worklist: Vec<RenameWorkItem> = Vec::new();
+    worklist.push((entry_block, reaching_def_map.clone()));
+
+    while let Some((block, incoming_reaching_def_map)) = worklist.pop() {
+        let outgoing_reaching_def_map = process_rename_block(
             ctx,
-            child,
-            dom_tree,
+            block,
             new_phis_in_block,
-            &reaching_def_map,
+            &incoming_reaching_def_map,
             default_def_map,
             alloc_candidates,
         )?;
+
+        let mut children: Vec<Ptr<BasicBlock>> = dom_tree.children(&block).collect();
+        // Reverse so pop() preserves the original child iteration order.
+        children.reverse();
+        for child in children {
+            worklist.push((child, outgoing_reaching_def_map.clone()));
+        }
     }
 
     Ok(())
 }
 
-/// Perform memory to register promotion on regions (recursively) within root.
+/// Perform memory to register promotion on regions within root.
 pub fn mem2reg(
     root: Ptr<Operation>,
     ctx: &mut Context,
@@ -566,10 +598,10 @@ pub fn mem2reg(
             }
         }
 
-        // Initialize reaching def map for this region's candidates. The stacks will be mutated during renaming.
-        let reaching_def_map: FxHashMap<Value, Vec<Value>> = alloc_candidates
+        // Initialize reaching def map for this region's candidates.
+        let reaching_def_map: ReachingDefMap = alloc_candidates
             .iter()
-            .map(|c| (c.alloc_info.ptr, Vec::new()))
+            .map(|c| (c.alloc_info.ptr, None))
             .collect();
         let mut default_def_map: FxHashMap<Value, Value> = FxHashMap::default();
 
@@ -578,7 +610,7 @@ pub fn mem2reg(
             .deref(ctx)
             .get_head()
             .expect("No entry block in region");
-        rename_block(
+        rename_blocks(
             ctx,
             entry_block,
             dom_tree,
