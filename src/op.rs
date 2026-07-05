@@ -342,6 +342,7 @@ pub mod statics {
 #[cfg(not(target_family = "wasm"))]
 pub use statics::OP_INTERFACE_VERIFIERS;
 
+#[doc(hidden)]
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
