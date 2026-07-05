@@ -283,6 +283,52 @@ fn two_results_one_operand() {
     assert!(verify_operation(res, ctx).is_ok());
 }
 
+#[format_op("$0 `, ` $1 `: (` opdtypes(CharSpace(`,`)) `) -> (` types(CharSpace(`,`)) `)`")]
+#[def_op("test.one_result_two_operands")]
+#[verify_succ]
+struct OneResultTwoOperandsOp {}
+
+#[test]
+fn opdtypes() {
+    let ctx = &mut Context::new();
+
+    let printed = "builtin.func @testfunc: builtin.function <() -> ()> {
+          ^entry():
+            res0 = test.one_result_zero_operands : builtin.integer si64;
+            res1 = test.one_result_two_operands res0, res0 : (builtin.integer si64, builtin.integer si64) -> (builtin.integer si64);
+            test.return res1
+        }";
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+
+    let (res, _) = Operation::top_level_parser()
+        .parse(state_stream)
+        .expect("OneResultTwoOperands parser failed");
+
+    expect![[r#"
+        builtin.func @testfunc: builtin.function <() -> ()> 
+        {
+          ^entry_block1v1() !0:
+            res0_v0 = test.one_result_zero_operands : builtin.integer si64 !1;
+            res1_v1 = test.one_result_two_operands res0_v0, res0_v0: (builtin.integer si64, builtin.integer si64) -> (builtin.integer si64) !2;
+            test.return res1_v1 !3
+        } !4
+
+        outlined_attributes:
+        !0 = @[<in-memory>: line: 2, column: 11], []
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1]]
+        !3 = @[<in-memory>: line: 5, column: 13], []
+        !4 = @[<in-memory>: line: 1, column: 1], []
+    "#]]
+    .assert_eq(&res.disp(ctx).to_string());
+
+    assert!(verify_operation(res, ctx).is_ok());
+}
+
 #[format_op("$0 ` : ` typesig")]
 #[def_op("test.one_result_one_operand_typesig")]
 #[derive_op_interface_impl(NOpdsInterface<1>, NResultsInterface<1>, OneResultInterface)]
@@ -322,6 +368,52 @@ fn one_result_one_operand_typesig() {
         !0 = @[<in-memory>: line: 2, column: 11], []
         !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1]]
+        !3 = @[<in-memory>: line: 5, column: 13], []
+        !4 = @[<in-memory>: line: 1, column: 1], []
+    "#]]
+    .assert_eq(&res.disp(ctx).to_string());
+
+    assert!(verify_operation(res, ctx).is_ok());
+}
+
+#[format_op("$0 ` : (` opdtype($0) `)`")]
+#[def_op("test.zero_results_one_operand")]
+#[verify_succ]
+struct ZeroResultsOneOperandOp {}
+
+#[test]
+fn opdtype() {
+    let ctx = &mut Context::new();
+
+    let printed = "builtin.func @testfunc: builtin.function <() -> ()> {
+          ^entry():
+            res0 = test.one_result_zero_operands : builtin.integer si64;
+            test.zero_results_one_operand res0 : (builtin.integer si64);
+            test.return res0
+        }";
+
+    let state_stream = state_stream_from_iterator(
+        printed.chars(),
+        parsable::State::new(ctx, location::Source::InMemory),
+    );
+
+    let (res, _) = Operation::top_level_parser()
+        .parse(state_stream)
+        .expect("OneResultTwoOperands parser failed");
+
+    expect![[r#"
+        builtin.func @testfunc: builtin.function <() -> ()> 
+        {
+          ^entry_block1v1() !0:
+            res0_v0 = test.one_result_zero_operands : builtin.integer si64 !1;
+            test.zero_results_one_operand res0_v0 : (builtin.integer si64) !2;
+            test.return res0_v0 !3
+        } !4
+
+        outlined_attributes:
+        !0 = @[<in-memory>: line: 2, column: 11], []
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
