@@ -119,7 +119,7 @@ pub(crate) fn interface_impl(
                     (::core::any::TypeId::of::<#rust_ty>(), <#rust_ty as #intr_name>::__all_verifiers);
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::InventoryWrapper(&INTERFACE_VERIFIER)
+                ::pliron::InventoryWrapper(&INTERFACE_VERIFIER)
             }
         };
     };

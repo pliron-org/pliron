@@ -339,7 +339,7 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::InventoryWrapper;
+    use crate::InventoryWrapper;
 
     ::pliron::inventory::collect!(InventoryWrapper<LazyLock<DictKeyId>>);
 
@@ -376,8 +376,8 @@ where
     Verifier: Eq + Hash + Clone,
 {
     let mut grouped = FxHashMap::default();
-    for lazy in interface_verifiers {
-        let (id, all_verifiers_for_interface) = lazy;
+    for entry in interface_verifiers {
+        let (id, all_verifiers_for_interface) = entry;
         grouped
             .entry(id.clone())
             .and_modify(|verifiers: &mut Vec<AllVerifiers>| {
@@ -466,7 +466,7 @@ macro_rules! dict_key {
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::InventoryWrapper(&$decl)
+                ::pliron::InventoryWrapper(&$decl)
             }
         };
         $(#[$outer])*
@@ -501,7 +501,7 @@ macro_rules! context_registration {
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::InventoryWrapper(&CONTEXT_REGISTRATION)
+                ::pliron::InventoryWrapper(&CONTEXT_REGISTRATION)
             }
         };
     };

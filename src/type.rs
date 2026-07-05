@@ -600,6 +600,7 @@ pub type TypeInterfaceAllVerifiers = fn() -> Vec<TypeInterfaceVerifier>;
 /// (specifically the verifiers (including super verifiers) for that interface).
 type TypeInterfaceVerifierInfo = (core::any::TypeId, TypeInterfaceAllVerifiers);
 
+#[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
@@ -607,33 +608,35 @@ pub mod statics {
     #[::pliron::linkme::distributed_slice]
     pub static TYPE_INTERFACE_VERIFIERS: [TypeInterfaceVerifierInfo] = [..];
 
-    pub fn get_type_interface_verifiers() -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo>
-    {
+    pub(super) fn get_type_interface_verifiers()
+    -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo> {
         TYPE_INTERFACE_VERIFIERS.iter()
     }
 }
+#[doc(hidden)]
+#[cfg(not(target_family = "wasm"))]
+pub use statics::TYPE_INTERFACE_VERIFIERS;
 
+#[doc(hidden)]
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::InventoryWrapper;
+    use crate::InventoryWrapper;
 
     ::pliron::inventory::collect!(InventoryWrapper<TypeInterfaceVerifierInfo>);
 
-    pub fn get_type_interface_verifiers() -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo>
-    {
+    pub(super) fn get_type_interface_verifiers()
+    -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo> {
         ::pliron::inventory::iter::<InventoryWrapper<TypeInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
-
-pub use statics::*;
 
 #[doc(hidden)]
 /// A map from every [Type] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static TYPE_INTERFACE_VERIFIERS_MAP: LazyLock<
     FxHashMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(get_type_interface_verifiers()));
+> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_type_interface_verifiers()));
 
 /// A convenient struct to hold a type signature.
 

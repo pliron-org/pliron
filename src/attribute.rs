@@ -464,6 +464,7 @@ pub type AttrInterfaceAllVerifiers = fn() -> Vec<AttrInterfaceVerifier>;
 /// (specifically the verifiers (including super verifiers) for that interface).
 type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
 
+#[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
@@ -471,30 +472,32 @@ pub mod statics {
     #[::pliron::linkme::distributed_slice]
     pub static ATTR_INTERFACE_VERIFIERS: [AttrInterfaceVerifierInfo] = [..];
 
-    pub fn get_attr_interface_verifiers() -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo>
-    {
+    pub(super) fn get_attr_interface_verifiers()
+    -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo> {
         ATTR_INTERFACE_VERIFIERS.iter()
     }
 }
+#[doc(hidden)]
+#[cfg(not(target_family = "wasm"))]
+pub use statics::ATTR_INTERFACE_VERIFIERS;
 
+#[doc(hidden)]
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::InventoryWrapper;
+    use crate::InventoryWrapper;
 
     ::pliron::inventory::collect!(InventoryWrapper<AttrInterfaceVerifierInfo>);
 
-    pub fn get_attr_interface_verifiers() -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo>
-    {
+    pub(super) fn get_attr_interface_verifiers()
+    -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo> {
         ::pliron::inventory::iter::<InventoryWrapper<AttrInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
-
-pub use statics::*;
 
 #[doc(hidden)]
 /// A map from every [Attribute] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static ATTR_INTERFACE_VERIFIERS_MAP: LazyLock<
     FxHashMap<core::any::TypeId, Vec<AttrInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(get_attr_interface_verifiers()));
+> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_attr_interface_verifiers()));

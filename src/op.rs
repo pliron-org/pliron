@@ -325,6 +325,7 @@ pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
 /// (specifically the verifiers (including super verifiers) for that interface).
 type OpInterfaceVerifierInfo = (core::any::TypeId, OpInterfaceAllVerifiers);
 
+#[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
@@ -332,31 +333,34 @@ pub mod statics {
     #[::pliron::linkme::distributed_slice]
     pub static OP_INTERFACE_VERIFIERS: [OpInterfaceVerifierInfo] = [..];
 
-    pub fn get_op_interface_verifiers() -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
+    pub(super) fn get_op_interface_verifiers()
+    -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
         OP_INTERFACE_VERIFIERS.iter()
     }
 }
+#[doc(hidden)]
+#[cfg(not(target_family = "wasm"))]
+pub use statics::OP_INTERFACE_VERIFIERS;
 
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::InventoryWrapper;
+    use crate::InventoryWrapper;
 
     ::pliron::inventory::collect!(InventoryWrapper<OpInterfaceVerifierInfo>);
 
-    pub fn get_op_interface_verifiers() -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
+    pub(super) fn get_op_interface_verifiers()
+    -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
         ::pliron::inventory::iter::<InventoryWrapper<OpInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
-
-pub use statics::*;
 
 #[doc(hidden)]
 /// A map from every [Op] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<
     FxHashMap<core::any::TypeId, Vec<OpInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(get_op_interface_verifiers()));
+> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
 
 /// Printer for an [Op] in canonical syntax.
 /// `res_1, res_2, ... res_n =
