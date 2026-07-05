@@ -504,8 +504,17 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///  12. The "typesig" directive prints the full type signature of an operation as
 ///      `(operand_types) -> (result_types)`. It takes no arguments. When parsing, the operand
 ///      types are consumed and ignored; only the result types are used to build the operation.
-///      This cannot be combined with the "type" or "types" directives.
-///  13. The <a name="opt_attr"></a> "opt_attr" directive specifies an optional attribute on an `Op`.
+///      This cannot be combined with any of "type", "types", "opdtype" or "opdtypes" directives.
+///  13. The "opdtype" directive specifies that an operand type should be printed. It takes one
+///      argument, which is an unnamed variable `$i` with `i` specifying `operands[i]`. This cannot
+///      be combined with the "opdtypes" or "typesig" directives. **Note**: Parsed operand types
+///      are ignored, and not validated against actual operand types.
+///  14. The "opdtypes" directive specifies all the operand types of an operation. It takes one
+///      argument which is a directive specifying the separator between operand types. The separator
+///      directive is same as that for "operands" above. This cannot be combined with the "opdtype"
+///      or "typesig" directives. **Note**: Parsed operand types are ignored and not validated against
+///      actual operand types.
+///  15. The <a name="opt_attr"></a> "opt_attr" directive specifies an optional attribute on an `Op`.
 ///      It takes two or more arguments, which are same as those of the [attr](#attr) directive.
 ///      This cannot be combined with the [attr_dict](#attr_dict) directive.
 ///
