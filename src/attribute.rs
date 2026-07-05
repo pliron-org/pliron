@@ -467,13 +467,12 @@ type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
-    use crate::std_deps::sync::LazyLock;
 
     #[::pliron::linkme::distributed_slice]
-    pub static ATTR_INTERFACE_VERIFIERS: [LazyLock<AttrInterfaceVerifierInfo>] = [..];
+    pub static ATTR_INTERFACE_VERIFIERS: [AttrInterfaceVerifierInfo] = [..];
 
-    pub fn get_attr_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<AttrInterfaceVerifierInfo>> {
+    pub fn get_attr_interface_verifiers() -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo>
+    {
         ATTR_INTERFACE_VERIFIERS.iter()
     }
 }
@@ -481,13 +480,13 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::LazyLockWrapper;
+    use crate::utils::inventory::InventoryWrapper;
 
-    ::pliron::inventory::collect!(LazyLockWrapper<AttrInterfaceVerifierInfo>);
+    ::pliron::inventory::collect!(InventoryWrapper<AttrInterfaceVerifierInfo>);
 
-    pub fn get_attr_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<AttrInterfaceVerifierInfo>> {
-        ::pliron::inventory::iter::<LazyLockWrapper<AttrInterfaceVerifierInfo>>().map(|llw| llw.0)
+    pub fn get_attr_interface_verifiers() -> impl Iterator<Item = &'static AttrInterfaceVerifierInfo>
+    {
+        ::pliron::inventory::iter::<InventoryWrapper<AttrInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
 

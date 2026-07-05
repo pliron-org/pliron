@@ -605,10 +605,10 @@ pub mod statics {
     use super::*;
 
     #[::pliron::linkme::distributed_slice]
-    pub static TYPE_INTERFACE_VERIFIERS: [LazyLock<TypeInterfaceVerifierInfo>] = [..];
+    pub static TYPE_INTERFACE_VERIFIERS: [TypeInterfaceVerifierInfo] = [..];
 
-    pub fn get_type_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<TypeInterfaceVerifierInfo>> {
+    pub fn get_type_interface_verifiers() -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo>
+    {
         TYPE_INTERFACE_VERIFIERS.iter()
     }
 }
@@ -616,13 +616,13 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::LazyLockWrapper;
+    use crate::utils::inventory::InventoryWrapper;
 
-    ::pliron::inventory::collect!(LazyLockWrapper<TypeInterfaceVerifierInfo>);
+    ::pliron::inventory::collect!(InventoryWrapper<TypeInterfaceVerifierInfo>);
 
-    pub fn get_type_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<TypeInterfaceVerifierInfo>> {
-        ::pliron::inventory::iter::<LazyLockWrapper<TypeInterfaceVerifierInfo>>().map(|llw| llw.0)
+    pub fn get_type_interface_verifiers() -> impl Iterator<Item = &'static TypeInterfaceVerifierInfo>
+    {
+        ::pliron::inventory::iter::<InventoryWrapper<TypeInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
 
