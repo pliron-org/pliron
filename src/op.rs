@@ -423,8 +423,9 @@ pub fn canonical_syntax_parse<'a, T: Op>(
         .map(|(op, c)| (T::wrap_operation(op), c))
 }
 
+/// We keep the non-generic impl of [canonical_syntax_parse] separate to reduce code bloat
 #[inline(never)]
-pub fn canonical_syntax_parse_impl<'a>(
+fn canonical_syntax_parse_impl<'a>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
     concrete_op: ConcreteOpInfo,
