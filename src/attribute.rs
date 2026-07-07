@@ -209,13 +209,9 @@ pub trait Attribute: Printable + Verify + Downcast + Sync + Send + DynClone + De
     where
         Self: Sized + Parsable<Arg = (), Parsed = A>,
     {
-        let attr_parser: AttrParserFn = Box::new(|&()| {
-            combine::parser(move |parsable_state: &mut StateStream<'_>| {
-                Self::parse(parsable_state, ())
-                    .map(|(attr, r)| -> (AttrObj, _) { (Box::new(attr), r) })
-            })
-            .boxed()
-        });
+        let attr_parser: AttrParserFn = |parsable_state, &()| {
+            Self::parse(parsable_state, ()).map(|(attr, r)| -> (AttrObj, _) { (Box::new(attr), r) })
+        };
         let attrid = Self::get_attr_id_static();
         Dialect::register(ctx, &attrid.dialect).add_attr(attrid.clone(), attr_parser);
     }
@@ -228,11 +224,7 @@ pub type AttrObj = Box<dyn Attribute>;
 
 /// A storable function pointer to parse a specific [Attribute].
 /// The [Attribute]'s [Dialect] maps an [AttrId] to such a parser.
-pub(crate) type AttrParserFn = Box<
-    for<'a> fn(
-        &'a (),
-    ) -> Box<dyn Parser<StateStream<'a>, Output = AttrObj, PartialState = ()> + 'a>,
->;
+pub(crate) type AttrParserFn = for<'a> fn(&mut StateStream<'a>, &'a ()) -> ParseResult<'a, AttrObj>;
 
 impl PartialEq for AttrObj {
     fn eq(&self, other: &Self) -> bool {
@@ -287,7 +279,7 @@ impl Parsable for AttrObj {
                         attr_id.disp(state.ctx)
                     )?
                 };
-                attr_parser(&()).parse_stream(parsable_state).into_result()
+                attr_parser(parsable_state, &())
             })
         });
 

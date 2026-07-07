@@ -59,6 +59,11 @@ pub fn location<'a>() -> Box<dyn Parser<StateStream<'a>, Output = Location, Part
 }
 
 /// A parser combinator to parse [TypeId](crate::type::TypeId) followed by the type's contents.
+pub fn type_parse<'a>(state_stream: &mut StateStream<'a>) -> ParseResult<'a, TypeHandle> {
+    TypeHandle::parse(state_stream, ())
+}
+
+/// A parser combinator to parse [TypeId](crate::type::TypeId) followed by the type's contents.
 pub fn type_parser<'a>()
 -> Box<dyn Parser<StateStream<'a>, Output = TypeHandle, PartialState = ()> + 'a> {
     TypeHandle::parser(())
@@ -179,6 +184,11 @@ pub fn quoted_string_parser<'a>()
         quoted_string_parse(parsable_state, ())
     })
     .boxed()
+}
+
+/// A parser combinator to parse [AttrId](crate::attribute::AttrId) followed by the attribute's contents.
+pub fn attr_parse<'a>(state_stream: &mut StateStream<'a>) -> ParseResult<'a, AttrObj> {
+    AttrObj::parse(state_stream, ())
 }
 
 /// A parser combinator to parse [AttrId](crate::attribute::AttrId) followed by the attribute's contents.

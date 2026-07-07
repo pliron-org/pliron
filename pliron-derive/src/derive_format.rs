@@ -726,8 +726,7 @@ trait ParsableBuilder<State: Default> {
             let variant_name_parsed = quote! {
                 let variant_name_parsed =
                     ::pliron::alloc::string::ToString::to_string(
-                        &::pliron::identifier::Identifier::parser(()).
-                            parse_stream(state_stream).into_result()?.0
+                        &::pliron::identifier::Identifier::parse(state_stream, ())?.0
                     );
             };
 
@@ -847,7 +846,7 @@ trait ParsableBuilder<State: Default> {
         };
         let name = format_ident!("{}", name);
         Ok(quote! {
-            let #name = <#ty>::parser(()).parse_stream(state_stream).into_result()?.0;
+            let #name = <#ty>::parse(state_stream, ())?.0;
         })
     }
 
@@ -871,7 +870,7 @@ trait ParsableBuilder<State: Default> {
         })?;
         let name = format_ident!("field_at_{}", index);
         Ok(quote! {
-            let #name = <#ty>::parser(()).parse_stream(state_stream).into_result()?.0;
+            let #name = <#ty>::parse(state_stream, ())?.0;
         })
     }
 
@@ -1066,7 +1065,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             use ::pliron::op::Op;
             use ::pliron::operation::Operation;
             use ::pliron::irfmt::parsers::
-                {process_parsed_ssa_defs, ssa_opd_parser, block_opd_parser, attr_parser};
+                {process_parsed_ssa_defs, ssa_opd_parser, block_opd_parser};
         };
 
         // Is region parsing specified as part of the syntax?
@@ -1301,10 +1300,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
         }
 
         Ok(quote! {
-            let #attr_name_ident = attr_parser()
-                .parse_stream(state_stream)
-                .into_result()?
-                .0;
+            let #attr_name_ident = ::pliron::irfmt::parsers::attr_parse(state_stream)?.0;
         })
     }
 
@@ -1326,7 +1322,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
         }
         Ok(quote! {
-            let #opd_name = ssa_opd_parser().parse_stream(state_stream).into_result()?.0;
+            let #opd_name = ::pliron::irfmt::parsers::ssa_opd_parse(state_stream, ())?.0;
         })
     }
 
@@ -1338,11 +1334,10 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
         if d.name == "canonical" {
             state.is_canonical = true;
             Ok(quote! {
-                ::pliron::op::canonical_syntax_parser::<Self>(
+                ::pliron::op::canonical_syntax_parse::<Self>(
+                    state_stream,
                     arg,
                 )
-                .parse_stream(state_stream)
-                .into()
             })
         } else if d.name == "type" {
             let err = Err(syn::Error::new_spanned(
@@ -1367,7 +1362,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                     }
                 }
                 Ok(quote! {
-                    let #res_type = ::pliron::irfmt::parsers::type_parser().parse_stream(state_stream).into_result()?.0;
+                    let #res_type = ::pliron::irfmt::parsers::type_parse(state_stream)?.0;
                 })
             } else {
                 err
@@ -1482,7 +1477,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 }
             }
             Ok(quote! {
-                let #succ_name = block_opd_parser().parse_stream(state_stream).into_result()?.0;
+                let #succ_name = ::pliron::irfmt::parsers::block_opd_parse(state_stream, ())?.0;
             })
         } else if d.name == "regions" {
             let Some(Elem::Directive(sep)) = &d.args.first() else {
@@ -1533,8 +1528,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             state.result_types = ElementSpec::All(result_types_var_name.clone());
             Ok(quote! {
                 let type_sig =
-                    ::pliron::r#type::TypeSig::parser(())
-                    .parse_stream(state_stream).into_result()?.0;
+                    ::pliron::r#type::TypeSig::parse(state_stream, ())?.0;
                 let #result_types_var_name = type_sig.results;
             })
         } else if d.name == "successors" {
@@ -1624,7 +1618,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             state.attributes.0 = ElementSpec::All(attr_sets_name.clone());
             Ok(quote! {
                 let #attr_sets_name =
-                    ::pliron::attribute::AttributeDict::parser(()).parse_stream(state_stream).into_result()?.0;
+                    ::pliron::attribute::AttributeDict::parse(state_stream, ())?.0;
             })
         } else {
             unimplemented!("Unknown directive {}", d.name)

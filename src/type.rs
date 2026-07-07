@@ -162,13 +162,10 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
     where
         Self: Sized + Parsable<Arg = (), Parsed = TypedHandle<Self>>,
     {
-        let ptr_parser: TypeParserFn = Box::new(|&()| {
-            combine::parser(move |parsable_state: &mut StateStream<'_>| {
-                Self::parse(parsable_state, ())
-                    .map(|(typtr, r)| -> (TypeHandle, _) { (typtr.to_handle(), r) })
-            })
-            .boxed()
-        });
+        let ptr_parser: TypeParserFn = |parsable_state, &()| {
+            Self::parse(parsable_state, ())
+                .map(|(typtr, r)| -> (TypeHandle, _) { (typtr.to_handle(), r) })
+        };
         let typeid = Self::get_type_id_static();
         Dialect::register(ctx, &typeid.dialect.clone()).add_type(typeid, ptr_parser);
     }
@@ -177,12 +174,8 @@ impl_downcast!(Type);
 
 /// A storable function pointer to parse a specific [Type].
 /// The [Type]'s [Dialect] maps a [TypeId] to such a parser.
-pub(crate) type TypeParserFn = Box<
-    for<'a> fn(
-        &'a (),
-    )
-        -> Box<dyn Parser<StateStream<'a>, Output = TypeHandle, PartialState = ()> + 'a>,
->;
+pub(crate) type TypeParserFn =
+    for<'a> fn(&mut StateStream<'a>, &'a ()) -> ParseResult<'a, TypeHandle>;
 
 /// Trait for IR entities that have a direct type.
 pub trait Typed {
@@ -388,7 +381,7 @@ impl Parsable for TypeHandle {
                 let Some(type_parser) = dialect.types.get(&type_id) else {
                     input_err!(loc.clone(), "Unregistered type {}", type_id.disp(state.ctx))?
                 };
-                type_parser(&()).parse_stream(parsable_state).into()
+                type_parser(parsable_state, &())
             })
         });
 
