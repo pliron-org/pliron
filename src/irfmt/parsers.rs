@@ -276,6 +276,14 @@ pub fn block_opd_parser<'a>()
         .boxed()
 }
 
+#[inline(never)]
+pub fn parsable_parser<'a, Arg: Clone + 'static, Output: 'a>(
+    parse: fn(&mut StateStream<'a>, Arg) -> ParseResult<'a, Output>,
+    args: Arg,
+) -> Box<dyn Parser<StateStream<'a>, Output = Output, PartialState = ()> + 'a> {
+    combine::parser(move |state_stream| parse(state_stream, args.clone())).boxed()
+}
+
 /// After an [Operation] is fully parsed, for each result,
 /// set its name and register it as an SSA definition.
 pub fn process_parsed_ssa_defs(
