@@ -22,13 +22,14 @@ extern crate std;
 pub use linkme;
 // Export combine as pliron::combine for procedural macros.
 pub use combine;
-// Export log as pliron::log for procedural macros.
-pub use log;
 // Export dyn_clone as pliron::dyn_clone for procedural macros.
 pub use dyn_clone;
 // Export inventory as pliron::inventory for procedural macros.
 #[cfg(target_family = "wasm")]
 pub use inventory;
+/// A wrapper type that allows collecting any type with [pliron::inventory::collect!].
+#[cfg(target_family = "wasm")]
+pub struct InventoryWrapper<T: 'static>(pub &'static T);
 
 pub mod analyses;
 pub mod attribute;

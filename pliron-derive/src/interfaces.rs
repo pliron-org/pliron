@@ -115,23 +115,11 @@ pub(crate) fn interface_impl(
     let verifiers_entry = quote! {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]
-            static INTERFACE_VERIFIER: ::pliron::std_deps::sync::LazyLock<(::core::any::TypeId, (#all_verifiers_fn_type))> =
-                ::pliron::std_deps::sync::LazyLock::new(|| {
-                    ::pliron::log::trace!(
-                        target: "interface_registration",
-                        "{}({:?}) for type {}({:?})",
-                        ::core::any::type_name::<dyn #intr_name>(),
-                        ::core::any::TypeId::of::<dyn #intr_name>(),
-                        ::core::any::type_name::<#rust_ty>(),
-                        ::core::any::TypeId::of::<#rust_ty>(),
-                    );
-                    (::core::any::TypeId::of::<#rust_ty>(),
-                        <#rust_ty as #intr_name>::__all_verifiers)
-                });
-
+            static INTERFACE_VERIFIER: (::core::any::TypeId, (#all_verifiers_fn_type)) =
+                    (::core::any::TypeId::of::<#rust_ty>(), <#rust_ty as #intr_name>::__all_verifiers);
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::LazyLockWrapper(&INTERFACE_VERIFIER)
+                ::pliron::InventoryWrapper(&INTERFACE_VERIFIER)
             }
         };
     };

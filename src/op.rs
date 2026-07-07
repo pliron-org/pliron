@@ -321,40 +321,43 @@ pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
 /// (specifically the verifiers (including super verifiers) for that interface).
 type OpInterfaceVerifierInfo = (core::any::TypeId, OpInterfaceAllVerifiers);
 
+#[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
 
     #[::pliron::linkme::distributed_slice]
-    pub static OP_INTERFACE_VERIFIERS: [LazyLock<OpInterfaceVerifierInfo>] = [..];
+    pub static OP_INTERFACE_VERIFIERS: [OpInterfaceVerifierInfo] = [..];
 
-    pub fn get_op_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<OpInterfaceVerifierInfo>> {
+    pub(super) fn get_op_interface_verifiers()
+    -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
         OP_INTERFACE_VERIFIERS.iter()
     }
 }
+#[doc(hidden)]
+#[cfg(not(target_family = "wasm"))]
+pub use statics::OP_INTERFACE_VERIFIERS;
 
+#[doc(hidden)]
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::LazyLockWrapper;
+    use crate::InventoryWrapper;
 
-    ::pliron::inventory::collect!(LazyLockWrapper<OpInterfaceVerifierInfo>);
+    ::pliron::inventory::collect!(InventoryWrapper<OpInterfaceVerifierInfo>);
 
-    pub fn get_op_interface_verifiers()
-    -> impl Iterator<Item = &'static LazyLock<OpInterfaceVerifierInfo>> {
-        ::pliron::inventory::iter::<LazyLockWrapper<OpInterfaceVerifierInfo>>().map(|llw| llw.0)
+    pub(super) fn get_op_interface_verifiers()
+    -> impl Iterator<Item = &'static OpInterfaceVerifierInfo> {
+        ::pliron::inventory::iter::<InventoryWrapper<OpInterfaceVerifierInfo>>().map(|llw| llw.0)
     }
 }
-
-pub use statics::*;
 
 #[doc(hidden)]
 /// A map from every [Op] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<
     FxHashMap<core::any::TypeId, Vec<OpInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(get_op_interface_verifiers()));
+> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
 
 /// Printer for an [Op] in canonical syntax.
 /// `res_1, res_2, ... res_n =
@@ -415,6 +418,17 @@ pub fn canonical_syntax_parse<'a, T: Op>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
 ) -> ParseResult<'a, OpObj> {
+    canonical_syntax_parse_impl(state_stream, results, T::get_concrete_op_info())
+        .map(|(op, c)| (T::wrap_operation(op), c))
+}
+
+/// We keep the non-generic impl of [canonical_syntax_parse] separate to reduce code bloat
+#[inline(never)]
+fn canonical_syntax_parse_impl<'a>(
+    state_stream: &mut StateStream<'a>,
+    results: Vec<(Identifier, Location)>,
+    concrete_op: ConcreteOpInfo,
+) -> ParseResult<'a, Ptr<Operation>> {
     // Results and opid have already been parsed. Continue after that.
     let mut without_regions = delimited_list_parser('(', ')', ',', ssa_opd_parser())
         .and(spaces().with(delimited_list_parser('[', ']', ',', block_opd_parser())))
@@ -453,7 +467,7 @@ pub fn canonical_syntax_parse<'a, T: Op>(
                     }
                     let opr = Operation::new(
                         ctx,
-                        T::get_concrete_op_info(),
+                        concrete_op,
                         fty.results.clone(),
                         operands.clone(),
                         successors.clone(),
@@ -470,7 +484,6 @@ pub fn canonical_syntax_parse<'a, T: Op>(
     zero_or_more_parser(Region::parser(op))
         .parse_stream(state_stream)
         .into_result()?;
-    let op = T::wrap_operation(op);
     Ok(op).into_parse_result()
 }
 

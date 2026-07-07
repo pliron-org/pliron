@@ -339,19 +339,20 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
-    use crate::utils::inventory::LazyLockWrapper;
+    use crate::InventoryWrapper;
 
-    ::pliron::inventory::collect!(LazyLockWrapper<DictKeyId>);
+    ::pliron::inventory::collect!(InventoryWrapper<LazyLock<DictKeyId>>);
 
     pub fn get_dict_key_ids() -> impl Iterator<Item = &'static LazyLock<DictKeyId>> {
-        ::pliron::inventory::iter::<LazyLockWrapper<DictKeyId>>().map(|llw| llw.0)
+        ::pliron::inventory::iter::<InventoryWrapper<LazyLock<DictKeyId>>>().map(|llw| llw.0)
     }
 
-    ::pliron::inventory::collect!(LazyLockWrapper<ContextRegistration>);
+    ::pliron::inventory::collect!(InventoryWrapper<LazyLock<ContextRegistration>>);
 
     pub fn get_context_registrations()
     -> impl Iterator<Item = &'static LazyLock<ContextRegistration>> {
-        ::pliron::inventory::iter::<LazyLockWrapper<ContextRegistration>>().map(|llw| llw.0)
+        ::pliron::inventory::iter::<InventoryWrapper<LazyLock<ContextRegistration>>>()
+            .map(|llw| llw.0)
     }
 }
 
@@ -367,7 +368,7 @@ pub static DICT_KEYS_VERIFIER: LazyLock<Result<()>> = LazyLock::new(verify_dict_
 /// This helper preserves interface dependency order (as returned by each `__all_verifiers`
 /// function) while deduplicating verifier function pointers.
 pub(crate) fn collect_deduped_interface_verifiers<Id, AllVerifiers, Verifier>(
-    interface_verifiers: impl Iterator<Item = &'static LazyLock<(Id, AllVerifiers)>>,
+    interface_verifiers: impl Iterator<Item = &'static (Id, AllVerifiers)>,
 ) -> FxHashMap<Id, Vec<Verifier>>
 where
     Id: Eq + Hash + Clone + 'static,
@@ -375,8 +376,8 @@ where
     Verifier: Eq + Hash + Clone,
 {
     let mut grouped = FxHashMap::default();
-    for lazy in interface_verifiers {
-        let (id, all_verifiers_for_interface) = &**lazy;
+    for entry in interface_verifiers {
+        let (id, all_verifiers_for_interface) = entry;
         grouped
             .entry(id.clone())
             .and_modify(|verifiers: &mut Vec<AllVerifiers>| {
@@ -465,7 +466,7 @@ macro_rules! dict_key {
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::LazyLockWrapper(&$decl)
+                ::pliron::InventoryWrapper(&$decl)
             }
         };
         $(#[$outer])*
@@ -500,7 +501,7 @@ macro_rules! context_registration {
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                ::pliron::utils::inventory::LazyLockWrapper(&CONTEXT_REGISTRATION)
+                ::pliron::InventoryWrapper(&CONTEXT_REGISTRATION)
             }
         };
     };
