@@ -879,10 +879,8 @@ impl Parsable for Operation {
                     let Some(opid_parser) = dialect.ops.get(&opid) else {
                         input_err!(loc.clone(), "Unregistered Op {}", opid.disp(state.ctx))?
                     };
-                    let op = opid_parser(&(), results.clone())
-                        .parse_stream(parsable_state)
-                        .map(|op| op.get_operation())
-                        .into();
+                    let op = opid_parser(parsable_state, results.clone())
+                        .map(|(op, c)| (op.get_operation(), c));
 
                     if let Ok((op, _)) = op {
                         // Set the location of the operation to be from where we just parsed it.
