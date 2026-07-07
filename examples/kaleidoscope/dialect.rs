@@ -6,9 +6,9 @@ use pliron::{
         attributes::{IdentifierAttr, IntegerAttr, TypeAttr},
         op_interfaces::{
             AtLeastNOpdsInterface, AtLeastNResultsInterface, IsTerminatorInterface, NOpdsInterface,
-            NRegionsInterface, NResultsInterface, OneResultInterface, OperandNOfType,
-            ResultNOfType, SameOperandsAndResultType, SameOperandsType, SameResultsType,
-            SingleBlockRegionInterface,
+            NRegionsInterface, NResultsInterface, OneOpdInterface, OneRegionInterface,
+            OneResultInterface, OperandNOfType, ResultNOfType, SameOperandsAndResultType,
+            SameOperandsType, SameResultsType, SingleBlockRegionInterface,
         },
         types::{IntegerType, Signedness},
     },
@@ -31,7 +31,7 @@ use pliron_llvm::types::PointerType;
 #[pliron_op(
     name = "kaleidoscope.constant",
     format = "attr($value, $IntegerAttr) ` : ` type($0)",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     attributes = (value: IntegerAttr),
     verifier = "succ",
 )]
@@ -64,23 +64,6 @@ impl ConstantOp {
 }
 // ANCHOR_END: constant_op_new
 
-// ANCHOR: binop_kind_attr
-/// Encodes which AST binary operator a `kaleidoscope.binop` represents.
-#[pliron_attr(name = "kaleidoscope.binop_kind", format, verifier = "succ")]
-#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
-pub enum BinOpKind {
-    Add,
-    Sub,
-    Mul,
-    Lt,
-    Gt,
-    Le,
-    Ge,
-    Eq,
-    Ne,
-}
-// ANCHOR_END: binop_kind_attr
-
 /// Declares mutable storage for AST declarations (`var name` / `var name = ...`).
 ///
 /// The op result is always an LLVM pointer slot, and the declared value type is
@@ -92,7 +75,6 @@ pub enum BinOpKind {
     interfaces = [
         NOpdsInterface<0>,
         OneResultInterface,
-        NResultsInterface<1>,
         ResultNOfType<0, PointerType>
     ],
     attributes = (var_type: TypeAttr),
@@ -133,9 +115,8 @@ impl DeclOp {
     name = "kaleidoscope.load",
     format = "$0",
     interfaces = [
-        NOpdsInterface<1>,
+        OneOpdInterface,
         OneResultInterface,
-        NResultsInterface<1>
     ],
     verifier = "succ",
 )]
@@ -193,6 +174,23 @@ impl StoreOp {
     }
 }
 
+// ANCHOR: binop_kind_attr
+/// Encodes which AST binary operator a `kaleidoscope.binop` represents.
+#[pliron_attr(name = "kaleidoscope.binop_kind", format, verifier = "succ")]
+#[derive(PartialEq, Eq, Clone, Copy, Debug, Hash)]
+pub enum BinOpKind {
+    Add,
+    Sub,
+    Mul,
+    Lt,
+    Gt,
+    Le,
+    Ge,
+    Eq,
+    Ne,
+}
+// ANCHOR_END: binop_kind_attr
+
 /// Lowers all AST binary expressions into one op with a kind attribute.
 // ANCHOR: binop_decl
 #[pliron_op(
@@ -203,7 +201,6 @@ impl StoreOp {
         AtLeastNResultsInterface<1>,
         NOpdsInterface<2>,
         OneResultInterface,
-        NResultsInterface<1>,
         SameOperandsType,
         SameResultsType,
         SameOperandsAndResultType
@@ -319,7 +316,7 @@ impl IfOp {
     interfaces = [
         OperandNOfType<0, PointerType>,
         NResultsInterface<0>,
-        NRegionsInterface<1>,
+        OneRegionInterface,
         SingleBlockRegionInterface
     ],
     verifier = "succ",
@@ -400,7 +397,7 @@ impl Verify for ReturnOp {
 #[pliron_op(
     name = "kaleidoscope.call",
     format = "`@`attr($callee, $IdentifierAttr) `(` operands(CharSpace(`,`)) `)` : type($0)",
-    interfaces = [NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     attributes = (callee: IdentifierAttr),
     verifier = "succ",
 )]

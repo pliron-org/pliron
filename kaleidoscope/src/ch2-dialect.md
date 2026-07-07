@@ -99,8 +99,8 @@ macro. In addition to adding the `op: Ptr<Operation>` field (that we saw above),
 this macro fills up boilerplate code required for implementing pliron's
 `Op` trait.
 
-The `pliron_op` macro has one mandatory argument: A string specifying the dialect
-and opcode name (e.g., `"kaleidoscope.constant"`).
+The `pliron_op` macro has one mandatory field `name`, which requires a string value
+specifying the dialect and opcode name (e.g., `"kaleidoscope.constant"`).
 
 We then specify, using the `attributes` field in the macro, that this operation has
 one attribute named `value` of type `IntegerAttr`.
@@ -114,8 +114,9 @@ should be printed first, followed by the result type (after a colon).
 Defining a syntax amounts to automatically deriving the `Printable` and `Parsable`
 traits for the operation, which are used by pliron's IR printer and parser respectively.
 
-The `format` field can have its string argument skipped, in which case a canonical
-(default) syntax is used.
+The `format` field can have its string value skipped, in which case a canonical
+(default) syntax is used. If you want to manually implement the `Printable` and `Parsable`
+traits for your operation, you can skip the `format` field entirely.
 
 Next, we have the `interfaces` field in the macro. Interfaces are Rust
 traits that are annotated with the `#[op_interface]` macro. Interfaces allow
@@ -148,11 +149,24 @@ The `PointerType` is taken from pliron's LLVM dialect.
 ### BinOp: Binary Operations
 
 `BinOp` has two operands (the left-hand side and right-hand side of the binary operation)
-and one result (the computed value). The specific binary operation (e.g., add, subtract,
-multiply, divide) is captured as an attribute (`BinOpKind`).
+and one result (the computed value).
 
 ```rust
 {{#include ../../examples/kaleidoscope/dialect.rs:binop_decl}}
+```
+
+> **Note**: An attentive reader may observe that we specify `AtLeastNOpdsInterface<1>` and
+`NOpdsInterface<2>` interfaces, which seems counter-intuitive because the latter subsumes
+the former, so why specify both? This is because `SameOperandsType`
+(which also we've specified) requires `AtLeastNOpdsInterface<1>` as a super-interface.
+`SameOperandsType` provides a convenience method `get_operand_type` which requires
+that there is at least one operand. A similar argument holds for `AtLeastNResultsInterface<1>`.
+
+The specific binary operation (e.g., add, subtract,
+multiply, divide) is captured as an attribute (`BinOpKind`).
+
+```rust
+{{#include ../../examples/kaleidoscope/dialect.rs:binop_kind_attr}}
 ```
 
 Here we show how one can define convenience methods on the typed wrapper (Op):

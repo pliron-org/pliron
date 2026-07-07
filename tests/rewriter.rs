@@ -265,7 +265,7 @@ pub struct PointerType;
 #[pliron_op(
     name = "test.load",
     format = "$0 ` ` : ` type($0)",
-    interfaces = [OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>],
+    interfaces = [OneResultInterface, OneOpdInterface],
     verifier = "succ",
 )]
 pub struct LoadOp;

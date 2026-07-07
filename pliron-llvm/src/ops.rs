@@ -9,11 +9,11 @@ use pliron::{
         attributes::{BoolAttr, IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{
             self, ATTR_KEY_SYM_NAME, AtLeastNOpdsInterface, AtLeastNResultsInterface,
-            AtMostNOpdsInterface, AtMostNRegionsInterface, AtMostOneRegionInterface,
-            BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
-            IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
-            OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
-            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            AtMostNRegionsInterface, AtMostOneRegionInterface, BranchOpInterface, CallOpCallable,
+            CallOpInterface, IsTerminatorInterface, IsolatedFromAboveInterface, NOpdsInterface,
+            NResultsInterface, NSuccsInterface, OneOpdInterface, OneResultInterface,
+            OneSuccInterface, OperandSegmentInterface, OptionalOpdInterface,
+            SameOperandsAndResultType, SameOperandsType, SameResultsType,
             SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
@@ -91,7 +91,7 @@ use super::{
 #[pliron_op(
     name = "llvm.return",
     format = "operands(CharSpace(`,`))",
-    interfaces = [IsTerminatorInterface, NResultsInterface<0>, AtMostNOpdsInterface<1>, OptionalOpdInterface],
+    interfaces = [IsTerminatorInterface, NResultsInterface<0>, OptionalOpdInterface],
 )]
 pub struct ReturnOp;
 impl ReturnOp {
@@ -192,7 +192,7 @@ macro_rules! new_int_bin_op_with_format {
             name = $op_id,
             format = $format,
             interfaces = [
-                OneResultInterface, NResultsInterface<1>, SameOperandsType, SameResultsType,
+                OneResultInterface, SameOperandsType, SameResultsType,
                 AtLeastNOpdsInterface<1>, AtLeastNResultsInterface<1>,
                 SameOperandsAndResultType, BinArithOp, IntBinArithOp, NOpdsInterface<2>
             ],
@@ -340,7 +340,7 @@ pub enum ICmpOpVerifyErr {
 #[pliron_op(
     name = "llvm.icmp",
     format = "$0 ` <` attr($icmp_predicate, $ICmpPredicateAttr) `> ` $1 ` : ` type($0)",
-    interfaces = [SameOperandsType, AtLeastNOpdsInterface<1>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [SameOperandsType, AtLeastNOpdsInterface<1>, OneResultInterface],
     attributes = (icmp_predicate: ICmpPredicateAttr)
 )]
 pub struct ICmpOp;
@@ -452,8 +452,6 @@ pub enum AllocaOpVerifyErr {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         AlignableOpInterface,
     ],
     operands = (array_size: IntegerType),
@@ -517,8 +515,6 @@ impl AllocaOp {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         CastOpInterface
     ],
     verifier = "succ"
@@ -551,8 +547,6 @@ pub enum IntToPtrOpErr {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         CastOpInterface,
      ],
       operands = (arg: IntegerType),
@@ -585,8 +579,6 @@ pub enum PtrToIntOpErr {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         CastOpInterface,
     ],
     operands = (arg: PointerType),
@@ -612,8 +604,6 @@ pub struct PtrToIntOp;
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         CastOpInterface,
     ],
     operands = (arg: PointerType),
@@ -1253,7 +1243,7 @@ pub enum GetElementPtrOpErr {
 #[pliron_op(
     name = "llvm.gep",
     format = "`<` attr($gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` attr($gep_indices, $GepIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     operands = (src_ptr, dynamic_indices),
     results = (_: PointerType),
     attributes = (gep_src_elem_type: TypeAttr, gep_indices: GepIndicesAttr)
@@ -1417,8 +1407,6 @@ pub enum LoadOpVerifyErr {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         AlignableOpInterface,
     ],
     operands = (address: PointerType),
@@ -1501,7 +1489,6 @@ impl StoreOp {
     format = "attr($llvm_rmw_kind, $AtomicRmwKindAttr) ` ` $0 `, ` $1 ` ` opt_attr($llvm_rmw_syncscope, $StringAttr, label($syncscope)) attr($llvm_rmw_ordering, $AtomicOrderingAttr) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
-        NResultsInterface<1>,
         NOpdsInterface<2>,
     ],
     operands = (ptr: PointerType, val),
@@ -1564,7 +1551,6 @@ impl AtomicRmwOp {
     format = "$0 `, ` $1 `, ` $2 ` ` opt_attr($llvm_cas_syncscope, $StringAttr, label($syncscope)) attr($llvm_cas_success_ordering, $AtomicOrderingAttr) ` ` attr($llvm_cas_failure_ordering, $AtomicOrderingAttr) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
-        NResultsInterface<1>,
         NOpdsInterface<3>,
     ],
     operands = (ptr: PointerType, cmp, new_val),
@@ -1651,8 +1637,6 @@ impl FenceOp {
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         AlignableOpInterface,
     ],
     operands = (ptr: PointerType),
@@ -1750,7 +1734,7 @@ impl AtomicStoreOp {
 #[pliron_op(
     name = "llvm.inline_asm",
     format = "attr($inline_asm_template, $StringAttr) `, ` attr($inline_asm_constraints, $StringAttr) ` convergent = ` attr($inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     attributes = (
         inline_asm_template: StringAttr,
         inline_asm_constraints: StringAttr,
@@ -1801,7 +1785,7 @@ impl InlineAsmOp {
 /// | `res` | LLVM type |
 #[pliron_op(
     name = "llvm.call",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     attributes = (llvm_call_callee: IdentifierAttr, llvm_call_fastmath_flags: FastmathFlagsAttr)
 )]
 pub struct CallOp;
@@ -2088,7 +2072,7 @@ impl Verify for CallOp {
 #[pliron_op(
     name = "llvm.constant",
     format = "`<` $llvm_constant_value `>` ` : ` type($0)",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     attributes = (llvm_constant_value),
 )]
 pub struct ConstantOp;
@@ -2146,7 +2130,7 @@ impl Verify for ConstantOp {
 #[pliron_op(
     name = "llvm.undef",
     format = "`: ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>],
+    interfaces = [OneResultInterface, NOpdsInterface<0>],
     verifier = "succ"
 )]
 pub struct UndefOp;
@@ -2176,7 +2160,7 @@ impl UndefOp {
 #[pliron_op(
     name = "llvm.poison",
     format = "`: ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     verifier = "succ"
 )]
 pub struct PoisonOp;
@@ -2211,7 +2195,7 @@ impl PoisonOp {
 #[pliron_op(
     name = "llvm.freeze",
     format = "$0 ` : ` type($0)",
-    interfaces = [OneOpdInterface, OneResultInterface, NOpdsInterface<1>, NResultsInterface<1>],
+    interfaces = [OneOpdInterface, OneResultInterface],
     verifier = "succ"
 )]
 pub struct FreezeOp;
@@ -2243,7 +2227,7 @@ impl FreezeOp {
 #[pliron_op(
     name = "llvm.zero",
     format = "`: ` type($0)",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     verifier = "succ"
 )]
 pub struct ZeroOp;
@@ -2503,7 +2487,7 @@ impl Parsable for GlobalOp {
 #[pliron_op(
     name = "llvm.addressof",
     format = "`@` attr($global_name, $IdentifierAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>],
+    interfaces = [OneResultInterface, NOpdsInterface<0>],
     results = (_: PointerType),
     attributes = (global_name: IdentifierAttr),
 )]
@@ -2697,7 +2681,7 @@ fn integer_cast_verify(op: &Operation, ctx: &Context, cmp: ICmpPredicateAttr) ->
 #[pliron_op(
     name = "llvm.sext",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
 )]
 pub struct SExtOp;
 impl Verify for SExtOp {
@@ -2728,8 +2712,6 @@ impl Verify for SExtOp {
         OneOpdInterface,
         NNegFlag,
         CastOpWithNNegInterface,
-        NResultsInterface<1>,
-        NOpdsInterface<1>
     ]
 )]
 pub struct ZExtOp;
@@ -2758,7 +2740,7 @@ impl Verify for ZExtOp {
 #[pliron_op(
     name = "llvm.fpext",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags]
 )]
 pub struct FPExtOp;
 
@@ -2812,7 +2794,7 @@ pub enum FloatCastVerifyErr {
 #[pliron_op(
     name = "llvm.trunc",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
 )]
 pub struct TruncOp;
 
@@ -2838,7 +2820,7 @@ impl Verify for TruncOp {
 #[pliron_op(
     name = "llvm.fptrunc",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags]
 )]
 pub struct FPTruncOp;
 
@@ -2907,7 +2889,7 @@ fn cast_element_types(
 #[pliron_op(
     name = "llvm.fptosi",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
 )]
 pub struct FPToSIOp;
 
@@ -2949,7 +2931,7 @@ impl Verify for FPToSIOp {
 #[pliron_op(
     name = "llvm.fptoui",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
 )]
 pub struct FPToUIOp;
 
@@ -2991,7 +2973,7 @@ impl Verify for FPToUIOp {
 #[pliron_op(
     name = "llvm.sitofp",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
 )]
 pub struct SIToFPOp;
 
@@ -3039,8 +3021,6 @@ impl Verify for SIToFPOp {
         OneOpdInterface,
         CastOpWithNNegInterface,
         NNegFlag,
-        NResultsInterface<1>,
-        NOpdsInterface<1>
     ]
 )]
 pub struct UIToFPOp;
@@ -3084,7 +3064,7 @@ impl Verify for UIToFPOp {
 #[pliron_op(
     name = "llvm.insert_value",
     format = "$0 attr($insert_value_indices, $InsertExtractValueIndicesAttr) `, ` $1 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<2>],
+    interfaces = [OneResultInterface, NOpdsInterface<2>],
     attributes = (insert_value_indices: InsertExtractValueIndicesAttr)
 )]
 pub struct InsertValueOp;
@@ -3164,7 +3144,7 @@ impl Verify for InsertValueOp {
 #[pliron_op(
     name = "llvm.extract_value",
     format = "$0 attr($extract_value_indices, $InsertExtractValueIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>],
+    interfaces = [OneResultInterface, OneOpdInterface],
     attributes = (extract_value_indices: InsertExtractValueIndicesAttr)
 )]
 pub struct ExtractValueOp;
@@ -3286,7 +3266,7 @@ pub enum InsertExtractValueErr {
 #[pliron_op(
     name = "llvm.insert_element",
     format = "$0 `, ` $1 `, ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<3>],
+    interfaces = [OneResultInterface, NOpdsInterface<3>],
     operands = (vector, element, index)
 )]
 pub struct InsertElementOp;
@@ -3361,7 +3341,7 @@ pub enum InsertExtractElementOpVerifyErr {
 #[pliron_op(
     name = "llvm.extract_element",
     format = "$0 `, ` $1 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<2>],
+    interfaces = [OneResultInterface, NOpdsInterface<2>],
     operands = (vector, index)
 )]
 pub struct ExtractElementOp;
@@ -3434,7 +3414,7 @@ impl ExtractElementOp {
 #[pliron_op(
     name = "llvm.shuffle_vector",
     format = "$0 `, ` $1 `, ` attr($llvm_shuffle_vector_mask, $ShuffleVectorMaskAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<2>],
+    interfaces = [OneResultInterface, NOpdsInterface<2>],
     attributes = (llvm_shuffle_vector_mask: ShuffleVectorMaskAttr)
 )]
 pub struct ShuffleVectorOp;
@@ -3545,7 +3525,7 @@ pub enum ShuffleVectorOpVerifyErr {
 #[pliron_op(
     name = "llvm.select",
     format = "$0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NResultsInterface<1>, NOpdsInterface<3>]
+    interfaces = [OneResultInterface, NOpdsInterface<3>]
 )]
 pub struct SelectOp;
 
@@ -3631,8 +3611,6 @@ pub enum SelectOpVerifyErr {
         SameOperandsType,
         SameOperandsAndResultType,
         FastMathFlags,
-        NResultsInterface<1>,
-        NOpdsInterface<1>,
         AtLeastNOpdsInterface<1>,
         AtLeastNResultsInterface<1>
     ]
@@ -3707,7 +3685,7 @@ macro_rules! new_float_bin_op {
                 OneResultInterface, SameOperandsType, SameResultsType,
                 AtLeastNOpdsInterface<1>, AtLeastNResultsInterface<1>,
                 SameOperandsAndResultType, BinArithOp, FloatBinArithOp,
-                FloatBinArithOpWithFastMathFlags, FastMathFlags, NResultsInterface<1>, NOpdsInterface<2>
+                FloatBinArithOpWithFastMathFlags, FastMathFlags, NOpdsInterface<2>
             ],
             verifier = "succ"
         )]
@@ -3766,7 +3744,6 @@ new_float_bin_op! {
         SameOperandsType,
         AtLeastNOpdsInterface<1>,
         FastMathFlags,
-        NResultsInterface<1>,
         NOpdsInterface<2>
     ],
     attributes = (fcmp_predicate: FCmpPredicateAttr)
@@ -3839,7 +3816,7 @@ pub enum FCmpOpVerifyErr {
 /// Same as MLIR's [llvm.call_intrinsic](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmcall_intrinsic-llvmcallintrinsicop).
 #[pliron_op(
     name = "llvm.call_intrinsic",
-    interfaces = [OneResultInterface, NResultsInterface<1>],
+    interfaces = [OneResultInterface],
     attributes = (
         llvm_intrinsic_name: StringAttr,
         llvm_intrinsic_type: TypeAttr,
@@ -4026,7 +4003,7 @@ impl Verify for CallIntrinsicOp {
 #[pliron_op(
     name = "llvm.va_arg",
     format = "$0 ` : ` type($0)",
-    interfaces = [OneResultInterface, OneOpdInterface, NResultsInterface<1>, NOpdsInterface<1>]
+    interfaces = [OneResultInterface, OneOpdInterface]
 )]
 pub struct VAArgOp;
 

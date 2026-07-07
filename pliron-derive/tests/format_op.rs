@@ -58,7 +58,7 @@ fn zero_results_zero_operands() {
 
 #[format_op("`: ` type($0)")]
 #[def_op("test.one_result_zero_operands")]
-#[derive_op_interface_impl(NOpdsInterface<0>, NResultsInterface<1>, OneResultInterface)]
+#[derive_op_interface_impl(NOpdsInterface<0>, OneResultInterface)]
 #[verify_succ]
 struct OneResultZeroOperandsOp {}
 
@@ -102,7 +102,7 @@ fn one_result_zero_operands() {
 
 #[format_op]
 #[def_op("test.one_result_zero_operands_canonical")]
-#[derive_op_interface_impl(NOpdsInterface<0>, NResultsInterface<1>, OneResultInterface)]
+#[derive_op_interface_impl(NOpdsInterface<0>, OneResultInterface)]
 #[verify_succ]
 struct OneResultZeroOperandsCanonicalOp;
 
@@ -146,7 +146,7 @@ fn one_result_zero_operands_canonical() {
 
 #[format_op("$0 `:` type($0)")]
 #[def_op("test.one_result_one_operand")]
-#[derive_op_interface_impl(NOpdsInterface<1>, NResultsInterface<1>, OneOpdInterface, OneResultInterface)]
+#[derive_op_interface_impl(OneOpdInterface, OneResultInterface)]
 #[verify_succ]
 struct OneResultOneOperandOp {}
 
@@ -331,7 +331,7 @@ fn opdtypes() {
 
 #[format_op("$0 ` : ` typesig")]
 #[def_op("test.one_result_one_operand_typesig")]
-#[derive_op_interface_impl(NOpdsInterface<1>, NResultsInterface<1>, OneResultInterface)]
+#[derive_op_interface_impl(OneOpdInterface, OneResultInterface)]
 #[verify_succ]
 struct OneResultOneOperandTypeSigOp {}
 
@@ -828,7 +828,7 @@ fn attr_op3() {
 
 #[format_op("`(`$0`)` region($0)")]
 #[def_op("test.if_op")]
-#[derive_op_interface_impl(NOpdsInterface<1>, OneOpdInterface, NResultsInterface<0>, NRegionsInterface<1>, OneRegionInterface)]
+#[derive_op_interface_impl(OneOpdInterface, NResultsInterface<0>, OneRegionInterface)]
 #[verify_succ]
 struct IfOp {}
 
@@ -887,7 +887,7 @@ fn if_op() {
 
 #[format_op("`(`$0`)` region($0) `else` region($1)")]
 #[def_op("test.if_else_op")]
-#[derive_op_interface_impl(NOpdsInterface<1>, OneOpdInterface, NResultsInterface<0>, NRegionsInterface<2>)]
+#[derive_op_interface_impl(OneOpdInterface, NResultsInterface<0>, NRegionsInterface<2>)]
 #[verify_succ]
 struct IfElseOp {}
 

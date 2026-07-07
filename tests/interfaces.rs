@@ -10,7 +10,7 @@ use pliron::{
     builtin::{
         attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
         attributes::{IntegerAttr, StringAttr},
-        op_interfaces::{NResultsInterface, NResultsVerifyErr, OneResultInterface},
+        op_interfaces::{NResultsVerifyErr, OneResultInterface},
         ops::ModuleOp,
         types::{IntegerType, UnitType},
     },
@@ -47,9 +47,6 @@ struct ZeroResultOp {}
 // This is setup to fail.
 #[op_interface_impl]
 impl OneResultInterface for ZeroResultOp {}
-
-#[op_interface_impl]
-impl NResultsInterface<1> for ZeroResultOp {}
 
 impl Printable for ZeroResultOp {
     fn fmt(
