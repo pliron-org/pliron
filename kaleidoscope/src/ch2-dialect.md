@@ -155,13 +155,6 @@ and one result (the computed value).
 {{#include ../../examples/kaleidoscope/dialect.rs:binop_decl}}
 ```
 
-> **Note**: An attentive reader may observe that we specify `AtLeastNOpdsInterface<1>` and
-`NOpdsInterface<2>` interfaces, which seems counter-intuitive because the latter subsumes
-the former, so why specify both? This is because `SameOperandsType`
-(which also we've specified) requires `AtLeastNOpdsInterface<1>` as a super-interface.
-`SameOperandsType` provides a convenience method `get_operand_type` which requires
-that there is at least one operand. A similar argument holds for `AtLeastNResultsInterface<1>`.
-
 The specific binary operation (e.g., add, subtract,
 multiply, divide) is captured as an attribute (`BinOpKind`).
 

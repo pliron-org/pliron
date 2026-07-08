@@ -5,10 +5,10 @@ use pliron::{
     builtin::{
         attributes::{IdentifierAttr, IntegerAttr, TypeAttr},
         op_interfaces::{
-            AtLeastNOpdsInterface, AtLeastNResultsInterface, IsTerminatorInterface, NOpdsInterface,
-            NRegionsInterface, NResultsInterface, OneOpdInterface, OneRegionInterface,
-            OneResultInterface, OperandNOfType, ResultNOfType, SameOperandsAndResultType,
-            SameOperandsType, SameResultsType, SingleBlockRegionInterface,
+            IsTerminatorInterface, NOpdsInterface, NRegionsInterface, NResultsInterface,
+            OneOpdInterface, OneRegionInterface, OneResultInterface, OperandNOfType, ResultNOfType,
+            SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            SingleBlockRegionInterface,
         },
         types::{IntegerType, Signedness},
     },
@@ -197,8 +197,6 @@ pub enum BinOpKind {
     name = "kaleidoscope.binop",
     format = "$0 ` `attr($kind, $BinOpKind) ` ` $1 ` : ` type($0)",
     interfaces = [
-        AtLeastNOpdsInterface<1>,
-        AtLeastNResultsInterface<1>,
         NOpdsInterface<2>,
         OneResultInterface,
         SameOperandsType,

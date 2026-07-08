@@ -935,12 +935,13 @@ pub trait IsolatedFromAboveInterface {
 #[error("Op has different operand types")]
 pub struct SameOperandsTypeVerifyErr;
 
-/// An [Op] with at least one operand, and them all having the same type.
+/// An [Op]  with all operands having the same type.
 #[op_interface]
-pub trait SameOperandsType: AtLeastNOpdsInterface<1> {
+pub trait SameOperandsType {
     /// Get the common type of the operands.
-    fn operand_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_operation().deref(ctx).get_operand(0).get_type(ctx)
+    fn common_operand_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        let self_op = self.get_operation().deref(ctx);
+        (self_op.get_num_operands() > 0).then(|| self_op.get_operand(0).get_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -950,7 +951,9 @@ pub trait SameOperandsType: AtLeastNOpdsInterface<1> {
         let op = op.get_operation().deref(ctx);
 
         let mut opds = op.operands();
-        let ty = opds.next().unwrap().get_type(ctx);
+        let Some(ty) = opds.next().map(|opd| opd.get_type(ctx)) else {
+            return Ok(());
+        };
         for opd in opds {
             if opd.get_type(ctx) != ty {
                 return verify_err!(op.loc(), SameOperandsTypeVerifyErr);
@@ -1033,12 +1036,13 @@ pub trait OperandNOfType<const N: usize, T: Type> {
 #[error("Op has different result types")]
 pub struct SameResultsTypeVerifyErr;
 
-// An [Op] with at least one result, and them all having the same type.
+// An [Op] with all results having the same type.
 #[op_interface]
-pub trait SameResultsType: AtLeastNResultsInterface<1> {
+pub trait SameResultsType {
     /// Get the common type of the results.
-    fn result_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_operation().deref(ctx).get_result(0).get_type(ctx)
+    fn common_result_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        let self_op = self.get_operation().deref(ctx);
+        (self_op.get_num_results() > 0).then(|| self_op.get_result(0).get_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -1048,7 +1052,9 @@ pub trait SameResultsType: AtLeastNResultsInterface<1> {
         let op = op.get_operation().deref(ctx);
 
         let mut results = op.results();
-        let ty = results.next().unwrap().get_type(ctx);
+        let Some(ty) = results.next().map(|result| result.get_type(ctx)) else {
+            return Ok(());
+        };
         for res in results {
             if res.get_type(ctx) != ty {
                 return verify_err!(op.loc(), SameResultsTypeVerifyErr);
@@ -1127,13 +1133,13 @@ pub trait ResultNOfType<const N: usize, T: Type> {
 #[error("Op has different operand and result types")]
 pub struct SameOperandsAndResultTypeVerifyErr;
 
-/// An [Op] with at least one result and one operand, and them all having the same type.
-/// See MLIR's [SameOperandsAndResultType](https://mlir.llvm.org/doxygen/classmlir_1_1OpTrait_1_1SameOperandsAndResultType.html).
+/// An [Op] with all results and operands having the same type.
 #[op_interface]
 pub trait SameOperandsAndResultType: SameOperandsType + SameResultsType {
     /// Get the common type of results / operands.
-    fn get_type(&self, ctx: &Context) -> TypeHandle {
-        self.result_type(ctx)
+    fn common_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        self.common_result_type(ctx)
+            .or_else(|| self.common_operand_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -1142,12 +1148,14 @@ pub trait SameOperandsAndResultType: SameOperandsType + SameResultsType {
     {
         let res_ty = op_cast::<dyn SameResultsType>(op)
             .expect("Op must impl SameResultsType")
-            .result_type(ctx);
+            .common_result_type(ctx);
         let opd_ty = op_cast::<dyn SameOperandsType>(op)
             .expect("Op must impl SameOperandsType")
-            .operand_type(ctx);
+            .common_operand_type(ctx);
 
-        if res_ty != opd_ty {
+        if let (Some(res_ty), Some(opd_ty)) = (res_ty, opd_ty)
+            && res_ty != opd_ty
+        {
             return verify_err!(op.loc(ctx), SameOperandsAndResultTypeVerifyErr);
         }
 

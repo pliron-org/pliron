@@ -8,12 +8,11 @@ use pliron::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
         attributes::{BoolAttr, IdentifierAttr, IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{
-            self, ATTR_KEY_SYM_NAME, AtLeastNOpdsInterface, AtLeastNResultsInterface,
-            AtMostNRegionsInterface, AtMostOneRegionInterface, BranchOpInterface, CallOpCallable,
-            CallOpInterface, IsTerminatorInterface, IsolatedFromAboveInterface, NOpdsInterface,
-            NResultsInterface, NSuccsInterface, OneOpdInterface, OneResultInterface,
-            OneSuccInterface, OperandSegmentInterface, OptionalOpdInterface,
-            SameOperandsAndResultType, SameOperandsType, SameResultsType,
+            self, ATTR_KEY_SYM_NAME, AtMostNRegionsInterface, AtMostOneRegionInterface,
+            BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
+            IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
+            OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
+            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
             SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
@@ -41,7 +40,7 @@ use pliron::{
     result::{Error, ErrorKind, Result},
     symbol_table::SymbolTableCollection,
     r#type::{TypeHandle, TypedHandle, type_cast, type_impls},
-    utils::vec_exns::VecExtns,
+    utils::{const_bound_n::I, vec_exns::VecExtns},
     value::Value,
     verify_err, verify_error,
 };
@@ -193,7 +192,6 @@ macro_rules! new_int_bin_op_with_format {
             format = $format,
             interfaces = [
                 OneResultInterface, SameOperandsType, SameResultsType,
-                AtLeastNOpdsInterface<1>, AtLeastNResultsInterface<1>,
                 SameOperandsAndResultType, BinArithOp, IntBinArithOp, NOpdsInterface<2>
             ],
             verifier = "succ"
@@ -340,7 +338,7 @@ pub enum ICmpOpVerifyErr {
 #[pliron_op(
     name = "llvm.icmp",
     format = "$0 ` <` attr($icmp_predicate, $ICmpPredicateAttr) `> ` $1 ` : ` type($0)",
-    interfaces = [SameOperandsType, AtLeastNOpdsInterface<1>, OneResultInterface],
+    interfaces = [SameOperandsType, OneResultInterface, NOpdsInterface<2>],
     attributes = (icmp_predicate: ICmpPredicateAttr)
 )]
 pub struct ICmpOp;
@@ -406,7 +404,7 @@ impl Verify for ICmpOp {
             return verify_err!(loc, ICmpOpVerifyErr::ResultNotBool);
         }
 
-        let mut opd_ty = self.operand_type(ctx);
+        let mut opd_ty = self.operand_type_i(ctx, I::<0>.into());
         if let Some(vec_ty) = opd_ty.deref(ctx).downcast_ref::<VectorType>() {
             opd_ty = vec_ty.elem_type();
             // Ensure that the number of elements matches the result type's number of elements.
@@ -3611,8 +3609,6 @@ pub enum SelectOpVerifyErr {
         SameOperandsType,
         SameOperandsAndResultType,
         FastMathFlags,
-        AtLeastNOpdsInterface<1>,
-        AtLeastNResultsInterface<1>
     ]
 )]
 pub struct FNegOp;
@@ -3683,7 +3679,6 @@ macro_rules! new_float_bin_op {
             format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 `, ` $1 ` : ` type($0)",
             interfaces = [
                 OneResultInterface, SameOperandsType, SameResultsType,
-                AtLeastNOpdsInterface<1>, AtLeastNResultsInterface<1>,
                 SameOperandsAndResultType, BinArithOp, FloatBinArithOp,
                 FloatBinArithOpWithFastMathFlags, FastMathFlags, NOpdsInterface<2>
             ],
@@ -3742,7 +3737,6 @@ new_float_bin_op! {
     interfaces = [
         OneResultInterface,
         SameOperandsType,
-        AtLeastNOpdsInterface<1>,
         FastMathFlags,
         NOpdsInterface<2>
     ],
@@ -3793,7 +3787,7 @@ impl Verify for FCmpOp {
             return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
         }
 
-        let opd_ty = self.operand_type(ctx).deref(ctx);
+        let opd_ty = self.operand_type_i(ctx, I::<0>.into()).deref(ctx);
         if !(type_impls::<dyn FloatTypeInterface>(&*opd_ty)) {
             return verify_err!(loc, FCmpOpVerifyErr::IncorrectOperandsType);
         }

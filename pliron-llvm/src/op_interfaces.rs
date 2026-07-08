@@ -89,9 +89,9 @@ pub trait IntBinArithOp: BinArithOp {
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn SameOperandsAndResultType>(op)
-            .expect("Op must impl SameOperandsAndResultType")
-            .get_type(ctx);
+        let mut ty = op_cast::<dyn BinArithOp>(op)
+            .expect("Op must impl BinArithOp")
+            .operand_type_i(ctx, I::<0>.into());
 
         if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
             ty = vec_ty.elem_type();
@@ -190,9 +190,9 @@ pub trait FloatBinArithOp: BinArithOp {
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn SameOperandsAndResultType>(op)
-            .expect("Op must impl SameOperandsAndResultType")
-            .get_type(ctx);
+        let mut ty = op_cast::<dyn BinArithOp>(op)
+            .expect("Op must impl BinArithOp")
+            .operand_type_i(ctx, I::<0>.into());
 
         if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
             ty = vec_ty.elem_type();
