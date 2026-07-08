@@ -24,7 +24,7 @@ use crate::{
     context::{Context, Ptr},
     identifier::Identifier,
     input_err,
-    irfmt::parsers::{hex_int_parser, int_parser, parsable_parser, quoted_string_parser},
+    irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
     location::{self, Located, Location, Source},
     op::op_impls,
     operation::Operation,
@@ -158,8 +158,17 @@ pub trait Parsable {
     where
         Self::Parsed: 'a,
     {
-        parsable_parser(Self::parse, arg)
+        parser_combinator(Self::parse, arg)
     }
+}
+
+/// Build a parser combinator from a [Parsable::parse] function and its argument.
+#[inline(never)]
+pub fn parser_combinator<'a, Arg: Clone + 'static, Output: 'a>(
+    parse: fn(&mut StateStream<'a>, Arg) -> ParseResult<'a, Output>,
+    args: Arg,
+) -> Box<dyn Parser<StateStream<'a>, Output = Output, PartialState = ()> + 'a> {
+    combine::parser(move |state_stream| parse(state_stream, args.clone())).boxed()
 }
 
 /// Build a [StateStream] from an iterator, for use with [Parsable].
