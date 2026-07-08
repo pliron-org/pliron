@@ -154,12 +154,21 @@ pub trait Parsable {
     /// Get a parser combinator that can work on [StateStream] as its input.
     fn parser<'a>(
         arg: Self::Arg,
-    ) -> Box<dyn Parser<StateStream<'a>, Output = Self::Parsed, PartialState = ()> + 'a> {
-        combine::parser(move |parsable_state: &mut StateStream<'a>| {
-            Self::parse(parsable_state, arg.clone())
-        })
-        .boxed()
+    ) -> Box<dyn Parser<StateStream<'a>, Output = Self::Parsed, PartialState = ()> + 'a>
+    where
+        Self::Parsed: 'a,
+    {
+        parser_combinator(Self::parse, arg)
     }
+}
+
+/// Build a parser combinator from a [Parsable::parse] function and its argument.
+#[inline(never)]
+pub fn parser_combinator<'a, Arg: Clone + 'static, Output: 'a>(
+    parse: fn(&mut StateStream<'a>, Arg) -> ParseResult<'a, Output>,
+    args: Arg,
+) -> Box<dyn Parser<StateStream<'a>, Output = Output, PartialState = ()> + 'a> {
+    combine::parser(move |state_stream| parse(state_stream, args.clone())).boxed()
 }
 
 /// Build a [StateStream] from an iterator, for use with [Parsable].
