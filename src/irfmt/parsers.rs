@@ -16,7 +16,7 @@ use crate::{
     identifier::Identifier,
     location::{Located, Location},
     operation::Operation,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     result::Result,
     r#type::TypeHandle,
     value::Value,
@@ -85,11 +85,10 @@ where
 pub fn int_parser<'a, IntT>()
 -> Box<dyn Parser<StateStream<'a>, Output = IntT, PartialState = ()> + 'a>
 where
-    IntT: FromStr,
+    IntT: FromStr + 'a,
     IntT::Err: core::error::Error + Send + Sync + 'static,
 {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| int_parse(parsable_state, ()))
-        .boxed()
+    parser_combinator(int_parse, ())
 }
 
 /// A trait for parsing an integer from a string with a given radix.
@@ -129,10 +128,9 @@ where
 pub fn hex_int_parser<'a, IntT>()
 -> Box<dyn Parser<StateStream<'a>, Output = IntT, PartialState = ()> + 'a>
 where
-    IntT: FromStrRadix,
+    IntT: FromStrRadix + 'a,
 {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| hex_int_parse(parsable_state, ()))
-        .boxed()
+    parser_combinator(hex_int_parse, ())
 }
 
 /// Parse a quoted string, which is a double-quoted string that may contain escaped characters.
@@ -180,10 +178,7 @@ pub fn quoted_string_parse<'a>(
 /// A parser combinator to parse a quoted string, which is a double-quoted string that may contain escaped characters.
 pub fn quoted_string_parser<'a>()
 -> Box<dyn Parser<StateStream<'a>, Output = String, PartialState = ()> + 'a> {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| {
-        quoted_string_parse(parsable_state, ())
-    })
-    .boxed()
+    parser_combinator(quoted_string_parse, ())
 }
 
 /// A parser to parse [AttrId](crate::attribute::AttrId) followed by the attribute's contents.
@@ -246,8 +241,7 @@ pub fn ssa_opd_parse<'a>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseR
 /// a [forward reference](crate::builtin::ops::ForwardRefOp) is returned.
 pub fn ssa_opd_parser<'a>()
 -> Box<dyn Parser<StateStream<'a>, Output = Value, PartialState = ()> + 'a> {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| ssa_opd_parse(parsable_state, ()))
-        .boxed()
+    parser_combinator(ssa_opd_parse, ())
 }
 
 /// Parse a block label into a [`Ptr<BasicBlock>`]. Typically called to parse
@@ -272,8 +266,7 @@ pub fn block_opd_parse<'a>(
 /// the block operands of an [Operation]. If the block doesn't exist, it's created,
 pub fn block_opd_parser<'a>()
 -> Box<dyn Parser<StateStream<'a>, Output = Ptr<BasicBlock>, PartialState = ()> + 'a> {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| block_opd_parse(parsable_state, ()))
-        .boxed()
+    parser_combinator(block_opd_parse, ())
 }
 
 /// After an [Operation] is fully parsed, for each result,
