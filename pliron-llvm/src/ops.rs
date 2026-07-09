@@ -2112,7 +2112,7 @@ impl Verify for ConstantOp {
         let loc = self.loc(ctx);
         let value = self.get_value(ctx);
         if !(value.is::<IntegerAttr>() || attr_impls::<dyn FloatAttr>(&*value)) {
-            return verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
+            verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
         }
         Ok(())
     }
@@ -2425,7 +2425,7 @@ impl Parsable for GlobalOp {
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
         if !results.is_empty() {
-            return input_err!(loc, "GlobalOp must cannot have results")?;
+            input_err!(loc, "GlobalOp must cannot have results")?;
         }
         let name_parser = combine::token('@').with(Identifier::parser(()));
         let type_parser = type_parser();
