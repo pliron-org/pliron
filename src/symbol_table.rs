@@ -248,11 +248,7 @@ pub fn nearest_symbol_table(
         {
             return Some(dyn_clone::clone_box(symbol_table));
         }
-        if let Some(parent) = op.deref(ctx).get_parent_op(ctx) {
-            op = parent;
-        } else {
-            return None;
-        }
+        op = op.deref(ctx).get_parent_op(ctx)?;
     }
 }
 

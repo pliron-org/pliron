@@ -399,7 +399,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
     ) -> Result<TokenStream> {
         let attr_name = attr_name.to_string();
         let op_name = input.ident.clone();
-        let missing_attr_err = format!("Missing attribute {} on Op {}", &attr_name, &op_name);
+        let missing_attr_err = format!("Missing attribute {} on Op {}", attr_name, op_name);
         Ok(quote! {
             {
                 let name: ::pliron::identifier::Identifier = #attr_name.try_into().expect("Invalid attribute name");
@@ -489,8 +489,8 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
 
             let missing_attr_err = format!(
                 "Missing attribute {} on Op {}",
-                &attr_dict_key,
-                &input.ident.clone()
+                attr_dict_key,
+                input.ident.clone()
             );
             let mut res = TokenStream::new();
 
