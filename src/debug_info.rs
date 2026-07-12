@@ -275,7 +275,7 @@ mod tests {
     use crate::{
         basic_block::BasicBlock,
         builtin::{
-            op_interfaces::{NOpdsInterface, NResultsInterface, OneResultInterface},
+            op_interfaces::{NOpdsInterface, OneResultInterface},
             types::{IntegerType, Signedness},
         },
         context::Context,
@@ -292,9 +292,7 @@ mod tests {
     #[pliron_op(
         name = "test.zero",
         format,
-        interfaces = [
-            OneResultInterface, NResultsInterface<1>, NOpdsInterface<0>
-        ],
+            interfaces = [OneResultInterface, NOpdsInterface<0>],
         verifier = "succ",
     )]
     struct ZeroOp;

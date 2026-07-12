@@ -10,8 +10,8 @@ use crate::{
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{
-            ATTR_KEY_SYM_NAME, NRegionsInterface, NResultsInterface, NoTerminatorInterface,
-            RegionKind, RegionKindInterface,
+            ATTR_KEY_SYM_NAME, NResultsInterface, NoTerminatorInterface, RegionKind,
+            RegionKindInterface,
         },
         ops::func_op_attr_names::ATTR_KEY_FUNC_TYPE,
         type_interfaces::FunctionTypeInterface,
@@ -58,7 +58,6 @@ use super::{
 #[pliron_op(
     name = "builtin.module",
     interfaces = [
-        NRegionsInterface<1>,
         OneRegionInterface,
         SingleBlockRegionInterface,
         SymbolTableInterface,
@@ -150,7 +149,6 @@ impl ModuleOp {
 #[pliron_op(
     name = "builtin.func",
     interfaces = [
-        NRegionsInterface<1>,
         OneRegionInterface,
         SymbolOpInterface,
         IsolatedFromAboveInterface,
@@ -297,7 +295,7 @@ impl Verify for FuncOp {
 #[pliron_op(
     name = "builtin.constant",
     format = "`<` $builtin_constant_value `>` ` : ` type($0)",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     attributes = (builtin_constant_value),
     verifier = "succ"
 )]
@@ -335,7 +333,6 @@ impl ConstantOp {
 #[pliron_op(
     name = "builtin.forward_ref",
     interfaces = [
-        NResultsInterface<1>,
         NOpdsInterface<0>,
         OneResultInterface,
     ],

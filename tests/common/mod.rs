@@ -4,8 +4,8 @@ use pliron::{
     builtin::{
         attributes::IntegerAttr,
         op_interfaces::{
-            IsTerminatorInterface, NOpdsInterface, NResultsInterface, NResultsVerifyErr,
-            OneResultInterface, SingleBlockRegionInterface,
+            IsTerminatorInterface, NOpdsInterface, NResultsVerifyErr, OneResultInterface,
+            SingleBlockRegionInterface,
         },
         ops::{FuncOp, ModuleOp},
         types::{FunctionType, IntegerType, Signedness},
@@ -54,7 +54,7 @@ mod constant_op {
 
 #[pliron_op(
     name = "test.constant",
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     verifier = "succ",
 )]
 pub struct ConstantOp;

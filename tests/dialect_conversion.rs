@@ -31,7 +31,7 @@ use wasm_bindgen_test::*;
 #[pliron_op(
     name = "test.producer",
     format,
-    interfaces = [NOpdsInterface<0>, OneResultInterface, NResultsInterface<1>],
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
     verifier = "succ",
 )]
 pub struct ProducerOp;
@@ -54,7 +54,7 @@ impl ProducerOp {
 #[pliron_op(
     name = "test.consumer",
     format,
-    interfaces = [OneOpdInterface, NOpdsInterface<1>, NResultsInterface<0>],
+    interfaces = [OneOpdInterface, NResultsInterface<0>],
     verifier = "succ",
 )]
 pub struct ConsumerOp;
@@ -79,7 +79,6 @@ impl ConsumerOp {
     interfaces = [
         IsTerminatorInterface,
         OneOpdInterface,
-        NOpdsInterface<1>,
         NResultsInterface<0>
     ],
     verifier = "succ",
