@@ -241,7 +241,7 @@ impl Pass for Passes {
 
         // Run each pass in the list on the current operation.
         for pass in &mut self.passes {
-            let res = pass.run(op, ctx, analyses)?;
+            let res = Self::run_pass(pass.as_mut(), op, ctx, analyses)?;
             pass_res.ir_changed |= res.ir_changed;
             // Invalidate analyses that are not preserved.
             analyses.retain_preserved(&res);
@@ -296,7 +296,7 @@ impl Pass for NestedOpsPass {
             for block in blocks {
                 let ops = block.deref(ctx).iter(ctx).collect::<Vec<_>>();
                 for nested_op in ops {
-                    let res = self.pass.run(nested_op, ctx, analyses)?;
+                    let res = Self::run_pass(self.pass.as_mut(), nested_op, ctx, analyses)?;
                     pass_res.ir_changed |= res.ir_changed;
                     // Invalidate analyses that are not preserved.
                     analyses.retain_preserved(&res);
@@ -430,6 +430,38 @@ pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
 pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
+#[cfg(feature = "std")]
+mod print_file {
+    use core::sync::atomic::{self, AtomicU64};
+
+    use crate::{
+        context::{Context, Ptr},
+        operation::Operation,
+        pass::Pass,
+        printable::Printable,
+    };
+
+    static CURRENT_PASS_NUMBER: AtomicU64 = AtomicU64::new(0);
+
+    pub(super) fn incr_pass() {
+        CURRENT_PASS_NUMBER.fetch_add(1, atomic::Ordering::Relaxed);
+    }
+
+    pub(super) fn dump_file(
+        op: Ptr<Operation>,
+        ctx: &mut Context,
+        pass: &mut dyn Pass,
+        tree_printing_path: &Option<std::path::PathBuf>,
+    ) {
+        use std::string::ToString;
+        if let Some(path) = tree_printing_path {
+            let number = CURRENT_PASS_NUMBER.load(atomic::Ordering::Relaxed);
+            let path = path.join(alloc::format!("{}-{}.plir", number, pass.name()));
+            std::fs::write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+        }
+    }
+}
+
 /// A [Pass] that contains, manages and runs other [Pass]es.
 /// The only requirement (that cannot be enforced by the type system)
 /// is that a [PassManager] [Pass] must run its contained [Passes] via
@@ -460,6 +492,9 @@ pub trait PassManager {
         let should_time = !is_pass_manager
             && (config.time_all_passes || config.time_passes.contains(pass.name()));
 
+        #[cfg(feature = "std")]
+        let tree_printing_path = config.tree_printing_path.clone();
+
         // Skip passes that are configured to be skipped, but only for non-manager passes.
         if skip_pass {
             log::debug!("Skipping pass {} on {}", pass.name(), OpDbg { op, ctx });
@@ -472,6 +507,8 @@ pub trait PassManager {
 
         if pre_print_pass {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
+            #[cfg(feature = "std")]
+            print_file::dump_file(op, ctx, pass, &tree_printing_path);
         }
         if pre_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -497,6 +534,8 @@ pub trait PassManager {
         }
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
+            #[cfg(feature = "std")]
+            print_file::dump_file(op, ctx, pass, &tree_printing_path);
         }
         if post_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -508,6 +547,8 @@ pub trait PassManager {
                 );
             })?;
         }
+        #[cfg(feature = "std")]
+        print_file::incr_pass();
         result
     }
 }
@@ -519,6 +560,9 @@ pub struct PMConfig {
     pub print_before_all: bool,
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
+    #[cfg(feature = "std")]
+    /// Optional path of the folder where passes will print IR inside files
+    pub tree_printing_path: Option<std::path::PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
     /// Set of pass names for which to print the IR after execution.
