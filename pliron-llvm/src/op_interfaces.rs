@@ -3,14 +3,13 @@
 use pliron::{
     builtin::{
         attributes::BoolAttr,
-        op_interfaces::{
-            NOpdsInterface, NResultsInterface, OneOpdInterface, ResultNOfType, SymbolOpInterface,
-        },
+        op_interfaces::{NOpdsInterface, OneOpdInterface, ResultNOfType, SymbolOpInterface},
         type_interfaces::FloatTypeInterface,
     },
     derive::op_interface,
     dict_key,
     r#type::type_cast,
+    utils::const_bound_n::I,
 };
 use thiserror::Error;
 
@@ -38,9 +37,7 @@ use super::{attributes::IntegerOverflowFlagsAttr, types::PointerType};
 
 /// Binary arithmetic [Op].
 #[op_interface]
-pub trait BinArithOp:
-    SameOperandsAndResultType + OneResultInterface + NOpdsInterface<2> + NResultsInterface<1>
-{
+pub trait BinArithOp: SameOperandsAndResultType + OneResultInterface + NOpdsInterface<2> {
     /// Create a new binary arithmetic operation given the operands.
     fn new(ctx: &mut Context, lhs: Value, rhs: Value) -> Self
     where
@@ -69,7 +66,7 @@ pub trait BinArithOp:
     where
         Self: Sized,
     {
-        self.get_operand_i(ctx, 0)
+        self.get_operand_i(ctx, I::<0>.into())
     }
 
     /// Get the right-hand side operand of this binary arithmetic [Op].
@@ -77,7 +74,7 @@ pub trait BinArithOp:
     where
         Self: Sized,
     {
-        self.get_operand_i(ctx, 1)
+        self.get_operand_i(ctx, I::<1>.into())
     }
 }
 
@@ -92,9 +89,9 @@ pub trait IntBinArithOp: BinArithOp {
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn SameOperandsAndResultType>(op)
-            .expect("Op must impl SameOperandsAndResultType")
-            .get_type(ctx);
+        let mut ty = op_cast::<dyn BinArithOp>(op)
+            .expect("Op must impl BinArithOp")
+            .operand_type_i(ctx, I::<0>.into());
 
         if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
             ty = vec_ty.elem_type();
@@ -193,9 +190,9 @@ pub trait FloatBinArithOp: BinArithOp {
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn SameOperandsAndResultType>(op)
-            .expect("Op must impl SameOperandsAndResultType")
-            .get_type(ctx);
+        let mut ty = op_cast::<dyn BinArithOp>(op)
+            .expect("Op must impl BinArithOp")
+            .operand_type_i(ctx, I::<0>.into());
 
         if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
             ty = vec_ty.elem_type();
@@ -363,9 +360,7 @@ pub trait PointerTypeResult: OneResultInterface + ResultNOfType<0, PointerType> 
 
 /// A Cast [Op] has one argument and one result.
 #[op_interface]
-pub trait CastOpInterface:
-    OneResultInterface + OneOpdInterface + NResultsInterface<1> + NOpdsInterface<1>
-{
+pub trait CastOpInterface: OneResultInterface + OneOpdInterface {
     /// Create a new cast operation given the operand.
     fn new(ctx: &mut Context, operand: Value, res_type: TypeHandle) -> Self
     where
@@ -392,9 +387,7 @@ pub trait CastOpInterface:
 
 /// A Cast [Op] with NNEG flag.
 #[op_interface]
-pub trait CastOpWithNNegInterface:
-    CastOpInterface + NNegFlag + NResultsInterface<1> + NOpdsInterface<1>
-{
+pub trait CastOpWithNNegInterface: CastOpInterface + NNegFlag {
     /// Create a new cast operation with nneg flag
     fn new_with_nneg(ctx: &mut Context, operand: Value, res_type: TypeHandle, nneg: bool) -> Self
     where

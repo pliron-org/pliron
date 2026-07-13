@@ -241,7 +241,7 @@ impl Pass for Passes {
 
         // Run each pass in the list on the current operation.
         for pass in &mut self.passes {
-            let res = Self::run_pass(pass.as_mut(), op, ctx, analyses)?;
+            let res = <Self as PassManager>::run_pass(&mut **pass, op, ctx, analyses)?;
             pass_res.ir_changed |= res.ir_changed;
             // Invalidate analyses that are not preserved.
             analyses.retain_preserved(&res);
@@ -296,7 +296,8 @@ impl Pass for NestedOpsPass {
             for block in blocks {
                 let ops = block.deref(ctx).iter(ctx).collect::<Vec<_>>();
                 for nested_op in ops {
-                    let res = Self::run_pass(self.pass.as_mut(), nested_op, ctx, analyses)?;
+                    let res =
+                        <Self as PassManager>::run_pass(&mut *self.pass, nested_op, ctx, analyses)?;
                     pass_res.ir_changed |= res.ir_changed;
                     // Invalidate analyses that are not preserved.
                     analyses.retain_preserved(&res);

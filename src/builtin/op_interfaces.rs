@@ -26,6 +26,7 @@ use crate::{
     result::Result,
     symbol_table::{SymbolTableCollection, walk_symbol_table},
     r#type::{Type, TypeHandle, Typed, type_impls},
+    utils::const_bound_n::LessThanN,
     value::Value,
     verify_err, verify_error,
 };
@@ -416,23 +417,27 @@ pub trait NRegionsInterface<const N: usize> {
     }
 
     /// Get the `i`'th region.
-    fn get_region_i(&self, ctx: &Context, i: usize) -> Ptr<Region> {
-        self.get_operation().deref(ctx).get_region(i)
+    fn get_region_i(&self, ctx: &Context, i: LessThanN<N>) -> Ptr<Region> {
+        self.get_operation().deref(ctx).get_region(i.i())
     }
 }
 
 /// [Op]s that have exactly one region.
 #[op_interface]
-pub trait OneRegionInterface: NRegionsInterface<1> {
+pub trait OneRegionInterface {
     /// Get the single region that this [Op] has.
     fn get_region(&self, ctx: &Context) -> Ptr<Region> {
         self.get_operation().deref(ctx).get_region(0)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op = op.get_operation().deref(ctx);
+        if self_op.num_regions() != 1 {
+            return verify_err!(self_op.loc(), NRegionsVerifyErr(1, self_op.num_regions()));
+        }
         Ok(())
     }
 }
@@ -689,9 +694,14 @@ pub trait NResultsInterface<const N: usize> {
         Ok(())
     }
 
-    /// Get the `i`'th result
-    fn get_result_i(&self, ctx: &Context, i: usize) -> Value {
-        self.get_operation().deref(ctx).get_result(i)
+    /// Get the `i`'th result.
+    fn get_result_i(&self, ctx: &Context, i: LessThanN<N>) -> Value {
+        self.get_operation().deref(ctx).get_result(i.i())
+    }
+
+    /// Get the type of the `i`'th result.
+    fn result_type_i(&self, ctx: &Context, i: LessThanN<N>) -> TypeHandle {
+        self.get_operation().deref(ctx).get_type(i.i())
     }
 }
 
@@ -716,11 +726,18 @@ pub trait AtMostNResultsInterface<const N: usize> {
 
 /// An [Op] having at most one result.
 #[op_interface]
-pub trait OptionalResultInterface: AtMostNResultsInterface<1> {
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+pub trait OptionalResultInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op = op.get_operation().deref(ctx);
+        if self_op.get_num_results() > 1 {
+            return verify_err!(
+                self_op.loc(),
+                AtMostNResultsVerifyErr(1, self_op.get_num_results())
+            );
+        }
         Ok(())
     }
 
@@ -753,7 +770,7 @@ pub trait AtLeastNResultsInterface<const N: usize> {
 
 /// An [Op] having exactly one result.
 #[op_interface]
-pub trait OneResultInterface: NResultsInterface<1> {
+pub trait OneResultInterface {
     /// Get the single result defined by this [Op].
     fn get_result(&self, ctx: &Context) -> Value {
         self.get_operation().deref(ctx).get_result(0)
@@ -764,10 +781,17 @@ pub trait OneResultInterface: NResultsInterface<1> {
         self.get_operation().deref(ctx).get_type(0)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op = op.get_operation().deref(ctx);
+        if self_op.get_num_results() != 1 {
+            return verify_err!(
+                self_op.loc(),
+                NResultsVerifyErr(1, self_op.get_num_results())
+            );
+        }
         Ok(())
     }
 }
@@ -791,9 +815,14 @@ pub trait NOpdsInterface<const N: usize> {
         Ok(())
     }
 
-    /// Get the `i`'th operand
-    fn get_operand_i(&self, ctx: &Context, i: usize) -> Value {
-        self.get_operation().deref(ctx).get_operand(i)
+    /// Get the `i`'th operand.
+    fn get_operand_i(&self, ctx: &Context, i: LessThanN<N>) -> Value {
+        self.get_operation().deref(ctx).get_operand(i.i())
+    }
+
+    /// Get the type of the `i`'th operand.
+    fn operand_type_i(&self, ctx: &Context, i: LessThanN<N>) -> TypeHandle {
+        self.get_operand_i(ctx, i).get_type(ctx)
     }
 }
 
@@ -818,11 +847,18 @@ pub trait AtMostNOpdsInterface<const N: usize> {
 
 /// An [Op] having at most one operand.
 #[op_interface]
-pub trait OptionalOpdInterface: AtMostNOpdsInterface<1> {
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+pub trait OptionalOpdInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op = op.get_operation().deref(ctx);
+        if self_op.get_num_operands() > 1 {
+            return verify_err!(
+                self_op.loc(),
+                AtMostNOpdsVerifyErr(1, self_op.get_num_operands())
+            );
+        }
         Ok(())
     }
 
@@ -854,7 +890,7 @@ pub trait AtLeastNOpdsInterface<const N: usize> {
 
 /// An [Op] having exactly one operand.
 #[op_interface]
-pub trait OneOpdInterface: NOpdsInterface<1> {
+pub trait OneOpdInterface {
     /// Get the single operand used by this [Op].
     fn get_operand(&self, ctx: &Context) -> Value {
         self.get_operation().deref(ctx).get_operand(0)
@@ -865,10 +901,14 @@ pub trait OneOpdInterface: NOpdsInterface<1> {
         self.get_operand(ctx).get_type(ctx)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op = op.get_operation().deref(ctx);
+        if self_op.get_num_operands() != 1 {
+            return verify_err!(self_op.loc(), NOpdsVerifyErr(1, self_op.get_num_operands()));
+        }
         Ok(())
     }
 }
@@ -895,12 +935,13 @@ pub trait IsolatedFromAboveInterface {
 #[error("Op has different operand types")]
 pub struct SameOperandsTypeVerifyErr;
 
-/// An [Op] with at least one operand, and them all having the same type.
+/// An [Op]  with all operands having the same type.
 #[op_interface]
-pub trait SameOperandsType: AtLeastNOpdsInterface<1> {
+pub trait SameOperandsType {
     /// Get the common type of the operands.
-    fn operand_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_operation().deref(ctx).get_operand(0).get_type(ctx)
+    fn common_operand_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        let self_op = self.get_operation().deref(ctx);
+        (self_op.get_num_operands() > 0).then(|| self_op.get_operand(0).get_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -910,7 +951,9 @@ pub trait SameOperandsType: AtLeastNOpdsInterface<1> {
         let op = op.get_operation().deref(ctx);
 
         let mut opds = op.operands();
-        let ty = opds.next().unwrap().get_type(ctx);
+        let Some(ty) = opds.next().map(|opd| opd.get_type(ctx)) else {
+            return Ok(());
+        };
         for opd in opds {
             if opd.get_type(ctx) != ty {
                 return verify_err!(op.loc(), SameOperandsTypeVerifyErr);
@@ -993,12 +1036,13 @@ pub trait OperandNOfType<const N: usize, T: Type> {
 #[error("Op has different result types")]
 pub struct SameResultsTypeVerifyErr;
 
-// An [Op] with at least one result, and them all having the same type.
+// An [Op] with all results having the same type.
 #[op_interface]
-pub trait SameResultsType: AtLeastNResultsInterface<1> {
+pub trait SameResultsType {
     /// Get the common type of the results.
-    fn result_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_operation().deref(ctx).get_result(0).get_type(ctx)
+    fn common_result_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        let self_op = self.get_operation().deref(ctx);
+        (self_op.get_num_results() > 0).then(|| self_op.get_result(0).get_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -1008,7 +1052,9 @@ pub trait SameResultsType: AtLeastNResultsInterface<1> {
         let op = op.get_operation().deref(ctx);
 
         let mut results = op.results();
-        let ty = results.next().unwrap().get_type(ctx);
+        let Some(ty) = results.next().map(|result| result.get_type(ctx)) else {
+            return Ok(());
+        };
         for res in results {
             if res.get_type(ctx) != ty {
                 return verify_err!(op.loc(), SameResultsTypeVerifyErr);
@@ -1087,13 +1133,13 @@ pub trait ResultNOfType<const N: usize, T: Type> {
 #[error("Op has different operand and result types")]
 pub struct SameOperandsAndResultTypeVerifyErr;
 
-/// An [Op] with at least one result and one operand, and them all having the same type.
-/// See MLIR's [SameOperandsAndResultType](https://mlir.llvm.org/doxygen/classmlir_1_1OpTrait_1_1SameOperandsAndResultType.html).
+/// An [Op] with all results and operands having the same type.
 #[op_interface]
 pub trait SameOperandsAndResultType: SameOperandsType + SameResultsType {
     /// Get the common type of results / operands.
-    fn get_type(&self, ctx: &Context) -> TypeHandle {
-        self.result_type(ctx)
+    fn common_type(&self, ctx: &Context) -> Option<TypeHandle> {
+        self.common_result_type(ctx)
+            .or_else(|| self.common_operand_type(ctx))
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -1102,12 +1148,14 @@ pub trait SameOperandsAndResultType: SameOperandsType + SameResultsType {
     {
         let res_ty = op_cast::<dyn SameResultsType>(op)
             .expect("Op must impl SameResultsType")
-            .result_type(ctx);
+            .common_result_type(ctx);
         let opd_ty = op_cast::<dyn SameOperandsType>(op)
             .expect("Op must impl SameOperandsType")
-            .operand_type(ctx);
+            .common_operand_type(ctx);
 
-        if res_ty != opd_ty {
+        if let (Some(res_ty), Some(opd_ty)) = (res_ty, opd_ty)
+            && res_ty != opd_ty
+        {
             return verify_err!(op.loc(ctx), SameOperandsAndResultTypeVerifyErr);
         }
 

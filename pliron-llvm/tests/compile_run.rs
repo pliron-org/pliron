@@ -289,7 +289,7 @@ fn test_globals() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("globals.ll").to_str().unwrap(),
         Passes::default(),
-        59,
+        64,
     );
 }
 
@@ -389,75 +389,16 @@ fn test_vector_ops() {
     );
 }
 
-/// Round-trip the atomic and inline-asm constructs through the LLVM bridge
-/// (LLVM-IR -> pliron -> LLVM-IR) and verify both representations. The IR is
-/// provided inline rather than as a resource file, and is not executed (the
-/// test only round-trips and verifies); `out_module.verify()` proves the
-/// emitted IR is well-formed.
+/// Test atomics and inline assembly by compiling atomics_inline_asm.ll via pliron
 #[test]
-fn test_atomics_and_inline_asm_roundtrip() {
+fn test_atomics_and_inline_asm() {
     init_env_logger_for_tests!();
-
-    let input_ir = r#"
-define i32 @atomics_asm(ptr %p, i32 %v) {
-entry:
-  %old = atomicrmw add ptr %p, i32 %v monotonic
-  %cx = cmpxchg ptr %p, i32 %old, i32 %v acquire monotonic
-  fence seq_cst
-  %la = load atomic i32, ptr %p monotonic, align 4
-  store atomic i32 %la, ptr %p release, align 4
-  %asm = call i32 asm sideeffect "mov $0, $1", "=r,r"(i32 %v)
-  ret i32 %asm
-}
-"#;
-
-    let llvm_context = LLVMContext::default();
-    let tmp_dir = tempdir().unwrap();
-    let in_path = tmp_dir.path().join("atomics_asm.ll");
-    std::fs::write(&in_path, input_ir).unwrap();
-
-    let module = LLVMModule::from_ir_in_file(&llvm_context, in_path.to_str().unwrap())
-        .expect("input LLVM IR should parse");
-
-    let ctx = &mut Context::new();
-    let pliron_module =
-        from_llvm_ir::convert_module(ctx, &module).expect("from_llvm_ir should succeed");
-    verify_op(&pliron_module, ctx).expect("reconstructed pliron module should verify");
-
-    let plir = pliron_module.get_operation().disp(ctx).to_string();
-    for needle in [
-        "llvm.atomicrmw",
-        "llvm.cmpxchg",
-        "llvm.fence",
-        "llvm.atomic_load",
-        "llvm.atomic_store",
-        "llvm.inline_asm",
-    ] {
-        assert!(
-            plir.contains(needle),
-            "pliron IR missing `{needle}`:\n{plir}"
-        );
-    }
-
-    // Round-trip back to LLVM IR and verify it.
-    let out_module = to_llvm_ir::convert_module(ctx, &llvm_context, pliron_module)
-        .expect("to_llvm_ir should succeed");
-    out_module
-        .verify()
-        .expect("round-tripped LLVM module should verify");
-
-    let out_ir = llvm_print_module_to_string(&out_module).expect("print module");
-    for needle in [
-        "atomicrmw add",
-        "cmpxchg",
-        "fence seq_cst",
-        "load atomic",
-        "store atomic",
-        "asm sideeffect",
-    ] {
-        assert!(
-            out_ir.contains(needle),
-            "emitted IR missing `{needle}`:\n{out_ir}"
-        );
-    }
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR
+            .join("atomics_inline_asm.ll")
+            .to_str()
+            .unwrap(),
+        Passes::default(),
+        33,
+    );
 }

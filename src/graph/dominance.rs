@@ -827,8 +827,7 @@ mod tests {
         basic_block::BasicBlock,
         builtin::{
             op_interfaces::{
-                IsTerminatorInterface, NRegionsInterface, OneRegionInterface,
-                SingleBlockRegionInterface,
+                IsTerminatorInterface, OneRegionInterface, SingleBlockRegionInterface,
             },
             ops::{FuncOp, ModuleOp},
             types::{FunctionType, IntegerType, Signedness},
@@ -854,7 +853,7 @@ mod tests {
     #[pliron_op(
         name = "test.scope",
         format = "`{` region($0) `}`",
-        interfaces = [NRegionsInterface<1>, OneRegionInterface],
+        interfaces = [OneRegionInterface],
         verifier = "succ",
     )]
     struct ScopeOp;

@@ -530,13 +530,11 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 /// 2. An example with a custom format string:
 /// ```
 /// use pliron::derive::{def_op, derive_op_interface_impl, format_op, verify_succ};
-/// use pliron::{op::Op, builtin::op_interfaces::
-///     {OneOpdInterface, OneResultInterface, NOpdsInterface, NResultsInterface}};
+/// use pliron::{op::Op, builtin::op_interfaces::{OneOpdInterface, OneResultInterface}};
 /// #[verify_succ]
 /// #[format_op("$0 `<` $attr `>` `:` type($0)")]
 /// #[def_op("test.one_result_one_operand")]
-/// #[derive_op_interface_impl
-///     (OneOpdInterface, OneResultInterface, NOpdsInterface<1>, NResultsInterface<1>)]
+/// #[derive_op_interface_impl(OneOpdInterface, OneResultInterface)]
 /// struct OneResultOneOperandOp;
 /// ```
 /// More examples can be seen in the tests for this macro in `pliron-derive/tests/format_op.rs`.
