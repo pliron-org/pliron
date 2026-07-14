@@ -63,7 +63,7 @@ if ! make \
 	CC="$WRAPPER" \
 	LLVM_OPT="$LLVM_OPT_BIN" \
 	-j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 2)" \
-	>"$build_log" 2>&1; then
+	2>&1 | tee "$build_log"; then
 	echo "[bzip2] build failed; tail of log:" >&2
 	tail -n 80 "$build_log" >&2 || true
 	exit 1
