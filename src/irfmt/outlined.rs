@@ -326,8 +326,8 @@ pub(crate) fn postparse_outline(state_stream: &mut StateStream, op: Ptr<Operatio
 }
 
 /// Register a [BasicBlock] with a given outline index in the parse state.
-/// Called from [BasicBlock](crate::basic_block::BasicBlock) parsing after the block is
-/// created, with the outline index that was already parsed from the stream.
+/// Called from [BasicBlock] parsing after the block is created,
+/// with the outline index that was already parsed from the stream.
 pub(crate) fn register_block_for_outline(
     state_stream: &mut StateStream,
     outindex: usize,
