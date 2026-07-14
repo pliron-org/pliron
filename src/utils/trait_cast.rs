@@ -149,8 +149,9 @@ macro_rules! type_to_trait {
             fn cast_to_trait<'a>(
                 r: &'a (dyn core::any::Any + 'static),
             ) -> &'a (dyn $to_trait_name + 'static) {
-                // This function is stored in our trait caster map only
-                // for known trait casts, so it should always succeed.
+                // This function is only called when the type of `r` is `$ty_name`,
+                // so the downcast must succeed. A failure indicates an internal bug
+                // in `type_to_trait!` or `any_to_trait`, not their usage.
                 r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
             }
         };
