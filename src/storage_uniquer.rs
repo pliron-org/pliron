@@ -74,7 +74,7 @@ impl<T: 'static> UniqueStore<T> {
     /// Get or create a unique copy of `t: T`.
     /// `t` is uniqued based on its provided `hash` and `eq`.
     /// Consumes the provided argument either way.
-    /// Returns [ArenaIndex] into [Self::unique_store] of the unique copy.
+    /// Returns index into [Self::unique_store] of the unique copy.
     pub(crate) fn get_or_create_unique(
         &self,
         t: T,

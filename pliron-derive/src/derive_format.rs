@@ -38,8 +38,7 @@ fn erase_helper_attributes(mut input: DeriveInput) -> DeriveInput {
     }
 }
 
-/// Derive the [Printable](::pliron::printable::Printable) and
-/// [Parsable](::pliron::parsable::Parsable) traits for Rust types.
+/// Derive the `Printable` and `Parsable` for Rust types.
 pub(crate) fn derive(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
@@ -87,8 +86,7 @@ pub(crate) fn derive(
     Ok(derived)
 }
 
-/// Derive a token stream for [Printable](::pliron::printable::Printable)
-/// and [Parsable](::pliron::parsable::Parsable) traits from [FmtInput].
+/// Derive a token stream for `Printable` and `Parsable` traits from [FmtInput].
 fn derive_from_parsed(input: FmtInput, irobj: DeriveIRObject) -> Result<TokenStream> {
     let mut format_tokens = TokenStream::new();
 
@@ -121,7 +119,7 @@ struct OpPrinterState {
     is_canonical: bool,
 }
 
-/// Generate token stream for derived [Printable](::pliron::printable::Printable) trait.
+/// Generate token stream for derived `Printable` trait.
 trait PrintableBuilder<State: Default> {
     // Entry function. Builds the outer function outline.
     fn build(input: &FmtInput) -> Result<TokenStream> {
@@ -680,7 +678,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
     }
 }
 
-/// Generate token stream for derived [Printable](::pliron::printable::Printable) trait.
+/// Generate token stream for derived `Parsable` trait.
 trait ParsableBuilder<State: Default> {
     /// Entry point to build a parser.
     fn build(input: &FmtInput, state: &mut State) -> Result<TokenStream> {

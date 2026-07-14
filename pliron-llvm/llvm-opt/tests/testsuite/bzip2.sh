@@ -78,4 +78,3 @@ if ! grep -F "you're in business" "$build_log" >/dev/null 2>&1; then
 fi
 
 echo "[bzip2] PASS"
-
