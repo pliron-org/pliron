@@ -38,7 +38,7 @@ fn erase_helper_attributes(mut input: DeriveInput) -> DeriveInput {
     }
 }
 
-/// Derive the `Printable` and `Parsable` for Rust types.
+/// Derive `Printable` and `Parsable` for Rust types.
 pub(crate) fn derive(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
