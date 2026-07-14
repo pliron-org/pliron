@@ -36,8 +36,7 @@ entry:
   %sum3 = fadd float %e_f, %f_f
   %sum4 = fadd float %sum1, %sum2
   %sum5 = fadd float %sum3, %g_f
-  %neg_sum4 = fneg float %sum4
-  %final_sum = fsub float %sum5, %neg_sum4
+  %final_sum = fadd float %sum4, %sum5
 
   ; Cast final result to int and return
   %result2 = fptosi float %final_sum to i32

@@ -53,9 +53,9 @@ use crate::{
         llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br,
         llvm_build_call2, llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value,
         llvm_build_fadd, llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul,
-        llvm_build_fneg, llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui,
-        llvm_build_fptrunc, llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep2,
-        llvm_build_icmp, llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
+        llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
+        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep2, llvm_build_icmp,
+        llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
         llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or, llvm_build_phi,
         llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void, llvm_build_sdiv,
         llvm_build_select, llvm_build_sext, llvm_build_shl, llvm_build_shuffle_vector,
@@ -81,7 +81,7 @@ use crate::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
         AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BrOp, CallIntrinsicOp, CallOp,
         CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp,
-        FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FenceOp, FreezeOp, FuncOp,
+        FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FenceOp, FreezeOp, FuncOp,
         GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp, InsertValueOp, IntToPtrOp,
         LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp,
         SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchOp, TruncOp, UDivOp,
@@ -1715,26 +1715,6 @@ impl ToLLVMValue for FCmpOp {
             llvm_set_fast_math_flags(fcmp_op, fastmath.into());
         }
         Ok(fcmp_op)
-    }
-}
-
-#[op_interface_impl]
-impl ToLLVMValue for FNegOp {
-    fn convert(
-        &self,
-        ctx: &Context,
-        _llvm_ctx: &LLVMContext,
-        cctx: &mut ConversionContext,
-    ) -> Result<LLVMValue> {
-        let op = self.get_operation().deref(ctx);
-        let arg = convert_value_operand(cctx, ctx, &op.get_operand(0))?;
-        let inst = llvm_build_fneg(&cctx.builder, arg, &self.get_result(ctx).unique_name(ctx));
-        // The built value may not even be an instruction, but a folded constant.
-        if llvm_can_value_use_fast_math_flags(inst) {
-            let fastmath = self.fast_math_flags(ctx);
-            llvm_set_fast_math_flags(inst, fastmath.into());
-        }
-        Ok(inst)
     }
 }
 
