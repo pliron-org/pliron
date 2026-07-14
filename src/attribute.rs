@@ -65,6 +65,7 @@ use crate::{
     printable::{self, Printable},
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
+    utils::trait_cast::impls_trait_static,
 };
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
@@ -365,6 +366,14 @@ pub fn attr_cast<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute
 /// ```
 pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute) -> bool {
     attr_cast::<T>(attr).is_some()
+}
+
+/// Does this [Attribute] type `A` implement interface `T`?
+/// This function does the lookup from the type instead of a dynamic object, which can be useful for
+/// parsing.
+/// See also: [`attr_impls`]
+pub fn attr_impls_static<A: Attribute, T: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<A, T>()
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]

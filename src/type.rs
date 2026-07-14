@@ -50,6 +50,7 @@ use crate::{
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
     storage_uniquer::TypeValueHash,
+    utils::trait_cast::impls_trait_static,
 };
 
 use alloc::{
@@ -581,6 +582,14 @@ pub fn type_cast<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> Op
 /// ```
 pub fn type_impls<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> bool {
     type_cast::<T>(ty).is_some()
+}
+
+/// Does this [Type] type `T` implement interface `I`?
+/// This function does the lookup from the type instead of a dynamic object, which can be useful for
+/// parsing.
+/// See also: [`type_impls`]
+pub fn type_impls_static<T: Type, I: ?Sized + TypeInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<T, I>()
 }
 
 /// Every type interface must have a function named `verify` with this type.

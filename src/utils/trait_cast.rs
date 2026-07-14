@@ -52,6 +52,11 @@ pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
         })
 }
 
+/// Check if a type implements a specific interface by checking the interface registration
+pub fn impls_trait_static<T: 'static, I: ?Sized + 'static>() -> bool {
+    TRAIT_CASTERS_MAP.contains_key(&(TypeId::of::<T>(), TypeId::of::<I>()))
+}
+
 #[doc(hidden)]
 /// Information to cast from a Rust type to a trait object.
 pub struct TraitCasterInfo {

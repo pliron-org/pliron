@@ -72,6 +72,7 @@ use crate::{
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
     r#type::{TypeSig, Typed},
+    utils::trait_cast::impls_trait_static,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -309,6 +310,14 @@ pub fn op_cast<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> Option<&
 /// ```
 pub fn op_impls<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> bool {
     op_cast::<T>(op).is_some()
+}
+
+/// Does this [Op] type `O` implement interface `T`?
+/// This function does the lookup from the type instead of a dynamic object, which can be useful for
+/// parsing.
+/// See also: [`op_impls`]
+pub fn op_impls_static<O: Op, T: ?Sized + OpInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<O, T>()
 }
 
 /// Every op interface must have a function named `verify` with this type.
