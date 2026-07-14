@@ -46,7 +46,7 @@ use crate::{
     combine::{Parser, parser::char},
     impl_printable_for_display, input_error,
     location::Located,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     result::Result,
 };
 
@@ -119,8 +119,7 @@ pub fn float_parse<'a, T: Float>(
 
 /// A parser combinator to parse a [Float] of type `T`.
 pub fn float_parser<'a, T: Float + 'a>(_arg: ()) -> impl Parser<StateStream<'a>, Output = T> + 'a {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| float_parse(parsable_state, ()))
-        .boxed()
+    parser_combinator(float_parse, ())
 }
 
 impl Parsable for BFloat {
