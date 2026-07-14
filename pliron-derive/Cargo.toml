@@ -27,4 +27,3 @@ syn = { version = "2", features = ["derive", "full", "parsing"] }
 prettyplease.workspace = true
 expect-test.workspace = true
 pliron = { path = "../" }
-

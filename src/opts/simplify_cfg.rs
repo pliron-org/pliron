@@ -46,7 +46,7 @@ use crate::{
 };
 
 /// For each operand of `op`, return the constant value it carries if the operand
-/// is defined by a [ConstantOp], or `None` otherwise.
+/// is defined by [ConstFoldInterface], or `None` otherwise.
 fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrObj>> {
     // Assumes `v` is defined by `def`.
     // Returns `Some(attr_obj)` if `def` implements `ConstFoldInterface` and the
