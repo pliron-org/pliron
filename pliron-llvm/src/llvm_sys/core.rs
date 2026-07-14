@@ -19,27 +19,28 @@ use llvm_sys::{
         LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca, LLVMBuildBitCast,
         LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
-        LLVMBuildFPExt, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc, LLVMBuildFRem,
-        LLVMBuildFSub, LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildInsertElement,
-        LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMul,
-        LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet, LLVMBuildRetVoid,
-        LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect,
-        LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub, LLVMBuildSwitch,
-        LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable,
-        LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt, LLVMCanValueUseFastMathFlags,
-        LLVMClearInsertionPosition, LLVMConstInt, LLVMConstIntGetZExtValue, LLVMConstNull,
-        LLVMConstReal, LLVMConstRealGetDouble, LLVMConstVector, LLVMContextCreate,
-        LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams,
-        LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
-        LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
-        LLVMDeleteFunction, LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
-        LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType, LLVMDumpValue,
-        LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetAggregateElement, LLVMGetAlignment,
-        LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetBasicBlockName, LLVMGetBasicBlockParent,
-        LLVMGetBasicBlockTerminator, LLVMGetCalledFunctionType, LLVMGetCalledValue,
-        LLVMGetConstOpcode, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
-        LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
-        LLVMGetFirstParam, LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
+        LLVMBuildFNeg, LLVMBuildFPExt, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc,
+        LLVMBuildFRem, LLVMBuildFSub, LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp,
+        LLVMBuildInsertElement, LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr,
+        LLVMBuildLoad2, LLVMBuildMul, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet,
+        LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem,
+        LLVMBuildSelect, LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub,
+        LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem,
+        LLVMBuildUnreachable, LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt,
+        LLVMCanValueUseFastMathFlags, LLVMClearInsertionPosition, LLVMConstInt,
+        LLVMConstIntGetZExtValue, LLVMConstNull, LLVMConstReal, LLVMConstRealGetDouble,
+        LLVMConstVector, LLVMContextCreate, LLVMContextDispose, LLVMCountIncoming,
+        LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
+        LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
+        LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDisposeMemoryBuffer,
+        LLVMDisposeMessage, LLVMDisposeModule, LLVMDoubleTypeInContext, LLVMDumpModule,
+        LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
+        LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
+        LLVMGetBasicBlockName, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
+        LLVMGetCalledFunctionType, LLVMGetCalledValue, LLVMGetConstOpcode, LLVMGetElementType,
+        LLVMGetFCmpPredicate, LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction,
+        LLVMGetFirstGlobal, LLVMGetFirstInstruction, LLVMGetFirstParam,
+        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
         LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInsertBlock,
         LLVMGetInstructionOpcode, LLVMGetInstructionParent, LLVMGetIntTypeWidth,
         LLVMGetIntrinsicDeclaration, LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage,
@@ -2029,6 +2030,12 @@ pub fn llvm_build_frem(
         )
         .into()
     }
+}
+
+/// LLVMBuildFNeg
+pub fn llvm_build_fneg(builder: &LLVMBuilder, val: LLVMValue, name: &str) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe { LLVMBuildFNeg(builder.inner_ref(), val.into(), to_c_str(name).as_ptr()).into() }
 }
 
 /// LLVMBuildFCmp
