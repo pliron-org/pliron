@@ -15,6 +15,10 @@ mod r#impl {
         pub use std::path::PathBuf;
     }
 
+    pub mod fs {
+        pub use std::fs::write;
+    }
+
     pub mod time {
         pub use std::time::Instant;
     }
@@ -69,15 +73,36 @@ mod r#impl {
     }
 
     pub mod io {
-        use alloc::string::String;
+        use alloc::string::{String, ToString};
         use core::ops::{Deref, DerefMut};
 
         #[derive(PartialEq, Eq, Clone, Debug, Hash)]
         pub struct PathBuf(String);
 
-        impl<T: Into<String>> From<T> for PathBuf {
-            fn from(value: T) -> Self {
-                PathBuf(value.into())
+        impl PathBuf {
+            pub fn join<P: AsRef<str>>(&self, path: P) -> PathBuf {
+                let mut s = self.clone();
+                s.push('/');
+                s.push_str(path.as_ref());
+                s
+            }
+        }
+
+        impl AsRef<str> for PathBuf {
+            fn as_ref(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl From<String> for PathBuf {
+            fn from(value: String) -> Self {
+                PathBuf(value)
+            }
+        }
+
+        impl From<&str> for PathBuf {
+            fn from(value: &str) -> Self {
+                PathBuf(value.to_string())
             }
         }
 
@@ -102,6 +127,13 @@ mod r#impl {
         }
     }
 
+    pub mod fs {
+        pub use super::io::PathBuf;
+        pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(_path: P, _contents: C) -> Result<(), ()> {
+            Ok(())
+        }
+    }
+
     pub mod time {
         pub struct Instant;
         impl Instant {
@@ -122,4 +154,4 @@ mod r#impl {
     }
 }
 
-pub use r#impl::{backtrace, hash, io, sync, time};
+pub use r#impl::{backtrace, fs, hash, io, sync, time};

@@ -162,7 +162,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, string::ToString, vec::Vec};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -174,6 +174,8 @@ use crate::{
     operation::{OpDbg, Operation, verify_operation},
     printable::Printable,
     result::Result,
+    std_deps::fs::write,
+    std_deps::io::PathBuf,
     utils::timer::Timer,
 };
 
@@ -431,38 +433,6 @@ pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
 pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
-#[cfg(feature = "std")]
-mod print_file {
-    use core::sync::atomic::{self, AtomicU64};
-
-    use crate::{
-        context::{Context, Ptr},
-        operation::Operation,
-        pass::Pass,
-        printable::Printable,
-    };
-
-    static CURRENT_PASS_NUMBER: AtomicU64 = AtomicU64::new(0);
-
-    pub(super) fn incr_pass() {
-        CURRENT_PASS_NUMBER.fetch_add(1, atomic::Ordering::Relaxed);
-    }
-
-    pub(super) fn dump_file(
-        op: Ptr<Operation>,
-        ctx: &mut Context,
-        pass: &mut dyn Pass,
-        tree_printing_path: &Option<std::path::PathBuf>,
-    ) {
-        use std::string::ToString;
-        if let Some(path) = tree_printing_path {
-            let number = CURRENT_PASS_NUMBER.load(atomic::Ordering::Relaxed);
-            let path = path.join(alloc::format!("{}-{}.plir", number, pass.name()));
-            std::fs::write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
-        }
-    }
-}
-
 /// A [Pass] that contains, manages and runs other [Pass]es.
 /// The only requirement (that cannot be enforced by the type system)
 /// is that a [PassManager] [Pass] must run its contained [Passes] via
@@ -480,6 +450,7 @@ pub trait PassManager {
     {
         let is_pass_manager = pass.as_pass_manager().is_some();
         let config = analyses.pm_data().config();
+        let number = analyses.pm_data().state().current_pass_number;
 
         let skip_pass = !is_pass_manager && config.skip_passes.contains(pass.name());
         let pre_print_pass = !is_pass_manager
@@ -508,8 +479,10 @@ pub trait PassManager {
 
         if pre_print_pass {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
-            #[cfg(feature = "std")]
-            print_file::dump_file(op, ctx, pass, &tree_printing_path);
+            if let Some(path) = &tree_printing_path {
+                let path = path.join(alloc::format!("{}-before-{}.plir", number, pass.name()));
+                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            }
         }
         if pre_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -535,8 +508,10 @@ pub trait PassManager {
         }
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
-            #[cfg(feature = "std")]
-            print_file::dump_file(op, ctx, pass, &tree_printing_path);
+            if let Some(path) = &tree_printing_path {
+                let path = path.join(alloc::format!("{}-after-{}.plir", number, pass.name()));
+                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            }
         }
         if post_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -548,8 +523,7 @@ pub trait PassManager {
                 );
             })?;
         }
-        #[cfg(feature = "std")]
-        print_file::incr_pass();
+        analyses.pm_data_mut().state_mut().current_pass_number += 1;
         result
     }
 }
@@ -563,7 +537,7 @@ pub struct PMConfig {
     pub print_after_all: bool,
     #[cfg(feature = "std")]
     /// Optional path of the folder where passes will print IR inside files
-    pub tree_printing_path: Option<std::path::PathBuf>,
+    pub tree_printing_path: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
     /// Set of pass names for which to print the IR after execution.
@@ -596,6 +570,8 @@ pub struct PMState {
     pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
     /// Custom state for extensibility.
     pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    /// Used to print the order of the passes
+    pub current_pass_number: usize,
 }
 
 /// Common data across [PassManager]s stored in [AnalysisManager].
