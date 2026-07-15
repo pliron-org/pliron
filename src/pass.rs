@@ -450,7 +450,7 @@ pub trait PassManager {
     {
         let is_pass_manager = pass.as_pass_manager().is_some();
         let config = analyses.pm_data().config();
-        let number = analyses.pm_data().state().current_pass_number;
+        let pass_run_count = analyses.pm_data().state().pass_run_count;
 
         let skip_pass = !is_pass_manager && config.skip_passes.contains(pass.name());
         let pre_print_pass = !is_pass_manager
@@ -464,7 +464,7 @@ pub trait PassManager {
         let should_time = !is_pass_manager
             && (config.time_all_passes || config.time_passes.contains(pass.name()));
 
-        let tree_printing_path = config.tree_printing_path.clone();
+        let ir_printing_dir = config.ir_printing_dir.clone();
 
         // Skip passes that are configured to be skipped, but only for non-manager passes.
         if skip_pass {
@@ -478,8 +478,12 @@ pub trait PassManager {
 
         if pre_print_pass {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &tree_printing_path {
-                let path = path.join(alloc::format!("{}-before-{}.plir", number, pass.name()));
+            if let Some(path) = &ir_printing_dir {
+                let path = path.join(alloc::format!(
+                    "{}-before-{}.plir",
+                    pass_run_count,
+                    pass.name()
+                ));
                 write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
             }
         }
@@ -507,8 +511,12 @@ pub trait PassManager {
         }
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &tree_printing_path {
-                let path = path.join(alloc::format!("{}-after-{}.plir", number, pass.name()));
+            if let Some(path) = &ir_printing_dir {
+                let path = path.join(alloc::format!(
+                    "{}-after-{}.plir",
+                    pass_run_count,
+                    pass.name()
+                ));
                 write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
             }
         }
@@ -522,7 +530,11 @@ pub trait PassManager {
                 );
             })?;
         }
-        analyses.pm_data_mut().state_mut().current_pass_number += 1;
+
+        if !is_pass_manager {
+            analyses.pm_data_mut().state_mut().pass_run_count += 1;
+        }
+
         result
     }
 }
@@ -534,8 +546,8 @@ pub struct PMConfig {
     pub print_before_all: bool,
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
-    /// Optional path of the folder where passes will print IR inside files
-    pub tree_printing_path: Option<PathBuf>,
+    /// Directory to place printed IR files before and after passes.
+    pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
     /// Set of pass names for which to print the IR after execution.
@@ -568,8 +580,8 @@ pub struct PMState {
     pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
     /// Custom state for extensibility.
     pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
-    /// Used to print the order of the passes
-    pub current_pass_number: usize,
+    /// A count of the number of non-manager passes run so far
+    pub pass_run_count: usize,
 }
 
 /// Common data across [PassManager]s stored in [AnalysisManager].
