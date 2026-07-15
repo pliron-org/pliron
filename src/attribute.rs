@@ -368,12 +368,19 @@ pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribut
     attr_cast::<T>(attr).is_some()
 }
 
-/// Does this [Attribute] type `A` implement interface `T`?
-/// This function does the lookup from the type instead of a dynamic object, which can be useful for
-/// parsing.
-/// See also: [`attr_impls`]
-pub fn attr_impls_static<A: Attribute, T: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
-    impls_trait_static::<A, T>()
+/// Does [Attribute] `A` implement interface `I`?
+/// See also: [`attr_impls`].
+///
+/// Example:
+/// ```
+/// use pliron::attribute::{Attribute, attr_impls_static};
+/// use pliron::builtin::attr_interfaces::{FloatAttr, TypedAttrInterface};
+/// use pliron::builtin::attributes::IntegerAttr;
+/// assert!(attr_impls_static::<IntegerAttr, dyn TypedAttrInterface>());
+/// assert!(!attr_impls_static::<IntegerAttr, dyn FloatAttr>());
+/// ```
+pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<A, I>()
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]

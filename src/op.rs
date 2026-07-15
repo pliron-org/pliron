@@ -312,12 +312,19 @@ pub fn op_impls<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> bool {
     op_cast::<T>(op).is_some()
 }
 
-/// Does this [Op] type `O` implement interface `T`?
-/// This function does the lookup from the type instead of a dynamic object, which can be useful for
-/// parsing.
+/// Does [Op] `O` implement interface `I`?
 /// See also: [`op_impls`]
-pub fn op_impls_static<O: Op, T: ?Sized + OpInterfaceMarker + 'static>() -> bool {
-    impls_trait_static::<O, T>()
+///
+/// Example:
+/// ```
+/// use pliron::builtin::op_interfaces::{SymbolTableInterface, IsTerminatorInterface};
+/// use pliron::builtin::ops::ModuleOp;
+/// use pliron::op::{Op, op_impls_static};
+/// assert!(op_impls_static::<ModuleOp, dyn SymbolTableInterface>());
+/// assert!(!op_impls_static::<ModuleOp, dyn IsTerminatorInterface>());
+/// ```
+pub fn op_impls_static<O: Op, I: ?Sized + OpInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<O, I>()
 }
 
 /// Every op interface must have a function named `verify` with this type.

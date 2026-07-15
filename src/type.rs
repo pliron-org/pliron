@@ -584,10 +584,17 @@ pub fn type_impls<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> b
     type_cast::<T>(ty).is_some()
 }
 
-/// Does this [Type] type `T` implement interface `I`?
-/// This function does the lookup from the type instead of a dynamic object, which can be useful for
-/// parsing.
+/// Does [Type] `T` implement interface `I`?
 /// See also: [`type_impls`]
+///
+/// Example:
+/// ```
+/// use pliron::builtin::type_interfaces::{FunctionTypeInterface, FloatTypeInterface};
+/// use pliron::builtin::types::FunctionType;
+/// use pliron::r#type::{Type, type_impls_static};
+/// assert!(type_impls_static::<FunctionType, dyn FunctionTypeInterface>());
+/// assert!(!type_impls_static::<FunctionType, dyn FloatTypeInterface>());
+/// ```
 pub fn type_impls_static<T: Type, I: ?Sized + TypeInterfaceMarker + 'static>() -> bool {
     impls_trait_static::<T, I>()
 }
