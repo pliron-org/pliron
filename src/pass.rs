@@ -162,7 +162,7 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{boxed::Box, string::String, string::ToString, vec::Vec};
 use downcast_rs::{Downcast, impl_downcast};
 use rustc_hash::{FxHashMap, FxHashSet};
 
@@ -174,6 +174,8 @@ use crate::{
     operation::{OpDbg, Operation, verify_operation},
     printable::Printable,
     result::Result,
+    std_deps::fs::write,
+    std_deps::io::PathBuf,
     utils::timer::Timer,
 };
 
@@ -448,6 +450,7 @@ pub trait PassManager {
     {
         let is_pass_manager = pass.as_pass_manager().is_some();
         let config = analyses.pm_data().config();
+        let pass_run_count = analyses.pm_data().state().pass_run_count;
 
         let skip_pass = !is_pass_manager && config.skip_passes.contains(pass.name());
         let pre_print_pass = !is_pass_manager
@@ -461,6 +464,8 @@ pub trait PassManager {
         let should_time = !is_pass_manager
             && (config.time_all_passes || config.time_passes.contains(pass.name()));
 
+        let ir_printing_dir = config.ir_printing_dir.clone();
+
         // Skip passes that are configured to be skipped, but only for non-manager passes.
         if skip_pass {
             log::debug!("Skipping pass {} on {}", pass.name(), OpDbg { op, ctx });
@@ -473,6 +478,14 @@ pub trait PassManager {
 
         if pre_print_pass {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
+            if let Some(path) = &ir_printing_dir {
+                let path = path.join(alloc::format!(
+                    "{}-before-{}.plir",
+                    pass_run_count,
+                    pass.name()
+                ));
+                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            }
         }
         if pre_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -498,6 +511,14 @@ pub trait PassManager {
         }
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
+            if let Some(path) = &ir_printing_dir {
+                let path = path.join(alloc::format!(
+                    "{}-after-{}.plir",
+                    pass_run_count,
+                    pass.name()
+                ));
+                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            }
         }
         if post_verify_pass {
             verify_operation(op, ctx).inspect_err(|e| {
@@ -509,6 +530,11 @@ pub trait PassManager {
                 );
             })?;
         }
+
+        if !is_pass_manager {
+            analyses.pm_data_mut().state_mut().pass_run_count += 1;
+        }
+
         result
     }
 }
@@ -520,6 +546,8 @@ pub struct PMConfig {
     pub print_before_all: bool,
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
+    /// Directory to place printed IR files before and after passes.
+    pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
     /// Set of pass names for which to print the IR after execution.
@@ -552,6 +580,8 @@ pub struct PMState {
     pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
     /// Custom state for extensibility.
     pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    /// A count of the number of non-manager passes run so far
+    pub pass_run_count: usize,
 }
 
 /// Common data across [PassManager]s stored in [AnalysisManager].
