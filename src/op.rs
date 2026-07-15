@@ -72,6 +72,7 @@ use crate::{
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
     r#type::{TypeSig, Typed},
+    utils::trait_cast::impls_trait_static,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -309,6 +310,21 @@ pub fn op_cast<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> Option<&
 /// ```
 pub fn op_impls<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> bool {
     op_cast::<T>(op).is_some()
+}
+
+/// Does [Op] `O` implement interface `I`?
+/// See also: [`op_impls`]
+///
+/// Example:
+/// ```
+/// use pliron::builtin::op_interfaces::{SymbolTableInterface, IsTerminatorInterface};
+/// use pliron::builtin::ops::ModuleOp;
+/// use pliron::op::{Op, op_impls_static};
+/// assert!(op_impls_static::<ModuleOp, dyn SymbolTableInterface>());
+/// assert!(!op_impls_static::<ModuleOp, dyn IsTerminatorInterface>());
+/// ```
+pub fn op_impls_static<O: Op, I: ?Sized + OpInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<O, I>()
 }
 
 /// Every op interface must have a function named `verify` with this type.
