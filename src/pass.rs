@@ -464,7 +464,6 @@ pub trait PassManager {
         let should_time = !is_pass_manager
             && (config.time_all_passes || config.time_passes.contains(pass.name()));
 
-        #[cfg(feature = "std")]
         let tree_printing_path = config.tree_printing_path.clone();
 
         // Skip passes that are configured to be skipped, but only for non-manager passes.
@@ -535,7 +534,6 @@ pub struct PMConfig {
     pub print_before_all: bool,
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
-    #[cfg(feature = "std")]
     /// Optional path of the folder where passes will print IR inside files
     pub tree_printing_path: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
