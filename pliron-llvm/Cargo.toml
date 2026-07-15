@@ -23,7 +23,7 @@ log.workspace = true
 bitflags = { workspace = true, features = ["std"] }
 
 # When upgrading the LLVM version, change the LLVM versions in
-# `ci.yml` and the READMEs in `pliron-llvm` and `llvm-opt`.
+# CI `.yml` files and the READMEs in `pliron-llvm` and `llvm-opt`.
 llvm-sys = { version = "221", optional = true }
 
 [dev-dependencies]

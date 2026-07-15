@@ -328,10 +328,9 @@ pub mod statics {
 
     #[::pliron::linkme::distributed_slice]
     #[linkme(crate = ::pliron::linkme)]
-    pub static CONTEXT_REGISTRATIONS: [LazyLock<ContextRegistration>];
+    pub static CONTEXT_REGISTRATIONS: [ContextRegistration];
 
-    pub fn get_context_registrations()
-    -> impl Iterator<Item = &'static LazyLock<ContextRegistration>> {
+    pub fn get_context_registrations() -> impl Iterator<Item = &'static ContextRegistration> {
         CONTEXT_REGISTRATIONS.iter()
     }
 }
@@ -347,12 +346,10 @@ pub mod statics {
         ::pliron::inventory::iter::<InventoryWrapper<LazyLock<DictKeyId>>>().map(|llw| llw.0)
     }
 
-    ::pliron::inventory::collect!(InventoryWrapper<LazyLock<ContextRegistration>>);
+    ::pliron::inventory::collect!(InventoryWrapper<ContextRegistration>);
 
-    pub fn get_context_registrations()
-    -> impl Iterator<Item = &'static LazyLock<ContextRegistration>> {
-        ::pliron::inventory::iter::<InventoryWrapper<LazyLock<ContextRegistration>>>()
-            .map(|llw| llw.0)
+    pub fn get_context_registrations() -> impl Iterator<Item = &'static ContextRegistration> {
+        ::pliron::inventory::iter::<InventoryWrapper<ContextRegistration>>().map(|llw| llw.0)
     }
 }
 
@@ -486,7 +483,7 @@ macro_rules! dict_key {
 /// context_registration!(my_registration_fn);
 /// fn my_registration_fn(_: &mut pliron::context::Context) {}
 /// ```
-/// Here, `my_registration_fn` is a function or closure matching [ContextRegistration].
+/// Here, `my_registration_fn` is a function matching [ContextRegistration].
 #[macro_export]
 macro_rules! context_registration {
     (   $(#[$outer:meta])*
@@ -496,8 +493,7 @@ macro_rules! context_registration {
             $(#[$outer])*
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::CONTEXT_REGISTRATIONS), linkme(crate = ::pliron::linkme))]
-            static CONTEXT_REGISTRATION: $crate::std_deps::sync::LazyLock<::pliron::context::ContextRegistration> =
-                $crate::std_deps::sync::LazyLock::new(|| $registration);
+            static CONTEXT_REGISTRATION: ::pliron::context::ContextRegistration = $registration;
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {

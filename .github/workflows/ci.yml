@@ -48,24 +48,17 @@ jobs:
     - name: Clippy
       run: cargo clippy --workspace --all-targets -- -D warnings
 
-    - name: Build
-      run: RUSTFLAGS="-D warnings" cargo build --workspace --verbose
-
-      # We don't need to support pliron-llvm on WASM
-    - name: Build Wasm Target
-      run: RUSTFLAGS="-D warnings" cargo build -p pliron -p pliron-derive --target wasm32-unknown-unknown --verbose
-
     - name: Tests (Debug)
-      run: cargo test --workspace --verbose
+      run: RUSTFLAGS="-D warnings" cargo test --workspace --verbose
 
     - name: Tests (Release)
-      run: cargo test --release --workspace --verbose
+      run: RUSTFLAGS="-D warnings" cargo test --release --workspace --verbose
 
     - name: WASM Tests (Debug)
-      run: cargo test --target wasm32-unknown-unknown
+      run: RUSTFLAGS="-D warnings" cargo test --target wasm32-unknown-unknown
 
     - name: WASM Tests (Release)
-      run: cargo test --release --target wasm32-unknown-unknown
+      run: RUSTFLAGS="-D warnings" cargo test --release --target wasm32-unknown-unknown
 
     - name: Documentation
-      run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items

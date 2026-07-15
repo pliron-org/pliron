@@ -44,10 +44,11 @@ use crate::std_deps::{hash::FxHashMap, sync::LazyLock};
 pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
     TRAIT_CASTERS_MAP
         .get(&(r.type_id(), TypeId::of::<T>()))
-        .and_then(|caster| {
-            (**caster)
-                .downcast_ref::<for<'a> fn(&'a (dyn Any + 'static)) -> Option<&'a T>>()
-                .and_then(|caster| caster(r))
+        .map(|caster| {
+            ((**caster)
+                // The caster function is set by `type_to_trait!`, and can only be of this type.
+                .downcast_ref::<for<'a> fn(&'a (dyn Any + 'static)) -> &'a T>()
+                .unwrap())(r)
         })
 }
 
@@ -136,8 +137,7 @@ macro_rules! type_to_trait {
                     caster: &(cast_to_trait
                         as for<'a> fn(
                             &'a (dyn core::any::Any + 'static),
-                        )
-                            -> Option<&'a (dyn $to_trait_name + 'static)>)
+                        ) -> &'a (dyn $to_trait_name + 'static))
                         as &'static (dyn core::any::Any + Sync + Send),
                 };
 
@@ -148,9 +148,11 @@ macro_rules! type_to_trait {
 
             fn cast_to_trait<'a>(
                 r: &'a (dyn core::any::Any + 'static),
-            ) -> Option<&'a (dyn $to_trait_name + 'static)> {
-                r.downcast_ref::<$ty_name>()
-                    .map(|s| s as &dyn $to_trait_name)
+            ) -> &'a (dyn $to_trait_name + 'static) {
+                // This function is only called when the type of `r` is `$ty_name`,
+                // so the downcast must succeed. A failure indicates an internal bug
+                // in `type_to_trait!` or `any_to_trait`, not their usage.
+                r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
             }
         };
     };

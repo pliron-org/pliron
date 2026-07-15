@@ -66,7 +66,7 @@ use crate::{
     },
     location::{Located, Location},
     operation::{Operation, verify_operation},
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     printable::{self, Printable},
     region::Region,
     result::Result,
@@ -497,10 +497,7 @@ fn canonical_syntax_parse_impl<'a>(
 pub fn canonical_syntax_parser<'a, T: Op>(
     results: Vec<(Identifier, Location)>,
 ) -> Box<dyn Parser<StateStream<'a>, Output = OpObj, PartialState = ()> + 'a> {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| {
-        canonical_syntax_parse::<T>(parsable_state, results.clone())
-    })
-    .boxed()
+    parser_combinator(canonical_syntax_parse::<T>, results)
 }
 
 /// This must always be the same as any concrete [Op] object.
