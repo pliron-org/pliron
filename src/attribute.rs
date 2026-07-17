@@ -65,6 +65,7 @@ use crate::{
     printable::{self, Printable},
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
+    utils::trait_cast::impls_trait_static,
 };
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
@@ -365,6 +366,21 @@ pub fn attr_cast<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute
 /// ```
 pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute) -> bool {
     attr_cast::<T>(attr).is_some()
+}
+
+/// Does [Attribute] `A` implement interface `I`?
+/// See also: [`attr_impls`].
+///
+/// Example:
+/// ```
+/// use pliron::attribute::{Attribute, attr_impls_static};
+/// use pliron::builtin::attr_interfaces::{FloatAttr, TypedAttrInterface};
+/// use pliron::builtin::attributes::IntegerAttr;
+/// assert!(attr_impls_static::<IntegerAttr, dyn TypedAttrInterface>());
+/// assert!(!attr_impls_static::<IntegerAttr, dyn FloatAttr>());
+/// ```
+pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<A, I>()
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]

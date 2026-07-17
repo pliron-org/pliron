@@ -1598,3 +1598,554 @@ fn fsub_nnan_does_not_fold_nan_result() -> Result<()> {
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
+
+// ---------------------------------------------------------------------------
+// llvm.fmul
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fmul_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fmul <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn fmul_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fmul <> x, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fmul_folds_negative_operands_to_positive() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single -2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single -4.0> : builtin.fp32;
+        c = llvm.fmul <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn fmul_folds_infinity_and_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.fmul <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after
+            .matches("<builtin.single +Inf> : builtin.fp32")
+            .count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn fmul_folds_zero_times_infinity_to_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fmul <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn fmul_folds_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.fmul <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn fmul_ninf_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.fmul <NINF> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fmul_nnan_does_not_fold_nan_result() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fmul <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fmul_nnan_still_folds_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fmul <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fdiv
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fdiv_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 10.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 2.5> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn fdiv_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fdiv <> x, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fdiv_folds_finite_by_zero_to_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after
+            .matches("<builtin.single +Inf> : builtin.fp32")
+            .count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn fdiv_folds_zero_by_zero_to_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn fdiv_folds_infinity_by_infinity_to_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn fdiv_folds_finite_by_infinity_to_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 0> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn fdiv_folds_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.fdiv <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn fdiv_ninf_does_not_fold_division_by_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.fdiv <NINF> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fdiv_nnan_does_not_fold_nan_result() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.fdiv <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fdiv_nnan_still_folds_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 10.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fdiv <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 2.5> : builtin.fp32"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.frem
+// ---------------------------------------------------------------------------
+
+#[test]
+fn frem_folds_two_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 10.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 2> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn frem_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.frem <> x, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// `frem` truncates toward zero, so the result takes the sign of the dividend
+/// rather than rounding to nearest as IEEE `remainder` would.
+#[test]
+fn frem_result_takes_sign_of_dividend() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single -10.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single -2> : builtin.fp32"));
+    Ok(())
+}
+
+/// IEEE `remainder(3.0, 2.0)` would be -1.0; `frem`/`fmod` must give 1.0.
+#[test]
+fn frem_truncates_rather_than_rounding_to_nearest() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 3.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 1> : builtin.fp32"));
+    Ok(())
+}
+
+#[test]
+fn frem_folds_by_zero_to_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        1
+    );
+    Ok(())
+}
+
+#[test]
+fn frem_folds_infinity_dividend_to_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        1
+    );
+    Ok(())
+}
+
+/// A finite dividend with an infinite divisor returns the dividend unchanged.
+#[test]
+fn frem_folds_infinity_divisor_to_dividend() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single 2.5> : builtin.fp32").count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn frem_folds_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.0> : builtin.fp32;
+        c = llvm.frem <> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert_eq!(
+        after.matches("<builtin.single NaN> : builtin.fp32").count(),
+        2
+    );
+    Ok(())
+}
+
+#[test]
+fn frem_nnan_does_not_fold_nan_result() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 1.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.frem <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn frem_ninf_does_not_fold_infinite_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.frem <NINF> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn frem_nnan_still_folds_finite() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 10.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.frem <NNAN> a, b : builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<builtin.single 2> : builtin.fp32"));
+    Ok(())
+}

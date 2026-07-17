@@ -66,12 +66,13 @@ use crate::{
     },
     location::{Located, Location},
     operation::{Operation, verify_operation},
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     printable::{self, Printable},
     region::Region,
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
     r#type::{TypeSig, Typed},
+    utils::trait_cast::impls_trait_static,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -311,6 +312,21 @@ pub fn op_impls<T: ?Sized + OpInterfaceMarker + 'static>(op: &dyn Op) -> bool {
     op_cast::<T>(op).is_some()
 }
 
+/// Does [Op] `O` implement interface `I`?
+/// See also: [`op_impls`]
+///
+/// Example:
+/// ```
+/// use pliron::builtin::op_interfaces::{SymbolTableInterface, IsTerminatorInterface};
+/// use pliron::builtin::ops::ModuleOp;
+/// use pliron::op::{Op, op_impls_static};
+/// assert!(op_impls_static::<ModuleOp, dyn SymbolTableInterface>());
+/// assert!(!op_impls_static::<ModuleOp, dyn IsTerminatorInterface>());
+/// ```
+pub fn op_impls_static<O: Op, I: ?Sized + OpInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<O, I>()
+}
+
 /// Every op interface must have a function named `verify` with this type.
 pub type OpInterfaceVerifier = fn(&dyn Op, &Context) -> Result<()>;
 /// Function returns the list of super verifiers, followed by a self verifier, for an interface.
@@ -497,10 +513,7 @@ fn canonical_syntax_parse_impl<'a>(
 pub fn canonical_syntax_parser<'a, T: Op>(
     results: Vec<(Identifier, Location)>,
 ) -> Box<dyn Parser<StateStream<'a>, Output = OpObj, PartialState = ()> + 'a> {
-    combine::parser(move |parsable_state: &mut StateStream<'a>| {
-        canonical_syntax_parse::<T>(parsable_state, results.clone())
-    })
-    .boxed()
+    parser_combinator(canonical_syntax_parse::<T>, results)
 }
 
 /// This must always be the same as any concrete [Op] object.

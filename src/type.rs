@@ -50,6 +50,7 @@ use crate::{
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
     storage_uniquer::TypeValueHash,
+    utils::trait_cast::impls_trait_static,
 };
 
 use alloc::{
@@ -581,6 +582,21 @@ pub fn type_cast<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> Op
 /// ```
 pub fn type_impls<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> bool {
     type_cast::<T>(ty).is_some()
+}
+
+/// Does [Type] `T` implement interface `I`?
+/// See also: [`type_impls`]
+///
+/// Example:
+/// ```
+/// use pliron::builtin::type_interfaces::{FunctionTypeInterface, FloatTypeInterface};
+/// use pliron::builtin::types::FunctionType;
+/// use pliron::r#type::{Type, type_impls_static};
+/// assert!(type_impls_static::<FunctionType, dyn FunctionTypeInterface>());
+/// assert!(!type_impls_static::<FunctionType, dyn FloatTypeInterface>());
+/// ```
+pub fn type_impls_static<T: Type, I: ?Sized + TypeInterfaceMarker + 'static>() -> bool {
+    impls_trait_static::<T, I>()
 }
 
 /// Every type interface must have a function named `verify` with this type.

@@ -52,6 +52,25 @@ pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
         })
 }
 
+/// Check if type `T` was registered to be casted to trait `I`
+/// using [type_to_trait](crate::type_to_trait).
+///
+/// Example:
+/// ```
+/// # use pliron::{type_to_trait, utils::trait_cast::impls_trait_static};
+/// # use core::any::Any;
+/// trait Trait {}
+/// struct S;
+/// impl Trait for S {}
+/// type_to_trait!(S, Trait);
+/// assert!(impls_trait_static::<S, dyn Trait>());
+/// struct S2;
+/// assert!(!impls_trait_static::<S2, dyn Trait>());
+/// ```
+pub fn impls_trait_static<T: 'static, I: ?Sized + 'static>() -> bool {
+    TRAIT_CASTERS_MAP.contains_key(&(TypeId::of::<T>(), TypeId::of::<I>()))
+}
+
 #[doc(hidden)]
 /// Information to cast from a Rust type to a trait object.
 pub struct TraitCasterInfo {
