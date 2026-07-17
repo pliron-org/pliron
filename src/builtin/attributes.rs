@@ -79,6 +79,12 @@ impl From<String> for StringAttr {
     }
 }
 
+impl From<&str> for StringAttr {
+    fn from(value: &str) -> Self {
+        StringAttr(value.into())
+    }
+}
+
 impl From<StringAttr> for String {
     fn from(value: StringAttr) -> Self {
         value.0
