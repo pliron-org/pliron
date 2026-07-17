@@ -1200,6 +1200,225 @@ impl Verify for SwitchOp {
     }
 }
 
+/// One destination of an [IndirectBrOp].
+#[derive(Clone)]
+pub struct IndirectBrDest {
+    /// The destination block to jump to.
+    pub dest: Ptr<BasicBlock>,
+    /// The operands to pass to the destination block.
+    pub dest_opds: Vec<Value>,
+}
+
+impl Printable for IndirectBrDest {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        _state: &pliron::printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(
+            f,
+            "^{}({})",
+            self.dest.deref(ctx).unique_name(ctx),
+            list_with_sep(
+                &self.dest_opds,
+                pliron::printable::ListSeparator::CharSpace(',')
+            )
+            .disp(ctx)
+        )
+    }
+}
+
+impl Parsable for IndirectBrDest {
+    type Arg = ();
+    type Parsed = Self;
+
+    fn parse<'a>(
+        state_stream: &mut StateStream<'a>,
+        _arg: Self::Arg,
+    ) -> ParseResult<'a, Self::Parsed> {
+        let mut parser = (
+            block_opd_parser(),
+            delimited_list_parser('(', ')', ',', ssa_opd_parser()),
+        );
+
+        let ((dest, dest_opds), _) = parser.parse_stream(state_stream).into_result()?;
+
+        Ok(IndirectBrDest { dest, dest_opds }).into_parse_result()
+    }
+}
+
+/// Equivalent to LLVM's IndirectBr opcode.
+///
+/// ### Operands
+/// | operand | description |
+/// |-----|-------|
+/// | `address` | [PointerType] |
+/// | `dest_opds` | variadic of any type, one segment per destination |
+///
+/// ### Successors:
+/// | Successor | description |
+/// |-----|-------|
+/// | `dests` | one or more successor(s) |
+#[pliron_op(
+    name = "llvm.indirectbr",
+    interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+    operands = (address: PointerType, dest_opds),
+)]
+pub struct IndirectBrOp;
+
+impl Printable for IndirectBrOp {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &pliron::printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let op = self.get_operation().deref(ctx);
+        let address = op.get_operand(0);
+        let dests = self.destinations(ctx);
+
+        write!(f, "{} {} [", Self::get_opid_static(), address.disp(ctx))?;
+        indented_block!(state, {
+            write!(f, "{}", indented_nl(state))?;
+            list_with_sep(&dests, pliron::printable::ListSeparator::CharNewline(','))
+                .fmt(ctx, state, f)?;
+        });
+        write!(f, "{}]", indented_nl(state))?;
+
+        Ok(())
+    }
+}
+
+impl Parsable for IndirectBrOp {
+    type Arg = Vec<(Identifier, Location)>;
+    type Parsed = OpObj;
+
+    fn parse<'a>(
+        state_stream: &mut StateStream<'a>,
+        arg: Self::Arg,
+    ) -> ParseResult<'a, Self::Parsed> {
+        if !arg.is_empty() {
+            input_err!(
+                state_stream.loc(),
+                op_interfaces::NResultsVerifyErr(0, arg.len())
+            )?
+        }
+
+        let dests = delimited_list_parser('[', ']', ',', IndirectBrDest::parser(()));
+
+        let final_parser = spaced(ssa_opd_parser()).and(dests);
+
+        final_parser
+            .then(move |(address, dests)| {
+                let results = arg.clone();
+                combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                    let ctx = &mut parsable_state.state.ctx;
+                    let op = IndirectBrOp::new(
+                        ctx,
+                        address,
+                        dests
+                            .iter()
+                            .map(|d| (d.dest, d.dest_opds.clone()))
+                            .collect(),
+                    );
+
+                    process_parsed_ssa_defs(parsable_state, &results, op.get_operation())?;
+                    Ok(OpObj::new(op)).into_parse_result()
+                })
+            })
+            .parse_stream(state_stream)
+            .into()
+    }
+}
+
+impl IndirectBrOp {
+    /// Create a new [IndirectBrOp].
+    pub fn new(
+        ctx: &mut Context,
+        address: Value,
+        dests: Vec<(Ptr<BasicBlock>, Vec<Value>)>,
+    ) -> Self {
+        let mut operand_segments = vec![vec![address]];
+        operand_segments.extend(dests.iter().map(|(_, dest_opds)| dest_opds.clone()));
+        let (operands, segment_sizes) = Self::compute_segment_sizes(operand_segments);
+
+        let successors = dests.iter().map(|(dest, _)| *dest).collect();
+        let op = IndirectBrOp {
+            op: Operation::new(
+                ctx,
+                Self::get_concrete_op_info(),
+                vec![],
+                operands,
+                successors,
+                0,
+            ),
+        };
+
+        // Set the operand segment sizes attribute.
+        op.set_operand_segment_sizes(ctx, segment_sizes);
+        op
+    }
+
+    /// Get the destinations of this indirectbr operation, along with the operands
+    /// passed to each.
+    pub fn destinations(&self, ctx: &Context) -> Vec<IndirectBrDest> {
+        let op = self.get_operation().deref(ctx);
+        op.successors()
+            .enumerate()
+            .map(|(i, dest)| IndirectBrDest {
+                dest,
+                dest_opds: self.successor_operands(ctx, i),
+            })
+            .collect()
+    }
+}
+
+#[op_interface_impl]
+impl BranchOpInterface for IndirectBrOp {
+    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+        // Skip the first segment, which is the address.
+        self.get_segment(ctx, succ_idx + 1)
+    }
+
+    fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
+        // The successor operands start at segment 1, since segment 0 is the address operand.
+        self.push_to_segment(ctx, succ_idx + 1, operand)
+    }
+
+    fn remove_successor_operand(
+        &self,
+        ctx: &mut Context,
+        succ_idx: usize,
+        opd_idx: usize,
+    ) -> Value {
+        // The successor operands start at segment 1, since segment 0 is the address operand.
+        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+    }
+}
+
+#[op_interface_impl]
+impl OperandSegmentInterface for IndirectBrOp {}
+
+#[derive(Error, Debug)]
+pub enum IndirectBrOpVerifyErr {
+    #[error("IndirectBrOp must have at least one destination")]
+    NoDestinations,
+}
+
+impl Verify for IndirectBrOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        let op = &*self.get_operation().deref(ctx);
+
+        if op.get_num_successors() < 1 {
+            verify_err!(loc, IndirectBrOpVerifyErr::NoDestinations)?;
+        }
+
+        Ok(())
+    }
+}
+
 /// A way to express whether a GEP index is a constant or an SSA value
 #[derive(Clone)]
 pub enum GepIndex {

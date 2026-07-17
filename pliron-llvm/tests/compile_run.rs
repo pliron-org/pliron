@@ -341,6 +341,17 @@ fn test_switch() {
     );
 }
 
+/// Test IndirectBrOp by compiling indirectbr.ll via pliron.
+#[test]
+fn test_indirectbr() {
+    init_env_logger_for_tests!();
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR.join("indirectbr.ll").to_str().unwrap(),
+        Passes::default(),
+        66,
+    );
+}
+
 /// Test const structs and arrays
 #[test]
 fn test_consts() {

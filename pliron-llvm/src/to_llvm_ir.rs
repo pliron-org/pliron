@@ -26,7 +26,7 @@ use pliron::{
     graph::traversals::region::topological_order,
     identifier::Identifier,
     input_err, input_err_noloc, input_error, input_error_noloc,
-    linked_list::{ContainsLinkedList, LinkedList},
+    linked_list::ContainsLinkedList,
     location::Located,
     op::{Op, op_cast},
     operation::Operation,
@@ -47,33 +47,34 @@ use crate::{
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
-        instruction_iter, llvm_add_case, llvm_add_function, llvm_add_global_in_address_space,
-        llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2,
-        llvm_block_address, llvm_build_add, llvm_build_addrspacecast, llvm_build_and,
-        llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw,
-        llvm_build_bitcast, llvm_build_br, llvm_build_call2, llvm_build_cond_br,
-        llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd, llvm_build_fcmp,
-        llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg, llvm_build_fpext,
-        llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc, llvm_build_freeze,
-        llvm_build_frem, llvm_build_fsub, llvm_build_gep2, llvm_build_icmp,
-        llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
-        llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or, llvm_build_phi,
-        llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void, llvm_build_sdiv,
-        llvm_build_select, llvm_build_sext, llvm_build_shl, llvm_build_shuffle_vector,
-        llvm_build_sitofp, llvm_build_srem, llvm_build_store, llvm_build_sub, llvm_build_switch,
-        llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp, llvm_build_unreachable,
-        llvm_build_urem, llvm_build_va_arg, llvm_build_xor, llvm_build_zext,
-        llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position, llvm_const_int,
-        llvm_const_null, llvm_const_real, llvm_const_vector, llvm_double_type_in_context,
-        llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
-        llvm_get_named_function, llvm_get_param, llvm_get_poison, llvm_get_sync_scope_id,
-        llvm_get_undef, llvm_half_type_in_context, llvm_instruction_erase_from_parent,
-        llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
-        llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
-        llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
-        llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
-        llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
-        llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
+        instruction_iter, llvm_add_case, llvm_add_destination, llvm_add_function,
+        llvm_add_global_in_address_space, llvm_add_incoming, llvm_append_basic_block_in_context,
+        llvm_array_type2, llvm_block_address, llvm_build_add, llvm_build_addrspacecast,
+        llvm_build_and, llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg,
+        llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br, llvm_build_call2,
+        llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd,
+        llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg,
+        llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
+        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep2, llvm_build_icmp,
+        llvm_build_indirect_br, llvm_build_insert_element, llvm_build_insert_value,
+        llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or,
+        llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void,
+        llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
+        llvm_build_shuffle_vector, llvm_build_sitofp, llvm_build_srem, llvm_build_store,
+        llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
+        llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
+        llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
+        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_vector,
+        llvm_double_type_in_context, llvm_float_type_in_context, llvm_function_type,
+        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param, llvm_get_poison,
+        llvm_get_sync_scope_id, llvm_get_undef, llvm_half_type_in_context,
+        llvm_instruction_erase_from_parent, llvm_int_type_in_context, llvm_is_a,
+        llvm_lookup_intrinsic_id, llvm_pointer_type_in_context, llvm_position_builder_at_end,
+        llvm_replace_all_uses_with, llvm_scalable_vector_type, llvm_set_alignment,
+        llvm_set_atomic_sync_scope_id, llvm_set_fast_math_flags, llvm_set_initializer,
+        llvm_set_linkage, llvm_set_nneg, llvm_set_ordering, llvm_struct_create_named,
+        llvm_struct_set_body, llvm_struct_type_in_context, llvm_type_of, llvm_vector_type,
+        llvm_void_type_in_context,
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
@@ -84,11 +85,11 @@ use crate::{
         AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BlockAddressOp, BlockTagOp, BrOp,
         CallIntrinsicOp, CallOp, CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp,
         FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp,
-        FenceOp, FreezeOp, FuncOp, GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp,
-        InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp,
-        SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp,
-        SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp,
-        ZExtOp, ZeroOp,
+        FenceOp, FreezeOp, FuncOp, GetElementPtrOp, GlobalOp, ICmpOp, IndirectBrOp, InlineAsmOp,
+        InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp,
+        PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp,
+        StoreOp, SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp,
+        VAArgOp, XorOp, ZExtOp, ZeroOp,
     },
     types::{ArrayType, FuncType, PointerType, StructType, VectorType, VoidType},
 };
@@ -649,7 +650,7 @@ impl ToLLVMValue for BrOp {
         link_succ_operands_with_phis(
             ctx,
             cctx,
-            op.get_container().expect("Unlinked operation"),
+            op.get_parent_block().expect("Unlinked operation"),
             succ_llvm,
             self.successor_operands(ctx, 0),
         )?;
@@ -678,14 +679,14 @@ impl ToLLVMValue for CondBrOp {
         link_succ_operands_with_phis(
             ctx,
             cctx,
-            op.get_container().expect("Unlinked operation"),
+            op.get_parent_block().expect("Unlinked operation"),
             true_succ_llvm,
             self.successor_operands(ctx, 0),
         )?;
         link_succ_operands_with_phis(
             ctx,
             cctx,
-            op.get_container().expect("Unlinked operation"),
+            op.get_parent_block().expect("Unlinked operation"),
             false_succ_llvm,
             self.successor_operands(ctx, 1),
         )?;
@@ -716,7 +717,7 @@ impl ToLLVMValue for SwitchOp {
         link_succ_operands_with_phis(
             ctx,
             cctx,
-            op.get_container().expect("Unlinked operation"),
+            op.get_parent_block().expect("Unlinked operation"),
             default_succ,
             self.default_dest_operands(ctx),
         )?;
@@ -725,7 +726,7 @@ impl ToLLVMValue for SwitchOp {
             link_succ_operands_with_phis(
                 ctx,
                 cctx,
-                op.get_container().expect("Unlinked operation"),
+                op.get_parent_block().expect("Unlinked operation"),
                 succ_llvm,
                 case.dest_opds,
             )?;
@@ -739,6 +740,35 @@ impl ToLLVMValue for SwitchOp {
         }
 
         Ok(switch_op)
+    }
+}
+
+#[op_interface_impl]
+impl ToLLVMValue for IndirectBrOp {
+    fn convert(
+        &self,
+        ctx: &Context,
+        _llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let op = self.get_operation().deref(ctx);
+        let addr = convert_value_operand(cctx, ctx, &self.get_operand_address(ctx))?;
+        let dests = self.destinations(ctx);
+        let indirect_br_op = llvm_build_indirect_br(&cctx.builder, addr, dests.len() as u32);
+
+        for dest in dests {
+            let succ_llvm = convert_block_operand(cctx, ctx, dest.dest)?;
+            llvm_add_destination(indirect_br_op, succ_llvm);
+            link_succ_operands_with_phis(
+                ctx,
+                cctx,
+                op.get_parent_block().expect("Unlinked operation"),
+                succ_llvm,
+                dest.dest_opds,
+            )?;
+        }
+
+        Ok(indirect_br_op)
     }
 }
 

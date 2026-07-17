@@ -14,41 +14,42 @@ use llvm_sys::{
     analysis::LLVMVerifyModule,
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
-        LLVMAddCase, LLVMAddFunction, LLVMAddGlobal, LLVMAddGlobalInAddressSpace, LLVMAddIncoming,
-        LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBlockAddress,
-        LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
-        LLVMBuildBitCast, LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
-        LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
-        LLVMBuildFNeg, LLVMBuildFPExt, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc,
-        LLVMBuildFRem, LLVMBuildFSub, LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp,
-        LLVMBuildInsertElement, LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr,
-        LLVMBuildLoad2, LLVMBuildMul, LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet,
-        LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem,
-        LLVMBuildSelect, LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub,
-        LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem,
-        LLVMBuildUnreachable, LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt,
-        LLVMCanValueUseFastMathFlags, LLVMClearInsertionPosition, LLVMConstInt,
-        LLVMConstIntGetZExtValue, LLVMConstNull, LLVMConstReal, LLVMConstRealGetDouble,
-        LLVMConstVector, LLVMContextCreate, LLVMContextDispose, LLVMCountIncoming,
-        LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
-        LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
-        LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDisposeMemoryBuffer,
-        LLVMDisposeMessage, LLVMDisposeModule, LLVMDoubleTypeInContext, LLVMDumpModule,
-        LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
-        LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
-        LLVMGetBasicBlockName, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
-        LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType,
-        LLVMGetCalledValue, LLVMGetConstOpcode, LLVMGetElementType, LLVMGetFCmpPredicate,
-        LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal,
-        LLVMGetFirstInstruction, LLVMGetFirstParam, LLVMGetGEPSourceElementType,
-        LLVMGetICmpPredicate, LLVMGetIncomingBlock, LLVMGetIncomingValue, LLVMGetIndices,
-        LLVMGetInitializer, LLVMGetInsertBlock, LLVMGetInstructionOpcode, LLVMGetInstructionParent,
-        LLVMGetIntTypeWidth, LLVMGetIntrinsicDeclaration, LLVMGetLastFunction, LLVMGetLastGlobal,
-        LLVMGetLinkage, LLVMGetMaskValue, LLVMGetModuleIdentifier, LLVMGetNNeg, LLVMGetNSW,
-        LLVMGetNUW, LLVMGetNamedFunction, LLVMGetNamedGlobal, LLVMGetNextBasicBlock,
-        LLVMGetNextFunction, LLVMGetNextGlobal, LLVMGetNextInstruction, LLVMGetNextParam,
-        LLVMGetNumArgOperands, LLVMGetNumIndices, LLVMGetNumMaskElements, LLVMGetNumOperands,
-        LLVMGetOperand, LLVMGetParam, LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison,
+        LLVMAddCase, LLVMAddDestination, LLVMAddFunction, LLVMAddGlobal,
+        LLVMAddGlobalInAddressSpace, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
+        LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr, LLVMBuildAdd,
+        LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca, LLVMBuildBitCast, LLVMBuildBr,
+        LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement, LLVMBuildExtractValue,
+        LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul, LLVMBuildFNeg, LLVMBuildFPExt,
+        LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc, LLVMBuildFRem, LLVMBuildFSub,
+        LLVMBuildFreeze, LLVMBuildGEP2, LLVMBuildICmp, LLVMBuildIndirectBr, LLVMBuildInsertElement,
+        LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMul,
+        LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet, LLVMBuildRetVoid,
+        LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect,
+        LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub, LLVMBuildSwitch,
+        LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable,
+        LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt, LLVMCanValueUseFastMathFlags,
+        LLVMClearInsertionPosition, LLVMConstInt, LLVMConstIntGetZExtValue, LLVMConstNull,
+        LLVMConstReal, LLVMConstRealGetDouble, LLVMConstVector, LLVMContextCreate,
+        LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams,
+        LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
+        LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
+        LLVMDeleteFunction, LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
+        LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType, LLVMDumpValue,
+        LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetAggregateElement, LLVMGetAlignment,
+        LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetBasicBlockName, LLVMGetBasicBlockParent,
+        LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction,
+        LLVMGetCalledFunctionType, LLVMGetCalledValue, LLVMGetConstOpcode, LLVMGetElementType,
+        LLVMGetFCmpPredicate, LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction,
+        LLVMGetFirstGlobal, LLVMGetFirstInstruction, LLVMGetFirstParam,
+        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
+        LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInsertBlock,
+        LLVMGetInstructionOpcode, LLVMGetInstructionParent, LLVMGetIntTypeWidth,
+        LLVMGetIntrinsicDeclaration, LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage,
+        LLVMGetMaskValue, LLVMGetModuleIdentifier, LLVMGetNNeg, LLVMGetNSW, LLVMGetNUW,
+        LLVMGetNamedFunction, LLVMGetNamedGlobal, LLVMGetNextBasicBlock, LLVMGetNextFunction,
+        LLVMGetNextGlobal, LLVMGetNextInstruction, LLVMGetNextParam, LLVMGetNumArgOperands,
+        LLVMGetNumIndices, LLVMGetNumMaskElements, LLVMGetNumOperands, LLVMGetOperand,
+        LLVMGetParam, LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison,
         LLVMGetPreviousBasicBlock, LLVMGetPreviousFunction, LLVMGetPreviousGlobal,
         LLVMGetPreviousInstruction, LLVMGetPreviousParam, LLVMGetReturnType,
         LLVMGetStructElementTypes, LLVMGetStructName, LLVMGetSwitchCaseValue, LLVMGetTypeKind,
@@ -341,10 +342,10 @@ pub mod llvm_is_a {
         LLVMIsAAllocaInst, LLVMIsAArgument, LLVMIsABlockAddress, LLVMIsACallInst, LLVMIsAConstant,
         LLVMIsAConstantExpr, LLVMIsAConstantFP, LLVMIsAConstantInt, LLVMIsAExtractElementInst,
         LLVMIsAExtractValueInst, LLVMIsAFCmpInst, LLVMIsAFPToUIInst, LLVMIsAGetElementPtrInst,
-        LLVMIsAGlobalValue, LLVMIsAGlobalVariable, LLVMIsAICmpInst, LLVMIsAInsertElementInst,
-        LLVMIsAInsertValueInst, LLVMIsAInstruction, LLVMIsAInvokeInst, LLVMIsALoadInst,
-        LLVMIsAPHINode, LLVMIsAShuffleVectorInst, LLVMIsAStoreInst, LLVMIsASwitchInst,
-        LLVMIsAUIToFPInst, LLVMIsAZExtInst,
+        LLVMIsAGlobalValue, LLVMIsAGlobalVariable, LLVMIsAICmpInst, LLVMIsAIndirectBrInst,
+        LLVMIsAInsertElementInst, LLVMIsAInsertValueInst, LLVMIsAInstruction, LLVMIsAInvokeInst,
+        LLVMIsALoadInst, LLVMIsAPHINode, LLVMIsAShuffleVectorInst, LLVMIsAStoreInst,
+        LLVMIsASwitchInst, LLVMIsAUIToFPInst, LLVMIsAZExtInst,
     };
 
     use super::*;
@@ -422,6 +423,11 @@ pub mod llvm_is_a {
     /// LLVMIsASwitchInst
     pub fn switch_inst(val: LLVMValue) -> bool {
         unsafe { !LLVMIsASwitchInst(val.into()).is_null() }
+    }
+
+    /// LLVMIsAIndirectBrInst
+    pub fn indirect_br_inst(val: LLVMValue) -> bool {
+        unsafe { !LLVMIsAIndirectBrInst(val.into()).is_null() }
     }
 
     /// LLVMIsAArgument
@@ -2305,6 +2311,20 @@ pub fn llvm_add_case(switch_inst: LLVMValue, on_val: LLVMValue, dest_block: LLVM
     assert!(llvm_is_a::switch_inst(switch_inst));
     unsafe {
         LLVMAddCase(switch_inst.into(), on_val.into(), dest_block.into());
+    }
+}
+
+/// LLVMBuildIndirectBr
+pub fn llvm_build_indirect_br(builder: &LLVMBuilder, addr: LLVMValue, num_dests: u32) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    unsafe { LLVMBuildIndirectBr(builder.inner_ref(), addr.into(), num_dests).into() }
+}
+
+/// LLVMAddDestination
+pub fn llvm_add_destination(indirect_br_inst: LLVMValue, dest_block: LLVMBasicBlock) {
+    assert!(llvm_is_a::indirect_br_inst(indirect_br_inst));
+    unsafe {
+        LLVMAddDestination(indirect_br_inst.into(), dest_block.into());
     }
 }
 

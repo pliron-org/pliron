@@ -77,11 +77,11 @@ use crate::{
         AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BlockAddressOp, BlockTagOp, BrOp,
         CallIntrinsicOp, CallOp, CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp,
         FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp,
-        FenceOp, FreezeOp, FuncOp, GepIndex, GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp,
-        InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp,
-        PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp,
-        StoreOp, SubOp, SwitchCase, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp,
-        UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
+        FenceOp, FreezeOp, FuncOp, GepIndex, GetElementPtrOp, GlobalOp, ICmpOp, IndirectBrOp,
+        InlineAsmOp, InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp,
+        PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp,
+        ShuffleVectorOp, StoreOp, SubOp, SwitchCase, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp,
+        UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
     },
     types::{
         ArrayType, FuncType, PointerType, StructErr, StructType, VectorType, VectorTypeKind,
@@ -320,6 +320,12 @@ fn successors(block: LLVMBasicBlock) -> Vec<LLVMBasicBlock> {
                 )));
             }
             succs
+        }
+        LLVMOpcode::LLVMIndirectBr => {
+            // Operand 0 is the address; the rest are the possible destinations.
+            (1..llvm_get_num_operands(term))
+                .map(|i| llvm_value_as_basic_block(llvm_get_operand(term, i)))
+                .collect()
         }
         LLVMOpcode::LLVMRet | LLVMOpcode::LLVMUnreachable => {
             // No successors.
@@ -1207,7 +1213,22 @@ fn convert_instruction(
                     .get_operation(),
             )
         }
-        LLVMOpcode::LLVMIndirectBr => todo!(),
+        LLVMOpcode::LLVMIndirectBr => {
+            let addr = get_operand(opds, 0)?;
+            let src_block = llvm_get_instruction_parent(inst).unwrap();
+            let dests = succs
+                .iter()
+                .enumerate()
+                .map(|(i, dest)| {
+                    // Operand 0 is the address, so destinations start at operand 1.
+                    let llvm_dest =
+                        llvm_value_as_basic_block(llvm_get_operand(inst, (i + 1) as u32));
+                    let dest_opds = convert_branch_args(ctx, cctx, src_block, llvm_dest)?;
+                    Ok((*dest, dest_opds))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IndirectBrOp::new(ctx, addr, dests).get_operation())
+        }
         LLVMOpcode::LLVMInsertElement => {
             let vector = get_operand(opds, 0)?;
             let element = get_operand(opds, 1)?;
