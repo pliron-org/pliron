@@ -326,7 +326,7 @@ fn test_blockaddress() {
     test_llvm_ir_via_pliron_compiled(
         RESOURCES_DIR.join("blockaddress.ll").to_str().unwrap(),
         Passes::default(),
-        6,
+        7,
     );
 }
 

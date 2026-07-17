@@ -33,8 +33,8 @@ use llvm_sys::{
         LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams,
         LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
         LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
-        LLVMDeleteFunction, LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
-        LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType, LLVMDumpValue,
+        LLVMDeleteFunction, LLVMDeleteGlobal, LLVMDisposeMemoryBuffer, LLVMDisposeMessage,
+        LLVMDisposeModule, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType, LLVMDumpValue,
         LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetAggregateElement, LLVMGetAlignment,
         LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetBasicBlockName, LLVMGetBasicBlockParent,
         LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction,
@@ -1279,6 +1279,12 @@ pub fn llvm_add_global_in_address_space(
         )
         .into()
     }
+}
+
+/// LLVMDeleteGlobal
+pub fn llvm_delete_global(global: LLVMValue) {
+    assert!(llvm_is_a::global_variable(global));
+    unsafe { LLVMDeleteGlobal(global.into()) }
 }
 
 /// LLVMGetInsertBlock

@@ -64,17 +64,16 @@ use crate::{
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
         llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_vector,
+        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_vector, llvm_delete_global,
         llvm_double_type_in_context, llvm_float_type_in_context, llvm_function_type,
-        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param, llvm_get_poison,
-        llvm_get_sync_scope_id, llvm_get_undef, llvm_half_type_in_context,
-        llvm_instruction_erase_from_parent, llvm_int_type_in_context, llvm_is_a,
-        llvm_lookup_intrinsic_id, llvm_pointer_type_in_context, llvm_position_builder_at_end,
-        llvm_replace_all_uses_with, llvm_scalable_vector_type, llvm_set_alignment,
-        llvm_set_atomic_sync_scope_id, llvm_set_fast_math_flags, llvm_set_initializer,
-        llvm_set_linkage, llvm_set_nneg, llvm_set_ordering, llvm_struct_create_named,
-        llvm_struct_set_body, llvm_struct_type_in_context, llvm_type_of, llvm_vector_type,
-        llvm_void_type_in_context,
+        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param,
+        llvm_get_pointer_address_space, llvm_get_poison, llvm_get_sync_scope_id, llvm_get_undef,
+        llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
+        llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
+        llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
+        llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
+        llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
+        llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
@@ -1241,24 +1240,7 @@ impl ToLLVMValue for BlockAddressOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let tag = self.get_tag_id(ctx);
-        let func = self.get_function_name(ctx);
-
-        // We insert a placeholder instruction now and later replace it
-        // with the actual block address once we have converted all blocks.
-        // The placeholder cannot be any constant because those are unique'd and cannot
-        // be "replace all uses with"ed. So we use a load of a null pointer of the correct type.
-        let result_ty = convert_type(ctx, llvm_ctx, cctx, self.result_type(ctx))?;
-        let placeholder = llvm_build_load2(
-            &cctx.builder,
-            result_ty,
-            llvm_const_null(result_ty),
-            "blockaddress_placeholder",
-        );
-
-        cctx.pending_block_address_ops
-            .insert(placeholder, (func, tag));
-        Ok(placeholder)
+        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -2198,6 +2180,41 @@ impl ToLLVMConstValue for AddressOfOp {
 }
 
 #[op_interface_impl]
+impl ToLLVMConstValue for BlockAddressOp {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let tag = self.get_tag_id(ctx);
+        let func = self.get_function_name(ctx);
+
+        // The target block may not be converted yet (possibly not even its
+        // function), so emit a placeholder now and patch it in `convert_module`
+        // once the whole module is converted. The placeholder must be a real
+        // constant, not an instruction, so it can be used in other constant
+        // expressions (e.g. a global's initializer). A `GlobalVariable` fits:
+        // unlike other LLVM constants, which are unique'd, it has per-instance
+        // identity and so can be RAUW'd. Same trick used by MLIR's LLVM-IR
+        // translation and LLVM's own bitcode reader for forward-referenced
+        // block addresses.
+        let result_ty = convert_type(ctx, llvm_ctx, cctx, self.result_type(ctx))?;
+        let addr_space = llvm_get_pointer_address_space(result_ty);
+        let placeholder = llvm_add_global_in_address_space(
+            cctx.cur_llvm_module,
+            llvm_int_type_in_context(llvm_ctx, 8),
+            "blockaddress_placeholder",
+            addr_space,
+        );
+
+        cctx.pending_block_address_ops
+            .insert(placeholder, (func, tag));
+        Ok(placeholder)
+    }
+}
+
+#[op_interface_impl]
 impl ToLLVMConstValue for InsertValueOp {
     fn convert(
         &self,
@@ -2482,7 +2499,7 @@ pub fn convert_module(
             })?;
         let block_addr = llvm_block_address(*function_llvm, *block_llvm);
         llvm_replace_all_uses_with(*placeholder, block_addr);
-        llvm_instruction_erase_from_parent(*placeholder);
+        llvm_delete_global(*placeholder);
     }
 
     Ok(llvm_module)
