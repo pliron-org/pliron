@@ -1,21 +1,21 @@
-Real-world wrapper tests live in this directory.
+# Real-world wrapper tests
 
-Each script must:
-- run in an isolated temporary directory,
-- build a real C program using llvm-opt-wrapper.sh as CC,
-- validate an expected success marker,
-- return non-zero on failure.
+Each script:
+- runs in an isolated temporary directory,
+- builds a real C program using llvm-opt-wrapper.sh as CC,
+- validates an expected success marker,
+- returns non-zero on failure.
 
-Currently available tests:
+## Currently available tests:
 - bzip2.sh: clones bzip2, checks out bzip2-1.0.8, runs make with wrapper,
   and verifies upstream self-tests succeeded.
 - lua.sh: clones lua, checks out v5.5.0, runs make with wrapper,
   and verifies the upstream test suite succeeded.
 
-Runner:
-- ../testsuite.sh discovers and executes all *.sh scripts in this directory.
+## Runner
+- `../testsuite.sh` discovers and executes all *.sh scripts in this directory.
 
-Environment variables:
+## Environment variables:
 - LLVM_OPT_WRAPPER: path to llvm-opt-wrapper.sh
   default: pliron-llvm/llvm-opt/llvm-opt-wrapper.sh
 - LLVM_OPT: path to llvm-opt binary
