@@ -104,3 +104,31 @@ fn builtin_func_converts_to_llvm_func() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn builtin_unit_func_converts_to_llvm_void_func() -> Result<()> {
+    let input = r#"
+        builtin.module @m {
+        ^block_0_0():
+          builtin.func @foo: builtin.function <() -> (builtin.unit)> {
+          ^entry_block_1_0():
+            llvm.return
+          }
+        }
+    "#;
+
+    let after = run_conversion_pipeline(input)?;
+
+    expect![[r#"
+        ; ModuleID = 'm'
+        source_filename = "m"
+
+        define void @foo() {
+        entry_block_1_0_block1v1:
+          ret void
+        }
+    "#]]
+    .assert_eq(&after);
+
+    Ok(())
+}

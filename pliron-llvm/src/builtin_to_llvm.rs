@@ -5,7 +5,7 @@ use pliron::{
         op_interfaces::{OneRegionInterface, SymbolOpInterface},
         ops::{ConstantOp as BuiltinConstantOp, FuncOp as BuiltinFuncOp, ModuleOp},
         type_interfaces::FunctionTypeInterface,
-        types::FunctionType as BuiltinFunctionType,
+        types::{FunctionType as BuiltinFunctionType, UnitType},
     },
     common_traits::Verify,
     context::{Context, Ptr},
@@ -27,7 +27,7 @@ use pliron::{
 use crate::{
     ToLLVMDialect, ToLLVMType, ToLLVMTypeFn,
     ops::{ConstantOp as LLVMConstantOp, FuncOp as LLVMFuncOp},
-    types::FuncType as LLVMFuncType,
+    types::{FuncType as LLVMFuncType, VoidType},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -51,6 +51,11 @@ impl ToLLVMType for BuiltinFunctionType {
                 return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
             }
             let result_type = res_types[0];
+            let result_type = if result_type.deref(ctx).is::<UnitType>() {
+                VoidType::get(ctx).into()
+            } else {
+                result_type
+            };
 
             let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
             Ok(llvm_func_type.into())
