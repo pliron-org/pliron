@@ -48,14 +48,15 @@ use crate::{
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
         instruction_iter, llvm_add_case, llvm_add_function, llvm_add_global_in_address_space,
-        llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2, llvm_build_add,
-        llvm_build_addrspacecast, llvm_build_and, llvm_build_array_alloca, llvm_build_ashr,
-        llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br,
-        llvm_build_call2, llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value,
-        llvm_build_fadd, llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul,
-        llvm_build_fneg, llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui,
-        llvm_build_fptrunc, llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep2,
-        llvm_build_icmp, llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
+        llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2,
+        llvm_block_address, llvm_build_add, llvm_build_addrspacecast, llvm_build_and,
+        llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw,
+        llvm_build_bitcast, llvm_build_br, llvm_build_call2, llvm_build_cond_br,
+        llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd, llvm_build_fcmp,
+        llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg, llvm_build_fpext,
+        llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc, llvm_build_freeze,
+        llvm_build_frem, llvm_build_fsub, llvm_build_gep2, llvm_build_icmp,
+        llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
         llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or, llvm_build_phi,
         llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void, llvm_build_sdiv,
         llvm_build_select, llvm_build_sext, llvm_build_shl, llvm_build_shuffle_vector,
@@ -66,8 +67,9 @@ use crate::{
         llvm_const_null, llvm_const_real, llvm_const_vector, llvm_double_type_in_context,
         llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
         llvm_get_named_function, llvm_get_param, llvm_get_poison, llvm_get_sync_scope_id,
-        llvm_get_undef, llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a,
-        llvm_lookup_intrinsic_id, llvm_pointer_type_in_context, llvm_position_builder_at_end,
+        llvm_get_undef, llvm_half_type_in_context, llvm_instruction_erase_from_parent,
+        llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
+        llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
         llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
         llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
@@ -79,13 +81,14 @@ use crate::{
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
-        AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BrOp, CallIntrinsicOp, CallOp,
-        CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp,
-        FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FenceOp, FreezeOp, FuncOp,
-        GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp, InsertValueOp, IntToPtrOp,
-        LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp,
-        SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchOp, TruncOp, UDivOp,
-        UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
+        AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BlockAddressOp, BlockTagOp, BrOp,
+        CallIntrinsicOp, CallOp, CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp,
+        FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp,
+        FenceOp, FreezeOp, FuncOp, GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp,
+        InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp,
+        SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp,
+        SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp,
+        ZExtOp, ZeroOp,
     },
     types::{ArrayType, FuncType, PointerType, StructType, VectorType, VoidType},
 };
@@ -102,6 +105,11 @@ pub struct ConversionContext<'a> {
     function_map: FxHashMap<Identifier, LLVMValue>,
     // A map from pliron globals to LLVM globals.
     globals_map: FxHashMap<Identifier, LLVMValue>,
+    // A map from `(function symbol, block tag)` to the corresponding LLVM block.
+    block_tags: FxHashMap<(Identifier, u64), LLVMBasicBlock>,
+    // A map from every placeholder we insert to
+    // its corresponding `(function symbol, block tag)`
+    pending_block_address_ops: FxHashMap<LLVMValue, (Identifier, u64)>,
     // A map from pliron StructTypes to LLVM StructTypes.
     structs_map: FxHashMap<Identifier, LLVMType>,
     // Type cache to avoid redundant conversions.
@@ -120,6 +128,8 @@ impl<'a> ConversionContext<'a> {
             block_map: FxHashMap::default(),
             function_map: FxHashMap::default(),
             globals_map: FxHashMap::default(),
+            block_tags: FxHashMap::default(),
+            pending_block_address_ops: FxHashMap::default(),
             structs_map: FxHashMap::default(),
             type_cache: FxHashMap::default(),
             builder: LLVMBuilder::new(llvm_ctx),
@@ -156,6 +166,8 @@ pub enum ToLLVMErr {
     GlobalOpInitializerRegionBadReturn,
     #[error("Cannot evaluate value to a constant")]
     CannotEvaluateToConst,
+    #[error("BlockAddressOp refers to missing block tag {1} in function {0}")]
+    MissingBlockTag(String, u64),
 }
 
 pub fn convert_ipredicate(pred: ICmpPredicateAttr) -> LLVMIntPredicate {
@@ -1192,6 +1204,72 @@ impl ToLLVMValue for AddressOfOp {
 }
 
 #[op_interface_impl]
+impl ToLLVMValue for BlockAddressOp {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let tag = self.get_tag_id(ctx);
+        let func = self.get_function_name(ctx);
+
+        // We insert a placeholder instruction now and later replace it
+        // with the actual block address once we have converted all blocks.
+        // The placeholder cannot be any constant because those are unique'd and cannot
+        // be "replace all uses with"ed. So we use a load of a null pointer of the correct type.
+        let result_ty = convert_type(ctx, llvm_ctx, cctx, self.result_type(ctx))?;
+        let placeholder = llvm_build_load2(
+            &cctx.builder,
+            result_ty,
+            llvm_const_null(result_ty),
+            "blockaddress_placeholder",
+        );
+
+        cctx.pending_block_address_ops
+            .insert(placeholder, (func, tag));
+        Ok(placeholder)
+    }
+}
+
+#[op_interface_impl]
+impl ToLLVMValue for BlockTagOp {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let cur_block = self
+            .get_operation()
+            .deref(ctx)
+            .get_parent_block()
+            .expect("BlockTagOp must be in a basic block");
+        let cur_func = cur_block
+            .deref(ctx)
+            .get_parent_op(ctx)
+            .expect("BlockTagOp must be in a basic block of a function");
+        let cur_func =
+            Operation::get_op::<FuncOp>(cur_func, ctx).expect("Block's parent op must be FuncOp");
+        let cur_func_name = cur_func.get_symbol_name(ctx);
+        let tag = self.get_tag_id(ctx);
+
+        let cur_llvm_block = cctx
+            .block_map
+            .get(&cur_block)
+            .expect("Current block must be in block_map");
+
+        // Later on, for all llvm.blockaddress that refers to this tag, we use this info.
+        cctx.block_tags
+            .insert((cur_func_name, tag), *cur_llvm_block);
+
+        // Actual LLVM doesn't need a BlockTagOp.
+        // Address is taken directly via the llvm.blockaddress instruction.
+        Ok(llvm_const_null(llvm_pointer_type_in_context(llvm_ctx, 0)))
+    }
+}
+
+#[op_interface_impl]
 impl ToLLVMValue for FreezeOp {
     fn convert(
         &self,
@@ -2088,6 +2166,7 @@ impl ToLLVMConstValue for AddressOfOp {
             .ok_or_else(|| input_error_noloc!(ToLLVMErr::CannotEvaluateToConst))
     }
 }
+
 #[op_interface_impl]
 impl ToLLVMConstValue for InsertValueOp {
     fn convert(
@@ -2357,6 +2436,23 @@ pub fn convert_module(
                 llvm_set_alignment(global_llvm, alignment);
             }
         }
+    }
+
+    // Replace all pending block address operations with the actual block addresses.
+    for (placeholder, (func_name, tag)) in cctx.pending_block_address_ops.iter() {
+        let function_llvm = cctx
+            .function_map
+            .get(func_name)
+            .ok_or_else(|| input_error_noloc!(ToLLVMErr::CannotEvaluateToConst))?;
+        let block_llvm = cctx
+            .block_tags
+            .get(&(func_name.clone(), *tag))
+            .ok_or_else(|| {
+                input_error_noloc!(ToLLVMErr::MissingBlockTag(func_name.to_string(), *tag))
+            })?;
+        let block_addr = llvm_block_address(*function_llvm, *block_llvm);
+        llvm_replace_all_uses_with(*placeholder, block_addr);
+        llvm_instruction_erase_from_parent(*placeholder);
     }
 
     Ok(llvm_module)

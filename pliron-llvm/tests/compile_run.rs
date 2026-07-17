@@ -260,6 +260,18 @@ fn test_select() {
     );
 }
 
+/// Test blockaddress by compiling blockaddress.ll via pliron.
+#[test]
+#[ignore = "LLI cannot process cross-function blockaddress"]
+fn test_blockaddress() {
+    init_env_logger_for_tests!();
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR.join("blockaddress.ll").to_str().unwrap(),
+        Passes::default(),
+        6,
+    );
+}
+
 /// Test SwitchOp by compiling switch.ll via pliron.
 #[test]
 fn test_switch() {
