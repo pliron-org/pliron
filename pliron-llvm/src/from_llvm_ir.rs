@@ -50,8 +50,9 @@ use crate::{
         llvm_const_int_get_zext_value, llvm_const_real_get_double, llvm_count_struct_element_types,
         llvm_get_aggregate_element, llvm_get_alignment, llvm_get_allocated_type,
         llvm_get_array_length2, llvm_get_atomic_rmw_bin_op, llvm_get_atomic_sync_scope_id,
-        llvm_get_basic_block_name, llvm_get_basic_block_terminator, llvm_get_called_function_type,
-        llvm_get_called_value, llvm_get_cmpxchg_failure_ordering,
+        llvm_get_basic_block_name, llvm_get_basic_block_terminator,
+        llvm_get_block_address_basic_block, llvm_get_block_address_function,
+        llvm_get_called_function_type, llvm_get_called_value, llvm_get_cmpxchg_failure_ordering,
         llvm_get_cmpxchg_success_ordering, llvm_get_const_opcode, llvm_get_element_type,
         llvm_get_fast_math_flags, llvm_get_fcmp_predicate, llvm_get_gep_source_element_type,
         llvm_get_icmp_predicate, llvm_get_indices, llvm_get_initializer,
@@ -73,13 +74,14 @@ use crate::{
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
-        AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BrOp, CallIntrinsicOp, CallOp,
-        CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp,
-        FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FenceOp, FreezeOp, FuncOp,
-        GepIndex, GetElementPtrOp, GlobalOp, ICmpOp, InlineAsmOp, InsertElementOp, InsertValueOp,
-        IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp,
-        SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchCase, SwitchOp,
-        TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
+        AtomicLoadOp, AtomicRmwOp, AtomicStoreOp, BitcastOp, BlockAddressOp, BlockTagOp, BrOp,
+        CallIntrinsicOp, CallOp, CondBrOp, ConstantOp, ExtractElementOp, ExtractValueOp, FAddOp,
+        FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp,
+        FenceOp, FreezeOp, FuncOp, GepIndex, GetElementPtrOp, GlobalOp, ICmpOp, IndirectBrOp,
+        InlineAsmOp, InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp,
+        PoisonOp, PtrToIntOp, ReturnOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp,
+        ShuffleVectorOp, StoreOp, SubOp, SwitchCase, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp,
+        UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
     },
     types::{
         ArrayType, FuncType, PointerType, StructErr, StructType, VectorType, VectorTypeKind,
@@ -264,6 +266,11 @@ struct ConversionContext {
     block_map: FxHashMap<LLVMBasicBlock, Ptr<BasicBlock>>,
     /// Cache already converted types.
     type_cache: FxHashMap<LLVMType, TypeHandle>,
+    /// Tag addressed to a (function, block) pair.
+    block_tag_map: FxHashMap<(LLVMValue, LLVMBasicBlock), u64>,
+    /// Next block tag id to assign.
+    /// This is unique across all functions in the module for simplicity.
+    block_tag_counter: u64,
     /// Insertion point for constants in the entry block.
     constants_inserter: Option<IRInserter<DummyListener>>,
     /// Identifier legaliser
@@ -276,8 +283,9 @@ impl ConversionContext {
     /// Identifier::Legaliser remains unmodified.
     fn reset_for_region(&mut self, entry_block: Ptr<BasicBlock>) {
         self.constants_inserter = Some(IRInserter::new_at_block_start(entry_block));
+        // The same LLVM constant values map to different pliron Values in different regions.
+        // So we clear the value map for each region.
         self.value_map.clear();
-        self.block_map.clear();
     }
 }
 
@@ -312,6 +320,12 @@ fn successors(block: LLVMBasicBlock) -> Vec<LLVMBasicBlock> {
                 )));
             }
             succs
+        }
+        LLVMOpcode::LLVMIndirectBr => {
+            // Operand 0 is the address; the rest are the possible destinations.
+            (1..llvm_get_num_operands(term))
+                .map(|i| llvm_value_as_basic_block(llvm_get_operand(term, i)))
+                .collect()
         }
         LLVMOpcode::LLVMRet | LLVMOpcode::LLVMUnreachable => {
             // No successors.
@@ -709,6 +723,28 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             cctx.value_map
                 .insert(val, const_vector.deref(ctx).get_result(0));
         }
+        LLVMValueKind::LLVMBlockAddressValueKind => {
+            let function = llvm_get_block_address_function(val);
+            let block = llvm_get_block_address_basic_block(val);
+            let fn_name = llvm_get_value_name(function).unwrap_or_default();
+            let fn_name = cctx.id_legaliser.legalise(&fn_name);
+            let tag = *cctx
+                .block_tag_map
+                .entry((function, block))
+                .or_insert_with(|| {
+                    let tag = cctx.block_tag_counter;
+                    cctx.block_tag_counter += 1;
+                    tag
+                });
+            let block_addr_op = BlockAddressOp::new(
+                ctx,
+                fn_name,
+                tag,
+                llvm_get_pointer_address_space(llvm_type_of(val)),
+            );
+            insert_const_inst(ctx, cctx, block_addr_op.get_operation());
+            cctx.value_map.insert(val, block_addr_op.get_result(ctx));
+        }
         LLVMValueKind::LLVMArgumentValueKind => todo!(),
         LLVMValueKind::LLVMBasicBlockValueKind => todo!(),
         LLVMValueKind::LLVMMemoryUseValueKind => todo!(),
@@ -716,7 +752,6 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
         LLVMValueKind::LLVMMemoryPhiValueKind => todo!(),
         LLVMValueKind::LLVMGlobalAliasValueKind => todo!(),
         LLVMValueKind::LLVMGlobalIFuncValueKind => todo!(),
-        LLVMValueKind::LLVMBlockAddressValueKind => todo!(),
         LLVMValueKind::LLVMConstantTokenNoneValueKind => todo!(),
         LLVMValueKind::LLVMMetadataAsValueValueKind => todo!(),
         LLVMValueKind::LLVMInlineAsmValueKind => todo!(),
@@ -1178,7 +1213,22 @@ fn convert_instruction(
                     .get_operation(),
             )
         }
-        LLVMOpcode::LLVMIndirectBr => todo!(),
+        LLVMOpcode::LLVMIndirectBr => {
+            let addr = get_operand(opds, 0)?;
+            let src_block = llvm_get_instruction_parent(inst).unwrap();
+            let dests = succs
+                .iter()
+                .enumerate()
+                .map(|(i, dest)| {
+                    // Operand 0 is the address, so destinations start at operand 1.
+                    let llvm_dest =
+                        llvm_value_as_basic_block(llvm_get_operand(inst, (i + 1) as u32));
+                    let dest_opds = convert_branch_args(ctx, cctx, src_block, llvm_dest)?;
+                    Ok((*dest, dest_opds))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            Ok(IndirectBrOp::new(ctx, addr, dests).get_operation())
+        }
         LLVMOpcode::LLVMInsertElement => {
             let vector = get_operand(opds, 0)?;
             let element = get_operand(opds, 1)?;
@@ -1594,6 +1644,7 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
     }
 
     // Convert functions.
+    let mut func_map = FxHashMap::default();
     for fun in function_iter(module) {
         let llvm_name = llvm_get_value_name(fun).expect("Expected function to have a name");
         if llvm_lookup_intrinsic_id(&llvm_name).is_some() {
@@ -1602,6 +1653,22 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
         }
         let m_fun = convert_function(ctx, cctx, fun)?;
         m.append_operation(ctx, m_fun.get_operation(), 0);
+        func_map.insert(fun, m_fun);
     }
+
+    // We need to insert [BlockTagOp]s for blocks with their address taken.
+    for ((func, block), tag) in &cctx.block_tag_map {
+        if llvm_is_declaration(*func) {
+            // Skip blocks in function declarations.
+            continue;
+        }
+        let m_block = cctx
+            .block_map
+            .get(block)
+            .expect("We should have converted this block");
+        let tag_op = BlockTagOp::new(ctx, *tag);
+        tag_op.get_operation().insert_at_front(*m_block, ctx);
+    }
+
     Ok(m)
 }

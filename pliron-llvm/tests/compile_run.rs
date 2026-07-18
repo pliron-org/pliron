@@ -26,8 +26,8 @@ use pliron_llvm::{
 };
 use tempfile::tempdir;
 
-/// Get the LLI binary path based on the llvm-sys version used.
-static LLI_BINARY: LazyLock<PathBuf> = LazyLock::new(|| {
+/// Get the LLVM major version used, based on the llvm-sys dependency version.
+fn llvm_major_version() -> String {
     let manifest =
         Manifest::from_path(env!("CARGO_MANIFEST_PATH")).expect("Could not read Cargo.toml");
     let llvm_version = manifest.dependencies.expect("Expected llvm-sys dependency")["llvm-sys"]
@@ -38,17 +38,23 @@ static LLI_BINARY: LazyLock<PathBuf> = LazyLock::new(|| {
         "Unexpected llvm-sys version format: Expected two-digit major version and one digit minor version, got {}",
         llvm_version
     );
+    llvm_version[..2].to_string()
+}
 
-    let llvm_major_version = &llvm_version[..2];
-    let lli_binary_name = format!("lli-{}", llvm_major_version);
+/// Locate an LLVM tool binary (e.g. `lli`, `clang`) matching the llvm-sys version used.
+/// `path_env_var` (e.g. `LLI_BINARY_PATH`), if set, overrides the default `<tool_name>-<major>`
+/// lookup and may itself be a path to the binary.
+fn find_llvm_tool(tool_name: &str, path_env_var: &str) -> PathBuf {
+    let llvm_major_version = llvm_major_version();
+    let default_binary_name = format!("{}-{}", tool_name, llvm_major_version);
 
-    let env_var = env::var("LLI_BINARY_PATH");
+    let env_var = env::var(path_env_var);
     let is_env_var_set = env_var.is_ok();
 
-    // Use LLI_BINARY_PATH if set, otherwise default to lli_binary_name
-    let binary_to_find = env_var.unwrap_or(lli_binary_name.clone());
+    // Use path_env_var if set, otherwise default to default_binary_name
+    let binary_to_find = env_var.unwrap_or(default_binary_name.clone());
 
-    // If LLI_BINARY_PATH is set and it's an absolute/relative path, do a cheap existence check first
+    // If path_env_var is set and it's an absolute/relative path, do a cheap existence check first
     if is_env_var_set {
         let path = PathBuf::from(&binary_to_find);
         if path.exists() {
@@ -62,18 +68,25 @@ static LLI_BINARY: LazyLock<PathBuf> = LazyLock::new(|| {
         Err(_) => {
             if is_env_var_set {
                 panic!(
-                    "LLI binary not found at path specified by LLI_BINARY_PATH ({}) or in system PATH. Expected LLVM version {}.",
-                    binary_to_find, llvm_major_version
+                    "{} binary not found at path specified by {} ({}) or in system PATH. Expected LLVM version {}.",
+                    tool_name, path_env_var, binary_to_find, llvm_major_version
                 );
             } else {
                 panic!(
-                    "LLI binary '{}' not found in PATH. Please install LLVM version {} or set the LLI_BINARY_PATH environment variable to the path of your LLI binary.",
-                    lli_binary_name, llvm_major_version
+                    "{} binary '{}' not found in PATH. Please install LLVM version {} or set the {} environment variable to the path of your {} binary.",
+                    tool_name, default_binary_name, llvm_major_version, path_env_var, tool_name
                 );
             }
         }
     }
-});
+}
+
+/// The LLI binary path, based on the llvm-sys version used.
+static LLI_BINARY: LazyLock<PathBuf> = LazyLock::new(|| find_llvm_tool("lli", "LLI_BINARY_PATH"));
+
+/// The clang binary path, based on the llvm-sys version used.
+static CLANG_BINARY: LazyLock<PathBuf> =
+    LazyLock::new(|| find_llvm_tool("clang", "CLANG_BINARY_PATH"));
 
 static RESOURCES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
     [env!("CARGO_MANIFEST_DIR"), "tests", "resources"]
@@ -81,10 +94,11 @@ static RESOURCES_DIR: LazyLock<PathBuf> = LazyLock::new(|| {
         .collect()
 });
 
-/// Test an LLVM-IR file by executing it and comparing the output.
-/// The input file is `input_file`, which contains LLVM IR / Bitcode.
-/// The expected output is `expected_output`.
-fn test_llvm_ir_via_pliron(input_file: &str, mut opts: impl Pass, expected_output: i32) {
+/// Convert `input_file` (LLVM IR / Bitcode) to pliron and back, running `opts`
+/// on the pliron module in between, and write out the resulting bitcode.
+/// Returns the `TempDir` holding the bitcode (kept alive by the caller) along
+/// with the path to the bitcode file within it.
+fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, PathBuf) {
     let llvm_context = LLVMContext::default();
     let module = match LLVMModule::from_ir_in_file(&llvm_context, input_file) {
         Ok(module) => module,
@@ -197,6 +211,15 @@ fn test_llvm_ir_via_pliron(input_file: &str, mut opts: impl Pass, expected_outpu
         .map_err(|_err| arg_error_noloc!("{}", "Error writing bitcode to file"))
         .unwrap();
 
+    (tmp_dir, bc_path)
+}
+
+/// Test an LLVM-IR file by executing it with `lli` and comparing the output.
+/// The input file is `input_file`, which contains LLVM IR / Bitcode.
+/// The expected output is `expected_output`.
+fn test_llvm_ir_via_pliron(input_file: &str, opts: impl Pass, expected_output: i32) {
+    let (_tmp_dir, bc_path) = build_bitcode(input_file, opts);
+
     let mut cmd = Command::new(LLI_BINARY.clone());
 
     let run_output = cmd
@@ -204,6 +227,40 @@ fn test_llvm_ir_via_pliron(input_file: &str, mut opts: impl Pass, expected_outpu
         .args([bc_path.to_str().unwrap()])
         .output()
         .expect("failed to execute LLi to execute output.bc");
+    assert_eq!(
+        run_output.status.code(),
+        Some(expected_output),
+        "{}",
+        String::from_utf8(run_output.stderr).unwrap()
+    );
+}
+
+/// Test an LLVM-IR file by compiling it to a native executable with `clang`
+/// and running that, instead of interpreting it with `lli`.
+/// Useful for IR constructs (e.g. cross-function `blockaddress` materialization)
+/// that `lli`'s lazy JIT can't handle but that are well defined when statically
+/// compiled and linked.
+/// The input file is `input_file`, which contains LLVM IR / Bitcode.
+/// The expected output is `expected_output`.
+fn test_llvm_ir_via_pliron_compiled(input_file: &str, opts: impl Pass, expected_output: i32) {
+    let (tmp_dir, bc_path) = build_bitcode(input_file, opts);
+
+    let exe_path = tmp_dir.path().join("a.out");
+    let compile_output = Command::new(CLANG_BINARY.clone())
+        .args([bc_path.to_str().unwrap(), "-o", exe_path.to_str().unwrap()])
+        .output()
+        .expect("failed to execute clang to compile output.bc");
+    assert!(
+        compile_output.status.success(),
+        "clang failed to compile {}: {}",
+        bc_path.to_str().unwrap(),
+        String::from_utf8(compile_output.stderr).unwrap()
+    );
+
+    let run_output = Command::new(exe_path)
+        .current_dir(&*RESOURCES_DIR)
+        .output()
+        .expect("failed to execute compiled a.out");
     assert_eq!(
         run_output.status.code(),
         Some(expected_output),
@@ -260,6 +317,19 @@ fn test_select() {
     );
 }
 
+/// Test blockaddress by compiling blockaddress.ll via pliron.
+/// `lli` can't process cross-function blockaddress materialization, so this
+/// is compiled to a native executable with clang instead of run under `lli`.
+#[test]
+fn test_blockaddress() {
+    init_env_logger_for_tests!();
+    test_llvm_ir_via_pliron_compiled(
+        RESOURCES_DIR.join("blockaddress.ll").to_str().unwrap(),
+        Passes::default(),
+        7,
+    );
+}
+
 /// Test SwitchOp by compiling switch.ll via pliron.
 #[test]
 fn test_switch() {
@@ -268,6 +338,17 @@ fn test_switch() {
         RESOURCES_DIR.join("switch.ll").to_str().unwrap(),
         Passes::default(),
         68,
+    );
+}
+
+/// Test IndirectBrOp by compiling indirectbr.ll via pliron.
+#[test]
+fn test_indirectbr() {
+    init_env_logger_for_tests!();
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR.join("indirectbr.ll").to_str().unwrap(),
+        Passes::default(),
+        66,
     );
 }
 

@@ -139,7 +139,7 @@ impl Parsable for Identifier {
 }
 
 /// A utility to safely (i.e., without collisions) legalise identifiers.
-/// Generated [Identifier]s are unique only within this the this object.
+/// Generated [Identifier]s are unique only within an instance of this legaliser.
 /// ```
 /// use pliron::identifier::{Legaliser, Identifier};
 /// let mut legaliser = Legaliser::default();

@@ -39,9 +39,15 @@ LLVM-IR bitcode.
 ### Using the Library
 Add a dependence on the [crate](https://crates.io/crates/pliron) in your Rust project.
 
-Note: `pliron` is under active development. Every effort is made to ensure that the code is well tested
-and of production quality. The LLVM dialect, although not complete, can be useful practically. It can,
-for example, [compile bzip2](https://github.com/pliron-org/pliron/wiki/Compiling-bzip2-through-pliron's-LLVM-dialect).
+#### Current Status:
+`pliron` is under active development. Every effort is made to ensure that the
+code is well tested and of production quality.
+
+The LLVM dialect, although not complete, can be useful practically. It can,
+for example, [compile bzip2](https://github.com/pliron-org/pliron/wiki/Compiling-bzip2-through-pliron's-LLVM-dialect)
+and [lua](https://github.com/lua/lua) and run their test suites. These two are
+already part of our [llvm-opt testsuite](pliron-llvm/llvm-opt/tests/testsuite/README.md).
+
 We also plan to start work on supporting a cranelift dialect/backend soon.
 
 ### Documentation & Resources
