@@ -1,6 +1,2 @@
 /target
 Cargo.lock
-
-# Nix flake environment
-.direnv
-.envrc
