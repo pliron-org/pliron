@@ -1181,6 +1181,75 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.trunc
+// ---------------------------------------------------------------------------
+
+#[test]
+fn trunc_folds_constant_that_fits() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16;
+        c = llvm.trunc a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<5: i8>"));
+    Ok(())
+}
+
+/// Truncation keeps only the low bits: 258 (i16, 0x102) -> 2 (i8).
+#[test]
+fn trunc_folds_constant_dropping_high_bits() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <258: i16>> : builtin.integer i16;
+        c = llvm.trunc a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<2: i8>"));
+    Ok(())
+}
+
+/// -1 (i16, 0xffff) truncates to 0xff, which is -1 again at the narrower
+/// width.
+#[test]
+fn trunc_folds_negative_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.integer <65535: i16>> : builtin.integer i16;
+        c = llvm.trunc a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<255: i8>"));
+    Ok(())
+}
+
+#[test]
+fn trunc_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i16) variadic = false> [] {
+        ^entry(x: builtin.integer i16):
+        c = llvm.trunc x to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
@@ -2147,5 +2216,350 @@ fn frem_nnan_still_folds_finite() -> Result<()> {
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     assert!(after.contains("<builtin.single 2> : builtin.fp32"));
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fcmp
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fcmp_oeq_folds_equal_constants_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <> a <OEQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_oeq_folds_unequal_constants_to_false() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fcmp <> a <OEQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+/// IEEE-754: +0.0 and -0.0 compare equal despite different bit patterns.
+#[test]
+fn fcmp_oeq_folds_positive_and_negative_zero_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single -0.0> : builtin.fp32;
+        b = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        c = llvm.fcmp <> a <OEQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+/// An ordered predicate is false whenever an operand is NaN.
+#[test]
+fn fcmp_ordered_predicate_with_nan_folds_to_false() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <> a <OLT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+/// An unordered predicate is true whenever an operand is NaN, even though the
+/// same operands compare false under the ordered version of the predicate.
+#[test]
+fn fcmp_unordered_predicate_with_nan_folds_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <> a <UGT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_ord_folds_nan_operand_to_false() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single NaN> : builtin.fp32;
+        c = llvm.fcmp <> a <ORD> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_uno_folds_nan_operand_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single NaN> : builtin.fp32;
+        c = llvm.fcmp <> a <UNO> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_folds_infinity_comparison() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fcmp <> a <OLT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_true_predicate_folds_to_true() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fcmp <> a <True> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_false_predicate_folds_to_false() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fcmp <> a <False> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<0: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_nnan_does_not_fold_nan_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <NNAN> a <UNO> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fcmp_ninf_does_not_fold_infinite_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <NINF> a <OGT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fcmp_nnan_still_folds_finite_operands() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        c = llvm.fcmp <NNAN> a <OLT> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<1: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fcmp_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fcmp <> x <OEQ> b : builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.select
+// ---------------------------------------------------------------------------
+
+/// A true condition selects the first value operand: the select's result is
+/// known to be 10, so the dependent add folds to 11.
+#[test]
+fn select_true_condition_propagates_first_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        cond = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        r = llvm.add s, one <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return r
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<11: i64>"));
+    Ok(())
+}
+
+/// A false condition selects the second value operand: the select's result is
+/// known to be 20, so the dependent add folds to 21.
+#[test]
+fn select_false_condition_propagates_second_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        cond = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        r = llvm.add s, one <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return r
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("<21: i64>"));
+    Ok(())
+}
+
+/// With a constant condition the select forwards its chosen operand even when
+/// that operand is not a constant.
+#[test]
+fn select_constant_condition_forwards_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        cond = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        s = llvm.select cond ? x : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("llvm.return x"));
+    Ok(())
+}
+
+/// Whichever way an unknown condition goes, equal constant operands make the
+/// result that same constant.
+#[test]
+fn select_unknown_condition_folds_equal_constant_operands() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+        ^entry(cond: builtin.integer i1):
+        a = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    // The two original constants plus the one materialized for the select.
+    assert_eq!(after.matches("<7: i64>").count(), 3);
+    Ok(())
+}
+
+#[test]
+fn select_does_not_fold_unknown_condition_with_distinct_operands() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+        ^entry(cond: builtin.integer i1):
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
