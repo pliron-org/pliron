@@ -6,7 +6,6 @@
 use core::{fmt::Display, ops::Deref};
 
 use alloc::string::String;
-use rustc_hash::FxHashMap;
 
 use crate::{
     attribute::{AttrId, AttrParserFn},
@@ -18,6 +17,7 @@ use crate::{
     op::{OpId, OpParserFn},
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
+    std_deps::hash::FxHashMap,
     r#type::{TypeId, TypeParserFn},
 };
 

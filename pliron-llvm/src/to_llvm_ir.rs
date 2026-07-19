@@ -35,13 +35,13 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashMap,
     r#type::{Type, TypeHandle, Typed, type_cast},
     utils::apint::APInt,
     value::{DefiningEntity, Value},
 };
 
 use pliron::derive::{op_interface, op_interface_impl, type_interface, type_interface_impl};
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{

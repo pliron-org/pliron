@@ -8,7 +8,6 @@
 use core::{borrow::Borrow, hash::Hash};
 
 use alloc::{boxed::Box, vec::Vec};
-use rustc_hash::FxHashMap;
 
 use crate::{
     attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
@@ -24,6 +23,7 @@ use crate::{
     parsable::{Parsable, StateStream},
     printable::{self, Printable},
     result::Result,
+    std_deps::hash::FxHashMap,
     utils::vec_exns::VecExtns,
 };
 

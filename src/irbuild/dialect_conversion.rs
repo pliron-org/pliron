@@ -9,7 +9,6 @@
 use core::cell::Ref;
 
 use alloc::{collections::vec_deque::VecDeque, vec, vec::Vec};
-use rustc_hash::FxHashMap;
 
 use crate::{
     builtin::op_interfaces::IsTerminatorInterface,
@@ -27,6 +26,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
+    std_deps::hash::FxHashMap,
     r#type::{Type, TypeHandle, Typed},
     value::{DefiningEntity, Value},
 };
