@@ -3,8 +3,6 @@
 
 //! Translate from pliron's LLVM dialect to LLVM-IR
 
-use std::collections::hash_map;
-
 use llvm_sys::{
     LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMInlineAsmDialect, LLVMIntPredicate, LLVMLinkage,
     LLVMRealPredicate,
@@ -35,7 +33,7 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    std_deps::hash::FxHashMap,
+    std_deps::hash::{FxHashMap, hash_map},
     r#type::{Type, TypeHandle, Typed, type_cast},
     utils::apint::APInt,
     value::{DefiningEntity, Value},
