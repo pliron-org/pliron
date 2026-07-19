@@ -2,7 +2,6 @@
 // Copyright (c) The pliron contributors
 
 use alloc::{vec, vec::Vec};
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     basic_block::BasicBlock,
@@ -15,6 +14,7 @@ use crate::{
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
+    std_deps::hash::{FxHashMap, FxHashSet},
     value::{DefiningEntity, Value},
 };
 
@@ -103,12 +103,12 @@ where
         for (i, node) in rpo.iter().enumerate().skip(1) {
             let preds = graph.predecessors(ctx, node);
             // only consider predecessors reachable from entry (exactly the predecessors in rpo_index)
-            let reachable_preds = preds.iter().filter(|p| rpo_index.contains_key(p));
+            let reachable_preds = preds.iter().filter(|p| rpo_index.contains_key(*p));
 
             // new_idom <- first (processed) predecessor of b (pick one)
             let picked_pred = reachable_preds
                 .clone()
-                .find(|p| dom[rpo_index[p]].is_some())
+                .find(|p| dom[rpo_index[*p]].is_some())
                 .unwrap();
             let mut new_idom = rpo_index[picked_pred];
 
@@ -513,9 +513,8 @@ mod tests {
     use super::*;
     use crate::{
         graph::{ControlFlowGraph, HasLabel},
-        std_deps::hash::HashSet,
+        std_deps::hash::{FxHashSet, HashSet},
     };
-    use rustc_hash::FxHashSet;
 
     #[derive(Clone, Debug)]
     struct Node {

@@ -6,8 +6,6 @@
 
 use alloc::collections::VecDeque;
 
-use rustc_hash::FxHashSet;
-
 use crate::{
     context::{Context, Ptr},
     graph::walkers::{IRNode, WalkConfig, uninterruptible::immutable::walk_op},
@@ -20,6 +18,7 @@ use crate::{
     operation::Operation,
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
+    std_deps::hash::FxHashSet,
 };
 
 /// A rewriter that uses the [Recorder] listener.

@@ -7,7 +7,6 @@ use alloc::{
     vec::Vec,
 };
 use pliron::derive::op_interface;
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
@@ -27,6 +26,7 @@ use crate::{
     printable::Printable,
     region::Region,
     result::Result,
+    std_deps::hash::FxHashMap,
     symbol_table::{SymbolTableCollection, walk_symbol_table},
     r#type::{Type, TypeHandle, Typed, type_impls},
     utils::const_bound_n::LessThanN,

@@ -11,7 +11,6 @@ use core::{
     fmt::Display,
     ops::{Add, Deref},
 };
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
@@ -20,6 +19,7 @@ use crate::{
     impl_printable_for_display,
     parsable::{self, Parsable, ParseResult},
     result::{self, Result},
+    std_deps::hash::FxHashMap,
     verify_err_noloc,
 };
 

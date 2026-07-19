@@ -19,7 +19,6 @@
 
 use alloc::vec::Vec;
 use pliron_derive::op_interface;
-use rustc_hash::FxHashSet;
 
 use crate::{
     basic_block::BasicBlock,
@@ -40,6 +39,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashSet,
     value::{DefiningEntity, Value},
 };
 
