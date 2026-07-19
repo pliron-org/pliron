@@ -6,7 +6,7 @@
 use alloc::{vec, vec::Vec};
 use core::hash::Hash;
 
-use rustc_hash::FxHashMap;
+use crate::std_deps::hash::FxHashMap;
 
 /// A union-find (disjoint-set) structure over values of type `T`.
 ///

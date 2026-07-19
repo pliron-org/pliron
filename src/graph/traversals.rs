@@ -4,7 +4,7 @@
 //! Control-flow-graph traversals
 
 use super::ControlFlowGraph;
-use rustc_hash::{FxHashMap, FxHashSet};
+use crate::std_deps::hash::{FxHashMap, FxHashSet};
 
 /// Region traversal utilities
 pub mod region {

@@ -54,10 +54,10 @@ use crate::{
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
+    std_deps::hash::FxHashSet,
     value::Value,
 };
 use alloc::vec::Vec;
-use rustc_hash::FxHashSet;
 
 use super::state::{BlockState, Constness, SccpState};
 

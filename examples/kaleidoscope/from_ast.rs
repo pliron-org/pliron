@@ -30,9 +30,9 @@ use pliron::{
     location::Location,
     op::Op,
     result::Result,
+    std_deps::hash::FxHashMap,
     value::Value,
 };
-use rustc_hash::FxHashMap;
 
 use crate::{
     ast::{BinOp as AstBinOp, Expr, Function, Stmt},

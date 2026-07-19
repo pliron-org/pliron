@@ -14,8 +14,8 @@ use pliron::{
     linked_list::ContainsLinkedList,
     operation::{self, Operation},
     region::Region,
+    std_deps::hash::FxHashMap,
 };
-use rustc_hash::FxHashMap;
 
 /// Visualise an [Operation], as a graphviz DOT graph.
 /// The returned value implements [Display], so it can be printed directly.

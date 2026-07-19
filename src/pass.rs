@@ -165,9 +165,12 @@ use core::{
     ops::{Deref, DerefMut},
 };
 
-use alloc::{boxed::Box, string::String, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use downcast_rs::{Downcast, impl_downcast};
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     context::{Context, Ptr},
@@ -177,8 +180,11 @@ use crate::{
     operation::{OpDbg, Operation, verify_operation},
     printable::Printable,
     result::Result,
-    std_deps::fs::write,
-    std_deps::io::PathBuf,
+    std_deps::{
+        fs::write,
+        hash::{FxHashMap, FxHashSet},
+        io::PathBuf,
+    },
     utils::timer::Timer,
 };
 

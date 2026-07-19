@@ -11,14 +11,6 @@
 //!     This may describe either a [Value] use (as operand in an [Operation])
 //!     or a [BasicBlock] use (as successor of an [Operation]).
 
-use alloc::{format, vec::Vec};
-use core::{
-    cell::{Ref, RefMut},
-    hash::Hash,
-    marker::PhantomData,
-};
-use rustc_hash::FxHashSet;
-
 use crate::{
     arg_error,
     basic_block::BasicBlock,
@@ -31,8 +23,15 @@ use crate::{
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashSet,
     r#type::{TypeHandle, Typed},
     verify_err, verify_error,
+};
+use alloc::{format, vec::Vec};
+use core::{
+    cell::{Ref, RefMut},
+    hash::Hash,
+    marker::PhantomData,
 };
 
 /// def-use chains are implemented for [Value]s and `Ptr<BasicBlock>`.
