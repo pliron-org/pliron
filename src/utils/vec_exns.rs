@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Extend functionality of Rust vectors.
 
 use alloc::vec::Vec;

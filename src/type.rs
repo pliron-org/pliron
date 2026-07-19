@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Every SSA value, such as operation results or block arguments
 //! has a type defined by the type system.
 //!

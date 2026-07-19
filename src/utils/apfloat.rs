@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Arbitrary precision float implementation.
 //! This is similar in functionality to LLVM's APFloat class.
 //!

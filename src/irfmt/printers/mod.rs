@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Printers for IR objects.
 //!
 //! This module provides a set of reusable printers for IR objects.

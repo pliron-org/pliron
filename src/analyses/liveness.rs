@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Liveness queries on SSA control-flow-graphs.
 //!
 //! The primary interface for liveness queries is through the [Liveness] struct.

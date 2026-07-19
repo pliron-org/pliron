@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Control flow graph (CFG) simplification.
 //!
 //! This optimization performs three tasks in sequence:

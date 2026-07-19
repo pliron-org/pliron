@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! All our `std` dependencies are used from re-exports here.
 //! Dummy implementations are provided for when `std` is disabled.
 

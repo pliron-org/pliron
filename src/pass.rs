@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! A framework to run passes and manage analyses.
 //!
 //! The design is centered around the [Pass] trait and aims to be

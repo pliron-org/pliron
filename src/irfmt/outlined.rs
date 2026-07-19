@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Printer and parser for [outlined](OutlinedAttr) attributes.
 //! Outlined attributes are printed in a separate section of the
 //! IR, after the top level operation is printed.

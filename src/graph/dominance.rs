@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use alloc::{vec, vec::Vec};
 use rustc_hash::{FxHashMap, FxHashSet};
 

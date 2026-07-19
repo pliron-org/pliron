@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Attribute macros for defining and implementing Interfaces.
 
 use quote::{ToTokens, quote};

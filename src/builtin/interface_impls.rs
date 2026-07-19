@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Implementation of various interfaces for builtin dialect entities.
 
 use alloc::{vec, vec::Vec};

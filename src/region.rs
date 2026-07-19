@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Regions are containers for [BasicBlock]s within an [Operation].
 use alloc::vec::Vec;
 

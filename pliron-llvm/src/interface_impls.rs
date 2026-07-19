@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Implementation of various op interfaces for LLVM IR instructions.
 
 use std::num::NonZero;

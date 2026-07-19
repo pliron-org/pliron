@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilities for dialect conversion style rewrites.
 //! Similar in spirit to MLIR dialect conversion, but intentionally simpler:
 //! - no unrealized conversion casts,

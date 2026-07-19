@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! A [BasicBlock] is a list of [Operation]s.
 
 use alloc::{format, string::String, vec, vec::Vec};

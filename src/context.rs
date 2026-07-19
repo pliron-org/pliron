@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! [Context] and [Ptr] together provide memory management for `pliron`.
 
 use core::{

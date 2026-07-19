@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Dead code elimination. Safely eliminate unused operations and block args.
 //!
 //! This pass removes operations that satisfy both the following conditions:

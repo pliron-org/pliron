@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Test that llvm operations implement the constant folding interfaces
 //! [ConstFoldInterface] and [BranchOpFoldInterface] correctly
 

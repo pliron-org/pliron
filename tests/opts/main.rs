@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Test optimizations
 
 // We use pliron-llvm in this test, which is not supported in wasm.

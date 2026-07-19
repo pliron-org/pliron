@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Test format derive for plain structs, attributes / types.
 
 use pliron::{

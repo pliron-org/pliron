@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use std::{env, path::PathBuf, process::Output, sync::LazyLock};
 
 use assert_cmd::{Command, cargo::cargo_bin_cmd};

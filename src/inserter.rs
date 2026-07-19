@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! A utility for inserting [Operation]s from a specified insertion point.
 //! Similar in spirit to LLVM's IRBuilder, but does not build operations.
 
