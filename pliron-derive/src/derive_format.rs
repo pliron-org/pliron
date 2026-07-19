@@ -1924,6 +1924,7 @@ fn get_inner_type_option_vec(ty: &Type) -> Result<Type> {
     if let Type::Path(TypePath {
         qself: None,
         path: Path { segments, .. },
+        ..
     }) = ty
         && let Some(PathSegment {
             ident,

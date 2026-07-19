@@ -21,7 +21,7 @@ combine.workspace = true
 rustc-hash.workspace = true
 convert_case = "0.11"
 
-syn = { version = "2", features = ["derive", "full", "parsing"] }
+syn = { version = "3", features = ["derive", "full", "parsing"] }
 
 [dev-dependencies]
 prettyplease.workspace = true

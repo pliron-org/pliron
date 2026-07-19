@@ -94,7 +94,7 @@ pub(crate) fn interface_impl(
 ) -> Result<proc_macro2::TokenStream> {
     let r#impl = syn::parse2::<ItemImpl>(input.into())?;
 
-    let Some((_, intr_name, _)) = r#impl.trait_.clone() else {
+    let Some((intr_name, _)) = r#impl.trait_.clone() else {
         return Err(syn::Error::new_spanned(
             r#impl,
             "#[*_interface_impl] can be specified only on a trait impl",
