@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilites for matching operations and rewriting them.
 //! Similar in spirit to MLIR's pattern matching rewrites.
 

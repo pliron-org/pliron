@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Builtin dialect: [Op](crate::op::Op)s, [Type](crate::type::Type)s and [Attribute](crate::attribute::Attribute)s
 
 pub mod attr_interfaces;

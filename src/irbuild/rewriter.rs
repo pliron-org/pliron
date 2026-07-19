@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! [Rewriter] extends [Inserter] with more capabilities, such as replace and erase operations.
 
 use alloc::{vec, vec::Vec};

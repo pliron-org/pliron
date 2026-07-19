@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Infrastructure for casting from `dyn Any` to `dyn Trait`,
 //! for traits that the type contained by the [Any] object implements.
 //!

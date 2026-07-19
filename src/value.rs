@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! SSA [Value]s: Use-Def and Def-Use Graph.
 //! At the core of the IR infrastructure are SSA def-use and use-def chains.
 //! Use-def and def-use chains are composed of four key structures:

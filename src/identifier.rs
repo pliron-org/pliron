@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! [Identifier]s are strings used to name entities in programming languages.
 
 use alloc::{

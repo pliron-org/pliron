@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Attributes are non-SSA data stored in [Operation](crate::operation::Operation)s.
 //!
 //! See [MLIR Attributes](https://mlir.llvm.org/docs/LangRef/#attributes).

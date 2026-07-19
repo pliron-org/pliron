@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use common::{ConstantOp, ReturnOp, const_ret_in_mod};
 use expect_test::{Expect, expect};
 use pliron::{

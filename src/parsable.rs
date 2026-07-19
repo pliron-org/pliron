@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! IR objects that can be parsed from their text representation.
 
 use alloc::{boxed::Box, string::String, vec, vec::Vec};

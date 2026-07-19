@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use rustc_hash::{FxHashMap, FxHashSet};

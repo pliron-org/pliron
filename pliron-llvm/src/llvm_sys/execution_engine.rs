@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Safe(r) wrappers around llvm_sys::execution_engine
 
 use std::mem::{MaybeUninit, forget};

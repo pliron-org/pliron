@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use std::{path::PathBuf, process::ExitCode, str::FromStr};
 
 use clap::Parser;

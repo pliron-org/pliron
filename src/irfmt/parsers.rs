@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilities for parsing.
 
 use core::{num::ParseIntError, str::FromStr};
