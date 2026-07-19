@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 /// This test is in a separate file to ensure that the duplicate key error is not
 /// triggered for other tests. Rust compiles each integration test file as a separate
 /// crate, ensuring that other tests aren't impacted.

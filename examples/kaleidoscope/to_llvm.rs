@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Translate from Kaleidoscope dialect IR to LLVM dialect IR.
 //!
 //! The entry point is [`lower_module`], which applies the

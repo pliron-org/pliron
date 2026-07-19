@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Store unique instances of a rust type.
 //!
 //! Only a single unique copy (in self context) will

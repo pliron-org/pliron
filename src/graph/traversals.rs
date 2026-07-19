@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Control-flow-graph traversals
 
 use super::ControlFlowGraph;
@@ -344,11 +347,130 @@ pub mod region {
                 .map(|n| n.expect("Node missing in pre-order"))
         }
     }
+
+    /// A strongly connected component of a graph.
+    #[derive(Clone, Debug)]
+    pub struct Scc<Node> {
+        /// The nodes in this component.
+        pub nodes: Vec<Node>,
+        /// Is there a cycle within this component?
+        /// (i.e., more than one node, or a single node with a self-edge).
+        pub is_cyclic: bool,
+    }
+
+    /// Compute the strongly connected components of a graph, returned in
+    /// topological order of the condensation (the SCC-DAG): if there is an edge
+    /// from a node in component `A` to a node in a different component `B`,
+    /// then `A` appears before `B` in the result.
+    ///
+    /// Uses Tarjan's algorithm (implemented iteratively), which emits SCCs in
+    /// reverse topological order; the result is reversed before returning.
+    /// Nodes unreachable from the entry node are also covered, as separate
+    /// DFS roots visited after the entry node.
+    pub fn sccs_in_topological_order<G, GraphContext>(
+        ctx: &GraphContext,
+        graph: &G,
+    ) -> Vec<Scc<G::Node>>
+    where
+        G: ControlFlowGraph<GraphContext>,
+    {
+        // DFS visit index of each visited node.
+        let mut index_of = FxHashMap::<G::Node, usize>::default();
+        // The lowest visit index reachable from each node's DFS subtree.
+        let mut lowlink = FxHashMap::<G::Node, usize>::default();
+        let mut next_index = 0usize;
+        // Tarjan's component stack.
+        let mut scc_stack = Vec::<G::Node>::new();
+        let mut on_scc_stack = FxHashSet::<G::Node>::default();
+        let mut sccs = Vec::<Scc<G::Node>>::new();
+
+        // Start DFS at the entry node first (if any), then cover any remaining
+        // (unreachable) nodes.
+        let roots: Vec<G::Node> = graph
+            .entry_node(ctx)
+            .into_iter()
+            .chain(graph.nodes(ctx))
+            .collect();
+
+        for root in roots {
+            if index_of.contains_key(&root) {
+                continue;
+            }
+
+            // Iterative version of Tarjan's `strongconnect`.
+            // The second element of the pair is the index of the next successor
+            // to visit for that node.
+            let mut call_stack = Vec::<(G::Node, usize)>::new();
+
+            index_of.insert(root.clone(), next_index);
+            lowlink.insert(root.clone(), next_index);
+            next_index += 1;
+            scc_stack.push(root.clone());
+            on_scc_stack.insert(root.clone());
+            call_stack.push((root, 0));
+
+            while let Some((node, succ_idx)) = call_stack.pop() {
+                if succ_idx < graph.num_successors(ctx, &node) {
+                    // Re-visit this node after attempting this successor.
+                    call_stack.push((node.clone(), succ_idx + 1));
+
+                    let succ = graph.get_successor(ctx, &node, succ_idx);
+                    if let Some(&succ_index) = index_of.get(&succ) {
+                        if on_scc_stack.contains(&succ) {
+                            // `succ` is in the current SCC-in-progress.
+                            let node_low = lowlink[&node].min(succ_index);
+                            lowlink.insert(node, node_low);
+                        }
+                        // Otherwise `succ`'s SCC is already complete; nothing to do.
+                    } else {
+                        // First visit of `succ`: descend.
+                        index_of.insert(succ.clone(), next_index);
+                        lowlink.insert(succ.clone(), next_index);
+                        next_index += 1;
+                        scc_stack.push(succ.clone());
+                        on_scc_stack.insert(succ.clone());
+                        call_stack.push((succ, 0));
+                    }
+                } else {
+                    // All successors of `node` have been visited.
+                    let node_low = lowlink[&node];
+                    if node_low == index_of[&node] {
+                        // `node` is the root of an SCC: pop the component.
+                        let mut nodes = Vec::new();
+                        loop {
+                            let member = scc_stack.pop().expect("SCC stack must contain the root");
+                            on_scc_stack.remove(&member);
+                            let is_root = member == node;
+                            nodes.push(member);
+                            if is_root {
+                                break;
+                            }
+                        }
+                        let is_cyclic =
+                            nodes.len() > 1 || graph.successors(ctx, &nodes[0]).contains(&nodes[0]);
+                        sccs.push(Scc { nodes, is_cyclic });
+                    }
+                    // Propagate this node's lowlink to its DFS parent
+                    // (which is now on top of the call stack).
+                    if let Some((parent, _)) = call_stack.last() {
+                        let parent_low = lowlink[parent].min(node_low);
+                        lowlink.insert(parent.clone(), parent_low);
+                    }
+                }
+            }
+        }
+
+        // Tarjan emits SCCs in reverse topological order.
+        sccs.reverse();
+        sccs
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::region::{DFSEdgeKind, DFSTraversal, post_order, topological_order};
+    use super::region::{
+        DFSEdgeKind, DFSTraversal, Scc, post_order, sccs_in_topological_order, topological_order,
+    };
     use crate::graph::{ControlFlowGraph, HasLabel};
     use alloc::{
         boxed::Box,
@@ -580,5 +702,97 @@ mod tests {
         assert_eq!(dfs.reverse_post_order_number(&3), 4);
         assert_eq!(dfs.reverse_post_order_number(&4), 5);
         assert_eq!(dfs.reverse_post_order_number(&5), 6);
+    }
+
+    /// Assert that `sccs` partition all of `ctx`'s nodes, and that the
+    /// topological property holds: every edge goes within an SCC or from an
+    /// earlier SCC to a later one.
+    fn assert_valid_scc_topo_order(ctx: &[Node], sccs: &[Scc<usize>]) {
+        let mut scc_of = vec![usize::MAX; ctx.len()];
+        let mut count = 0;
+        for (scc_idx, scc) in sccs.iter().enumerate() {
+            for &node in &scc.nodes {
+                assert_eq!(scc_of[node], usize::MAX, "node {node} in multiple SCCs");
+                scc_of[node] = scc_idx;
+                count += 1;
+            }
+        }
+        assert_eq!(count, ctx.len(), "SCCs must cover all nodes");
+        for (u, node) in ctx.iter().enumerate() {
+            for &v in &node.succs {
+                assert!(
+                    scc_of[u] <= scc_of[v],
+                    "edge {u}->{v} goes from a later SCC to an earlier one"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn scc_linear_chain() {
+        let ctx = vec![n(10, &[1]), n(20, &[2]), n(30, &[])];
+        let sccs = sccs_in_topological_order(&ctx, &ArenaGraph);
+        assert_valid_scc_topo_order(&ctx, &sccs);
+        assert_eq!(sccs.len(), 3);
+        assert!(sccs.iter().all(|scc| !scc.is_cyclic));
+        assert_eq!(
+            sccs.iter().map(|scc| scc.nodes[0]).collect::<Vec<_>>(),
+            vec![0, 1, 2]
+        );
+    }
+
+    #[test]
+    fn scc_simple_loop() {
+        // 0 -> 1 <-> 2, 1 -> 3
+        let ctx = vec![n(0, &[1]), n(1, &[2, 3]), n(2, &[1]), n(3, &[])];
+        let sccs = sccs_in_topological_order(&ctx, &ArenaGraph);
+        assert_valid_scc_topo_order(&ctx, &sccs);
+        assert_eq!(sccs.len(), 3);
+        assert!(!sccs[0].is_cyclic && sccs[0].nodes == vec![0]);
+        assert!(sccs[1].is_cyclic);
+        let mut loop_nodes = sccs[1].nodes.clone();
+        loop_nodes.sort();
+        assert_eq!(loop_nodes, vec![1, 2]);
+        assert!(!sccs[2].is_cyclic && sccs[2].nodes == vec![3]);
+    }
+
+    #[test]
+    fn scc_self_loop() {
+        let ctx = vec![n(0, &[1]), n(1, &[1, 2]), n(2, &[])];
+        let sccs = sccs_in_topological_order(&ctx, &ArenaGraph);
+        assert_valid_scc_topo_order(&ctx, &sccs);
+        assert_eq!(sccs.len(), 3);
+        assert!(!sccs[0].is_cyclic);
+        assert!(sccs[1].is_cyclic, "self-loop must be classified cyclic");
+        assert!(!sccs[2].is_cyclic);
+    }
+
+    #[test]
+    fn scc_nested_loops_merge() {
+        // Loop nest: 0 -> 1 -> 2 -> 3 -> 1 (outer), 3 -> 2 (inner), 3 -> 4.
+        let ctx = vec![
+            n(0, &[1]),
+            n(1, &[2]),
+            n(2, &[3]),
+            n(3, &[1, 2, 4]),
+            n(4, &[]),
+        ];
+        let sccs = sccs_in_topological_order(&ctx, &ArenaGraph);
+        assert_valid_scc_topo_order(&ctx, &sccs);
+        assert_eq!(sccs.len(), 3);
+        assert!(sccs[1].is_cyclic);
+        let mut loop_nodes = sccs[1].nodes.clone();
+        loop_nodes.sort();
+        assert_eq!(loop_nodes, vec![1, 2, 3], "nested loops form one SCC");
+    }
+
+    #[test]
+    fn scc_unreachable_nodes_covered() {
+        // 0 -> 1; 2 <-> 3 unreachable from entry.
+        let ctx = vec![n(0, &[1]), n(1, &[]), n(2, &[3]), n(3, &[2])];
+        let sccs = sccs_in_topological_order(&ctx, &ArenaGraph);
+        assert_valid_scc_topo_order(&ctx, &sccs);
+        assert_eq!(sccs.len(), 3);
+        assert_eq!(sccs.iter().filter(|scc| scc.is_cyclic).count(), 1);
     }
 }

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Tests for dialect conversion from builtin to LLVM ops.
 
 #![cfg(feature = "llvm-sys")]

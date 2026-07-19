@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! # pliron: Programming Languages Intermediate RepresentatiON
 //!
 //! `pliron` is an extensible compiler IR framework in Rust, inspired by MLIR.

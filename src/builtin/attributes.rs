@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use core::hash::{Hash, Hasher};
 
 use alloc::{boxed::Box, string::String, vec::Vec};

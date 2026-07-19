@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Derive macro for `Verify` trait that always succeeds.
 
 pub(crate) fn verify_succ_impl(

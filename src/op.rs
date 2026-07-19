@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! An [Op] is a thin wrapper arround an [Operation], providing
 //! API specific to the [OpId] of that Operation.
 //!

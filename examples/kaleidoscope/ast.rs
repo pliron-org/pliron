@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Abstract syntax tree (AST) types for the Kaleidoscope language.
 //!
 //! The language supports:

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Translate from LLVM-IR to pliron's LLVM dialect
 
 use std::num::NonZero;

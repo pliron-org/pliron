@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Translate from pliron's LLVM dialect to LLVM-IR
 
 use std::collections::hash_map;

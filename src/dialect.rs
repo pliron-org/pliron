@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! [Dialect]s are a mechanism to group related [Op](crate::op::Op)s, [Type](crate::type::Type)s
 //! and [Attribute](crate::attribute::Attribute)s.
 use core::{fmt::Display, ops::Deref};

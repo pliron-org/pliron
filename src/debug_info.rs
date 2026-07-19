@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilities for attaching / retrieving debug info to / from the IR.
 
 use alloc::{string::ToString, vec::Vec};

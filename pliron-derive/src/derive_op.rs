@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use convert_case::{Case, Casing};
 use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};

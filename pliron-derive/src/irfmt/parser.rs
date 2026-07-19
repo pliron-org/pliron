@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use combine::{
     Parser, between, choice, many, one_of, optional,
     parser::{

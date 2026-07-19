@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Tests for IR cloning ([pliron::irbuild::cloning]).
 
 use common::{ConstantOp, ReturnOp, const_ret_in_mod};

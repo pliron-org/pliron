@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use pliron::{common_traits::Verify, context::Context};
 use pliron_derive::verify_succ;
 

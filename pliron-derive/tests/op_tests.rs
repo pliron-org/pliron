@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Integration tests for op-related derive macros:
 //! - `operands` / `results` (getter generation and typed interface derivation)
 //! - `derive_attr_get_set` (attribute getter/setter generation)

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Listen to IR building / rewriting events.
 
 use alloc::vec::Vec;

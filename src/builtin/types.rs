@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use alloc::vec::Vec;
 
 use pliron::derive::{pliron_type, type_interface_impl};

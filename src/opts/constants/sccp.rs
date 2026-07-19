@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Sparse Conditional Constant Propagation (SCCP).
 //!
 //! This pass performs sparse conditional constant propagation over an operation
