@@ -1058,11 +1058,11 @@ fn parse_function_with_attrs() -> Result<()> {
     expect![[r#"
         builtin.module @bar 
         {
-          ^block1v1_block4v1() !0:
+          ^block1v1_block3v1() !0:
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
               [test_on_func_value: builtin.string "func_attr_value"]
             {
-              ^entry_block2v1_block3v1() !1:
+              ^entry_block2v1_block4v1() !1:
                 c0_v1 = test.constant builtin.integer <0: si64> !2;
                 test.return c0_v1 !3
             } !4
@@ -1692,10 +1692,10 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
     expect![[r#"
         builtin.module @bar 
         {
-          ^block_0_0_block2v1() !0:
+          ^block_0_0_block1v1() !0:
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-              ^entry_block_1_0_block1v1() [block_attr: builtin.string "hello"] !1:
+              ^entry_block_1_0_block2v1() [block_attr: builtin.string "hello"] !1:
                 c0_op_2_0_res0_v0 = test.constant builtin.integer <0: si64> !2;
                 test.return c0_op_2_0_res0_v0 !3
             } !4
@@ -1729,10 +1729,10 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
     expect![[r#"
         builtin.module @bar 
         {
-          ^block_0_0_block2v1_block2v1() !0:
+          ^block_0_0_block1v1_block1v1() !0:
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-              ^entry_block_1_0_block1v1_block1v1() [block_attr: builtin.string "hello"] !1:
+              ^entry_block_1_0_block2v1_block2v1() [block_attr: builtin.string "hello"] !1:
                 c0_op_2_0_res0_v0 = test.constant builtin.integer <0: si64> !2;
                 test.return c0_op_2_0_res0_v0 !3
             } !4
