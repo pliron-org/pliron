@@ -862,11 +862,11 @@ fn if_op() {
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
         {
-          ^entry_block2v1() !0:
+          ^entry_block1v1() !0:
             res0_v0 = test.attr_op <0: si64>:builtin.integer si64 !1;
             test.if_op (res0_v0)
             {
-              ^then_block1v1() !2:
+              ^then_block2v1() !2:
                 res1_v1 = test.attr_op <1: si64>:builtin.integer si64 !3;
                 test.return res1_v1 !4
             } !5;
@@ -925,16 +925,16 @@ fn if_else_op() {
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
         {
-          ^entry_block3v1() !0:
+          ^entry_block1v1() !0:
             res0_v0 = test.attr_op <0: si64>:builtin.integer si64 !1;
             test.if_else_op (res0_v0)
             {
-              ^then_block1v1() !2:
+              ^then_block2v1() !2:
                 res1_v1 = test.attr_op <1: si64>:builtin.integer si64 !3;
                 test.return res1_v1 !4
             }else
             {
-              ^else_block2v1() !5:
+              ^else_block3v1() !5:
                 res2_v2 = test.attr_op <2: si64>:builtin.integer si64 !6;
                 test.return res2_v2 !7
             } !8;
@@ -989,12 +989,12 @@ fn br_op() {
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
         {
-          ^entry_block2v1() !0:
+          ^entry_block1v1() !0:
             res0_v0 = test.attr_op <0: si64>:builtin.integer si64 !1;
             test.br ^bb1_block3v1(res0_v0) !2
 
-          ^bb1_block3v1(arg0_v2: builtin.integer si64) !3:
-            test.return arg0_v2 !4
+          ^bb1_block3v1(arg0_v1: builtin.integer si64) !3:
+            test.return arg0_v1 !4
         } !5
 
         outlined_attributes:
@@ -1042,14 +1042,14 @@ fn multiple_successors_op() {
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
         {
-          ^entry_block3v1() !0:
+          ^entry_block1v1() !0:
             res0_v0 = test.attr_op <0: si64>:builtin.integer si64 !1;
-            test.multiple_successors [^bb1_block4v1, ^bb2_block1v3] !2
+            test.multiple_successors [^bb1_block4v1, ^bb2_block2v3] !2
 
           ^bb1_block4v1() !3:
             test.return res0_v0 !4
 
-          ^bb2_block1v3() !5:
+          ^bb2_block2v3() !5:
             test.return res0_v0 !6
         } !7
 
@@ -1107,16 +1107,16 @@ fn multiple_regions_op() {
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
         {
-          ^entry_block3v1() !0:
+          ^entry_block1v1() !0:
             res_v0 = test.attr_op <0: si64>:builtin.integer si64 !1;
             test.multiple_regions [
             {
-              ^reg1_entry_block1v1() !2:
+              ^reg1_entry_block2v1() !2:
                 res0_v1 = test.attr_op <0: si64>:builtin.integer si64 !3;
                 test.return res0_v1 !4
             }, 
             {
-              ^reg2_entry_block2v1() !5:
+              ^reg2_entry_block3v1() !5:
                 res1_v2 = test.attr_op <1: si64>:builtin.integer si64 !6;
                 test.return res1_v2 !7
             }] !8;

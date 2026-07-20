@@ -523,19 +523,6 @@ impl Parsable for BasicBlock {
             .into_result()?
             .0;
 
-        // Parse the ops in the block
-        let ops: Vec<_> = spaces()
-            .with(sep_by::<Vec<_>, _, _, _>(
-                Operation::parser(OperationParserConfig {
-                    look_for_outlined_attrs: false,
-                })
-                .skip(spaces()),
-                token(';').skip(spaces()),
-            ))
-            .parse_stream(state_stream)
-            .into_result()?
-            .0;
-
         // We've parsed the components. Now construct the result.
         let (arg_names, arg_types): (Vec<_>, Vec<_>) = args.into_iter().unzip();
         let block = BasicBlock::new(state_stream.state.ctx, Some(label.clone()), arg_types);
@@ -565,13 +552,27 @@ impl Parsable for BasicBlock {
             register_block_for_outline(state_stream, outindex, block, outline_loc)?;
         }
 
-        for op in ops {
-            op.insert_at_back(block, state_stream.state.ctx);
-        }
         state_stream
             .state
             .name_tracker
             .block_def(state_stream.state.ctx, &(label, loc), block)?;
+
+        // Parse the ops in the block
+        let ops: Vec<_> = spaces()
+            .with(sep_by::<Vec<_>, _, _, _>(
+                Operation::parser(OperationParserConfig {
+                    look_for_outlined_attrs: false,
+                })
+                .skip(spaces()),
+                token(';').skip(spaces()),
+            ))
+            .parse_stream(state_stream)
+            .into_result()?
+            .0;
+        for op in ops {
+            op.insert_at_back(block, state_stream.state.ctx);
+        }
+
         Ok(block).into_parse_result()
     }
 }

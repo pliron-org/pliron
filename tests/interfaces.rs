@@ -1022,10 +1022,10 @@ fn test_outline_printonce_attr() -> Result<()> {
     expect![[r#"
         builtin.module @bar 
         {
-          ^block1v1_block4v1() !0:
+          ^block1v1_block3v1() !0:
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-              ^entry_block2v1_block3v1() !1:
+              ^entry_block2v1_block4v1() !1:
                 c0_v3 = test.constant builtin.integer <0: si64> !2;
                 v0_v4 = test.constant builtin.integer <42: si64> !3;
                 v1_v5 = test.constant builtin.integer <44: si64> !4;
@@ -1149,10 +1149,10 @@ fn test_outline_attr_on_block() -> Result<()> {
     expect![[r#"
         builtin.module @bar 
         {
-          ^block1v1_block4v1() !0:
+          ^block1v1_block3v1() !0:
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
-              ^entry_block2v1_block3v1() !1:
+              ^entry_block2v1_block4v1() !1:
                 c0_v1 = test.constant builtin.integer <0: si64> !2;
                 test.return c0_v1 !3
             } !4
