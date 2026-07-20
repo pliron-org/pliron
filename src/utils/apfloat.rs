@@ -350,6 +350,9 @@ pub trait DynFloat: Downcast + core::fmt::Debug {
     fn to_bits(&self) -> u128;
     /// [Float::to_u128_r]
     fn to_u128_r(&self, width: usize, round: Round, is_exact: &mut bool) -> StatusAnd<u128>;
+    /// [PartialOrd::partial_cmp]: IEEE-754 comparison, `None` when the
+    /// operands are unordered (i.e., either is a NaN).
+    fn partial_cmp(&self, other: &dyn DynFloat) -> Option<Ordering>;
     /// [Float::cmp_abs_normal]
     fn cmp_abs_normal(&self, other: &dyn DynFloat) -> Ordering;
     /// [Float::bitwise_eq]
@@ -572,6 +575,12 @@ impl<T: Float + GetSemantics + core::fmt::Debug + 'static> DynFloat for T {
     }
     fn to_u128_r(&self, width: usize, round: Round, is_exact: &mut bool) -> StatusAnd<u128> {
         <Self as Float>::to_u128_r(*self, width, round, is_exact)
+    }
+    fn partial_cmp(&self, other: &dyn DynFloat) -> Option<Ordering> {
+        let other_float = other
+            .downcast_ref::<T>()
+            .expect("Type mismatch in DynFloat::partial_cmp");
+        <Self as PartialOrd>::partial_cmp(self, other_float)
     }
     fn cmp_abs_normal(&self, other: &dyn DynFloat) -> Ordering {
         let other_float = other
