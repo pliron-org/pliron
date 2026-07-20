@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Cloning IR entities with a value / block / op remapping.
 //!
 //! This mirrors MLIR's [`IRMapping`] + `Operation::clone(mapper)` /
@@ -20,8 +23,6 @@
 
 use alloc::vec::Vec;
 
-use rustc_hash::FxHashMap;
-
 use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
@@ -33,6 +34,7 @@ use crate::{
     location::Located,
     operation::Operation,
     region::Region,
+    std_deps::hash::FxHashMap,
     r#type::Typed,
     value::Value,
 };

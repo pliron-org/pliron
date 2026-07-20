@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 mod common;
 
 use std::sync::{LazyLock, Mutex};

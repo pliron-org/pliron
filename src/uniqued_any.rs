@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Store, in [Context], a single unique copy of any object.
 
 use core::{any::Any, hash::Hash, marker::PhantomData};

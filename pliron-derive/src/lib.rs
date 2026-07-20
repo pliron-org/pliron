@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 mod derive_attr;
 mod derive_entity;
 mod derive_format;

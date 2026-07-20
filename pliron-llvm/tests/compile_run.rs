@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Tests that compile code and run it.
 
 #![cfg(feature = "llvm-sys")]

@@ -18,7 +18,6 @@ default = ["llvm-sys"]
 pliron = { path = "../", version = "0" }
 
 thiserror.workspace = true
-rustc-hash.workspace = true
 log.workspace = true
 bitflags = { workspace = true, features = ["std"] }
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! An [Op] is a thin wrapper arround an [Operation], providing
 //! API specific to the [OpId] of that Operation.
 //!
@@ -31,11 +34,7 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, string::ToString, vec::Vec};
 use core::{
     fmt::{self, Display},
     hash::Hash,
@@ -77,17 +76,17 @@ use crate::{
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 /// An Op's name (not including it's dialect).
-pub struct OpName(String);
+pub struct OpName(Identifier);
 
 impl OpName {
     /// Create a new OpName.
     pub fn new(name: &str) -> OpName {
-        OpName(name.to_string())
+        OpName(name.try_into().expect("Invalid Identifier for OpName"))
     }
 }
 
 impl Deref for OpName {
-    type Target = String;
+    type Target = Identifier;
 
     fn deref(&self) -> &Self::Target {
         &self.0

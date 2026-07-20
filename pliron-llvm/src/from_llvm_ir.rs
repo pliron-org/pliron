@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Translate from LLVM-IR to pliron's LLVM dialect
 
 use std::num::NonZero;
@@ -32,11 +35,11 @@ use pliron::{
     op::Op,
     operation::Operation,
     result::Result,
+    std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, TypedHandle, type_cast},
     utils::apint::APInt,
     value::Value,
 };
-use rustc_hash::{FxHashMap, FxHashSet};
 use thiserror::Error;
 
 use crate::{

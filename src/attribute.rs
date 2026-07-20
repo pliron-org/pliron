@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Attributes are non-SSA data stored in [Operation](crate::operation::Operation)s.
 //!
 //! See [MLIR Attributes](https://mlir.llvm.org/docs/LangRef/#attributes).
@@ -36,11 +39,7 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, vec::Vec};
 use core::{
     fmt::{Debug, Display},
     ops::Deref,
@@ -385,12 +384,12 @@ pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static
 
 #[derive(Clone, Hash, PartialEq, Eq)]
 /// An [Attribute]'s name (not including it's dialect).
-pub struct AttrName(String);
+pub struct AttrName(Identifier);
 
 impl AttrName {
     /// Create a new AttrName.
     pub fn new(name: &str) -> AttrName {
-        AttrName(name.to_string())
+        AttrName(name.try_into().expect("Invalid Identifier for AttrName"))
     }
 }
 
@@ -421,7 +420,7 @@ impl Parsable for AttrName {
 }
 
 impl Deref for AttrName {
-    type Target = String;
+    type Target = Identifier;
 
     fn deref(&self) -> &Self::Target {
         &self.0

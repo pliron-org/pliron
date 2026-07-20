@@ -1,6 +1,7 @@
-//! Translate from pliron's LLVM dialect to LLVM-IR
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
 
-use std::collections::hash_map;
+//! Translate from pliron's LLVM dialect to LLVM-IR
 
 use llvm_sys::{
     LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMInlineAsmDialect, LLVMIntPredicate, LLVMLinkage,
@@ -32,13 +33,13 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
+    std_deps::hash::{FxHashMap, hash_map},
     r#type::{Type, TypeHandle, Typed, type_cast},
     utils::apint::APInt,
     value::{DefiningEntity, Value},
 };
 
 use pliron::derive::{op_interface, op_interface_impl, type_interface, type_interface_impl};
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{

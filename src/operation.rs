@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! An operation is the basic unit of execution in the IR.
 //! The general idea is similar to MLIR's
 //! [Operation](https://mlir.llvm.org/docs/LangRef/#operations)

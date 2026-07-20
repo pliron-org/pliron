@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Sparse Conditional Constant Propagation (SCCP).
 //!
 //! This pass performs sparse conditional constant propagation over an operation
@@ -51,10 +54,10 @@ use crate::{
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
+    std_deps::hash::FxHashSet,
     value::Value,
 };
 use alloc::vec::Vec;
-use rustc_hash::FxHashSet;
 
 use super::state::{BlockState, Constness, SccpState};
 

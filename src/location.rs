@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Source location for different IR entities
 
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::fmt::Debug;
-use rustc_hash::FxHashSet;
 
 use crate::{
     attribute::AttrObj,
@@ -20,7 +22,7 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
-    std_deps::io::PathBuf,
+    std_deps::{hash::FxHashSet, io::PathBuf},
     uniqued_any::{self, UniquedKey},
 };
 

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Liveness queries on SSA control-flow-graphs.
 //!
 //! The primary interface for liveness queries is through the [Liveness] struct.
@@ -702,11 +705,11 @@ mod tests {
         value::Value,
     };
 
-    #[pliron_op(name = "test.liveness.node", format, verifier = "succ")]
+    #[pliron_op(name = "test.liveness_node", format, verifier = "succ")]
     struct NodeOp;
 
     #[pliron_op(
-        name = "test.liveness.br",
+        name = "test.liveness_br",
         format,
         interfaces = [IsTerminatorInterface],
         verifier = "succ",

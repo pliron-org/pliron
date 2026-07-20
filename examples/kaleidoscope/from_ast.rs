@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Translate from AST to IR using the dialect we defined in `dialect.rs`.
 //!
 //! The entry point is [`lower_function`], which takes a single [`Function`] AST
@@ -27,9 +30,9 @@ use pliron::{
     location::Location,
     op::Op,
     result::Result,
+    std_deps::hash::FxHashMap,
     value::Value,
 };
-use rustc_hash::FxHashMap;
 
 use crate::{
     ast::{BinOp as AstBinOp, Expr, Function, Stmt},

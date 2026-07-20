@@ -1,10 +1,12 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilities to work with [SymbolTableInterface] Ops.
 
 use alloc::{
     boxed::Box,
     string::{String, ToString},
 };
-use rustc_hash::FxHashMap;
 use thiserror::Error;
 
 use crate::{
@@ -26,6 +28,7 @@ use crate::{
     operation::Operation,
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashMap,
 };
 
 /// A utility to efficiently lookup and update [Symbol](SymbolOpInterface)s

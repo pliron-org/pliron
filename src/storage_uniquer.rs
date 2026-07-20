@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Store unique instances of a rust type.
 //!
 //! Only a single unique copy (in self context) will
@@ -9,9 +12,8 @@ use core::{
     hash::{Hash, Hasher},
 };
 use once_vec::OnceVec;
-use rustc_hash::FxHasher;
 
-use crate::std_deps::hash::{FxHashMap, hash_map::Entry};
+use crate::std_deps::hash::{FxHashMap, FxHasher, hash_map::Entry};
 
 /// Computes the hash of a rust value and its rust type.
 /// ```rust

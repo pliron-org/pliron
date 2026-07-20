@@ -1,9 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utilites for matching operations and rewriting them.
 //! Similar in spirit to MLIR's pattern matching rewrites.
 
 use alloc::collections::VecDeque;
-
-use rustc_hash::FxHashSet;
 
 use crate::{
     context::{Context, Ptr},
@@ -17,6 +18,7 @@ use crate::{
     operation::Operation,
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
+    std_deps::hash::FxHashSet,
 };
 
 /// A rewriter that uses the [Recorder] listener.

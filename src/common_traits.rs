@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Utility traits such as [Named], [Verify] etc.
 
 use crate::{

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! SSA [Value]s: Use-Def and Def-Use Graph.
 //! At the core of the IR infrastructure are SSA def-use and use-def chains.
 //! Use-def and def-use chains are composed of four key structures:
@@ -7,14 +10,6 @@
 //!   - [Use] describes the use of a definition.
 //!     This may describe either a [Value] use (as operand in an [Operation])
 //!     or a [BasicBlock] use (as successor of an [Operation]).
-
-use alloc::{format, vec::Vec};
-use core::{
-    cell::{Ref, RefMut},
-    hash::Hash,
-    marker::PhantomData,
-};
-use rustc_hash::FxHashSet;
 
 use crate::{
     arg_error,
@@ -28,8 +23,15 @@ use crate::{
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashSet,
     r#type::{TypeHandle, Typed},
     verify_err, verify_error,
+};
+use alloc::{format, vec::Vec};
+use core::{
+    cell::{Ref, RefMut},
+    hash::Hash,
+    marker::PhantomData,
 };
 
 /// def-use chains are implemented for [Value]s and `Ptr<BasicBlock>`.

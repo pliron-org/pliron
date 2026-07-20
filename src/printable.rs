@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! IR objects that are to be printed must implement [Printable].
 
 use alloc::{boxed::Box, rc::Rc, string::String};

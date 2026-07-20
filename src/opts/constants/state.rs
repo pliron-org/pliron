@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use alloc::vec::Vec;
-use rustc_hash::{FxHashMap, FxHashSet};
 
 use crate::{
     attribute::AttrObj,
@@ -9,6 +11,7 @@ use crate::{
     linked_list::ContainsLinkedList,
     operation::Operation,
     printable::{self, Printable},
+    std_deps::hash::{FxHashMap, FxHashSet},
     value::Value,
 };
 

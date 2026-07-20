@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use crate::common::{ReturnOp, const_ret_in_mod};
 use common::ConstantOp;
 use core::panic;

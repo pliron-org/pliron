@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
 use rustc_hash::{FxHashMap, FxHashSet};
@@ -1924,6 +1927,7 @@ fn get_inner_type_option_vec(ty: &Type) -> Result<Type> {
     if let Type::Path(TypePath {
         qself: None,
         path: Path { segments, .. },
+        ..
     }) = ty
         && let Some(PathSegment {
             ident,

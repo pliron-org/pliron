@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Provide linked-list operations for `Ptr<T: LinkedList>`.
 
 use crate::context::{Context, Ptr, private::ArenaObj};

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! A utility to enforce statically that a value is less than a given constant `N`.
 
 /// Statically enforced less than `N` value. Use [I] to construct.

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! Dead code elimination. Safely eliminate unused operations and block args.
 //!
 //! This pass removes operations that satisfy both the following conditions:
@@ -16,7 +19,6 @@
 
 use alloc::vec::Vec;
 use pliron_derive::op_interface;
-use rustc_hash::FxHashSet;
 
 use crate::{
     basic_block::BasicBlock,
@@ -37,6 +39,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::Printable,
     result::Result,
+    std_deps::hash::FxHashSet,
     value::{DefiningEntity, Value},
 };
 

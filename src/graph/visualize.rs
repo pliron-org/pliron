@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 use alloc::{format, string::String};
 use core::{fmt::Display, ops::Deref};
 use pliron::{
@@ -11,8 +14,8 @@ use pliron::{
     linked_list::ContainsLinkedList,
     operation::{self, Operation},
     region::Region,
+    std_deps::hash::FxHashMap,
 };
-use rustc_hash::FxHashMap;
 
 /// Visualise an [Operation], as a graphviz DOT graph.
 /// The returned value implements [Display], so it can be printed directly.
