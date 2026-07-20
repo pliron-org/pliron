@@ -160,8 +160,8 @@ impl ToTokens for ImplOp {
 
                 fn get_opid_static() -> ::pliron::op::OpId {
                     ::pliron::op::OpId {
-                        name: ::pliron::op::OpName::new(#op_name),
-                        dialect: ::pliron::dialect::DialectName::new(#dialect),
+                        name: ::pliron::op::OpName::try_new(#op_name).expect("Invalid Identifier for OpName"),
+                        dialect: ::pliron::dialect::DialectName::try_new(#dialect).expect("Invalid Identifier for DialectName"),
                     }
                 }
 
@@ -505,8 +505,10 @@ mod tests {
                 }
                 fn get_opid_static() -> ::pliron::op::OpId {
                     ::pliron::op::OpId {
-                        name: ::pliron::op::OpName::new("testop"),
-                        dialect: ::pliron::dialect::DialectName::new("testing"),
+                        name: ::pliron::op::OpName::try_new("testop")
+                            .expect("Invalid Identifier for OpName"),
+                        dialect: ::pliron::dialect::DialectName::try_new("testing")
+                            .expect("Invalid Identifier for DialectName"),
                     }
                 }
                 fn verify_interfaces(

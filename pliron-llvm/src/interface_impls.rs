@@ -3,7 +3,7 @@
 
 //! Implementation of various op interfaces for LLVM IR instructions.
 
-use std::num::NonZero;
+use core::num::NonZero;
 use thiserror::Error;
 
 use pliron::{

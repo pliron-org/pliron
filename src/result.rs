@@ -7,7 +7,7 @@
 //! - [struct@Error] is the main error type used throughout the compiler. This `struct` contains
 //!   the field `err` which holds the actual error that implements [AnyError]. [AnyError] is an
 //!   extension trait to enforce [core::error::Error] + [Downcast].
-//! - [Result] is an alias for `std::result::Result` with the error type set to [struct@Error].
+//! - [Result] is an alias for [core::result::Result] with the error type set to [struct@Error].
 //!   [Result] implements [ExpectOk], which provides a method [expect_ok](ExpectOk::expect_ok)
 //!   to `unwrap` the result, and if that fails, panics with the error message printed using
 //!   [Printable].

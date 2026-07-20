@@ -7,7 +7,7 @@
 #[cfg(feature = "std")]
 mod r#impl {
     pub mod sync {
-        pub use std::sync::LazyLock;
+        pub use std::sync::{LazyLock, Mutex};
     }
 
     pub mod backtrace {
@@ -37,7 +37,7 @@ mod r#impl {
 #[cfg(not(feature = "std"))]
 mod r#impl {
     pub mod sync {
-        pub use spin::LazyLock;
+        pub use spin::{LazyLock, Mutex};
     }
 
     pub mod backtrace {
