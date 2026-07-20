@@ -797,14 +797,14 @@ mod tests {
     #[test]
     fn test_floating_point_attributes() {
         // Single precision float
-        let single_attr: AttrObj = FPSingleAttr::from(std::f32::consts::PI).into();
+        let single_attr: AttrObj = FPSingleAttr::from(core::f32::consts::PI).into();
         let single_attr2: AttrObj = FPSingleAttr::from(2.71).into();
 
         assert!(single_attr.is::<FPSingleAttr>());
         assert_ne!(&single_attr, &single_attr2);
 
         let single_attr = *single_attr.downcast::<FPSingleAttr>().unwrap();
-        assert_eq!(f32::from(single_attr.clone()), std::f32::consts::PI);
+        assert_eq!(f32::from(single_attr.clone()), core::f32::consts::PI);
 
         let single_attr2 = *single_attr2.downcast::<FPSingleAttr>().unwrap();
         // Perform addition
@@ -812,14 +812,14 @@ mod tests {
         assert!((sum - 5.8515927).abs() < 1e-6);
 
         // Double precision float
-        let double_attr: AttrObj = FPDoubleAttr::from(std::f64::consts::TAU).into();
+        let double_attr: AttrObj = FPDoubleAttr::from(core::f64::consts::TAU).into();
         let double_attr2: AttrObj = FPDoubleAttr::from(1.414).into();
 
         assert!(double_attr.is::<FPDoubleAttr>());
         assert_ne!(&double_attr, &double_attr2);
 
         let double_attr = *double_attr.downcast::<FPDoubleAttr>().unwrap();
-        assert_eq!(f64::from(double_attr.clone()), std::f64::consts::TAU);
+        assert_eq!(f64::from(double_attr.clone()), core::f64::consts::TAU);
 
         let double_attr2 = *double_attr2.downcast::<FPDoubleAttr>().unwrap();
         // Perform multiplication

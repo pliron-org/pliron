@@ -489,7 +489,7 @@ pub trait MaterializableAttr: TypedAttrInterface {
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
+    use core::str::FromStr;
 
     use rustc_apfloat::ieee::Single;
 

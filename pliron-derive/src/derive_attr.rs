@@ -105,8 +105,8 @@ impl ToTokens for ImplAttribute {
 
                 fn get_attr_id_static() -> ::pliron::attribute::AttrId {
                     ::pliron::attribute::AttrId {
-                        name: ::pliron::attribute::AttrName::new(#attr_name),
-                        dialect: ::pliron::dialect::DialectName::new(#dialect),
+                        name: ::pliron::attribute::AttrName::try_new(#attr_name).expect("Invalid Identifier for AttrName"),
+                        dialect: ::pliron::dialect::DialectName::try_new(#dialect).expect("Invalid Identifier for DialectName"),
                     }
                 }
 
@@ -155,8 +155,10 @@ mod tests {
                 }
                 fn get_attr_id_static() -> ::pliron::attribute::AttrId {
                     ::pliron::attribute::AttrId {
-                        name: ::pliron::attribute::AttrName::new("unit"),
-                        dialect: ::pliron::dialect::DialectName::new("testing"),
+                        name: ::pliron::attribute::AttrName::try_new("unit")
+                            .expect("Invalid Identifier for AttrName"),
+                        dialect: ::pliron::dialect::DialectName::try_new("testing")
+                            .expect("Invalid Identifier for DialectName"),
                     }
                 }
                 fn verify_interfaces(
