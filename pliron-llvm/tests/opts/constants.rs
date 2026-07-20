@@ -2563,3 +2563,37 @@ fn select_does_not_fold_unknown_condition_with_distinct_operands() -> Result<()>
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
+
+/// Forwarding the chosen operand is type-agnostic: a scalar constant
+/// condition folds a select between whole vectors.
+#[test]
+fn select_scalar_constant_condition_forwards_vector_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i32>, llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(x: llvm.vector <Fixed x 4 x builtin.integer i32>, y: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        cond = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        s = llvm.select cond ? x : y : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return s
+      }
+    "#;
+    let (status, _before, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("llvm.return y"));
+    Ok(())
+}
+
+/// A vector-of-i1 condition selects element-wise; there is no vector constant
+/// attribute to propagate, so SCCP must leave the op alone (and not crash).
+#[test]
+fn select_does_not_fold_with_vector_condition() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i1>, llvm.vector <Fixed x 4 x builtin.integer i32>, llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(cond: llvm.vector <Fixed x 4 x builtin.integer i1>, x: llvm.vector <Fixed x 4 x builtin.integer i32>, y: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        s = llvm.select cond ? x : y : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return s
+      }
+    "#;
+    let (status, _before, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
