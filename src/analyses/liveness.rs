@@ -705,11 +705,11 @@ mod tests {
         value::Value,
     };
 
-    #[pliron_op(name = "test.liveness.node", format, verifier = "succ")]
+    #[pliron_op(name = "test.liveness_node", format, verifier = "succ")]
     struct NodeOp;
 
     #[pliron_op(
-        name = "test.liveness.br",
+        name = "test.liveness_br",
         format,
         interfaces = [IsTerminatorInterface],
         verifier = "succ",
