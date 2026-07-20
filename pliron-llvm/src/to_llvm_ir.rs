@@ -1642,6 +1642,11 @@ impl ToLLVMValue for SelectOp {
             false_val,
             &self.get_result(ctx).unique_name(ctx),
         );
+        // The built value may not even be an instruction, but a folded constant.
+        if llvm_can_value_use_fast_math_flags(select_op) {
+            let fastmath = self.fast_math_flags(ctx);
+            llvm_set_fast_math_flags(select_op, fastmath.into());
+        }
         Ok(select_op)
     }
 }
