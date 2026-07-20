@@ -50,7 +50,7 @@ use crate::{
     location::Located,
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
-    result::Result,
+    result::{Error, Result},
     std_deps::{hash::FxHashMap, sync::LazyLock},
     storage_uniquer::TypeValueHash,
     utils::trait_cast::impls_trait_static,
@@ -223,8 +223,36 @@ pub struct TypeName(Identifier);
 
 impl TypeName {
     /// Create a new TypeName.
-    pub fn new(name: &str) -> TypeName {
-        TypeName(name.try_into().expect("Invalid Identifier for TypeName"))
+    pub fn try_new(name: &str) -> Result<TypeName> {
+        Identifier::try_from(name).map(TypeName)
+    }
+}
+
+impl From<Identifier> for TypeName {
+    fn from(name: Identifier) -> Self {
+        TypeName(name)
+    }
+}
+
+impl From<TypeName> for Identifier {
+    fn from(name: TypeName) -> Self {
+        name.0
+    }
+}
+
+impl TryFrom<&str> for TypeName {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Identifier::try_from(value).map(TypeName)
+    }
+}
+
+impl TryFrom<String> for TypeName {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Identifier::try_from(value).map(TypeName)
     }
 }
 
@@ -256,7 +284,7 @@ impl Parsable for TypeName {
         Self: Sized,
     {
         Identifier::parser(())
-            .map(|name| TypeName::new(&name))
+            .map(TypeName)
             .parse_stream(state_stream)
             .into()
     }

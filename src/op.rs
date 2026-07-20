@@ -34,7 +34,7 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{boxed::Box, string::ToString, vec::Vec};
+use alloc::{boxed::Box, string::String, string::ToString, vec::Vec};
 use core::{
     fmt::{self, Display},
     hash::Hash,
@@ -68,7 +68,7 @@ use crate::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     printable::{self, Printable},
     region::Region,
-    result::Result,
+    result::{Error, Result},
     std_deps::{hash::FxHashMap, sync::LazyLock},
     r#type::{TypeSig, Typed},
     utils::trait_cast::impls_trait_static,
@@ -80,8 +80,8 @@ pub struct OpName(Identifier);
 
 impl OpName {
     /// Create a new OpName.
-    pub fn new(name: &str) -> OpName {
-        OpName(name.try_into().expect("Invalid Identifier for OpName"))
+    pub fn try_new(name: &str) -> Result<OpName> {
+        Identifier::try_from(name).map(OpName)
     }
 }
 
@@ -90,6 +90,34 @@ impl Deref for OpName {
 
     fn deref(&self) -> &Self::Target {
         &self.0
+    }
+}
+
+impl From<Identifier> for OpName {
+    fn from(value: Identifier) -> Self {
+        OpName(value)
+    }
+}
+
+impl From<OpName> for Identifier {
+    fn from(value: OpName) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<&str> for OpName {
+    type Error = Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Identifier::try_from(value).map(OpName)
+    }
+}
+
+impl TryFrom<String> for OpName {
+    type Error = Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Identifier::try_from(value).map(OpName)
     }
 }
 
@@ -107,7 +135,7 @@ impl Parsable for OpName {
         Self: Sized,
     {
         Identifier::parser(())
-            .map(|name| OpName::new(&name))
+            .map(OpName)
             .parse_stream(state_stream)
             .into()
     }

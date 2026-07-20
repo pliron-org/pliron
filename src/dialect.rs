@@ -17,6 +17,7 @@ use crate::{
     op::{OpId, OpParserFn},
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
+    result::Result,
     std_deps::hash::FxHashMap,
     r#type::{TypeId, TypeParserFn},
 };
@@ -27,14 +28,20 @@ pub struct DialectName(Identifier);
 
 impl DialectName {
     /// Create a new DialectName
-    pub fn new(name: &str) -> DialectName {
-        DialectName(name.try_into().expect("Invalid Identifier for DialectName"))
+    pub fn try_new(name: &str) -> Result<DialectName> {
+        Identifier::try_from(name).map(DialectName)
     }
 }
 
-impl From<&str> for DialectName {
-    fn from(value: &str) -> Self {
-        DialectName::new(value)
+impl From<DialectName> for Identifier {
+    fn from(dialect_name: DialectName) -> Self {
+        dialect_name.0
+    }
+}
+
+impl From<Identifier> for DialectName {
+    fn from(value: Identifier) -> Self {
+        DialectName(value)
     }
 }
 
@@ -62,7 +69,7 @@ impl Parsable for DialectName {
         let mut parser = id.then(move |dialect_name| {
             let loc = loc.clone();
             combine::parser(move |state_stream: &mut StateStream<'a>| {
-                let dialect_name = DialectName::new(&dialect_name);
+                let dialect_name = DialectName(dialect_name.clone());
                 if state_stream.state.ctx.dialects.contains_key(&dialect_name) {
                     Ok(dialect_name).into_parse_result()
                 } else {

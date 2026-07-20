@@ -14,13 +14,13 @@ use core::{
 use thiserror::Error;
 
 use crate::{
+    arg_err_noloc,
     builtin::attributes::StringAttr,
     combine::{Parser, token},
     impl_printable_for_display,
     parsable::{self, Parsable, ParseResult},
     result::{self, Result},
     std_deps::hash::FxHashMap,
-    verify_err_noloc,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
@@ -44,11 +44,11 @@ impl Identifier {
         match chars_iter.next() {
             Some(first_char) if (first_char.is_ascii_alphabetic() || first_char == '_') => {
                 if !chars_iter.all(|c| c.is_ascii_alphanumeric() || c == '_') {
-                    return verify_err_noloc!(MalformedIdentifierErr(value.clone()));
+                    return arg_err_noloc!(MalformedIdentifierErr(value.clone()));
                 }
             }
             _ => {
-                return verify_err_noloc!(MalformedIdentifierErr(value.clone()));
+                return arg_err_noloc!(MalformedIdentifierErr(value.clone()));
             }
         }
         Ok(Identifier(value))
@@ -74,7 +74,7 @@ impl Display for Identifier {
 impl TryFrom<String> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: String) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: String) -> Result<Self> {
         Self::try_new(value)
     }
 }
@@ -82,7 +82,7 @@ impl TryFrom<String> for Identifier {
 impl TryFrom<&str> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: &str) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: &str) -> Result<Self> {
         Self::try_new(value.to_string())
     }
 }
@@ -90,7 +90,7 @@ impl TryFrom<&str> for Identifier {
 impl TryFrom<StringAttr> for Identifier {
     type Error = result::Error;
 
-    fn try_from(value: StringAttr) -> core::result::Result<Self, Self::Error> {
+    fn try_from(value: StringAttr) -> Result<Self> {
         Self::try_new(value.into())
     }
 }

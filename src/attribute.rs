@@ -39,7 +39,7 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{Debug, Display},
     ops::Deref,
@@ -388,8 +388,8 @@ pub struct AttrName(Identifier);
 
 impl AttrName {
     /// Create a new AttrName.
-    pub fn new(name: &str) -> AttrName {
-        AttrName(name.try_into().expect("Invalid Identifier for AttrName"))
+    pub fn try_new(name: &str) -> Result<AttrName> {
+        Identifier::try_from(name).map(AttrName)
     }
 }
 
@@ -413,7 +413,7 @@ impl Parsable for AttrName {
         Self: Sized,
     {
         Identifier::parser(())
-            .map(|name| AttrName::new(&name))
+            .map(AttrName)
             .parse_stream(state_stream)
             .into()
     }
@@ -426,6 +426,35 @@ impl Deref for AttrName {
         &self.0
     }
 }
+
+impl From<Identifier> for AttrName {
+    fn from(value: Identifier) -> Self {
+        AttrName(value)
+    }
+}
+
+impl From<AttrName> for Identifier {
+    fn from(value: AttrName) -> Self {
+        value.0
+    }
+}
+
+impl TryFrom<&str> for AttrName {
+    type Error = crate::result::Error;
+
+    fn try_from(value: &str) -> Result<Self> {
+        Identifier::try_from(value).map(AttrName)
+    }
+}
+
+impl TryFrom<String> for AttrName {
+    type Error = crate::result::Error;
+
+    fn try_from(value: String) -> Result<Self> {
+        Identifier::try_from(value).map(AttrName)
+    }
+}
+
 /// A combination of a Attr's name and its dialect.
 #[derive(Clone, Hash, PartialEq, Eq)]
 pub struct AttrId {
