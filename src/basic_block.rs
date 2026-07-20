@@ -552,6 +552,11 @@ impl Parsable for BasicBlock {
             register_block_for_outline(state_stream, outindex, block, outline_loc)?;
         }
 
+        state_stream
+            .state
+            .name_tracker
+            .block_def(state_stream.state.ctx, &(label, loc), block)?;
+
         // Parse the ops in the block
         let ops: Vec<_> = spaces()
             .with(sep_by::<Vec<_>, _, _, _>(
@@ -564,14 +569,10 @@ impl Parsable for BasicBlock {
             .parse_stream(state_stream)
             .into_result()?
             .0;
-
         for op in ops {
             op.insert_at_back(block, state_stream.state.ctx);
         }
-        state_stream
-            .state
-            .name_tracker
-            .block_def(state_stream.state.ctx, &(label, loc), block)?;
+
         Ok(block).into_parse_result()
     }
 }
