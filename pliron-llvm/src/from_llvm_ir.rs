@@ -3,7 +3,7 @@
 
 //! Translate from LLVM-IR to pliron's LLVM dialect
 
-use std::num::NonZero;
+use core::num::NonZero;
 
 use llvm_sys::{
     LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMIntPredicate, LLVMLinkage, LLVMOpcode,

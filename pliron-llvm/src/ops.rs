@@ -3,7 +3,7 @@
 
 //! [Op]s defined in the LLVM dialect
 
-use std::num::NonZero;
+use core::num::NonZero;
 
 use pliron::{
     arg_err_noloc,

@@ -3,8 +3,6 @@
 
 mod common;
 
-use std::sync::{LazyLock, Mutex};
-
 use common::{ConstantOp, ReturnOp};
 use expect_test::expect;
 
@@ -32,6 +30,7 @@ use pliron::{
     parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
+    std_deps::sync::{LazyLock, Mutex},
     storage_uniquer::TypeValueHash,
     r#type::{Type, TypeHandle, type_cast, verify_type},
     utils::trait_cast::any_to_trait,

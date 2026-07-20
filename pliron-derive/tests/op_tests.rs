@@ -380,7 +380,7 @@ fn typed_attr_getter_setter_round_trip() -> Result<()> {
     let int_ty = IntegerType::get(ctx, 64, Signedness::Signed);
     let attr = IntegerAttr::new(
         int_ty,
-        APInt::from_u64(42, std::num::NonZero::new(64).unwrap()),
+        APInt::from_u64(42, core::num::NonZero::new(64).unwrap()),
     );
     op.set_attr_count(ctx, attr.clone());
 
@@ -433,11 +433,11 @@ fn overwriting_attr_replaces_value() -> Result<()> {
     let int_ty = IntegerType::get(ctx, 64, Signedness::Signed);
     let attr1 = IntegerAttr::new(
         int_ty,
-        APInt::from_u64(1, std::num::NonZero::new(64).unwrap()),
+        APInt::from_u64(1, core::num::NonZero::new(64).unwrap()),
     );
     let attr2 = IntegerAttr::new(
         int_ty,
-        APInt::from_u64(2, std::num::NonZero::new(64).unwrap()),
+        APInt::from_u64(2, core::num::NonZero::new(64).unwrap()),
     );
 
     op.set_attr_count(ctx, attr1.clone());
