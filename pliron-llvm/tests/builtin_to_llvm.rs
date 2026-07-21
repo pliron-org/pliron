@@ -127,7 +127,7 @@ fn builtin_unit_func_converts_to_llvm_void_func() -> Result<()> {
         source_filename = "m"
 
         define void @foo() {
-        entry_block_1_0_block1v1:
+        entry_block_1_0_block2v1:
           ret void
         }
     "#]]
