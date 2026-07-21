@@ -632,8 +632,7 @@ impl ConstFoldInterface for ICmpOp {
             return vec![None];
         };
         let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
-        let bool_ty = IntegerType::get_existing(ctx, 1, Signedness::Signless)
-            .expect("i1 type must exist: it is the result type of this op");
+        let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
         let res = Box::new(IntegerAttr::new(
             bool_ty,
             APInt::from_u8(result as u8, bw(1)),
@@ -665,8 +664,7 @@ impl ConstFoldInterface for SExtOp {
             .downcast_ref::<IntegerType>()
             .expect("sext result must be an integer type")
             .width();
-        let dest_ty = IntegerType::get_existing(ctx, dest_width, Signedness::Signless)
-            .expect("result type must exist: it is the result type of this op");
+        let dest_ty = IntegerType::get(ctx, dest_width, Signedness::Signless);
         let extended = operand
             .value()
             .sext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
@@ -708,8 +706,7 @@ impl ConstFoldInterface for ZExtOp {
             .downcast_ref::<IntegerType>()
             .expect("zext result must be an integer type")
             .width();
-        let dest_ty = IntegerType::get_existing(ctx, dest_width, Signedness::Signless)
-            .expect("result type must exist: it is the result type of this op");
+        let dest_ty = IntegerType::get(ctx, dest_width, Signedness::Signless);
         let extended =
             value.zext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
         let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;

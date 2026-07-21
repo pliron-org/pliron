@@ -34,15 +34,6 @@ pub struct IntegerType {
 }
 
 impl IntegerType {
-    /// Get, if it already exists, an integer type.
-    pub fn get_existing(
-        ctx: &Context,
-        width: u32,
-        signedness: Signedness,
-    ) -> Option<TypedHandle<Self>> {
-        Type::get_instance(IntegerType { width, signedness }, ctx)
-    }
-
     /// Get width.
     pub fn width(&self) -> u32 {
         self.width
@@ -126,16 +117,7 @@ impl FunctionType {
         arguments: Vec<TypeHandle>,
         results: Vec<TypeHandle>,
     ) -> TypedHandle<Self> {
-        FunctionType::register_instance(FunctionType(TypeSig { arguments, results }), ctx)
-    }
-
-    /// Get, if it already exists, a Function type.
-    pub fn get_existing(
-        ctx: &Context,
-        arguments: Vec<TypeHandle>,
-        results: Vec<TypeHandle>,
-    ) -> Option<TypedHandle<Self>> {
-        Type::get_instance(FunctionType(TypeSig { arguments, results }), ctx)
+        FunctionType::instantiate(FunctionType(TypeSig { arguments, results }), ctx)
     }
 }
 
@@ -255,7 +237,7 @@ mod tests {
             .unwrap()
             .0
             .0;
-        assert!(res == IntegerType::get_existing(&ctx, 64, Signedness::Signed).unwrap())
+        assert!(res == IntegerType::get(&ctx, 64, Signedness::Signed))
     }
 
     #[test]
@@ -295,6 +277,6 @@ mod tests {
             .unwrap()
             .0
             .0;
-        assert!(res == FunctionType::get_existing(&ctx, vec![], vec![si32.into()]).unwrap())
+        assert!(res == FunctionType::get(&ctx, vec![], vec![si32.into()]))
     }
 }

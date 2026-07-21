@@ -1753,7 +1753,7 @@ impl ParsableBuilder<()> for DeriveTypeParsable {
 
     fn build_final_ret_value(_input: &FmtInput, _state: &mut ()) -> TokenStream {
         quote! {
-            Ok(::pliron::r#type::Type::register_instance(final_ret_value, state_stream.state.ctx)).into_parse_result()
+            Ok(::pliron::r#type::Type::instantiate(final_ret_value, state_stream.state.ctx)).into_parse_result()
         }
     }
 }
