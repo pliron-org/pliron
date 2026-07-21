@@ -57,6 +57,7 @@ pub trait ToLLVMDialect {
 /// Interface for converting to an LLVM type.
 #[type_interface]
 pub trait ToLLVMType {
+    /// Convert [self] to an LLVM type.
     fn convert(&self, ctx: &Context) -> Result<TypeHandle>;
 
     fn verify(_ty: &dyn Type, _ctx: &Context) -> Result<()>
