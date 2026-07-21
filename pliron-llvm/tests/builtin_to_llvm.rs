@@ -70,7 +70,7 @@ fn mixed_constant_ops_fold_then_lower_to_llvm() -> Result<()> {
         source_filename = "m"
 
         define i64 @foo() {
-        entry_block_1_0_block1v1:
+        entry_block_1_0_block2v1:
           ret i64 7
         }
     "#]]
@@ -99,7 +99,7 @@ fn builtin_func_converts_to_llvm_func() -> Result<()> {
         source_filename = "m"
 
         define i64 @foo() {
-        entry_block_1_0_block1v1:
+        entry_block_1_0_block2v1:
           ret i64 42
         }
     "#]]
