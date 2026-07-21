@@ -28,7 +28,7 @@ use pliron::{
 };
 
 use crate::{
-    ToLLVMDialect, ToLLVMType, ToLLVMTypeFn,
+    ToLLVMDialect, ToLLVMType,
     ops::{ConstantOp as LLVMConstantOp, FuncOp as LLVMFuncOp},
     types::{FuncType as LLVMFuncType, VoidType},
 };
@@ -49,32 +49,17 @@ fn convert_type_to_llvm(ty: TypeHandle, ctx: &mut Context) -> TypeHandle {
 
 #[type_interface_impl]
 impl ToLLVMType for BuiltinFunctionType {
-    fn converter(&self) -> ToLLVMTypeFn {
-        |self_ty: TypeHandle, ctx: &mut Context| {
-            let func_type = self_ty.deref(ctx);
-            let func_type_ref = type_cast::<dyn FunctionTypeInterface>(&*func_type)
-                .expect("Expected a FunctionTypeInterface");
-            let arg_type_handles = func_type_ref.arg_types();
-            let res_type_handles = func_type_ref.res_types();
-            drop(func_type);
+    fn convert(&self, ctx: &Context) -> Result<TypeHandle> {
+        let arg_types = self.arg_types();
+        let res_types = self.res_types();
 
-            let arg_types: Vec<_> = arg_type_handles
-                .into_iter()
-                .map(|ty| convert_type_to_llvm(ty, ctx))
-                .collect();
-            let res_types: Vec<_> = res_type_handles
-                .into_iter()
-                .map(|ty| convert_type_to_llvm(ty, ctx))
-                .collect();
-
-            if res_types.is_empty() || res_types.len() > 1 {
-                return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
-            }
-            let result_type = res_types[0];
-
-            let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
-            Ok(llvm_func_type.into())
+        if res_types.is_empty() || res_types.len() > 1 {
+            return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
         }
+        let result_type = res_types[0];
+
+        let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
+        Ok(llvm_func_type.into())
     }
 }
 
@@ -133,12 +118,11 @@ impl ToLLVMDialect for BuiltinFuncOp {
 
         // Get the function type from builtin.func
         let builtin_func_type = self.get_type(ctx);
-        let converter = type_cast::<dyn ToLLVMType>(&*builtin_func_type.deref(ctx))
+        let llvm_func_type = type_cast::<dyn ToLLVMType>(&*builtin_func_type.deref(ctx))
             .ok_or_else(|| {
                 input_error_noloc!("builtin.func type does not implement ToLLVMType interface")
             })?
-            .converter();
-        let llvm_func_type = converter(builtin_func_type, ctx)?;
+            .convert(ctx)?;
         let llvm_func_type = TypedHandle::from_handle(llvm_func_type, ctx)?;
 
         // Create the LLVM function operation
