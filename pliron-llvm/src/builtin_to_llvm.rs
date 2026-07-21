@@ -8,7 +8,7 @@ use pliron::{
         op_interfaces::{OneRegionInterface, SymbolOpInterface},
         ops::{ConstantOp as BuiltinConstantOp, FuncOp as BuiltinFuncOp, ModuleOp},
         type_interfaces::FunctionTypeInterface,
-        types::FunctionType as BuiltinFunctionType,
+        types::{FunctionType as BuiltinFunctionType, UnitType},
     },
     common_traits::Verify,
     context::{Context, Ptr},
@@ -30,7 +30,7 @@ use pliron::{
 use crate::{
     ToLLVMDialect, ToLLVMType,
     ops::{ConstantOp as LLVMConstantOp, FuncOp as LLVMFuncOp},
-    types::FuncType as LLVMFuncType,
+    types::{FuncType as LLVMFuncType, VoidType},
 };
 
 #[derive(thiserror::Error, Debug)]
@@ -45,6 +45,21 @@ impl ToLLVMType for BuiltinFunctionType {
         let arg_types = self.arg_types();
         let res_types = self.res_types();
 
+        let convert_type_to_llvm = |ty: TypeHandle| {
+            type_cast::<dyn ToLLVMType>(&*ty.deref(ctx))
+                .map(|ty| ty.convert(ctx))
+                .unwrap_or(Ok(ty))
+        };
+
+        let arg_types = arg_types
+            .into_iter()
+            .map(convert_type_to_llvm)
+            .collect::<Result<Vec<_>>>()?;
+        let res_types = res_types
+            .into_iter()
+            .map(convert_type_to_llvm)
+            .collect::<Result<Vec<_>>>()?;
+
         if res_types.is_empty() || res_types.len() > 1 {
             return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
         }
@@ -52,6 +67,13 @@ impl ToLLVMType for BuiltinFunctionType {
 
         let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
         Ok(llvm_func_type.into())
+    }
+}
+
+#[type_interface_impl]
+impl ToLLVMType for UnitType {
+    fn convert(&self, ctx: &Context) -> Result<TypeHandle> {
+        Ok(VoidType::get(ctx).to_handle())
     }
 }
 
