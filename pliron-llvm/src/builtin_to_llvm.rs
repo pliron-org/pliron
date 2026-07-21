@@ -28,7 +28,7 @@ use pliron::{
 };
 
 use crate::{
-    ToLLVMDialect, ToLLVMType, ToLLVMTypeFn,
+    ToLLVMDialect, ToLLVMType,
     ops::{ConstantOp as LLVMConstantOp, FuncOp as LLVMFuncOp},
     types::FuncType as LLVMFuncType,
 };
@@ -41,23 +41,17 @@ pub enum BuiltinToLLVMConversionError {
 
 #[type_interface_impl]
 impl ToLLVMType for BuiltinFunctionType {
-    fn converter(&self) -> ToLLVMTypeFn {
-        |self_ty: TypeHandle, ctx: &mut Context| {
-            let func_type = self_ty.deref(ctx);
-            let func_type_ref = type_cast::<dyn FunctionTypeInterface>(&*func_type)
-                .expect("Expected a FunctionTypeInterface");
+    fn convert(&self, ctx: &Context) -> Result<TypeHandle> {
+        let arg_types = self.arg_types();
+        let res_types = self.res_types();
 
-            let arg_types = func_type_ref.arg_types();
-            let res_types = func_type_ref.res_types();
-
-            if res_types.is_empty() || res_types.len() > 1 {
-                return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
-            }
-            let result_type = res_types[0];
-
-            let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
-            Ok(llvm_func_type.into())
+        if res_types.is_empty() || res_types.len() > 1 {
+            return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
         }
+        let result_type = res_types[0];
+
+        let llvm_func_type = LLVMFuncType::get(ctx, result_type, arg_types, false);
+        Ok(llvm_func_type.into())
     }
 }
 
@@ -109,12 +103,11 @@ impl ToLLVMDialect for BuiltinFuncOp {
 
         // Get the function type from builtin.func
         let builtin_func_type = self.get_type(ctx);
-        let llvm_converter = type_cast::<dyn ToLLVMType>(&*builtin_func_type.deref(ctx))
+        let llvm_func_type = type_cast::<dyn ToLLVMType>(&*builtin_func_type.deref(ctx))
             .ok_or_else(|| {
                 input_error_noloc!("builtin.func type does not implement ToLLVMType interface")
             })?
-            .converter();
-        let llvm_func_type = llvm_converter(builtin_func_type, ctx)?;
+            .convert(ctx)?;
         let llvm_func_type = TypedHandle::from_handle(llvm_func_type, ctx)?;
 
         // Create the LLVM function operation

@@ -33,17 +33,6 @@ impl DefType {
             ));
         };
 
-        let is_singleton = match input.data {
-            syn::Data::Struct(ref data_struct) => data_struct.fields.is_empty(),
-            syn::Data::Enum(_) => false,
-            _ => {
-                return Err(syn::Error::new_spanned(
-                    &input,
-                    "Type can only be derived for structs or enums",
-                ));
-            }
-        };
-
         if !input.generics.params.is_empty() {
             return Err(syn::Error::new_spanned(
                 &input,
@@ -63,7 +52,6 @@ impl DefType {
             ident: input.ident.clone(),
             dialect_name: dialect_name.to_string(),
             type_name: type_name.to_string(),
-            is_singleton,
         };
         Ok(Self { input, impl_type })
     }
@@ -85,7 +73,6 @@ struct ImplType {
     ident: syn::Ident,
     dialect_name: String,
     type_name: String,
-    is_singleton: bool,
 }
 
 impl ToTokens for ImplType {
@@ -93,17 +80,8 @@ impl ToTokens for ImplType {
         let name = &self.ident;
         let dialect = &self.dialect_name;
         let type_name = &self.type_name;
-        let register = if self.is_singleton {
-            quote! {
-                |ctx: &mut ::pliron::context::Context| {
-                    <#name as ::pliron::r#type::Type>::register(ctx);
-                    ::pliron::r#type::Type::register_instance(#name {}, ctx);
-                }
-            }
-        } else {
-            quote! {
+        let register = quote! {
                 <#name as ::pliron::r#type::Type>::register
-            }
         };
 
         tokens.extend(quote! {
@@ -221,7 +199,7 @@ fn derive_type_get_impl(ident: &syn::Ident, fields: &syn::Fields) -> TokenStream
                 ctx: &::pliron::context::Context,
                 #field_params
             ) -> ::pliron::r#type::TypedHandle<Self> {
-                ::pliron::r#type::Type::register_instance(
+                ::pliron::r#type::Type::instantiate(
                     #struct_construction,
                     ctx,
                 )
@@ -342,10 +320,7 @@ mod tests {
                     Ok(())
                 }
             }
-            ::pliron::context_registration!(
-                | ctx : & mut ::pliron::context::Context | { < SimpleType as ::pliron::r#type::Type >
-                ::register(ctx); ::pliron::r#type::Type::register_instance(SimpleType {}, ctx); }
-            );
+            ::pliron::context_registration!(< SimpleType as ::pliron::r#type::Type > ::register);
         "##]]
         .assert_eq(&got);
     }
@@ -478,7 +453,7 @@ mod tests {
             impl UnitType {
                 /// Get or create a new instance.
                 pub fn get(ctx: &::pliron::context::Context) -> ::pliron::r#type::TypedHandle<Self> {
-                    ::pliron::r#type::Type::register_instance(UnitType {}, ctx)
+                    ::pliron::r#type::Type::instantiate(UnitType {}, ctx)
                 }
             }
         "#]]
@@ -513,7 +488,7 @@ mod tests {
                     num_elems: u32,
                     kind: VectorTypeKind,
                 ) -> ::pliron::r#type::TypedHandle<Self> {
-                    ::pliron::r#type::Type::register_instance(
+                    ::pliron::r#type::Type::instantiate(
                         VectorType {
                             elem_ty,
                             num_elems,
@@ -547,10 +522,7 @@ mod tests {
                     field_1: String,
                     field_2: bool,
                 ) -> ::pliron::r#type::TypedHandle<Self> {
-                    ::pliron::r#type::Type::register_instance(
-                        TupleType(field_0, field_1, field_2),
-                        ctx,
-                    )
+                    ::pliron::r#type::Type::instantiate(TupleType(field_0, field_1, field_2), ctx)
                 }
             }
         "#]]

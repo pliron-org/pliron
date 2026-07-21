@@ -59,7 +59,7 @@ impl StructType {
         name: Identifier,
         fields: Option<Vec<TypeHandle>>,
     ) -> Result<TypedHandle<Self>> {
-        let self_ptr = Type::register_instance(
+        let self_handle = Type::instantiate(
             StructType {
                 name: Some(name.clone()),
                 // Uniquing happens only on the name, so this doesn't matter.
@@ -68,7 +68,7 @@ impl StructType {
             ctx,
         );
         // Verify that we created a new or equivalent existing type.
-        let mut self_ref = self_ptr.to_handle().deref_mut(ctx);
+        let mut self_ref = self_handle.to_handle().deref_mut(ctx);
         let self_ref = self_ref.downcast_mut::<StructType>().unwrap();
         assert!(self_ref.name.as_ref().unwrap() == &name);
         if let Some(fields) = fields {
@@ -83,39 +83,13 @@ impl StructType {
                 self_ref.fields = Some(fields);
             }
         }
-        Ok(self_ptr)
+        Ok(self_handle)
     }
 
     /// Get or create a new unnamed (anonymous) struct.
     /// These are finalized upon creation, and uniqued based on the fields.
     pub fn get_unnamed(ctx: &Context, fields: Vec<TypeHandle>) -> TypedHandle<Self> {
-        Type::register_instance(
-            StructType {
-                name: None,
-                fields: Some(fields),
-            },
-            ctx,
-        )
-    }
-
-    /// If a named struct already exists, get a handle to it.
-    pub fn get_existing_named(ctx: &Context, name: &Identifier) -> Option<TypedHandle<Self>> {
-        Type::get_instance(
-            StructType {
-                name: Some(name.clone()),
-                // Named structs are uniqued only on the name.
-                fields: None,
-            },
-            ctx,
-        )
-    }
-
-    /// If an unnamed struct already exists, get a handle to it.
-    pub fn get_existing_unnamed(
-        ctx: &Context,
-        fields: Vec<TypeHandle>,
-    ) -> Option<TypedHandle<Self>> {
-        Type::get_instance(
+        Type::instantiate(
             StructType {
                 name: None,
                 fields: Some(fields),
@@ -451,15 +425,14 @@ mod tests {
         parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
         printable::{self, Printable},
         result::Result,
-        r#type::{Type, TypeHandle, TypedHandle},
+        r#type::{TypeHandle, TypedHandle},
     };
 
     #[test]
     fn test_struct() -> Result<()> {
         let ctx = Context::new();
-        let int64_ptr = IntegerType::get(&ctx, 64, Signedness::Signless).into();
+        let int64 = IntegerType::get(&ctx, 64, Signedness::Signless).into();
         let linked_list_id: Identifier = "LinkedList".try_into().unwrap();
-        let linked_list_2_id: Identifier = "LinkedList2".try_into().unwrap();
 
         // Create an opaque struct since we want a recursive type.
         let list_struct: TypeHandle =
@@ -472,7 +445,7 @@ mod tests {
                 .is_opaque()
         );
         let list_struct_ptr = TypedPointerType::get(&ctx, list_struct).into();
-        let fields = vec![int64_ptr, list_struct_ptr];
+        let fields = vec![int64, list_struct_ptr];
         // Set the struct body now.
         StructType::get_named(&ctx, linked_list_id.clone(), Some(fields))?;
         assert!(
@@ -483,22 +456,20 @@ mod tests {
                 .is_opaque()
         );
 
-        let list_struct_2 = StructType::get_existing_named(&ctx, &linked_list_id)
+        let list_struct_2 = StructType::get_named(&ctx, linked_list_id, None)
             .unwrap()
             .into();
         assert!(list_struct == list_struct_2);
-        assert!(StructType::get_existing_named(&ctx, &linked_list_2_id).is_none());
 
         assert_eq!(
             list_struct.disp(&ctx).to_string(),
             "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>"
         );
 
-        let head_fields = vec![int64_ptr, list_struct_ptr];
+        let head_fields = vec![int64, list_struct_ptr];
         let head_struct = StructType::get_unnamed(&ctx, head_fields.clone());
-        let head_struct2 = StructType::get_existing_unnamed(&ctx, head_fields).unwrap();
+        let head_struct2 = StructType::get_unnamed(&ctx, head_fields);
         assert!(head_struct == head_struct2);
-        assert!(StructType::get_existing_unnamed(&ctx, vec![int64_ptr, list_struct]).is_none());
 
         Ok(())
     }
@@ -514,11 +485,6 @@ mod tests {
     }
 
     impl TypedPointerType {
-        /// Get, if it already exists, a handle to this typed pointer type.
-        pub fn get_existing(ctx: &Context, to: TypeHandle) -> Option<TypedHandle<Self>> {
-            Type::get_instance(TypedPointerType { to }, ctx)
-        }
-
         /// Get the pointee type.
         pub fn get_pointee_type(&self) -> TypeHandle {
             self.to
@@ -557,19 +523,18 @@ mod tests {
     #[test]
     fn test_pointer_types() {
         let ctx = Context::new();
-        let int32_1_ptr = IntegerType::get(&ctx, 32, Signedness::Signed);
-        let int64_ptr = IntegerType::get(&ctx, 64, Signedness::Signed).into();
+        let int32_1 = IntegerType::get(&ctx, 32, Signedness::Signed);
+        let int64 = IntegerType::get(&ctx, 64, Signedness::Signed).into();
 
-        let int64pointer_ptr = TypedPointerType { to: int64_ptr };
-        let int64pointer_ptr = Type::register_instance(int64pointer_ptr, &ctx);
+        let int64pointer = TypedPointerType::get(&ctx, int64);
         assert_eq!(
-            int64pointer_ptr.disp(&ctx).to_string(),
+            int64pointer.disp(&ctx).to_string(),
             "llvm.typed_ptr <builtin.integer si64>"
         );
-        assert!(int64pointer_ptr == TypedPointerType::get(&ctx, int64_ptr));
+        assert!(int64pointer == TypedPointerType::get(&ctx, int64));
 
         assert!(
-            int64_ptr
+            int64
                 .deref(&ctx)
                 .downcast_ref::<IntegerType>()
                 .unwrap()
@@ -577,9 +542,9 @@ mod tests {
                 == 64
         );
 
-        assert!(IntegerType::get_existing(&ctx, 32, Signedness::Signed).unwrap() == int32_1_ptr);
-        assert!(TypedPointerType::get_existing(&ctx, int64_ptr).unwrap() == int64pointer_ptr);
-        assert!(int64pointer_ptr.deref(&ctx).get_pointee_type() == int64_ptr);
+        assert!(IntegerType::get(&ctx, 32, Signedness::Signed) == int32_1);
+        assert!(TypedPointerType::get(&ctx, int64) == int64pointer);
+        assert!(int64pointer.deref(&ctx).get_pointee_type() == int64);
     }
 
     #[test]

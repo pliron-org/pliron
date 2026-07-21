@@ -119,10 +119,8 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
         TypeHandle(idx)
     }
 
-    /// Register an instance of a type in the provided [Context]
-    /// Returns [TypeHandle] to self. If the type was already registered,
-    /// the existing handle is returned.
-    fn register_instance(t: Self, ctx: &Context) -> TypedHandle<Self>
+    /// Instantiate a type in the provided [Context], returning a [TypeHandle] to self.
+    fn instantiate(t: Self, ctx: &Context) -> TypedHandle<Self>
     where
         Self: Sized,
     {
@@ -133,18 +131,6 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
             &TypeObj::eq,
         );
         TypedHandle(TypeHandle(idx), PhantomData::<Self>)
-    }
-
-    /// If an instance of `t` already exists, get a [TypeHandle] to it.
-    /// Consumes `t` either way.
-    fn get_instance(t: Self, ctx: &Context) -> Option<TypedHandle<Self>>
-    where
-        Self: Sized,
-    {
-        let is = |other: &TypeObj| t.eq_type(&**other.0.borrow());
-        ctx.type_store
-            .get(t.hash_type(), &is)
-            .map(|idx| TypedHandle(TypeHandle(idx), PhantomData::<Self>))
     }
 
     /// Get a Type's static name. This is *not* per instantiation of the type.

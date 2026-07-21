@@ -54,17 +54,10 @@ pub trait ToLLVMDialect {
     }
 }
 
-/// A function pointer type for the [ToLLVMType] interface.
-pub type ToLLVMTypeFn = fn(self_ty: TypeHandle, &mut Context) -> Result<TypeHandle>;
-
 /// Interface for converting to an LLVM type.
 #[type_interface]
 pub trait ToLLVMType {
-    /// Get a function to convert [self] to an LLVM type.
-    // We don't directly specify a conversion function here because
-    // the caller cannot get `&dyn ToLLVMType` (&self) while also
-    // passing `&mut Context` to the conversion function.
-    fn converter(&self) -> ToLLVMTypeFn;
+    fn convert(&self, ctx: &Context) -> Result<TypeHandle>;
 
     fn verify(_ty: &dyn Type, _ctx: &Context) -> Result<()>
     where
