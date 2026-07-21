@@ -47,12 +47,18 @@ impl ToLLVMType for BuiltinFunctionType {
 
         let convert_type_to_llvm = |ty: TypeHandle| {
             type_cast::<dyn ToLLVMType>(&*ty.deref(ctx))
-                .map(|ty| ty.convert(ctx).expect("Type conversion failed"))
-                .unwrap_or(ty)
+                .map(|ty| ty.convert(ctx))
+                .unwrap_or(Ok(ty))
         };
 
-        let arg_types: Vec<_> = arg_types.into_iter().map(convert_type_to_llvm).collect();
-        let res_types: Vec<_> = res_types.into_iter().map(convert_type_to_llvm).collect();
+        let arg_types = arg_types
+            .into_iter()
+            .map(convert_type_to_llvm)
+            .collect::<Result<Vec<_>>>()?;
+        let res_types = res_types
+            .into_iter()
+            .map(convert_type_to_llvm)
+            .collect::<Result<Vec<_>>>()?;
 
         if res_types.is_empty() || res_types.len() > 1 {
             return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
