@@ -39,19 +39,20 @@ pub enum BuiltinToLLVMConversionError {
     InvalidFunctionType,
 }
 
-fn convert_type_to_llvm(ty: TypeHandle, ctx: &mut Context) -> TypeHandle {
-    let converter = type_cast::<dyn ToLLVMType>(&*ty.deref(ctx)).map(|convert| convert.converter());
-    match converter {
-        Some(convert) => convert(ty, ctx).expect("Conversion failed"),
-        None => ty,
-    }
-}
-
 #[type_interface_impl]
 impl ToLLVMType for BuiltinFunctionType {
     fn convert(&self, ctx: &Context) -> Result<TypeHandle> {
         let arg_types = self.arg_types();
         let res_types = self.res_types();
+
+        let convert_type_to_llvm = |ty: TypeHandle| {
+            type_cast::<dyn ToLLVMType>(&*ty.deref(ctx))
+                .map(|ty| ty.convert(ctx).expect("Type conversion failed"))
+                .unwrap_or(ty)
+        };
+
+        let arg_types: Vec<_> = arg_types.into_iter().map(convert_type_to_llvm).collect();
+        let res_types: Vec<_> = res_types.into_iter().map(convert_type_to_llvm).collect();
 
         if res_types.is_empty() || res_types.len() > 1 {
             return input_err_noloc!(BuiltinToLLVMConversionError::InvalidFunctionType);
@@ -65,8 +66,8 @@ impl ToLLVMType for BuiltinFunctionType {
 
 #[type_interface_impl]
 impl ToLLVMType for UnitType {
-    fn converter(&self) -> ToLLVMTypeFn {
-        |_self_ty: TypeHandle, ctx: &mut Context| Ok(VoidType::get(ctx).to_handle())
+    fn convert(&self, ctx: &Context) -> Result<TypeHandle> {
+        Ok(VoidType::get(ctx).to_handle())
     }
 }
 
