@@ -11,7 +11,9 @@ use core::cell::Ref;
 use alloc::{collections::vec_deque::VecDeque, vec, vec::Vec};
 
 use crate::{
+    basic_block::BasicBlock,
     builtin::op_interfaces::IsTerminatorInterface,
+    common_traits::Named,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     irbuild::{
@@ -26,7 +28,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
-    std_deps::hash::FxHashMap,
+    std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, Typed},
     value::{DefiningEntity, Value},
 };
@@ -145,26 +147,28 @@ pub trait DialectConversion {
 /// Conversion is trait-driven and ensures that any convertible
 /// operand definitions are rewritten before rewriting the current operation.
 ///
-/// Block argument types are updated only in two cases:
-/// 1. The block argument is an operand use of an operation being processed.
-/// 2. An operation being processed has successor blocks, in which case all
-///    arguments of those successor blocks are considered for type conversion.
+/// All block arguments reachable from `op` are converted up front.
+/// Block arguments of blocks inserted during conversion are
+/// converted as soon as they're observed via the listener.
 //
 // ## Algorithm
 //
-// 1. Collect all initially convertible operations (and terminators) into a
-//    worklist.
-// 2. Repeatedly pop from the front; only entries still marked `Queued` are
+// 1. Collect:
+//    - All initially convertible operations (and terminators)
+//    - All basic blocks structurally nested under `op`
+// 2. Convert the arguments of every collected block.
+// 3. Repeatedly pop from the front; only entries still marked `Queued` are
 //    processed.
-// 3. For each op, convert relevant block-argument types, then check operand
-//    defining ops. If defs are still pending, re-enqueue this op and those defs
-//    to the front so defs are handled first.
-// 4. Actually call the conversion pattern's `rewrite` callback.
-// 5. Post rewrite, process recorder events:
-//    - mark erased ops,
+// 4. For each op, check operand defining ops. If defs are still pending,
+//    re-enqueue this op and those defs to the front so defs are handled first.
+// 5. Actually call the conversion pattern's `rewrite` callback.
+// 6. Post rewrite, process recorder events:
+//    - mark erased (during this batch) ops and blocks,
 //    - update value type-history,
-//    - enqueue newly inserted convertible ops.
-// 6. Mark rewritten/non-convertible ops as `Processed`.
+//    - enqueue newly inserted convertible ops and basic blocks,
+// 7. Mark rewritten/non-convertible ops as `Processed`.
+// 8. Before processing the next op in the queue, convert arguments
+//    of newly inserted blocks.
 pub fn apply_dialect_conversion<C: DialectConversion>(
     ctx: &mut Context,
     conversion: &mut C,
@@ -181,6 +185,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         conversion: &'a mut C,
         rewriter: DialectConversionRewriter,
         worklist: VecDeque<Ptr<Operation>>,
+        pending_block_arg_conversions: Vec<Ptr<BasicBlock>>,
         op_states: FxHashMap<Ptr<Operation>, OpState>,
         previous_types: FxHashMap<Value, Vec<TypeHandle>>,
     }
@@ -193,6 +198,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 conversion,
                 rewriter,
                 worklist: VecDeque::new(),
+                pending_block_arg_conversions: Vec::new(),
                 op_states: FxHashMap::default(),
                 previous_types: FxHashMap::default(),
             }
@@ -248,18 +254,24 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 || op_impls::<dyn IsTerminatorInterface>(&*Operation::get_op_dyn(op, ctx))
         }
 
-        fn collect_operations(&mut self, ctx: &mut Context, root: Ptr<Operation>) {
+        /// Collects the initial worklist of operations (into `self.worklist`)
+        /// and every block structurally nested under `root` (into
+        /// `self.pending_block_arg_conversions`).
+        fn collect_operations_blocks(&mut self, ctx: &mut Context, root: Ptr<Operation>) {
             self.worklist.clear();
+            self.pending_block_arg_conversions.clear();
             self.op_states.clear();
             fn walker_callback<C: DialectConversion>(
                 ctx: &Context,
                 driver: &mut Driver<C>,
                 node: IRNode,
             ) {
-                if let IRNode::Operation(op) = node
-                    && driver.op_eligible_for_processing(ctx, op)
-                {
-                    driver.enqueue_back(op);
+                match node {
+                    IRNode::Operation(op) if driver.op_eligible_for_processing(ctx, op) => {
+                        driver.enqueue_back(op);
+                    }
+                    IRNode::BasicBlock(block) => driver.pending_block_arg_conversions.push(block),
+                    _ => {}
                 }
             }
             walk_op(
@@ -317,17 +329,18 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             Ok(())
         }
 
-        fn convert_successor_block_argument_types(
+        fn convert_block_arguments(
             &mut self,
             ctx: &mut Context,
-            op: Ptr<Operation>,
+            block: Ptr<BasicBlock>,
         ) -> Result<()> {
-            let successors: Vec<_> = op.deref(ctx).successors().collect();
-            for succ in successors {
-                let args: Vec<_> = succ.deref(ctx).arguments().collect();
-                for arg in args {
-                    self.convert_block_argument_type(ctx, arg)?;
-                }
+            log::trace!(
+                "Converting block arguments for block: {}",
+                block.deref(ctx).unique_name(ctx).disp(ctx)
+            );
+            let args: Vec<_> = block.deref(ctx).arguments().collect();
+            for arg in args {
+                self.convert_block_argument_type(ctx, arg)?;
             }
             Ok(())
         }
@@ -338,9 +351,14 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 core::mem::take(&mut listener.events)
             };
 
+            let mut erased_blocks = FxHashSet::default();
             for event in &events {
-                if let RecorderEvent::ErasedOperation(op) = event {
-                    self.mark_erased(*op);
+                match event {
+                    RecorderEvent::ErasedOperation(op) => self.mark_erased(*op),
+                    RecorderEvent::ErasedBlock(block) => {
+                        erased_blocks.insert(*block);
+                    }
+                    _ => {}
                 }
             }
 
@@ -371,15 +389,23 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             }
 
             for event in events {
-                if let RecorderEvent::InsertedOperation(new_op) = event
-                    && self.op_eligible_for_processing(ctx, new_op)
-                    && !self.is_queued(new_op)
-                {
-                    log::trace!(
-                        "Inserted operation added to worklist: {}",
-                        OpDbg { op: new_op, ctx }
-                    );
-                    self.enqueue_back(new_op);
+                match event {
+                    RecorderEvent::InsertedOperation(new_op)
+                        if self.op_eligible_for_processing(ctx, new_op)
+                            && !self.is_queued(new_op) =>
+                    {
+                        log::trace!(
+                            "Inserted operation added to worklist: {}",
+                            OpDbg { op: new_op, ctx }
+                        );
+                        self.enqueue_back(new_op);
+                    }
+                    RecorderEvent::InsertedBlock(new_block)
+                        if !erased_blocks.contains(&new_block) =>
+                    {
+                        self.pending_block_arg_conversions.push(new_block);
+                    }
+                    _ => {}
                 }
             }
 
@@ -388,8 +414,6 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
 
         fn process_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) -> Result<()> {
             log::trace!("Beginning to process operation: {}", OpDbg { op, ctx });
-
-            self.convert_successor_block_argument_types(ctx, op)?;
 
             if !self.conversion.can_convert_op(ctx, op) {
                 log::trace!(
@@ -403,14 +427,12 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             let operands: Vec<_> = op.deref(ctx).operands().collect();
             let mut pending_defs = Vec::new();
             for operand in &operands {
-                match operand.defining_entity() {
-                    DefiningEntity::Op(def_op) => {
-                        assert_ne!(def_op, op, "Operation cannot depend on its own result");
-                        if self.op_eligible_for_processing(ctx, def_op) {
-                            pending_defs.push(def_op);
-                        }
+                // Block-argument operands should already be converted.
+                if let DefiningEntity::Op(def_op) = operand.defining_entity() {
+                    assert_ne!(def_op, op, "Operation cannot depend on its own result");
+                    if self.op_eligible_for_processing(ctx, def_op) {
+                        pending_defs.push(def_op);
                     }
-                    DefiningEntity::Block(_) => self.convert_block_argument_type(ctx, *operand)?,
                 }
             }
 
@@ -461,7 +483,13 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         }
 
         fn run(&mut self, ctx: &mut Context, root: Ptr<Operation>) -> Result<()> {
-            self.collect_operations(ctx, root);
+            self.collect_operations_blocks(ctx, root);
+
+            // Convert block arguments first
+            for block in core::mem::take(&mut self.pending_block_arg_conversions) {
+                self.convert_block_arguments(ctx, block)?;
+            }
+
             while let Some(op) = self.worklist.pop_front() {
                 // Skip stale duplicate entries and ops that became terminal-state
                 // while queued. For the queued case, remove the queue-state first so
@@ -472,6 +500,11 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                         self.process_operation(ctx, op)?;
                     }
                     Some(OpState::Processed | OpState::Erased) | None => continue,
+                }
+
+                // Convert block arguments for any new blocks added, before processing the next op.
+                for block in core::mem::take(&mut self.pending_block_arg_conversions) {
+                    self.convert_block_arguments(ctx, block)?;
                 }
             }
             Ok(())
