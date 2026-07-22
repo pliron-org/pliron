@@ -156,7 +156,7 @@ fn float_select_preserves_fastmath_flags() -> Result<()> {
         source_filename = "m"
 
         define float @foo(i1 %0, float %1, float %2) {
-        entry_block_1_0_block1v1:
+        entry_block_1_0_block2v1:
           %s_v3 = select nnan i1 %0, float %1, float %2
           ret float %s_v3
         }
