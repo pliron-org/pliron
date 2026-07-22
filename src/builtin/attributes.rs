@@ -57,6 +57,18 @@ impl IdentifierAttr {
     }
 }
 
+impl AsRef<Identifier> for IdentifierAttr {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
+impl From<Identifier> for IdentifierAttr {
+    fn from(value: Identifier) -> Self {
+        IdentifierAttr(value)
+    }
+}
+
 impl From<IdentifierAttr> for Identifier {
     fn from(value: IdentifierAttr) -> Self {
         value.0
@@ -452,7 +464,7 @@ impl MaterializableAttr for FPDoubleAttr {
 /// Similar to MLIR's [DictionaryAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#dictionaryattr),
 #[pliron_attr(name = "builtin.dict", verifier = "succ")]
 #[derive(PartialEq, Clone, Eq, Debug)]
-pub struct DictAttr(AttributeDict);
+pub struct DictAttr(pub AttributeDict);
 
 impl Printable for DictAttr {
     fn fmt(
