@@ -4126,14 +4126,14 @@ new_float_bin_op! {
 /// ### Operand(s):
 /// | operand | description |
 /// |-----|-------|
-/// | `lhs` | float |
-/// | `rhs` | float |
+/// | `lhs` | float or vector<float> |
+/// | `rhs` | float or vector<float> |
 ///
 /// ### Result(s):
 ///
 /// | result | description |
 /// |-----|-------|
-/// | `res` | 1-bit signless integer |
+/// | `res` | i1 or vector<i1> |
 #[pliron_op(
     name = "llvm.fcmp",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` <` attr($fcmp_predicate, $FCmpPredicateAttr) `> ` $1 ` : ` type($0)",
@@ -4150,11 +4150,17 @@ pub struct FCmpOp;
 impl FCmpOp {
     /// Create a new [FCmpOp]
     pub fn new(ctx: &mut Context, pred: FCmpPredicateAttr, lhs: Value, rhs: Value) -> Self {
-        let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
+        use pliron::r#type::Typed;
+        let mut result_ty: TypeHandle = IntegerType::get(ctx, 1, Signedness::Signless).into();
+        if let Some(vector) = lhs.get_type(ctx).deref(ctx).downcast_ref::<VectorType>() {
+            let num_elements = vector.num_elements();
+            let kind = vector.kind();
+            result_ty = VectorType::get(ctx, result_ty, num_elements, kind).into();
+        }
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
-            vec![bool_ty.into()],
+            vec![result_ty],
             vec![lhs, rhs],
             vec![],
             0,
@@ -4180,18 +4186,12 @@ impl Verify for FCmpOp {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
-        let res_ty: TypedHandle<IntegerType> = TypedHandle::from_handle(self.result_type(ctx), ctx)
-            .map_err(|mut err| {
-                err.set_loc(loc.clone());
-                err
-            })?;
-
-        if res_ty.deref(ctx).width() != 1 {
-            return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
-        }
-
         let opd_ty = self.operand_type_i(ctx, I::<0>.into()).deref(ctx);
-        if !(type_impls::<dyn FloatTypeInterface>(&*opd_ty)) {
+        if let Some(vector) = opd_ty.downcast_ref::<VectorType>() {
+            if !type_impls::<dyn FloatTypeInterface>(&*vector.elem_type().deref(ctx)) {
+                return verify_err!(loc, FCmpOpVerifyErr::IncorrectOperandsType);
+            }
+        } else if !(type_impls::<dyn FloatTypeInterface>(&*opd_ty)) {
             return verify_err!(loc, FCmpOpVerifyErr::IncorrectOperandsType);
         }
 
@@ -4203,7 +4203,7 @@ impl Verify for FCmpOp {
 pub enum FCmpOpVerifyErr {
     #[error("Result must be 1-bit integer (bool)")]
     ResultNotBool,
-    #[error("Operand must be floating point type")]
+    #[error("Operand must be floating point type or vector of floating point")]
     IncorrectOperandsType,
     #[error("Missing or incorrect predicate attribute")]
     PredAttrErr,
