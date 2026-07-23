@@ -4126,14 +4126,14 @@ new_float_bin_op! {
 /// ### Operand(s):
 /// | operand | description |
 /// |-----|-------|
-/// | `lhs` | float or vector<float> |
-/// | `rhs` | float or vector<float> |
+/// | `lhs` | float or vector of float |
+/// | `rhs` | float or vector of float |
 ///
 /// ### Result(s):
 ///
 /// | result | description |
 /// |-----|-------|
-/// | `res` | i1 or vector<i1> |
+/// | `res` | i1 or vector of i1 |
 #[pliron_op(
     name = "llvm.fcmp",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` <` attr($fcmp_predicate, $FCmpPredicateAttr) `> ` $1 ` : ` type($0)",
