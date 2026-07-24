@@ -316,7 +316,7 @@ fn test_select() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("select.ll").to_str().unwrap(),
         Passes::default(),
-        100,
+        102,
     );
 }
 

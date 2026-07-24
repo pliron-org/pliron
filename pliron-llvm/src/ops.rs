@@ -58,9 +58,10 @@ use crate::{
         ShuffleVectorMaskAttr,
     },
     op_interfaces::{
-        AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
-        FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
-        IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag, PointerTypeResult,
+        ATTR_KEY_FAST_MATH_FLAGS, AlignableOpInterface, BinArithOp, CastOpInterface,
+        CastOpWithNNegInterface, FastMathFlags, FloatBinArithOp, FloatBinArithOpWithFastMathFlags,
+        IntBinArithOp, IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag,
+        PointerTypeResult,
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
@@ -3925,8 +3926,8 @@ pub enum ShuffleVectorOpVerifyErr {
 /// | `res` | any type |
 #[pliron_op(
     name = "llvm.select",
-    format = "$0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NOpdsInterface<3>]
+    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
+    interfaces = [OneResultInterface, NOpdsInterface<3>, FastMathFlags]
 )]
 pub struct SelectOp;
 
@@ -3944,7 +3945,22 @@ impl SelectOp {
             vec![],
             0,
         );
-        SelectOp { op }
+        let op = SelectOp { op };
+        op.set_fast_math_flags(ctx, FastmathFlagsAttr::default());
+        op
+    }
+
+    /// Create a new [SelectOp] with fast-math flags set.
+    pub fn new_with_fast_math_flags(
+        ctx: &mut Context,
+        cond: Value,
+        true_val: Value,
+        false_val: Value,
+        fast_math_flags: FastmathFlagsAttr,
+    ) -> Self {
+        let op = Self::new(ctx, cond, true_val, false_val);
+        op.set_fast_math_flags(ctx, fast_math_flags);
+        op
     }
 }
 
@@ -3978,6 +3994,22 @@ impl Verify for SelectOp {
         if cond_ty.is_none_or(|ty| ty.width() != 1) {
             return verify_err!(loc, SelectOpVerifyErr::ConditionTypeErr);
         }
+
+        // LLVM permits fast-math flags on select only when the result type is
+        // a floating-point scalar or vector.
+        if let Some(fmf) = op
+            .attributes
+            .get::<FastmathFlagsAttr>(&ATTR_KEY_FAST_MATH_FLAGS)
+            && *fmf != FastmathFlagsAttr::default()
+        {
+            let mut res_ty = ty;
+            if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
+                res_ty = vec_ty.elem_type();
+            }
+            if type_cast::<dyn FloatTypeInterface>(&*res_ty.deref(ctx)).is_none() {
+                return verify_err!(loc, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr);
+            }
+        }
         Ok(())
     }
 }
@@ -3988,6 +4020,8 @@ pub enum SelectOpVerifyErr {
     ResultTypeErr,
     #[error("Condition must be an i1 or a vector of i1 equal in length to the operand vectors")]
     ConditionTypeErr,
+    #[error("Fast-math flags are only allowed on selects of floating-point type")]
+    FastMathFlagsOnNonFloatErr,
 }
 
 /// Floating-point negation
