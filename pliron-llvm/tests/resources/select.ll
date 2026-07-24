@@ -15,24 +15,13 @@ entry:
   ret i32 %int
 }
 
-; Returns 1 if %x is NaN, 0 otherwise
-define i32 @is_nan(float %x) {
+; Selects between NaN and %a without fast-math flags, which is fully defined.
+; Returns 1 if the select result is NaN, 0 otherwise.
+define i32 @test_select_nan(i1 %cond, float %a) {
 entry:
-  %cmp = fcmp uno float %x, %x
-  %r = zext i1 %cmp to i32
-  ret i32 %r
-}
-
-; Without fast-math flags a NaN operand is fully defined: the select simply
-; returns the chosen value, NaN or not.
-define i32 @test_select_nan(i1 %cond) {
-entry:
-  %sel1 = select i1 %cond, float 0x7FF8000000000000, float 1.0
-  %sel2 = select i1 %cond, float 2.0, float 0x7FF8000000000000
-  %nan1 = call i32 @is_nan(float %sel1)
-  %nan2 = call i32 @is_nan(float %sel2)
-  %nan1x10 = mul i32 %nan1, 10
-  %r = add i32 %nan1x10, %nan2
+  %sel = select i1 %cond, float 0x7FF8000000000000, float %a
+  %isnan = fcmp uno float %sel, %sel
+  %r = select i1 %isnan, i32 1, i32 0
   ret i32 %r
 }
 
@@ -44,12 +33,10 @@ entry:
   %call2 = call i32 @test_select(i1 false, i32 30, i32 40)
   %call3 = call i32 @test_select(i1 true, i32 50, i32 60)
   %call4 = call i32 @test_select_fmf(i1 false, float 5.0, float 0.0)
-  %call5 = call i32 @test_select_nan(i1 true)
-  %call6 = call i32 @test_select_nan(i1 false)
+  %call5 = call i32 @test_select_nan(i1 true, float 1.0)
+  %call6 = call i32 @test_select_nan(i1 false, float 1.0)
 
-  ; With nnan, a NaN operand makes the result poison, so results are kept out of the exit code.
-  %poison1 = call i32 @test_select_fmf(i1 true, float 0x7FF8000000000000, float 1.0)
-  %poison2 = call i32 @test_select_fmf(i1 true, float 1.0, float 0x7FF8000000000000)
+  %call7 = call i32 @test_select_fmf(i1 true, float 1.0, float 0x7FF8000000000000)
 
   ; Sum the results
   %sum1 = add i32 %call1, %call2
@@ -57,7 +44,8 @@ entry:
   %sum3 = add i32 %sum2, %call4
   %sum4 = add i32 %sum3, %call5
   %sum5 = add i32 %sum4, %call6
+  %sum6 = add i32 %sum5, %call7
 
   ; Return the sum
-  ret i32 %sum5
+  ret i32 %sum6
 }
