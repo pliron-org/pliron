@@ -35,7 +35,6 @@ entry:
   %call4 = call i32 @test_select_fmf(i1 false, float 5.0, float 0.0)
   %call5 = call i32 @test_select_nan(i1 true, float 1.0)
   %call6 = call i32 @test_select_nan(i1 false, float 1.0)
-
   %call7 = call i32 @test_select_fmf(i1 true, float 1.0, float 0x7FF8000000000000)
 
   ; Sum the results
