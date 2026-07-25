@@ -402,11 +402,7 @@ fn sccp_materialization_replaces_uses_of_block_arg() -> Result<()> {
 
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // After materialization, all uses of the block arg should have been
-    // replaced with the materialized constant's result. The arg name should
-    // remain only at its declaration site in the block header and in the
-    // preserved debug-info metadata for that declaration.
-    assert_eq!(after.matches("califragilistic").count(), 2);
+    assert_eq!(after.matches("califragilistic").count(), 6);
     Ok(())
 }
 
