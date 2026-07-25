@@ -24,8 +24,34 @@ use crate::{
     value::Value,
 };
 
+/// Configuration for [Rewriter].
+#[derive(Clone)]
+pub struct RewriterConfig {
+    /// Propagate old location to the new operation
+    /// (if it already isn't located) when replacing an operation?
+    pub set_loc_on_operation_replacement: bool,
+    /// Propagate old name to the new value
+    /// (if it already isn't named) when replacing a value?
+    pub set_name_on_value_replacement: bool,
+}
+
+impl Default for RewriterConfig {
+    fn default() -> Self {
+        Self {
+            set_loc_on_operation_replacement: true,
+            set_name_on_value_replacement: true,
+        }
+    }
+}
+
 /// Rewriter interface for transformations.
 pub trait Rewriter: Inserter {
+    /// Get the configuration for this rewriter.
+    fn get_config(&self) -> &RewriterConfig;
+
+    /// Get a mutable reference to the configuration for this rewriter.
+    fn get_config_mut(&mut self) -> &mut RewriterConfig;
+
     /// Replace an [Operation] (and delete it) with another operation.
     /// Results of the new operation must match the results of the old operation.
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>);
@@ -96,7 +122,7 @@ pub trait Rewriter: Inserter {
 /// Use [DummyListener](super::listener::DummyListener) if no listener is needed.
 pub struct IRRewriter<L: RewriteListener> {
     inserter: IRInserter<L>,
-    config: IRRewriterConfig,
+    config: RewriterConfig,
     _phantom: core::marker::PhantomData<L>,
 }
 
@@ -107,23 +133,13 @@ where
     fn default() -> Self {
         Self {
             inserter: IRInserter::default(),
-            config: IRRewriterConfig::default(),
+            config: RewriterConfig::default(),
             _phantom: core::marker::PhantomData,
         }
     }
 }
 
 impl<L: RewriteListener> IRRewriter<L> {
-    /// Get the configuration for this rewriter.
-    pub fn get_config(&self) -> &IRRewriterConfig {
-        &self.config
-    }
-
-    /// Get a mutable reference to the configuration for this rewriter.
-    pub fn get_config_mut(&mut self) -> &mut IRRewriterConfig {
-        &mut self.config
-    }
-
     /// Sets the listener for insertion events.
     pub fn set_listener(&mut self, listener: L) {
         self.inserter.set_listener(listener);
@@ -190,27 +206,15 @@ impl<L: RewriteListener> Inserter for IRRewriter<L> {
     }
 }
 
-/// Configuration for [IRRewriter].
-#[derive(Clone)]
-pub struct IRRewriterConfig {
-    /// Propagate old location to the new operation
-    /// (if it already isn't located) when replacing an operation?
-    pub set_loc_on_operation_replacement: bool,
-    /// Propagate old name to the new value
-    /// (if it already isn't named) when replacing a value?
-    pub set_name_on_value_replacement: bool,
-}
-
-impl Default for IRRewriterConfig {
-    fn default() -> Self {
-        Self {
-            set_loc_on_operation_replacement: true,
-            set_name_on_value_replacement: true,
-        }
-    }
-}
-
 impl<L: RewriteListener> Rewriter for IRRewriter<L> {
+    fn get_config(&self) -> &RewriterConfig {
+        &self.config
+    }
+
+    fn get_config_mut(&mut self) -> &mut RewriterConfig {
+        &mut self.config
+    }
+
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>) {
         if op != new_op
             && self.config.set_loc_on_operation_replacement
@@ -446,15 +450,18 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
 pub struct ScopedRewriter<'a> {
     rewriter: &'a mut dyn Rewriter,
     prev_insertion_point: OpInsertionPoint,
+    prev_config: RewriterConfig,
 }
 
 impl<'a> ScopedRewriter<'a> {
     pub fn new(rewriter: &'a mut dyn Rewriter, insertion_point: OpInsertionPoint) -> Self {
         let prev_insertion_point = rewriter.get_insertion_point();
+        let prev_config = rewriter.get_config().clone();
         rewriter.set_insertion_point(insertion_point);
         Self {
             rewriter,
             prev_insertion_point,
+            prev_config,
         }
     }
 }
@@ -462,6 +469,7 @@ impl<'a> ScopedRewriter<'a> {
 impl<'a> Drop for ScopedRewriter<'a> {
     fn drop(&mut self) {
         self.rewriter.set_insertion_point(self.prev_insertion_point);
+        *self.rewriter.get_config_mut() = self.prev_config.clone();
     }
 }
 
@@ -516,6 +524,14 @@ impl<'a> Inserter for ScopedRewriter<'a> {
 }
 
 impl<'a> Rewriter for ScopedRewriter<'a> {
+    fn get_config(&self) -> &RewriterConfig {
+        self.rewriter.get_config()
+    }
+
+    fn get_config_mut(&mut self) -> &mut RewriterConfig {
+        self.rewriter.get_config_mut()
+    }
+
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>) {
         self.rewriter.replace_operation(ctx, op, new_op)
     }
