@@ -273,7 +273,17 @@ impl Value {
         let index = self.find_index(ctx);
         match self.defining_entity {
             DefiningEntity::Op(op) => op.deref_mut(ctx).results[index].set_type(ty),
-            DefiningEntity::Block(block) => block.deref_mut(ctx).args[index].set_type(ctx, ty),
+            DefiningEntity::Block(block) => block.deref_mut(ctx).args[index].set_type(ty),
+        }
+    }
+
+    /// Set this value's name.
+    /// This corresponds to the [given_name](Named::given_name) of the value.
+    pub fn set_name(&self, ctx: &Context, name: Option<Identifier>) {
+        let index = self.find_index(ctx);
+        match self.defining_entity {
+            DefiningEntity::Op(op) => debug_info::set_operation_result_name(ctx, op, index, name),
+            DefiningEntity::Block(block) => debug_info::set_block_arg_name(ctx, block, index, name),
         }
     }
 
@@ -306,7 +316,7 @@ impl Typed for Value {
         let index = self.find_index(ctx);
         match self.defining_entity {
             DefiningEntity::Op(op) => op.deref(ctx).results[index].get_type(),
-            DefiningEntity::Block(block) => block.deref(ctx).args[index].get_type(ctx),
+            DefiningEntity::Block(block) => block.deref(ctx).args[index].get_type(),
         }
     }
 }

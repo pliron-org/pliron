@@ -460,7 +460,6 @@ mod tests {
                 ops::{FuncOp, ModuleOp},
                 types::FunctionType,
             },
-            debug_info::set_operation_result_name,
             irbuild::{
                 inserter::{IRInserter, Inserter},
                 listener::DummyListener,
@@ -491,28 +490,35 @@ mod tests {
         // ANCHOR: fib_build_slots
         // Mutable slots: a, b, tmp, i, and the iteration limit n.
         let slot_a = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(ctx, slot_a.get_operation(), 0, "a".try_into().ok());
+        slot_a
+            .get_result(ctx)
+            .set_name(ctx, Some("a".try_into().unwrap()));
         ins.append_op(ctx, &slot_a);
         let slot_b = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(ctx, slot_b.get_operation(), 0, "b".try_into().ok());
+        slot_b
+            .get_result(ctx)
+            .set_name(ctx, Some("b".try_into().unwrap()));
         ins.append_op(ctx, &slot_b);
         let slot_tmp = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(ctx, slot_tmp.get_operation(), 0, "tmp".try_into().ok());
+        slot_tmp
+            .get_result(ctx)
+            .set_name(ctx, Some("tmp".try_into().unwrap()));
         ins.append_op(ctx, &slot_tmp);
         let slot_i = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(ctx, slot_i.get_operation(), 0, "i".try_into().ok());
+        slot_i
+            .get_result(ctx)
+            .set_name(ctx, Some("i".try_into().unwrap()));
         ins.append_op(ctx, &slot_i);
         let slot_n = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(ctx, slot_n.get_operation(), 0, "n".try_into().ok());
+        slot_n
+            .get_result(ctx)
+            .set_name(ctx, Some("n".try_into().unwrap()));
         ins.append_op(ctx, &slot_n);
         // A mutable slot for the loop condition (while cond_ptr do ...).
         let slot_cond_ptr = DeclOp::new(ctx, i64_ty.into());
-        set_operation_result_name(
-            ctx,
-            slot_cond_ptr.get_operation(),
-            0,
-            "cond_ptr".try_into().ok(),
-        );
+        slot_cond_ptr
+            .get_result(ctx)
+            .set_name(ctx, Some("cond_ptr".try_into().unwrap()));
         ins.append_op(ctx, &slot_cond_ptr);
         // ANCHOR_END: fib_build_slots
 

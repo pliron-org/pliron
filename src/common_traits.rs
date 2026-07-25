@@ -41,11 +41,11 @@ macro_rules! impl_verify_succ {
 
 /// Anything that has a name.
 pub trait Named {
-    // A (not necessarily unique) name.
+    /// A (not necessarily unique) name.
     fn given_name(&self, ctx: &Context) -> Option<Identifier>;
-    // A Unique (within the context) ID.
+    /// A Unique (within the context) ID.
     fn id(&self, ctx: &Context) -> Identifier;
-    // A unique name; concatenation of name and id.
+    /// A unique name; concatenation of name and id.
     fn unique_name(&self, ctx: &Context) -> Identifier {
         match self.given_name(ctx) {
             Some(given_name) => given_name + underscore() + self.id(ctx),

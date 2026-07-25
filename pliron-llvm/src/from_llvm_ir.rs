@@ -23,7 +23,6 @@ use pliron::{
         types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    debug_info,
     derive::{type_interface, type_interface_impl},
     identifier::{self, Identifier},
     input_err_noloc, input_error_noloc,
@@ -1498,10 +1497,10 @@ fn convert_block(
             let m_inst_result = m_inst.deref(ctx).results().next();
             // LLVM instructions have at most one result.
             if let Some(result) = m_inst_result {
-                if let Some(res_name) = llvm_get_value_name(inst).filter(|name| !name.is_empty()) {
-                    let res_name = cctx.id_legaliser.legalise(&res_name);
-                    debug_info::set_operation_result_name(ctx, m_inst, 0, Some(res_name));
-                }
+                let res_name = llvm_get_value_name(inst)
+                    .filter(|name| !name.is_empty())
+                    .map(|name| cctx.id_legaliser.legalise(&name));
+                result.set_name(ctx, res_name);
                 cctx.value_map.insert(inst, result);
             }
         }
