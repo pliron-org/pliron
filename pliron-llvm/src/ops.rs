@@ -58,10 +58,9 @@ use crate::{
         ShuffleVectorMaskAttr,
     },
     op_interfaces::{
-        ATTR_KEY_FAST_MATH_FLAGS, AlignableOpInterface, BinArithOp, CastOpInterface,
-        CastOpWithNNegInterface, FastMathFlags, FloatBinArithOp, FloatBinArithOpWithFastMathFlags,
-        IntBinArithOp, IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag,
-        PointerTypeResult,
+        AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
+        FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
+        IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag, PointerTypeResult,
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
@@ -3926,8 +3925,9 @@ pub enum ShuffleVectorOpVerifyErr {
 /// | `res` | any type |
 #[pliron_op(
     name = "llvm.select",
-    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NOpdsInterface<3>, FastMathFlags]
+    format = "opt_attr($llvm_select_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
+    interfaces = [OneResultInterface, NOpdsInterface<3>],
+    attributes = (llvm_select_fast_math_flags: FastmathFlagsAttr),
 )]
 pub struct SelectOp;
 
@@ -3946,7 +3946,7 @@ impl SelectOp {
             0,
         );
         let op = SelectOp { op };
-        op.set_fast_math_flags(ctx, FastmathFlagsAttr::default());
+        op.set_attr_llvm_select_fast_math_flags(ctx, FastmathFlagsAttr::default());
         op
     }
 
@@ -3959,7 +3959,7 @@ impl SelectOp {
         fast_math_flags: FastmathFlagsAttr,
     ) -> Self {
         let op = Self::new(ctx, cond, true_val, false_val);
-        op.set_fast_math_flags(ctx, fast_math_flags);
+        op.set_attr_llvm_select_fast_math_flags(ctx, fast_math_flags);
         op
     }
 }
@@ -3997,9 +3997,7 @@ impl Verify for SelectOp {
 
         // LLVM permits fast-math flags on select only when the result type is
         // a floating-point scalar or vector.
-        if let Some(fmf) = op
-            .attributes
-            .get::<FastmathFlagsAttr>(&ATTR_KEY_FAST_MATH_FLAGS)
+        if let Some(fmf) = self.get_attr_llvm_select_fast_math_flags(ctx)
             && *fmf != FastmathFlagsAttr::default()
         {
             let mut res_ty = ty;

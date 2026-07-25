@@ -1341,7 +1341,7 @@ fn convert_instruction(
             let op = SelectOp::new(ctx, cond, true_val, false_val);
             // Only float-typed selects can carry fast-math flags.
             if llvm_can_value_use_fast_math_flags(inst) {
-                op.set_fast_math_flags(ctx, llvm_get_fast_math_flags(inst).into());
+                op.set_attr_llvm_select_fast_math_flags(ctx, llvm_get_fast_math_flags(inst).into());
             }
             Ok(op.get_operation())
         }
