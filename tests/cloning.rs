@@ -437,7 +437,7 @@ fn clone_blocks_copies_block_label_and_attributes() -> Result<()> {
     // debug info).
     let src = func.get_entry_block(ctx);
     let label: Identifier = "myblock".try_into().unwrap();
-    src.deref_mut(ctx).set_label(ctx, Some(label.clone()));
+    src.deref_mut(ctx).set_label(Some(label.clone()));
     let key: Identifier = "test_block_attr".try_into().unwrap();
     src.deref_mut(ctx).attributes.set(
         key.clone(),

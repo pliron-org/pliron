@@ -15,10 +15,7 @@ use pliron::{
     },
     combine::parser::Parser,
     context::{Context, Ptr},
-    debug_info::{
-        get_block_arg_name, get_operation_result_name, set_block_arg_name,
-        set_operation_result_name,
-    },
+    debug_info::{get_block_arg_name, get_operation_result_name},
     derive::pliron_op,
     dict_key,
     graph::walkers::{
@@ -79,12 +76,9 @@ fn replace_c0_with_c1() -> Result<()> {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    set_operation_result_name(
-        ctx,
-        const1_op.get_operation(),
-        0,
-        Some("c1".try_into().unwrap()),
-    );
+    const1_op
+        .get_result(ctx)
+        .set_name(ctx, Some("c1".try_into().unwrap()));
     let const0_val = const_op.get_result(ctx);
     const0_val.replace_some_uses_with(ctx, |_, _| true, &const1_op.get_result(ctx));
 
@@ -109,12 +103,9 @@ fn replace_c0_with_c1_operand() -> Result<()> {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    set_operation_result_name(
-        ctx,
-        const1_op.get_operation(),
-        0,
-        Some("c1".try_into().unwrap()),
-    );
+    const1_op
+        .get_result(ctx)
+        .set_name(ctx, Some("c1".try_into().unwrap()));
 
     let printed = format!("{}", module_op.get_operation().disp(ctx));
     expect![[r#"
@@ -409,8 +400,8 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     let r0 = op.deref(ctx).get_result(0);
     let r1 = op.deref(ctx).get_result(1);
 
-    set_operation_result_name(ctx, op, 0, Some("r0".try_into().unwrap()));
-    set_operation_result_name(ctx, op, 1, Some("r1".try_into().unwrap()));
+    r0.set_name(ctx, Some("r0".try_into().unwrap()));
+    r1.set_name(ctx, Some("r1".try_into().unwrap()));
 
     assert_eq!(op.deref(ctx).get_num_results(), 2);
     assert_eq!(r0.find_index(ctx), 0);
@@ -542,8 +533,8 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     let a0 = block.deref(ctx).get_argument(0);
     let a1 = block.deref(ctx).get_argument(1);
 
-    set_block_arg_name(ctx, block, 0, Some("a0".try_into().unwrap()));
-    set_block_arg_name(ctx, block, 1, Some("a1".try_into().unwrap()));
+    a0.set_name(ctx, Some("a0".try_into().unwrap()));
+    a1.set_name(ctx, Some("a1".try_into().unwrap()));
 
     assert_eq!(block.deref(ctx).get_num_arguments(), 2);
     assert_eq!(a0.find_index(ctx), 0);
@@ -1383,12 +1374,9 @@ fn test_walker_find_op() {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    set_operation_result_name(
-        ctx,
-        const1_op.get_operation(),
-        0,
-        Some("c1".try_into().unwrap()),
-    );
+    const1_op
+        .get_result(ctx)
+        .set_name(ctx, Some("c1".try_into().unwrap()));
 
     // A function to breaks the walk when a [ConstantOp] is found.
     fn finder(ctx: &Context, _: &mut (), node: IRNode) -> interruptible::WalkResult<ConstantOp> {
