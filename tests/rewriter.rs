@@ -216,8 +216,8 @@ fn replace_c0_with_c1() -> Result<()> {
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
-                v2 = test.constant builtin.integer <2: si64>;
-                test.return v2
+                c0_v2 = test.constant builtin.integer <2: si64> !0;
+                test.return c0_v2
             }
         }"#]]
     .assert_eq(&printed);
@@ -361,8 +361,8 @@ fn scoped_rewriter_test() -> Result<()> {
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
-                v2 = test.load v1 ;
-                test.return v2
+                c0_v2 = test.load v1  !0;
+                test.return c0_v2
             }
         }"#]].assert_eq(&printed);
 

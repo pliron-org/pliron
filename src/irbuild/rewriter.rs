@@ -193,22 +193,29 @@ impl<L: RewriteListener> Inserter for IRRewriter<L> {
 /// Configuration for [IRRewriter].
 #[derive(Clone)]
 pub struct IRRewriterConfig {
-    /// Whether to set the location of the new operation
-    /// to the old operation when replacing an operation.
+    /// Propagate old location to the new operation
+    /// (if it already isn't located) when replacing an operation?
     pub set_loc_on_operation_replacement: bool,
+    /// Propagate old name to the new value
+    /// (if it already isn't named) when replacing a value?
+    pub set_name_on_value_replacement: bool,
 }
 
 impl Default for IRRewriterConfig {
     fn default() -> Self {
         Self {
             set_loc_on_operation_replacement: true,
+            set_name_on_value_replacement: true,
         }
     }
 }
 
 impl<L: RewriteListener> Rewriter for IRRewriter<L> {
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>) {
-        if op != new_op && self.config.set_loc_on_operation_replacement {
+        if op != new_op
+            && self.config.set_loc_on_operation_replacement
+            && new_op.deref(ctx).loc().is_unknown()
+        {
             new_op.deref_mut(ctx).set_loc(op.deref(ctx).loc());
         }
         let new_values = new_op.deref(ctx).results().collect();
@@ -232,6 +239,9 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
             self.get_listener_mut()
                 .notify_value_use_replacement(ctx, res, new_res);
             res.replace_all_uses_with(ctx, &new_res);
+            if self.config.set_name_on_value_replacement && new_res.given_name(ctx).is_none() {
+                new_res.set_name(ctx, res.given_name(ctx));
+            }
         }
         self.erase_operation(ctx, op);
         self.mark_modified();
@@ -244,6 +254,9 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
         self.get_listener_mut()
             .notify_value_use_replacement(ctx, old_value, new_value);
         old_value.replace_all_uses_with(ctx, &new_value);
+        if self.config.set_name_on_value_replacement && new_value.given_name(ctx).is_none() {
+            new_value.set_name(ctx, old_value.given_name(ctx));
+        }
         self.mark_modified();
     }
 
