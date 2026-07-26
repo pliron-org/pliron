@@ -4,16 +4,15 @@
 //! simplify-cfg integration tests using textual LLVM dialect IR parsing.
 
 use pliron::{
-    combine::Parser,
     context::Context,
     init_env_logger_for_tests,
     irbuild::IRStatus,
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
     opts::simplify_cfg::simplify_cfg,
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
-    result::Result,
+    result::{ExpectOk, Result},
 };
 
 use pliron_llvm as _;
@@ -34,14 +33,7 @@ pub struct TestRegionOp;
 fn run_simplify_cfg_on_text(input: &str) -> Result<(IRStatus, String, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     let before = op.disp(ctx).to_string();
     log::trace!("Before simplify-cfg:\n{}", before);

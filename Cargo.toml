@@ -43,6 +43,7 @@ once_vec.workspace = true
 downcast-rs.workspace = true
 regex.workspace = true
 dyn-clone.workspace = true
+utf8-chars.workspace = true
 
 hashbrown = "0"
 spin = "0"

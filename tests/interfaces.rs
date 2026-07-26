@@ -27,7 +27,9 @@ use pliron::{
     location::{self, Located, Location, Source},
     op::{Op, OpObj, op_cast, verify_op},
     operation::{Operation, verify_operation},
-    parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
+    parsable::{
+        self, Parsable, ParseResult, StateStream, parse_from_str, state_stream_from_iterator,
+    },
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
     std_deps::sync::{LazyLock, Mutex},
@@ -1132,16 +1134,7 @@ fn test_outline_attr_on_block() -> Result<()> {
     .assert_eq(&printed);
 
     // Parse the printed IR back and verify the outlined attr is restored on the block.
-    let parsed_op = {
-        let state_stream = state_stream_from_iterator(
-            printed.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let parsed_op = parse_from_str(spaced(Operation::top_level_parser()), ctx, &printed).unwrap();
     verify_operation(parsed_op, ctx)?;
 
     // After re-parse the block now has a source location too, so indices shift.

@@ -27,7 +27,7 @@ use pliron::{
     location,
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::{self, parse_from_str, state_stream_from_iterator},
     printable::Printable,
     result::Result,
     r#type::TypeHandle,
@@ -984,16 +984,7 @@ fn parse_simple() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
     println!("{}", op.disp(ctx));
     Ok(())
 }
@@ -1036,14 +1027,7 @@ fn parse_function_with_attrs() -> Result<()> {
     "#]]
     .assert_eq(&printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let parsed = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed = parse_from_str(spaced(Operation::top_level_parser()), ctx, &printed).unwrap();
 
     let print_parsed = format!("{}", parsed.disp(ctx));
     expect![[r#"
@@ -1580,16 +1564,7 @@ fn block_inline_attrs_roundtrip() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
 
     verify_operation(op, ctx)?;
 
@@ -1597,14 +1572,7 @@ fn block_inline_attrs_roundtrip() -> Result<()> {
 
     // Parse again and print to confirm roundtrip
     let ctx2 = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx2, location::Source::InMemory),
-    );
-    let parsed2 = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed2 = parse_from_str(spaced(Operation::top_level_parser()), ctx2, &printed).unwrap();
 
     verify_operation(parsed2, ctx2)?;
 
@@ -1660,16 +1628,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
 
     verify_operation(op, ctx)?;
 
@@ -1701,14 +1660,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
 
     // Parse again and verify it's still valid
     let ctx2 = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx2, location::Source::InMemory),
-    );
-    let parsed2 = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed2 = parse_from_str(spaced(Operation::top_level_parser()), ctx2, &printed).unwrap();
 
     verify_operation(parsed2, ctx2)?;
 

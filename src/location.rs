@@ -22,7 +22,7 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
-    std_deps::{hash::FxHashSet, io::PathBuf},
+    std_deps::{hash::FxHashSet, path::PathBuf},
     uniqued_any::{self, UniquedKey},
 };
 

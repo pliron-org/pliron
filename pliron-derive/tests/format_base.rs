@@ -6,9 +6,9 @@
 use pliron::{
     builtin::types::IntegerType,
     context::Context,
-    location,
-    parsable::{self, Parsable, state_stream_from_iterator},
+    parsable::{Parsable, parse_from_str},
     printable::Printable,
+    result::ExpectOk,
     r#type::TypedHandle,
 };
 use pliron_derive::format;
@@ -29,13 +29,7 @@ fn int_wrapper() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("{inner=builtin.integer si64}", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = IntWrapper::parser(())
-        .parse(state_stream)
-        .expect("IntWrapper parser failed");
+    let res = parse_from_str(IntWrapper::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -53,11 +47,7 @@ fn int_wrapper_custom() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("BubbleWrap[builtin.integer si64]", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = match IntWrapperCustom::parser(()).parse(state_stream) {
+    let res = match parse_from_str(IntWrapperCustom::parser(()), ctx, &printed) {
         Err(err) => panic!("IntWrapper parser failed: {err}"),
         Ok(res) => res,
     };
@@ -86,13 +76,7 @@ fn double_wrap() {
         &printed
     );
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = DoubleWrap::parser(())
-        .parse(state_stream)
-        .expect("DoubleWrap parser failed");
+    let res = parse_from_str(DoubleWrap::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -138,26 +122,14 @@ fn enum_test() {
         &printed
     );
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let test_ty = Enum::A(int_ty);
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("A(builtin.integer si64)", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 
@@ -165,13 +137,7 @@ fn enum_test() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("C", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 
@@ -182,13 +148,7 @@ fn enum_test() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("Op<42/7>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 
@@ -196,13 +156,7 @@ fn enum_test() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("WithOpt<42>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 
@@ -210,13 +164,7 @@ fn enum_test() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("WithVec<1,2,3>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 
@@ -224,13 +172,7 @@ fn enum_test() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("WithOptTuple<42;1, 2, 3>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Enum::parser(())
-        .parse(state_stream)
-        .expect("Enum parser failed");
+    let res = parse_from_str(Enum::parser(()), ctx, &printed).expect_ok(ctx);
 
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
@@ -268,13 +210,7 @@ fn u64_wrapper() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("{a=42}", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = U64Wrapper::parser(())
-        .parse(state_stream)
-        .expect("U64Wrapper parser failed");
+    let res = parse_from_str(U64Wrapper::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -286,13 +222,7 @@ fn generic_wrapper() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("{inner=42}", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = GenericWrapper::<u64>::parser(())
-        .parse(state_stream)
-        .expect("GenericWrapper parser failed");
+    let res = parse_from_str(GenericWrapper::<u64>::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -304,26 +234,14 @@ fn generic_enum() {
     let printed = tuple_variant.disp(ctx).to_string();
     assert_eq!("Value(42)", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = GenericEnum::<u64>::parser(())
-        .parse(state_stream)
-        .expect("GenericEnum parser failed");
+    let res = parse_from_str(GenericEnum::<u64>::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let named_variant = GenericEnum::Named { value: 7_u64 };
     let printed = named_variant.disp(ctx).to_string();
     assert_eq!("Named<7>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = GenericEnum::<u64>::parser(())
-        .parse(state_stream)
-        .expect("GenericEnum parser failed");
+    let res = parse_from_str(GenericEnum::<u64>::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -344,13 +262,7 @@ fn int_div() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("42/7", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = IntDiv::parser(())
-        .parse(state_stream)
-        .expect("IntDiv parser failed");
+    let res = parse_from_str(IntDiv::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -368,13 +280,7 @@ fn optional_field() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<42>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalField::parser(())
-        .parse(state_stream)
-        .expect("OptionalField parser failed");
+    let res = parse_from_str(OptionalField::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let test_ty = OptionalField { a: None };
@@ -382,13 +288,7 @@ fn optional_field() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalField::parser(())
-        .parse(state_stream)
-        .expect("OptionalField parser failed");
+    let res = parse_from_str(OptionalField::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -405,13 +305,12 @@ fn optional_field_with_label_and_delimiters() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("(value : 42)", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithLabelAndDelimiters::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithLabelAndDelimiters parser failed");
+    let res = parse_from_str(
+        OptionalFieldWithLabelAndDelimiters::parser(()),
+        ctx,
+        &printed,
+    )
+    .expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let test_ty = OptionalFieldWithLabelAndDelimiters { a: None };
@@ -419,13 +318,12 @@ fn optional_field_with_label_and_delimiters() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithLabelAndDelimiters::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithLabelAndDelimiters parser failed");
+    let res = parse_from_str(
+        OptionalFieldWithLabelAndDelimiters::parser(()),
+        ctx,
+        &printed,
+    )
+    .expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -442,13 +340,8 @@ fn optional_field_with_delimiters_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("(42)", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithDelimitersOnly::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithDelimitersOnly parser failed");
+    let res =
+        parse_from_str(OptionalFieldWithDelimitersOnly::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let test_ty = OptionalFieldWithDelimitersOnly { a: None };
@@ -456,13 +349,8 @@ fn optional_field_with_delimiters_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithDelimitersOnly::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithDelimitersOnly parser failed");
+    let res =
+        parse_from_str(OptionalFieldWithDelimitersOnly::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -479,13 +367,7 @@ fn optional_field_with_label_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("value : 42", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithLabelOnly::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithLabelOnly parser failed");
+    let res = parse_from_str(OptionalFieldWithLabelOnly::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     let test_ty = OptionalFieldWithLabelOnly { a: None };
@@ -493,13 +375,7 @@ fn optional_field_with_label_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptionalFieldWithLabelOnly::parser(())
-        .parse(state_stream)
-        .expect("OptionalFieldWithLabelOnly parser failed");
+    let res = parse_from_str(OptionalFieldWithLabelOnly::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -516,13 +392,7 @@ fn vec_field() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<1,2,3>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = VecField::parser(())
-        .parse(state_stream)
-        .expect("VecField parser failed");
+    let res = parse_from_str(VecField::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     // Test empty vector
@@ -530,13 +400,7 @@ fn vec_field() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = VecField::parser(())
-        .parse(state_stream)
-        .expect("VecField parser failed");
+    let res = parse_from_str(VecField::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -557,13 +421,7 @@ fn opt_and_vec() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<42;1,2,3>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptAndVec::parser(())
-        .parse(state_stream)
-        .expect("OptAndVec parser failed");
+    let res = parse_from_str(OptAndVec::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     // Test empty vector
@@ -571,13 +429,7 @@ fn opt_and_vec() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<;>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptAndVec::parser(())
-        .parse(state_stream)
-        .expect("OptAndVec parser failed");
+    let res = parse_from_str(OptAndVec::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -592,13 +444,7 @@ fn opt_and_vec_tuple() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<42;1,2,3>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptAndVecTuple::parser(())
-        .parse(state_stream)
-        .expect("OptAndVecTuple parser failed");
+    let res = parse_from_str(OptAndVecTuple::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
     // Test empty vector
@@ -606,13 +452,7 @@ fn opt_and_vec_tuple() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("<;>", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = OptAndVecTuple::parser(())
-        .parse(state_stream)
-        .expect("OptAndVecTuple parser failed");
+    let res = parse_from_str(OptAndVecTuple::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -629,13 +469,7 @@ fn array_wrapper() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("1,2,3", &printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = ArrayWrapper::parser(())
-        .parse(state_stream)
-        .expect("ArrayWrapper parser failed");
+    let res = parse_from_str(ArrayWrapper::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -650,9 +484,5 @@ fn array_wrapper_len_fail() {
 
     // Test with wrong number of elements
     let wrong_printed = "1,2";
-    let state_stream = state_stream_from_iterator(
-        wrong_printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    ArrayWrapper::parser(()).parse(state_stream).unwrap();
+    parse_from_str(ArrayWrapper::parser(()), ctx, wrong_printed).unwrap();
 }

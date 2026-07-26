@@ -5,7 +5,6 @@
 
 use pliron::{
     builtin::op_interfaces::{IsTerminatorInterface, NOpdsInterface, NResultsInterface},
-    combine::Parser,
     context::Context,
     derive::pliron_op,
     init_env_logger_for_tests,
@@ -13,10 +12,10 @@ use pliron::{
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
     opts::mem2reg::{AllocInfo, PromotableOpInterface, PromotableOpKind, mem2reg},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     pass::AnalysisManager,
     printable::Printable,
-    result::Result,
+    result::{ExpectOk, Result},
 };
 
 use pliron_llvm as _;
@@ -73,14 +72,7 @@ impl PromotableOpInterface for NonPromotableUseOp {
 fn run_mem2reg(input: &str) -> Result<(IRStatus, String, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     let before = op.disp(ctx).to_string();
     log::trace!("Before mem2reg:\n{}", before);
