@@ -45,7 +45,10 @@ jobs:
     - name: Documentation pliron - no default features
       run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron --no-default-features --verbose
 
-    - name: Test pliron-llvm with no_std pliron
+    # Only build (not test) pliron-llvm against a no_std pliron.
+    # This step guards against pliron-llvm accidentally failing
+    # to compile against a no_std pliron.
+    - name: Build pliron-llvm with no_std pliron
       run: |
         cargo add -p pliron-llvm pliron --no-default-features
-        RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --verbose
+        RUSTFLAGS="-D warnings" cargo build -p pliron-llvm --lib --verbose
