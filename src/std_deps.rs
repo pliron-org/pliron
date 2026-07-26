@@ -26,7 +26,7 @@ mod r#impl {
     }
 
     pub mod fs {
-        pub use std::fs::{File, write};
+        pub use std::fs::{File, create_dir_all, write};
     }
 
     pub mod time {
@@ -197,10 +197,16 @@ mod r#impl {
             }
         }
 
+        /// Dummy for `std::fs::write`: does nothing and never fails.
         pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(
             _path: P,
             _contents: C,
-        ) -> Result<(), NoStdFsError> {
+        ) -> Result<(), core::convert::Infallible> {
+            Ok(())
+        }
+
+        /// Dummy for `std::fs::create_dir_all`: does nothing and never fails.
+        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), core::convert::Infallible> {
             Ok(())
         }
     }

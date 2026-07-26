@@ -173,6 +173,7 @@ use alloc::{
 use downcast_rs::{Downcast, impl_downcast};
 
 use crate::{
+    arg_error_noloc,
     context::{Context, Ptr},
     identifier::Identifier,
     irbuild::IRStatus,
@@ -181,7 +182,7 @@ use crate::{
     printable::Printable,
     result::Result,
     std_deps::{
-        fs::write,
+        fs::{create_dir_all, write},
         hash::{FxHashMap, FxHashSet},
         path::PathBuf,
     },
@@ -442,6 +443,22 @@ pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
 pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
+/// Write `contents` to the file `dir/file_name`, creating `dir`
+/// (including parents) if it doesn't exist.
+/// Failures are returned as errors instead of panicking.
+fn write_ir_to_file(dir: &PathBuf, file_name: String, contents: &str) -> Result<()> {
+    create_dir_all(dir).map_err(|err| {
+        arg_error_noloc!(
+            "Failed to create directory {} for printing IR: {}",
+            dir.display(),
+            err
+        )
+    })?;
+    let path = dir.join(file_name);
+    write(&path, contents.as_bytes())
+        .map_err(|err| arg_error_noloc!("Failed to write IR to file {}: {}", path.display(), err))
+}
+
 /// A [Pass] that contains, manages and runs other [Pass]es.
 /// The only requirement (that cannot be enforced by the type system)
 /// is that a [PassManager] [Pass] must run its contained [Passes] via
@@ -486,14 +503,14 @@ pub trait PassManager {
         }
 
         if pre_print_pass {
-            log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &ir_printing_dir {
-                let path = path.join(alloc::format!(
-                    "{}-before-{}.plir",
-                    pass_run_count,
-                    pass.name()
-                ));
-                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            let ir = op.disp(ctx).to_string();
+            log::info!("IR before pass {}:\n{}", pass.name(), ir);
+            if let Some(dir) = &ir_printing_dir {
+                write_ir_to_file(
+                    dir,
+                    alloc::format!("{}-before-{}.plir", pass_run_count, pass.name()),
+                    &ir,
+                )?;
             }
         }
         if pre_verify_pass {
@@ -519,14 +536,14 @@ pub trait PassManager {
             );
         }
         if post_print_pass {
-            log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &ir_printing_dir {
-                let path = path.join(alloc::format!(
-                    "{}-after-{}.plir",
-                    pass_run_count,
-                    pass.name()
-                ));
-                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            let ir = op.disp(ctx).to_string();
+            log::info!("IR after pass {}:\n{}", pass.name(), ir);
+            if let Some(dir) = &ir_printing_dir {
+                write_ir_to_file(
+                    dir,
+                    alloc::format!("{}-after-{}.plir", pass_run_count, pass.name()),
+                    &ir,
+                )?;
             }
         }
         if post_verify_pass {
@@ -556,6 +573,8 @@ pub struct PMConfig {
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
     /// Directory to place printed IR files before and after passes.
+    /// The directory is created (including parents) if it doesn't exist.
+    /// Failures to create it or write into it are returned as errors.
     pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
