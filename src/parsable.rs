@@ -32,7 +32,13 @@ use crate::{
     op::op_impls,
     operation::Operation,
     result::{self, Result},
-    std_deps::hash::{FxHashMap, hash_map::Entry},
+    std_deps::{
+        fs::File,
+        hash::{FxHashMap, hash_map::Entry},
+        io::BufReader,
+        path::Path,
+        utf8_chars::BufReadCharsExt,
+    },
     value::{DefiningEntity, Value},
 };
 
@@ -239,6 +245,102 @@ pub fn state_stream_from_iterator<'a, T: Iterator<Item = char> + 'a>(
             100,
         ),
         state,
+    }
+}
+
+/// Run a [Parser] on a string input.
+/// Example:
+/// ```
+/// use pliron::{context::Context, parsable::{parse_from_str, Parsable}};
+/// use pliron::derive::format;
+/// #[format("$n")]
+/// struct Number { n: u64 }
+/// let mut ctx = Context::new();
+/// let parsed_res = parse_from_str(Number::parser(()), &mut ctx, "100").unwrap();
+/// assert!(parsed_res.n == 100);
+/// ```
+pub fn parse_from_str<'a, P: Parser<StateStream<'a>>>(
+    mut parser: P,
+    ctx: &'a mut Context,
+    input: &'a str,
+) -> Result<P::Output> {
+    let source = location::Source::InMemory;
+    let state_stream = state_stream_from_iterator(input.chars(), State::new(ctx, source));
+    match parser.parse(state_stream) {
+        Ok((parsed_res, _)) => Ok(parsed_res),
+        Err(err) => {
+            let loc = Location::SrcPos {
+                src: source,
+                pos: err.position,
+            };
+            input_err!(loc, err)
+        }
+    }
+}
+
+/// Run a [Parser] on a file input.
+/// Example:
+/// ```no_run
+/// use pliron::{context::Context, parsable::{parse_from_file, Parsable}, std_deps::path::PathBuf};
+/// use pliron::derive::format;
+/// #[format("$n")]
+/// struct Number { n: u64 }
+/// let mut ctx = Context::new();
+/// let parsed_res = parse_from_file(
+///     Number::parser(()),
+///     &mut ctx,
+///     &PathBuf::from("input.plir"),
+/// ).unwrap();
+/// assert!(parsed_res.n == 100);
+/// ```
+pub fn parse_from_file<'a, P: Parser<StateStream<'a>>>(
+    mut parser: P,
+    ctx: &'a mut Context,
+    path: &'a Path,
+) -> Result<P::Output> {
+    let source = location::Source::new_from_file(ctx, path);
+
+    // An owned iterator over the file's chars, to please the borrow checker.
+    struct FileChars<'a> {
+        reader: BufReader<File>,
+        path: &'a Path,
+    }
+
+    impl Iterator for FileChars<'_> {
+        type Item = char;
+
+        fn next(&mut self) -> Option<char> {
+            self.reader
+                .read_char()
+                .inspect_err(|e| {
+                    log::error!(
+                        "Error reading chars from file {}: {}",
+                        self.path.display(),
+                        e
+                    )
+                })
+                .unwrap()
+        }
+    }
+
+    // Parse the plir file and verify it.
+    let plir_file = File::open(path).unwrap();
+    let chars_iter = FileChars {
+        reader: BufReader::new(plir_file),
+        path,
+    };
+
+    let state_stream = state_stream_from_iterator(chars_iter, State::new(ctx, source));
+
+    match parser.parse(state_stream) {
+        Ok((parsed_res, _)) => Ok(parsed_res),
+        Err(err) => {
+            let loc = Location::SrcPos {
+                src: source,
+                pos: err.position,
+            };
+            input_err!(loc, err)
+        }
     }
 }
 

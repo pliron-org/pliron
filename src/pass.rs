@@ -183,7 +183,7 @@ use crate::{
     std_deps::{
         fs::write,
         hash::{FxHashMap, FxHashSet},
-        io::PathBuf,
+        path::PathBuf,
     },
     utils::timer::Timer,
 };

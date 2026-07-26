@@ -13,7 +13,6 @@ use pliron::{
         },
         types::{IntegerType, Signedness},
     },
-    combine::parser::Parser,
     context::{Context, Ptr},
     debug_info::{get_block_arg_name, get_operation_result_name},
     derive::pliron_op,
@@ -24,10 +23,9 @@ use pliron::{
         interruptible::{self, walk_advance, walk_break},
     },
     irfmt::parsers::spaced,
-    location,
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
     result::Result,
     r#type::TypeHandle,
@@ -984,16 +982,7 @@ fn parse_simple() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
     println!("{}", op.disp(ctx));
     Ok(())
 }
@@ -1036,14 +1025,7 @@ fn parse_function_with_attrs() -> Result<()> {
     "#]]
     .assert_eq(&printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let parsed = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed = parse_from_str(spaced(Operation::top_level_parser()), ctx, &printed).unwrap();
 
     let print_parsed = format!("{}", parsed.disp(ctx));
     expect![[r#"
@@ -1074,14 +1056,7 @@ fn parse_function_with_attrs() -> Result<()> {
 
 fn expect_parse_error(input: &str, expected_err: Expect) {
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let actual_err = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .err()
-        .unwrap();
+    let actual_err = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap_err();
 
     expected_err.assert_eq(&actual_err.to_string());
 }
@@ -1102,6 +1077,7 @@ fn parse_err_multiple_def() {
         }"#;
 
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 7, column: 17
         Identifier c0_op_2_0_res0 defined more than once in the scope
     "#]];
@@ -1119,6 +1095,7 @@ fn parse_err_multiple_def() {
         }"#;
 
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 8, column: 13
         Identifier entry_block_1_0 defined more than once in the scope
     "#]];
@@ -1138,6 +1115,7 @@ fn parse_err_unresolved_def() {
         }"#;
 
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 4, column: 80
         Identifier c0_op_2_0_res0 was not resolved to any definition in the scope
     "#]];
@@ -1159,6 +1137,7 @@ fn parse_err_block_label_colon() {
         }"#;
 
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 9, column: 13
         Unexpected `}`
         Expected whitespaces or `:`
@@ -1176,6 +1155,7 @@ fn parse_err_block_args() {
         }"#;
 
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 3, column: 47
         Unexpected `)`
         Expected whitespaces or `:`
@@ -1580,16 +1560,7 @@ fn block_inline_attrs_roundtrip() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
 
     verify_operation(op, ctx)?;
 
@@ -1597,14 +1568,7 @@ fn block_inline_attrs_roundtrip() -> Result<()> {
 
     // Parse again and print to confirm roundtrip
     let ctx2 = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx2, location::Source::InMemory),
-    );
-    let parsed2 = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed2 = parse_from_str(spaced(Operation::top_level_parser()), ctx2, &printed).unwrap();
 
     verify_operation(parsed2, ctx2)?;
 
@@ -1660,16 +1624,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         }"#;
 
     let ctx = &mut Context::new();
-    let op = {
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .unwrap()
-            .0
-    };
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
 
     verify_operation(op, ctx)?;
 
@@ -1701,14 +1656,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
 
     // Parse again and verify it's still valid
     let ctx2 = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx2, location::Source::InMemory),
-    );
-    let parsed2 = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .unwrap()
-        .0;
+    let parsed2 = parse_from_str(spaced(Operation::top_level_parser()), ctx2, &printed).unwrap();
 
     verify_operation(parsed2, ctx2)?;
 

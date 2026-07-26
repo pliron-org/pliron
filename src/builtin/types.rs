@@ -170,7 +170,7 @@ impl FloatTypeInterface for FP16Type {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, string::ToString, vec};
+    use alloc::{format, vec};
     use expect_test::expect;
 
     use super::*;
@@ -179,8 +179,8 @@ mod tests {
         builtin::types::{IntegerType, Signedness},
         combine::{Parser, eof},
         context::Context,
-        location,
-        parsable::{self, Parsable, state_stream_from_iterator},
+        parsable::parse_from_str,
+        result::ExpectOk,
         r#type::Type,
     };
 
@@ -226,16 +226,9 @@ mod tests {
     #[test]
     fn test_integer_parsing() {
         let mut ctx = Context::new();
-        let state_stream = state_stream_from_iterator(
-            "si64".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
 
-        let res = IntegerType::parser(())
-            .and(eof())
-            .parse(state_stream)
-            .unwrap()
-            .0
+        let res = parse_from_str(IntegerType::parser(()).and(eof()), &mut ctx, "si64")
+            .expect_ok(&ctx)
             .0;
         assert!(res == IntegerType::get(&ctx, 64, Signedness::Signed))
     }
@@ -243,16 +236,14 @@ mod tests {
     #[test]
     fn test_integer_parsing_errs() {
         let mut ctx = Context::new();
-        let a = "asi64".to_string();
-        let state_stream = state_stream_from_iterator(
-            a.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+
+        let err_msg = format!(
+            "{}",
+            parse_from_str(IntegerType::parser(()), &mut ctx, "asi64").unwrap_err()
         );
 
-        let res = IntegerType::parser(()).parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
-
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 1
             Unexpected `a`
             Expected whitespaces, si, ui or i
@@ -266,17 +257,13 @@ mod tests {
 
         let si32 = IntegerType::get(&ctx, 32, Signedness::Signed);
 
-        let state_stream = state_stream_from_iterator(
-            "<() -> (builtin.integer si32)>".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let res = FunctionType::parser(())
-            .and(eof())
-            .parse(state_stream)
-            .unwrap()
-            .0
-            .0;
+        let res = parse_from_str(
+            FunctionType::parser(()).and(eof()),
+            &mut ctx,
+            "<() -> (builtin.integer si32)>",
+        )
+        .expect_ok(&ctx)
+        .0;
         assert!(res == FunctionType::get(&ctx, vec![], vec![si32.into()]))
     }
 }

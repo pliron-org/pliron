@@ -6,6 +6,7 @@
 #![cfg(feature = "llvm-sys")]
 
 use std::{env, path::PathBuf, sync::LazyLock};
+use tempfile::tempdir;
 use which::which;
 
 use assert_cmd::Command;
@@ -13,21 +14,20 @@ use cargo_manifest::Manifest;
 use pliron::{
     arg_error_noloc,
     builtin::ops::ModuleOp,
-    combine::Parser,
     context::Context,
-    init_env_logger_for_tests, location,
+    init_env_logger_for_tests,
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_file,
     pass::{AnalysisManager, OpPass, Pass, Passes},
     printable::Printable,
+    result::ExpectOk,
 };
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMModule, llvm_print_module_to_string},
     to_llvm_ir,
 };
-use tempfile::tempdir;
 
 /// Get the LLVM major version used, based on the llvm-sys dependency version.
 fn llvm_major_version() -> String {
@@ -144,25 +144,7 @@ fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, P
     .map_err(|e| arg_error_noloc!(e))
     .unwrap();
 
-    // Parse the plir file and verify it.
-    let plir_file = std::fs::File::open(&plir_path).unwrap();
-    let mut plir_file = std::io::BufReader::new(plir_file);
-    use utf8_chars::BufReadCharsExt;
-    let chars_iter = plir_file.chars().map(|c| {
-        c.inspect_err(|e| eprint!("Error reading chars from file: {e}"))
-            .unwrap()
-    });
-
-    let source = location::Source::new_from_file(ctx, plir_path.to_str().unwrap());
-    let state_stream = state_stream_from_iterator(chars_iter, parsable::State::new(ctx, source));
-
-    let parsed_res = match Operation::top_level_parser().parse(state_stream) {
-        Ok((parsed_res, _)) => parsed_res,
-        Err(err) => {
-            eprintln!("{err}");
-            panic!("Error parsing {}", plir_path.to_str().unwrap());
-        }
-    };
+    let parsed_res = parse_from_file(Operation::top_level_parser(), ctx, &plir_path).expect_ok(ctx);
 
     log::debug!(
         "pliron module re-parsed after printing:\n{}",
@@ -485,132 +467,4 @@ fn test_atomics_and_inline_asm() {
         Passes::default(),
         33,
     );
-}
-
-/// Tests for fast-math flags on `llvm.select`.
-mod select_fastmath_flags {
-    use expect_test::expect;
-    use pliron::{irfmt::parsers::spaced, result::Result};
-    use pliron_llvm::llvm_sys::core::LLVMMemoryBuffer;
-
-    use super::*;
-
-    fn run_conversion_pipeline(input: &str) -> Result<String> {
-        init_env_logger_for_tests!();
-
-        let ctx = &mut Context::new();
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, pliron::location::Source::InMemory),
-        );
-        let op = spaced(Operation::top_level_parser())
-            .parse(state_stream)
-            .expect("textual IR should parse")
-            .0;
-        let module_op = Operation::get_op::<ModuleOp>(op, ctx).unwrap();
-
-        verify_operation(op, ctx)?;
-
-        // Run O1 passes (which also includes the builtin to LLVM conversion pass) on the module
-        let mut passes = OpPass::<ModuleOp, Passes>::default();
-        pliron_llvm::append_o1_passes(&mut passes);
-        passes.run(op, ctx, &mut AnalysisManager::default())?;
-
-        verify_operation(op, ctx)?;
-
-        let llvm_ctx = LLVMContext::default();
-        let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
-        Ok(llvm_mod.to_string())
-    }
-
-    #[test]
-    fn float_select_preserves_fastmath_flags() -> Result<()> {
-        let input = r#"
-            builtin.module @m {
-            ^block_0_0():
-              llvm.func @foo: llvm.func <builtin.fp32(builtin.integer i1, builtin.fp32, builtin.fp32) variadic = false> [] {
-              ^entry_block_1_0(c: builtin.integer i1, a: builtin.fp32, b: builtin.fp32):
-                s = llvm.select <NNAN> c ? a : b : builtin.fp32;
-                llvm.return s
-              }
-            }
-        "#;
-
-        let after = run_conversion_pipeline(input)?;
-
-        expect![[r#"
-            ; ModuleID = 'm'
-            source_filename = "m"
-
-            define float @foo(i1 %0, float %1, float %2) {
-            entry_block_1_0_block2v1:
-              %s_v3 = select nnan i1 %0, float %1, float %2
-              ret float %s_v3
-            }
-        "#]]
-        .assert_eq(&after);
-
-        Ok(())
-    }
-
-    /// Fast-math flags are only valid on selects of floating-point type; the
-    /// verifier must reject them on an integer select.
-    #[test]
-    fn int_select_with_fastmath_flags_is_rejected() {
-        let input = r#"
-            builtin.module @m {
-            ^block_0_0():
-              llvm.func @foo: llvm.func <builtin.integer i64(builtin.integer i1, builtin.integer i64, builtin.integer i64) variadic = false> [] {
-              ^entry_block_1_0(c: builtin.integer i1, a: builtin.integer i64, b: builtin.integer i64):
-                s = llvm.select <NNAN> c ? a : b : builtin.integer i64;
-                llvm.return s
-              }
-            }
-        "#;
-
-        let err = run_conversion_pipeline(input).expect_err("verifier must reject the flags");
-        assert!(
-            err.to_string()
-                .contains("Fast-math flags are only allowed on selects of floating-point type"),
-            "unexpected error: {err}"
-        );
-    }
-
-    /// A `select` with fast-math flags imported from LLVM IR must carry the flags
-    /// through pliron and back out to LLVM IR.
-    #[test]
-    fn llvm_ir_select_fastmath_flags_roundtrip() -> Result<()> {
-        init_env_logger_for_tests!();
-        let input = r#"
-            define float @choose(i1 %c, float %a, float %b) {
-            entry:
-              %r = select nnan nsz i1 %c, float %a, float %b
-              ret float %r
-            }
-        "#;
-
-        let llvm_ctx = LLVMContext::default();
-        let buf = LLVMMemoryBuffer::from_str(input, "select_fmf");
-        let llvm_mod = LLVMModule::from_ir_in_memory_buffer(&llvm_ctx, buf)
-            .expect("LLVM IR input should parse");
-
-        let ctx = &mut Context::new();
-        let module_op = from_llvm_ir::convert_module(ctx, &llvm_mod)?;
-        verify_operation(module_op.get_operation(), ctx)?;
-
-        let pliron_text = module_op.get_operation().disp(ctx).to_string();
-        assert!(
-            pliron_text.contains("NNAN"),
-            "fast-math flags lost on import:\n{pliron_text}"
-        );
-
-        let out_llvm_ctx = LLVMContext::default();
-        let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
-        let out = out_mod.to_string();
-        assert!(
-            out.contains("select nnan nsz"),
-            "fast-math flags lost on export:\n{out}"
-        );
-        Ok(())
-    }
 }

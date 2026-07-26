@@ -616,9 +616,9 @@ mod tests {
         context::Context,
         identifier::Identifier,
         irfmt::parsers::attr_parser,
-        location,
-        parsable::{self, state_stream_from_iterator},
+        parsable::parse_from_str,
         printable::Printable,
+        result::ExpectOk,
         utils::apint::APInt,
     };
 
@@ -651,16 +651,12 @@ mod tests {
         );
 
         let attr_input = "builtin.integer <0: builtin.unit>";
-        let state_stream = state_stream_from_iterator(
-            attr_input.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
 
-        let parse_err = attr_parser()
-            .parse(state_stream)
+        let parse_err = parse_from_str(attr_parser(), &mut ctx, attr_input)
             .err()
-            .expect("Integer attribute with non-integer type shouldn't be parsed successfully");
+            .unwrap();
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 21
             Unexpected `b`
             Expected whitespaces, si, ui, i or whitespace
@@ -689,29 +685,20 @@ mod tests {
         );
 
         let attr_input = "builtin.string \"hello\"";
-        let state_stream = state_stream_from_iterator(
-            attr_input.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let attr = attr_parser().parse(state_stream).unwrap().0;
+        let attr = parse_from_str(attr_parser(), &mut ctx, attr_input).expect_ok(&ctx);
         assert_eq!(attr.disp(&ctx).to_string(), attr_input);
 
         let attr_input = "builtin.string \"hello \\\"world\\\"\"";
-        let state_stream = state_stream_from_iterator(
-            attr_input.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let attr_parsed = attr_parser().parse(state_stream).unwrap().0;
+        let attr_parsed = parse_from_str(attr_parser(), &mut ctx, attr_input).expect_ok(&ctx);
         assert_eq!(attr_parsed.disp(&ctx).to_string(), attr_input,);
 
         // Unsupported escaped character.
-        let state_stream = state_stream_from_iterator(
-            "builtin.string \"hello \\k \"".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+        let err_msg = format!(
+            "{}",
+            parse_from_str(attr_parser(), &mut ctx, "builtin.string \"hello \\k \"").unwrap_err()
         );
-        let res = attr_parser().parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 23
             Unexpected escaped character \k
         "#]];
@@ -782,11 +769,7 @@ mod tests {
         assert!(ty_interface.get_type(&ctx) == ty);
 
         let ty_attr = ty_attr.disp(&ctx).to_string();
-        let state_stream = state_stream_from_iterator(
-            ty_attr.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let ty_attr_parsed = attr_parser().parse(state_stream).unwrap().0;
+        let ty_attr_parsed = parse_from_str(attr_parser(), &mut ctx, &ty_attr).expect_ok(&ctx);
         assert_eq!(ty_attr_parsed.disp(&ctx).to_string(), ty_attr);
     }
 
@@ -800,11 +783,7 @@ mod tests {
         assert_eq!(attr_parsed.0, sizes);
 
         let attr_disp = attr.disp(&ctx).to_string();
-        let state_stream = state_stream_from_iterator(
-            attr_disp.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let attr_parsed = attr_parser().parse(state_stream).unwrap().0;
+        let attr_parsed = parse_from_str(attr_parser(), &mut ctx, &attr_disp).expect_ok(&ctx);
         assert_eq!(attr_parsed.disp(&ctx).to_string(), attr_disp);
         let attr_parsed = attr_parsed
             .downcast_ref::<OperandSegmentSizesAttr>()

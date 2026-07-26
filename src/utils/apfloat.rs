@@ -33,10 +33,7 @@ use alloc::{
 };
 
 use downcast_rs::{Downcast, impl_downcast};
-use rustc_apfloat::ieee::{
-    BFloatS, DoubleS, Float8E4M3FNS, Float8E5M2S, HalfS, NonfiniteBehavior, QuadS, SingleS,
-    X87DoubleExtendedS,
-};
+use rustc_apfloat::ieee::{self, IeeeFloat, NonfiniteBehavior};
 use thiserror::Error;
 
 pub use rustc_apfloat::{
@@ -242,37 +239,23 @@ pub trait GetSemantics {
         Self: Sized;
 }
 
-macro_rules! impl_get_semantics_for_float {
-    ($ty_name:ty, $struct_name:ty) => {
-        impl GetSemantics for $ty_name {
-            fn get_semantics() -> Semantics {
-                use rustc_apfloat::ieee::Semantics;
-                crate::utils::apfloat::Semantics {
-                    bits: <$struct_name>::BITS,
-                    exp_bits: <$struct_name>::EXP_BITS,
-                    precision: <$struct_name>::PRECISION,
-                    nonfinite_behavior: <$struct_name>::NONFINITE_BEHAVIOR,
-                    max_exp: <$struct_name>::MAX_EXP,
-                    ieee_max_exp: <$struct_name>::IEEE_MAX_EXP,
-                    min_exp: <$struct_name>::MIN_EXP,
-                    ieee_min_exp: <$struct_name>::IEEE_MIN_EXP,
-                    nan_significand_base: <$struct_name>::NAN_SIGNIFICAND_BASE,
-                    nan_payload_mask: <$struct_name>::NAN_PAYLOAD_MASK,
-                    qnan_significand: <$struct_name>::QNAN_SIGNIFICAND,
-                }
-            }
+impl<S: ieee::Semantics> GetSemantics for IeeeFloat<S> {
+    fn get_semantics() -> Semantics {
+        Semantics {
+            bits: S::BITS,
+            exp_bits: S::EXP_BITS,
+            precision: S::PRECISION,
+            nonfinite_behavior: S::NONFINITE_BEHAVIOR,
+            max_exp: S::MAX_EXP,
+            ieee_max_exp: S::IEEE_MAX_EXP,
+            min_exp: S::MIN_EXP,
+            ieee_min_exp: S::IEEE_MIN_EXP,
+            nan_significand_base: S::NAN_SIGNIFICAND_BASE,
+            nan_payload_mask: S::NAN_PAYLOAD_MASK,
+            qnan_significand: S::QNAN_SIGNIFICAND,
         }
-    };
+    }
 }
-
-impl_get_semantics_for_float!(BFloat, BFloatS);
-impl_get_semantics_for_float!(Double, DoubleS);
-impl_get_semantics_for_float!(Float8E4M3FN, Float8E4M3FNS);
-impl_get_semantics_for_float!(Float8E5M2, Float8E5M2S);
-impl_get_semantics_for_float!(Half, HalfS);
-impl_get_semantics_for_float!(Quad, QuadS);
-impl_get_semantics_for_float!(Single, SingleS);
-impl_get_semantics_for_float!(X87DoubleExtended, X87DoubleExtendedS);
 
 /// This is an object safe version of the [Float] trait.
 /// *Panics* if operands to an operation are of different float types.
@@ -771,9 +754,9 @@ mod tests {
 
     use crate::{
         context::Context,
-        location,
-        parsable::{self, state_stream_from_iterator},
+        parsable::parse_from_str,
         printable::Printable,
+        result::ExpectOk,
         utils::apfloat::{double_to_f64, f32_to_single, f64_to_double, single_to_f32},
     };
 
@@ -785,19 +768,8 @@ mod tests {
     where
         T: Printable + Parsable<Arg = (), Parsed = T> + PartialEq,
     {
-        let parsed = {
-            let s = value.disp(ctx).to_string();
-            let mut state_stream = state_stream_from_iterator(
-                s.chars(),
-                parsable::State::new(ctx, location::Source::InMemory),
-            );
-            match T::parse(&mut state_stream, ()) {
-                Ok((parsed_res, _)) => parsed_res,
-                Err(err) => {
-                    panic!("{}\nError parsing {}", err.into_inner().error, s);
-                }
-            }
-        };
+        let s = value.disp(ctx).to_string();
+        let parsed = parse_from_str(T::parser(()), ctx, &s).expect_ok(ctx);
         assert!(value == parsed, "Failed for value: {}", value.disp(ctx));
     }
 
@@ -925,15 +897,7 @@ mod tests {
         let ctx = &mut Context::default();
         let nan = Single::from_str("NaN")?;
         let s = nan.disp(ctx).to_string();
-        let parsed = {
-            let mut state_stream = state_stream_from_iterator(
-                s.chars(),
-                parsable::State::new(ctx, location::Source::InMemory),
-            );
-            Single::parse(&mut state_stream, ())
-                .unwrap_or_else(|e| panic!("{}\nError parsing {}", e.into_inner().error, s))
-                .0
-        };
+        let parsed = parse_from_str(Single::parser(()), ctx, &s).expect_ok(ctx);
         assert!(
             parsed.is_nan(),
             "Failed to round-trip NaN, got {}",

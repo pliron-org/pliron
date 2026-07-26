@@ -284,10 +284,7 @@ pub struct ShuffleVectorMaskAttr(pub Vec<i32>);
 #[cfg(test)]
 mod tests {
     use expect_test::expect;
-    use pliron::{
-        location,
-        parsable::{self, state_stream_from_iterator},
-    };
+    use pliron::{parsable::parse_from_str, result::ExpectOk};
 
     use super::*;
 
@@ -300,12 +297,7 @@ mod tests {
         let flags_attr: FastmathFlagsAttr = flags.into();
         expect!["<>"].assert_eq(&flags_attr.disp(ctx).to_string());
 
-        let input = "<>";
-        let mut state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        let (parsed, _) = FastmathFlagsAttr::parse(&mut state_stream, ()).unwrap();
+        let parsed = parse_from_str(FastmathFlagsAttr::parser(()), ctx, "<>").expect_ok(ctx);
         assert_eq!(parsed, flags_attr);
     }
 
@@ -337,12 +329,8 @@ mod tests {
     fn test_fastmath_flags_attr_parse_valid() {
         let ctx = &mut Context::default();
 
-        let input = "<NNAN | ARCP>";
-        let mut state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        let (parsed, _) = FastmathFlagsAttr::parse(&mut state_stream, ()).unwrap();
+        let parsed =
+            parse_from_str(FastmathFlagsAttr::parser(()), ctx, "<NNAN | ARCP>").expect_ok(ctx);
         assert!(parsed.0.contains(FastmathFlags::NNAN));
         assert!(parsed.0.contains(FastmathFlags::ARCP));
     }
@@ -352,12 +340,7 @@ mod tests {
     fn test_fastmath_flags_attr_parse_fast() {
         let ctx = &mut Context::default();
 
-        let input = "<FAST>";
-        let mut state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        let (parsed, _) = FastmathFlagsAttr::parse(&mut state_stream, ()).unwrap();
+        let parsed = parse_from_str(FastmathFlagsAttr::parser(()), ctx, "<FAST>").expect_ok(ctx);
         assert!(parsed.0.contains(FastmathFlags::FAST));
 
         // FAST also means all the other flags.
@@ -373,16 +356,13 @@ mod tests {
     fn test_fastmath_flags_attr_parse_invalid() {
         let ctx = &mut Context::default();
         let input = "<INVALIDFLAG>";
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        match FastmathFlagsAttr::parser(()).parse(state_stream) {
-            Ok((parsed, _)) => {
+        match parse_from_str(FastmathFlagsAttr::parser(()), ctx, input) {
+            Ok(parsed) => {
                 panic!("Expected error, but got: {}", parsed);
             }
             Err(e) => {
                 expect![[r#"
+                    Compilation error: invalid input program.
                     Parse error at line: 1, column: 1
                     Error parsing fastmath flags: unrecognized named flag `INVALIDFLAG`
                 "#]]
@@ -393,14 +373,10 @@ mod tests {
 
     fn assert_attr_roundtrips<A>(ctx: &mut Context, attr: A)
     where
-        A: Parsable<Arg = (), Parsed = A> + Printable + PartialEq + std::fmt::Debug,
+        A: Parsable<Arg = (), Parsed = A> + Printable + PartialEq + core::fmt::Debug,
     {
         let printed = attr.disp(ctx).to_string();
-        let mut state_stream = state_stream_from_iterator(
-            printed.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        let (parsed, _) = A::parse(&mut state_stream, ()).unwrap();
+        let parsed = parse_from_str(A::parser(()), ctx, &printed).expect_ok(ctx);
         assert_eq!(parsed, attr, "round-trip mismatch for `{printed}`");
     }
 

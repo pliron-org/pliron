@@ -302,149 +302,94 @@ mod test {
     use expect_test::expect;
 
     use crate::{
-        context::Context,
-        location,
-        parsable::{self, state_stream_from_iterator},
-        printable::Printable,
+        context::Context, parsable::parse_from_str, printable::Printable, result::ExpectOk,
     };
 
     #[test]
     fn test_parse_type() {
         let mut ctx = Context::new();
 
-        let state_stream = state_stream_from_iterator(
-            "builtin.some".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+        let err_msg = format!(
+            "{}",
+            parse_from_str(type_parser(), &mut ctx, "builtin.some").unwrap_err()
         );
 
-        let res = type_parser().parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
-
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 1
             Unregistered type builtin.some
         "#]];
         expected_err_msg.assert_eq(&err_msg);
 
-        let state_stream = state_stream_from_iterator(
-            "builtin.integer a".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+        let err_msg = format!(
+            "{}",
+            parse_from_str(type_parser(), &mut ctx, "builtin.integer a").unwrap_err()
         );
 
-        let res = type_parser().parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
-
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 17
             Unexpected `a`
             Expected whitespaces, si, ui or i
         "#]];
         expected_err_msg.assert_eq(&err_msg);
 
-        let state_stream = state_stream_from_iterator(
-            "builtin.integer si32".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let parsed = type_parser().parse(state_stream).unwrap().0;
+        let parsed =
+            parse_from_str(type_parser(), &mut ctx, "builtin.integer si32").expect_ok(&ctx);
         assert_eq!(parsed.disp(&ctx).to_string(), "builtin.integer si32");
     }
 
     #[test]
     fn test_hex_int_parser() {
-        use crate::{
-            context::Context,
-            location,
-            parsable::{self, state_stream_from_iterator},
-        };
+        use crate::{context::Context, parsable::parse_from_str, result::ExpectOk};
 
         let mut ctx = Context::new();
 
         // Valid hex integer
-        let state_stream = state_stream_from_iterator(
-            "0xff".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: u64 = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: u64 = parse_from_str(hex_int_parser(), &mut ctx, "0xff").expect_ok(&ctx);
         assert_eq!(parsed, 0xff);
 
         // Valid hex integer with uppercase digits
-        let state_stream = state_stream_from_iterator(
-            "0xDEAD".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: u64 = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: u64 = parse_from_str(hex_int_parser(), &mut ctx, "0xDEAD").expect_ok(&ctx);
         assert_eq!(parsed, 0xDEAD);
 
         // u32 type
-        let state_stream = state_stream_from_iterator(
-            "0xCAFE".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: u32 = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: u32 = parse_from_str(hex_int_parser(), &mut ctx, "0xCAFE").expect_ok(&ctx);
         assert_eq!(parsed, 0xCAFEu32);
 
         // u8 type
-        let state_stream = state_stream_from_iterator(
-            "0x7f".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: u8 = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: u8 = parse_from_str(hex_int_parser(), &mut ctx, "0x7f").expect_ok(&ctx);
         assert_eq!(parsed, 0x7fu8);
 
         // i64 type
-        let state_stream = state_stream_from_iterator(
-            "0x1234".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: i64 = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: i64 = parse_from_str(hex_int_parser(), &mut ctx, "0x1234").expect_ok(&ctx);
         assert_eq!(parsed, 0x1234i64);
 
         // usize type
-        let state_stream = state_stream_from_iterator(
-            "0xABCDEF".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let parsed: usize = hex_int_parser().parse(state_stream).unwrap().0;
+        let parsed: usize = parse_from_str(hex_int_parser(), &mut ctx, "0xABCDEF").expect_ok(&ctx);
         assert_eq!(parsed, 0xABCDEFusize);
 
         // Value too large for u8 (0x100 = 256) should fail
         {
-            let state_stream = state_stream_from_iterator(
-                "0x100".chars(),
-                parsable::State::new(&mut ctx, location::Source::InMemory),
-            );
-            let res = hex_int_parser::<u8>().parse(state_stream);
+            let res = parse_from_str(hex_int_parser::<u8>(), &mut ctx, "0x100");
             assert!(res.is_err());
         }
 
         // Value too large for u16 (0x10000 = 65536) should fail
         {
-            let state_stream = state_stream_from_iterator(
-                "0x10000".chars(),
-                parsable::State::new(&mut ctx, location::Source::InMemory),
-            );
-            let res = hex_int_parser::<u16>().parse(state_stream);
+            let res = parse_from_str(hex_int_parser::<u16>(), &mut ctx, "0x10000");
             assert!(res.is_err());
         }
 
         // Missing 0x prefix should fail
         {
-            let state_stream = state_stream_from_iterator(
-                "ff".chars(),
-                parsable::State::new(&mut ctx, location::Source::InMemory),
-            );
-            let res = hex_int_parser::<u64>().parse(state_stream);
+            let res = parse_from_str(hex_int_parser::<u64>(), &mut ctx, "ff");
             assert!(res.is_err());
         }
 
         // No digits after 0x should fail
         {
-            let state_stream = state_stream_from_iterator(
-                "0x".chars(),
-                parsable::State::new(&mut ctx, location::Source::InMemory),
-            );
-            let res = hex_int_parser::<u64>().parse(state_stream);
+            let res = parse_from_str(hex_int_parser::<u64>(), &mut ctx, "0x");
             assert!(res.is_err());
         }
     }

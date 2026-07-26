@@ -3945,9 +3945,7 @@ impl SelectOp {
             vec![],
             0,
         );
-        let op = SelectOp { op };
-        op.set_attr_llvm_select_fast_math_flags(ctx, FastmathFlagsAttr::default());
-        op
+        Self { op }
     }
 
     /// Create a new [SelectOp] with fast-math flags set.
