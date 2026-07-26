@@ -300,9 +300,7 @@ pub fn parse_from_file<'a, P: Parser<StateStream<'a>>>(
 ) -> Result<P::Output> {
     let source = location::Source::new_from_file(ctx, path);
 
-    // An owned iterator over the file's chars, so that it doesn't need to
-    // borrow from any value local to this function (which wouldn't live
-    // long enough to satisfy `StateStream<'a>`).
+    // An owned iterator over the file's chars, to please the borrow checker.
     struct FileChars<'a> {
         reader: BufReader<File>,
         path: &'a Path,

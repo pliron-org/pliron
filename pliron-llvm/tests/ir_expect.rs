@@ -3,6 +3,8 @@
 
 //! General tests that expect a known (golden) IR.
 
+#![cfg(feature = "llvm-sys")]
+
 use expect_test::expect;
 use pliron::{
     context::Context, init_env_logger_for_tests, op::Op, operation::verify_operation,

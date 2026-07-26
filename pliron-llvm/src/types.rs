@@ -421,10 +421,9 @@ mod tests {
         derive::{pliron_type, verify_succ},
         identifier::Identifier,
         irfmt::parsers::{spaced, type_parser},
-        location,
-        parsable::{self, Parsable, ParseResult, StateStream, state_stream_from_iterator},
+        parsable::{Parsable, ParseResult, StateStream, parse_from_str},
         printable::{self, Printable},
-        result::Result,
+        result::{ExpectOk, Result},
         r#type::{TypeHandle, TypedHandle},
     };
 
@@ -551,12 +550,12 @@ mod tests {
     fn test_pointer_type_parsing() {
         let mut ctx = Context::new();
 
-        let state_stream = state_stream_from_iterator(
-            "llvm.typed_ptr <builtin.integer si64>".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(
+            type_parser(),
+            &mut ctx,
+            "llvm.typed_ptr <builtin.integer si64>",
+        )
+        .expect_ok(&ctx);
         assert_eq!(
             &res.disp(&ctx).to_string(),
             "llvm.typed_ptr <builtin.integer si64>"
@@ -569,11 +568,7 @@ mod tests {
 
         // The address space is always printed, so addrspace 0 round-trips as
         // `llvm.ptr (0)`.
-        let state_stream = state_stream_from_iterator(
-            "llvm.ptr (0)".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(type_parser(), &mut ctx, "llvm.ptr (0)").expect_ok(&ctx);
         assert_eq!(res.disp(&ctx).to_string().trim(), "llvm.ptr (0)");
         assert_eq!(
             res.deref(&ctx)
@@ -584,11 +579,7 @@ mod tests {
         );
 
         // A non-zero address space round-trips as `llvm.ptr (N)`.
-        let state_stream = state_stream_from_iterator(
-            "llvm.ptr (3)".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(type_parser(), &mut ctx, "llvm.ptr (3)").expect_ok(&ctx);
         assert_eq!(res.disp(&ctx).to_string().trim(), "llvm.ptr (3)");
         assert_eq!(
             res.deref(&ctx)
@@ -602,11 +593,7 @@ mod tests {
     #[test]
     fn test_fp16_type_roundtrip() {
         let mut ctx = Context::new();
-        let state_stream = state_stream_from_iterator(
-            "builtin.fp16".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(type_parser(), &mut ctx, "builtin.fp16").expect_ok(&ctx);
         assert_eq!(res.disp(&ctx).to_string().trim(), "builtin.fp16");
         assert!(
             res.deref(&ctx)
@@ -619,13 +606,12 @@ mod tests {
     fn test_struct_type_parsing() {
         let mut ctx = Context::new();
 
-        let state_stream = state_stream_from_iterator(
-            "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>"
-                .chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(
+            type_parser(),
+            &mut ctx,
+            "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>",
+        )
+        .expect_ok(&ctx);
         assert_eq!(
             &res.disp(&ctx).to_string(),
             "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>"
@@ -633,11 +619,7 @@ mod tests {
 
         // Test parsing an opaque struct.
         let test_string = "llvm.struct <ExternStruct>";
-        let state_stream = state_stream_from_iterator(
-            test_string.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
         assert_eq!(&res.disp(&ctx).to_string(), test_string);
         {
             let res = res.deref(&ctx);
@@ -647,11 +629,7 @@ mod tests {
 
         // Test parsing an unnamed struct.
         let test_string = "llvm.struct <{ builtin.integer i8 }>";
-        let state_stream = state_stream_from_iterator(
-            test_string.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let res = type_parser().parse(state_stream).unwrap().0;
+        let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
         assert_eq!(&res.disp(&ctx).to_string(), test_string);
         {
             let res = res.deref(&ctx);
@@ -664,21 +642,25 @@ mod tests {
     fn test_struct_type_errs() {
         let mut ctx = Context::new();
 
-        let state_stream = state_stream_from_iterator(
-            "llvm.struct < My1 { builtin.integer i8 } >".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-        let _ = type_parser().parse(state_stream).unwrap().0;
+        let _ = parse_from_str(
+            type_parser(),
+            &mut ctx,
+            "llvm.struct < My1 { builtin.integer i8 } >",
+        )
+        .expect_ok(&ctx);
 
-        let state_stream = state_stream_from_iterator(
-            "llvm.struct < My1 { builtin.integer i16 } >".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+        let err_msg = format!(
+            "{}",
+            parse_from_str(
+                type_parser(),
+                &mut ctx,
+                "llvm.struct < My1 { builtin.integer i16 } >",
+            )
+            .unwrap_err()
         );
-
-        let res = type_parser().parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
 
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 15
             struct My1 already exists and is different
         "#]];
@@ -692,12 +674,9 @@ mod tests {
         let si32 = IntegerType::get(&ctx, 32, Signedness::Signed);
 
         let input = "llvm.func <llvm.void (builtin.integer si32) variadic = false>";
-        let state_stream = state_stream_from_iterator(
-            input.chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let res = type_parser().and(eof()).parse(state_stream).unwrap().0.0;
+        let res = parse_from_str(type_parser().and(eof()), &mut ctx, input)
+            .expect_ok(&ctx)
+            .0;
 
         let void_ty = VoidType::get(&ctx);
         assert!(res == FuncType::get(&ctx, void_ty.to_handle(), vec![si32.into()], false).into());

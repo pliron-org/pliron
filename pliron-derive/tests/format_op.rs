@@ -3,7 +3,6 @@
 
 //! Test format derive for `Op`s.
 
-use ::pliron::combine::Parser;
 use expect_test::expect;
 use pliron::{
     builtin::op_interfaces::{
@@ -11,10 +10,9 @@ use pliron::{
         NResultsInterface, OneOpdInterface, OneRegionInterface, OneResultInterface,
     },
     context::Context,
-    location,
     op::Op,
     operation::{Operation, verify_operation},
-    parsable::{self, parse_from_str, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
     result::ExpectOk,
 };
@@ -1042,16 +1040,11 @@ fn multiple_regions2_op() {
                 test.return res1
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let actual = Operation::top_level_parser()
-        .parse(state_stream)
+    let actual = parse_from_str(Operation::top_level_parser(), ctx, printed)
         .err()
         .unwrap();
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 1, column: 1
         Regions in a top-level operation must be IsolatedFromAbove
     "#]];
@@ -1080,16 +1073,11 @@ fn multiple_regions3_op() {
             }
         ]";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let actual = Operation::top_level_parser()
-        .parse(state_stream)
+    let actual = parse_from_str(Operation::top_level_parser(), ctx, printed)
         .err()
         .unwrap();
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 1, column: 1
         Regions in a top-level operation must be IsolatedFromAbove
     "#]];

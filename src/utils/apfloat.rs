@@ -771,9 +771,9 @@ mod tests {
 
     use crate::{
         context::Context,
-        location,
-        parsable::{self, state_stream_from_iterator},
+        parsable::parse_from_str,
         printable::Printable,
+        result::ExpectOk,
         utils::apfloat::{double_to_f64, f32_to_single, f64_to_double, single_to_f32},
     };
 
@@ -785,19 +785,8 @@ mod tests {
     where
         T: Printable + Parsable<Arg = (), Parsed = T> + PartialEq,
     {
-        let parsed = {
-            let s = value.disp(ctx).to_string();
-            let mut state_stream = state_stream_from_iterator(
-                s.chars(),
-                parsable::State::new(ctx, location::Source::InMemory),
-            );
-            match T::parse(&mut state_stream, ()) {
-                Ok((parsed_res, _)) => parsed_res,
-                Err(err) => {
-                    panic!("{}\nError parsing {}", err.into_inner().error, s);
-                }
-            }
-        };
+        let s = value.disp(ctx).to_string();
+        let parsed = parse_from_str(T::parser(()), ctx, &s).expect_ok(ctx);
         assert!(value == parsed, "Failed for value: {}", value.disp(ctx));
     }
 
@@ -925,15 +914,7 @@ mod tests {
         let ctx = &mut Context::default();
         let nan = Single::from_str("NaN")?;
         let s = nan.disp(ctx).to_string();
-        let parsed = {
-            let mut state_stream = state_stream_from_iterator(
-                s.chars(),
-                parsable::State::new(ctx, location::Source::InMemory),
-            );
-            Single::parse(&mut state_stream, ())
-                .unwrap_or_else(|e| panic!("{}\nError parsing {}", e.into_inner().error, s))
-                .0
-        };
+        let parsed = parse_from_str(Single::parser(()), ctx, &s).expect_ok(ctx);
         assert!(
             parsed.is_nan(),
             "Failed to round-trip NaN, got {}",

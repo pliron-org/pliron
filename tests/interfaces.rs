@@ -15,7 +15,7 @@ use pliron::{
         ops::ModuleOp,
         types::{IntegerType, UnitType},
     },
-    combine::{Parser, stream::position::SourcePosition},
+    combine::stream::position::SourcePosition,
     common_traits::Verify,
     context::Context,
     derive::{
@@ -23,13 +23,10 @@ use pliron::{
         pliron_op, pliron_type, type_interface, type_interface_impl,
     },
     identifier::Identifier,
-    input_error,
-    location::{self, Located, Location, Source},
+    location::{Located, Location, Source},
     op::{Op, OpObj, op_cast, verify_op},
     operation::{Operation, verify_operation},
-    parsable::{
-        self, Parsable, ParseResult, StateStream, parse_from_str, state_stream_from_iterator,
-    },
+    parsable::{Parsable, ParseResult, StateStream, parse_from_str},
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
     std_deps::sync::{LazyLock, Mutex},
@@ -1003,22 +1000,7 @@ fn test_outline_printonce_attr() -> Result<()> {
 
     // Try parsing the just printed output.
 
-    let parsed_op = {
-        let mut state_stream = state_stream_from_iterator(
-            printed.chars(),
-            parsable::State::new(ctx, location::Source::InMemory),
-        );
-        Operation::top_level_parser()
-            .parse_stream(&mut state_stream)
-            .into_result()
-            .map_err(|err| {
-                let err = err.into_inner();
-                let pos = err.error.position;
-                input_error!(Location::SrcPos { src, pos }, err.error)
-            })
-    };
-
-    let parsed_op = parsed_op.expect_ok(ctx).0;
+    let parsed_op = parse_from_str(Operation::top_level_parser(), ctx, &printed).expect_ok(ctx);
 
     verify_operation(parsed_op, ctx)?;
     expect![[r#"
