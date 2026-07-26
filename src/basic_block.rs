@@ -59,12 +59,12 @@ impl BlockArgument {
     }
 
     /// Get the [Type](crate::type::Type) of this argument.
-    pub(crate) fn get_type(&self, _ctx: &Context) -> TypeHandle {
+    pub(crate) fn get_type(&self) -> TypeHandle {
         self.ty
     }
 
     /// Set the [Type](crate::type::Type) of this argument.
-    pub(crate) fn set_type(&mut self, _ctx: &Context, ty: TypeHandle) {
+    pub(crate) fn set_type(&mut self, ty: TypeHandle) {
         self.ty = ty;
     }
 
@@ -78,8 +78,8 @@ impl BlockArgument {
 }
 
 impl Typed for BlockArgument {
-    fn get_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_type(ctx)
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.get_type()
     }
 }
 
@@ -155,7 +155,7 @@ impl BasicBlock {
 
     /// Set the block's label.
     /// This corresponds to the [given_name](Named::given_name) of this block.
-    pub fn set_label(&mut self, _ctx: &Context, label: Option<Identifier>) {
+    pub fn set_label(&mut self, label: Option<Identifier>) {
         self.label = label;
     }
 
@@ -453,7 +453,7 @@ impl Printable for BasicBlock {
                     format!(
                         "{}: {}",
                         arg.as_value(self.self_ptr).disp(ctx),
-                        arg.get_type(ctx).disp(ctx)
+                        arg.get_type().disp(ctx)
                     )
                 }),
                 ListSeparator::CharSpace(',')

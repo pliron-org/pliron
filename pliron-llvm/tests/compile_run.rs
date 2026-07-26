@@ -6,6 +6,7 @@
 #![cfg(feature = "llvm-sys")]
 
 use std::{env, path::PathBuf, sync::LazyLock};
+use tempfile::tempdir;
 use which::which;
 
 use assert_cmd::Command;
@@ -13,21 +14,20 @@ use cargo_manifest::Manifest;
 use pliron::{
     arg_error_noloc,
     builtin::ops::ModuleOp,
-    combine::Parser,
     context::Context,
-    init_env_logger_for_tests, location,
+    init_env_logger_for_tests,
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_file,
     pass::{AnalysisManager, OpPass, Pass, Passes},
     printable::Printable,
+    result::ExpectOk,
 };
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMModule, llvm_print_module_to_string},
     to_llvm_ir,
 };
-use tempfile::tempdir;
 
 /// Get the LLVM major version used, based on the llvm-sys dependency version.
 fn llvm_major_version() -> String {
@@ -144,25 +144,7 @@ fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, P
     .map_err(|e| arg_error_noloc!(e))
     .unwrap();
 
-    // Parse the plir file and verify it.
-    let plir_file = std::fs::File::open(&plir_path).unwrap();
-    let mut plir_file = std::io::BufReader::new(plir_file);
-    use utf8_chars::BufReadCharsExt;
-    let chars_iter = plir_file.chars().map(|c| {
-        c.inspect_err(|e| eprint!("Error reading chars from file: {e}"))
-            .unwrap()
-    });
-
-    let source = location::Source::new_from_file(ctx, plir_path.to_str().unwrap());
-    let state_stream = state_stream_from_iterator(chars_iter, parsable::State::new(ctx, source));
-
-    let parsed_res = match Operation::top_level_parser().parse(state_stream) {
-        Ok((parsed_res, _)) => parsed_res,
-        Err(err) => {
-            eprintln!("{err}");
-            panic!("Error parsing {}", plir_path.to_str().unwrap());
-        }
-    };
+    let parsed_res = parse_from_file(Operation::top_level_parser(), ctx, &plir_path).expect_ok(ctx);
 
     log::debug!(
         "pliron module re-parsed after printing:\n{}",
@@ -316,7 +298,7 @@ fn test_select() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("select.ll").to_str().unwrap(),
         Passes::default(),
-        100,
+        102,
     );
 }
 

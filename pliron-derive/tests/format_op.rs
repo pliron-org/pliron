@@ -3,7 +3,6 @@
 
 //! Test format derive for `Op`s.
 
-use ::pliron::combine::Parser;
 use expect_test::expect;
 use pliron::{
     builtin::op_interfaces::{
@@ -11,11 +10,11 @@ use pliron::{
         NResultsInterface, OneOpdInterface, OneRegionInterface, OneResultInterface,
     },
     context::Context,
-    location,
     op::Op,
     operation::{Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
+    result::ExpectOk,
 };
 use pliron_derive::{def_op, derive_op_interface_impl, format_op, verify_succ};
 mod common;
@@ -41,13 +40,7 @@ fn zero_results_zero_operands() {
     let printed = op.disp(ctx).to_string();
     expect![r#"test.zero_results_zero_operands "#].assert_eq(&printed);
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("ZeroResultsZeroOperands parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, &printed).expect_ok(ctx);
     expect![[r#"
         test.zero_results_zero_operands  !0
 
@@ -75,14 +68,7 @@ fn one_result_zero_operands() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultZeroOperands parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -119,14 +105,7 @@ fn one_result_zero_operands_canonical() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultZeroOperandsCanonical parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -164,14 +143,7 @@ fn one_result_one_operand() {
             test.return res1
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultOneOperand parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -210,14 +182,7 @@ fn two_result_two_operands() {
             test.return res1a
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("TwoResultTwoOperands parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -256,14 +221,7 @@ fn two_results_one_operand() {
             test.return res1a
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("TwoResultsOneOperand parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -302,14 +260,7 @@ fn opdtypes() {
             test.return res1
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultTwoOperands parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -349,14 +300,7 @@ fn one_result_one_operand_typesig() {
             test.return res1
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultOneOperandTypeSig parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -395,14 +339,7 @@ fn opdtype() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("OneResultTwoOperands parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -442,14 +379,7 @@ fn attr_op() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -488,14 +418,7 @@ fn attr_op2() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -521,14 +444,8 @@ fn attr_op2() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed_with_opt_attr.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed with optional attribute");
+    let res =
+        parse_from_str(Operation::top_level_parser(), ctx, printed_with_opt_attr).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -567,14 +484,7 @@ fn attr_op2_labeled() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -600,14 +510,8 @@ fn attr_op2_labeled() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed_with_opt_attr.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed with optional attribute");
+    let res =
+        parse_from_str(Operation::top_level_parser(), ctx, printed_with_opt_attr).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -646,14 +550,7 @@ fn attr_op2_labeled_delimited() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -679,14 +576,8 @@ fn attr_op2_labeled_delimited() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed_with_opt_attr.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed with optional attribute");
+    let res =
+        parse_from_str(Operation::top_level_parser(), ctx, printed_with_opt_attr).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -725,14 +616,7 @@ fn attr_op2_delimited() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -758,14 +642,8 @@ fn attr_op2_delimited() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed_with_opt_attr.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed with optional attribute");
+    let res =
+        parse_from_str(Operation::top_level_parser(), ctx, printed_with_opt_attr).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -801,14 +679,7 @@ fn attr_op3() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -850,14 +721,7 @@ fn if_op() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("IfOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -913,14 +777,7 @@ fn if_else_op() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("IfOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -977,14 +834,7 @@ fn br_op() {
             test.return arg0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("BrOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -1030,14 +880,7 @@ fn multiple_successors_op() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("MultipleSuccessorsOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -1095,14 +938,7 @@ fn multiple_regions_op() {
         test.return res
     }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("MultipleRegionsOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -1160,14 +996,7 @@ fn attr_dict_op() {
             test.return res0
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("AttrDictOp parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         builtin.func @testfunc: builtin.function <() -> ()> 
@@ -1211,16 +1040,11 @@ fn multiple_regions2_op() {
                 test.return res1
         }";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let actual = Operation::top_level_parser()
-        .parse(state_stream)
+    let actual = parse_from_str(Operation::top_level_parser(), ctx, printed)
         .err()
         .unwrap();
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 1, column: 1
         Regions in a top-level operation must be IsolatedFromAbove
     "#]];
@@ -1249,16 +1073,11 @@ fn multiple_regions3_op() {
             }
         ]";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-
-    let actual = Operation::top_level_parser()
-        .parse(state_stream)
+    let actual = parse_from_str(Operation::top_level_parser(), ctx, printed)
         .err()
         .unwrap();
     let expected_err = expect![[r#"
+        Compilation error: invalid input program.
         Parse error at line: 1, column: 1
         Regions in a top-level operation must be IsolatedFromAbove
     "#]];
@@ -1288,13 +1107,7 @@ fn multiple_regions4_op() {
             }
         ]";
 
-    let state_stream = state_stream_from_iterator(
-        printed.chars(),
-        parsable::State::new(ctx, location::Source::InMemory),
-    );
-    let (res, _) = Operation::top_level_parser()
-        .parse(state_stream)
-        .expect("MultipleRegions4 parser failed");
+    let res = parse_from_str(Operation::top_level_parser(), ctx, printed).expect_ok(ctx);
 
     expect![[r#"
         test.multiple_regions4 [

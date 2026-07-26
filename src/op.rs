@@ -34,7 +34,11 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{boxed::Box, string::String, string::ToString, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{
     fmt::{self, Display},
     hash::Hash,

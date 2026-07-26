@@ -14,7 +14,6 @@ use pliron::{
         types::{FunctionType, IntegerType, Signedness},
     },
     context::Context,
-    debug_info::set_operation_result_name,
     derive::pliron_op,
     identifier::Identifier,
     init_env_logger_for_tests, input_err,
@@ -151,12 +150,9 @@ pub fn const_ret_in_mod(ctx: &mut Context) -> Result<(ModuleOp, FuncOp, Constant
     // Create a `const 0` op and add it to bb.
     let const_op = ConstantOp::new(ctx, 0);
     const_op.get_operation().insert_at_front(bb, ctx);
-    set_operation_result_name(
-        ctx,
-        const_op.get_operation(),
-        0,
-        Some("c0".try_into().unwrap()),
-    );
+    const_op
+        .get_result(ctx)
+        .set_name(ctx, Some("c0".try_into().unwrap()));
 
     // Return the constant.
     let ret_op = ReturnOp::new(ctx, const_op.get_result(ctx));

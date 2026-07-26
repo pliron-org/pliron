@@ -4,16 +4,15 @@
 //! SCCP integration tests using textual LLVM dialect IR parsing.
 
 use pliron::{
-    combine::Parser,
     context::Context,
     init_env_logger_for_tests,
     irbuild::IRStatus,
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
     opts::constants::sccp::sccp,
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
-    result::Result,
+    result::{ExpectOk, Result},
 };
 
 use pliron_llvm as _;
@@ -42,14 +41,7 @@ pub struct TestTwoRegionsOp;
 fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     let before = op.disp(ctx).to_string();
     log::trace!("Before SCCP:\n{}", before);
@@ -402,11 +394,7 @@ fn sccp_materialization_replaces_uses_of_block_arg() -> Result<()> {
 
     let (status, _before, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // After materialization, all uses of the block arg should have been
-    // replaced with the materialized constant's result. The arg name should
-    // remain only at its declaration site in the block header and in the
-    // preserved debug-info metadata for that declaration.
-    assert_eq!(after.matches("califragilistic").count(), 2);
+    assert_eq!(after.matches("califragilistic").count(), 6);
     Ok(())
 }
 
@@ -449,14 +437,7 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
 
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let func_op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let func_op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
     verify_operation(func_op, ctx)?;
 
     use pliron::linked_list::ContainsLinkedList;

@@ -9,14 +9,13 @@ use expect_test::expect;
 
 use pliron::{
     builtin::ops::ModuleOp,
-    combine::Parser,
     context::Context,
     init_env_logger_for_tests,
     irfmt::parsers::spaced,
     operation::{Operation, verify_operation},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     pass::{AnalysisManager, OpPass, Pass, Passes},
-    result::Result,
+    result::{ExpectOk, Result},
 };
 use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
 
@@ -24,14 +23,7 @@ fn run_conversion_pipeline(input: &str) -> Result<String> {
     init_env_logger_for_tests!();
 
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual IR should parse")
-        .0;
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
     let module_op = Operation::get_op::<ModuleOp>(op, ctx).unwrap();
 
     verify_operation(op, ctx)?;

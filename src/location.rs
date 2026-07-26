@@ -22,7 +22,7 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
-    std_deps::{hash::FxHashSet, io::PathBuf},
+    std_deps::{hash::FxHashSet, path::PathBuf},
     uniqued_any::{self, UniquedKey},
 };
 
@@ -299,37 +299,12 @@ mod tests {
     use alloc::{format, string::ToString, vec};
     use expect_test::expect;
 
-    use crate::{
-        builtin::attributes::StringAttr,
-        combine::ParseError,
-        input_err,
-        location::Source,
-        parsable::{self, state_stream_from_iterator},
-    };
+    use crate::{builtin::attributes::StringAttr, parsable::parse_from_str, result::ExpectOk};
 
     use super::*;
 
     fn parse_location(input: &str, ctx: &mut Context) -> Location {
-        let state_stream =
-            state_stream_from_iterator(input.chars(), parsable::State::new(ctx, Source::InMemory));
-
-        let res = match Location::parser(()).parse(state_stream) {
-            Ok(loc) => Ok(loc.0),
-            Err(err) => {
-                let loc = Location::SrcPos {
-                    src: Source::InMemory,
-                    pos: err.position(),
-                };
-                input_err!(loc, "Failed to parse location: {}", err)
-            }
-        };
-
-        match res {
-            Ok(loc) => loc,
-            Err(e) => {
-                panic!("{}", e.disp(ctx))
-            }
-        }
+        parse_from_str(Location::parser(()), ctx, input).expect_ok(ctx)
     }
 
     fn print_location(loc: &Location, ctx: &Context) -> String {

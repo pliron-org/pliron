@@ -221,6 +221,7 @@ impl<T: Printable> Printable for Result<T> {
 /// Same as `unwrap`, but with the panic message printed using [Printable].
 pub trait ExpectOk<T> {
     /// Unwraps the result, panicking if it is an error.
+    /// Panic message is printed using [Printable] with the provided [Context].
     #[track_caller]
     fn expect_ok(self, ctx: &Context) -> T;
 }

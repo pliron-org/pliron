@@ -3925,8 +3925,9 @@ pub enum ShuffleVectorOpVerifyErr {
 /// | `res` | any type |
 #[pliron_op(
     name = "llvm.select",
-    format = "$0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
-    interfaces = [OneResultInterface, NOpdsInterface<3>]
+    format = "opt_attr($llvm_select_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` ? ` $1 ` : ` $2 ` : ` type($0)",
+    interfaces = [OneResultInterface, NOpdsInterface<3>],
+    attributes = (llvm_select_fast_math_flags: FastmathFlagsAttr),
 )]
 pub struct SelectOp;
 
@@ -3944,7 +3945,20 @@ impl SelectOp {
             vec![],
             0,
         );
-        SelectOp { op }
+        Self { op }
+    }
+
+    /// Create a new [SelectOp] with fast-math flags set.
+    pub fn new_with_fast_math_flags(
+        ctx: &mut Context,
+        cond: Value,
+        true_val: Value,
+        false_val: Value,
+        fast_math_flags: FastmathFlagsAttr,
+    ) -> Self {
+        let op = Self::new(ctx, cond, true_val, false_val);
+        op.set_attr_llvm_select_fast_math_flags(ctx, fast_math_flags);
+        op
     }
 }
 
@@ -3978,6 +3992,20 @@ impl Verify for SelectOp {
         if cond_ty.is_none_or(|ty| ty.width() != 1) {
             return verify_err!(loc, SelectOpVerifyErr::ConditionTypeErr);
         }
+
+        // LLVM permits fast-math flags on select only when the result type is
+        // a floating-point scalar or vector.
+        if let Some(fmf) = self.get_attr_llvm_select_fast_math_flags(ctx)
+            && *fmf != FastmathFlagsAttr::default()
+        {
+            let mut res_ty = ty;
+            if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
+                res_ty = vec_ty.elem_type();
+            }
+            if type_cast::<dyn FloatTypeInterface>(&*res_ty.deref(ctx)).is_none() {
+                return verify_err!(loc, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr);
+            }
+        }
         Ok(())
     }
 }
@@ -3988,6 +4016,8 @@ pub enum SelectOpVerifyErr {
     ResultTypeErr,
     #[error("Condition must be an i1 or a vector of i1 equal in length to the operand vectors")]
     ConditionTypeErr,
+    #[error("Fast-math flags are only allowed on selects of floating-point type")]
+    FastMathFlagsOnNonFloatErr,
 }
 
 /// Floating-point negation

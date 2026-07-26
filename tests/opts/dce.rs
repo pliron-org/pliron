@@ -5,7 +5,6 @@
 
 use pliron::{
     basic_block::BasicBlock,
-    combine::Parser,
     context::{Context, Ptr},
     init_env_logger_for_tests,
     irbuild::IRStatus,
@@ -13,9 +12,9 @@ use pliron::{
     op::Op,
     operation::{Operation, verify_operation},
     opts::dce::{BlockArgRemoval, dce},
-    parsable::{self, state_stream_from_iterator},
+    parsable::parse_from_str,
     printable::Printable,
-    result::Result,
+    result::{ExpectOk, Result},
 };
 
 use pliron_llvm as _;
@@ -89,14 +88,7 @@ impl SideEffects for MultiUseSinkOp {
 fn run_dce_on_text(input: &str) -> Result<(IRStatus, String, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     let before = op.disp(ctx).to_string();
     log::trace!("Before DCE:\n{}", before);
@@ -363,14 +355,7 @@ fn dce_region_containing_dead_op_safely_ignores_inner_dead_code() -> Result<()> 
   "#;
 
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let func_op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let func_op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     verify_operation(func_op, ctx)?;
     let _before = func_op.disp(ctx).to_string();

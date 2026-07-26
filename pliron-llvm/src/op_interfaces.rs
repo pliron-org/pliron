@@ -219,6 +219,7 @@ dict_key!(
 #[error("Fastmath flag missing on Op")]
 pub struct FastMathFlagMissingErr;
 
+/// Ops that have fast math flags.
 #[op_interface]
 pub trait FastMathFlags {
     /// Get the fast math flags on this [Op].

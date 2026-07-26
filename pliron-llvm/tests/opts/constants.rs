@@ -5,42 +5,24 @@
 //! [ConstFoldInterface] and [BranchOpFoldInterface] correctly
 
 use pliron::{
-    combine::Parser,
-    context::Context,
-    init_env_logger_for_tests,
-    irbuild::IRStatus,
-    irfmt::parsers::spaced,
-    operation::{Operation, verify_operation},
-    opts::constants::sccp::sccp,
-    parsable::{self, state_stream_from_iterator},
-    printable::Printable,
-    result::Result,
+    context::Context, init_env_logger_for_tests, irbuild::IRStatus, op::Op,
+    operation::verify_operation, opts::constants::sccp::sccp, printable::Printable, result::Result,
 };
 
-// Linking the crate registers the LLVM dialect
-use pliron_llvm as _;
+use pliron_llvm::ops::FuncOp;
+
+use crate::common;
 
 fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
-    let state_stream = state_stream_from_iterator(
-        input.chars(),
-        parsable::State::new(ctx, pliron::location::Source::InMemory),
-    );
-    let op = spaced(Operation::top_level_parser())
-        .parse(state_stream)
-        .expect("textual LLVM IR should parse")
-        .0;
+    let op: FuncOp = common::parse_op_verify(ctx, input)?;
 
     let before = op.disp(ctx).to_string();
-    log::trace!("Before SCCP:\n{}", before);
-    verify_operation(op, ctx)?;
-
-    let status = sccp(op, ctx)?;
-
+    let status = sccp(op.get_operation(), ctx)?;
     let after = op.disp(ctx).to_string();
-    log::trace!("After SCCP:\n{}", after);
-    verify_operation(op, ctx)?;
+    log::debug!("After SCCP:\n{}", after);
+    verify_operation(op.get_operation(), ctx)?;
     Ok((status, before, after))
 }
 

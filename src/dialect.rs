@@ -165,9 +165,9 @@ mod test {
 
     use crate::{
         context::Context,
-        location,
-        parsable::{self, Parsable, state_stream_from_iterator},
+        parsable::{Parsable, parse_from_str},
         printable::Printable,
+        result::ExpectOk,
     };
 
     use super::*;
@@ -176,26 +176,21 @@ mod test {
     fn parse_dialect_name() {
         let mut ctx = Context::new();
 
-        let state_stream = state_stream_from_iterator(
-            "non_existant".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
+        let err_msg = format!(
+            "{}",
+            parse_from_str(DialectName::parser(()), &mut ctx, "non_existant")
+                .err()
+                .unwrap()
         );
 
-        let res = DialectName::parser(()).parse(state_stream);
-        let err_msg = format!("{}", res.err().unwrap());
-
         let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
             Parse error at line: 1, column: 1
             Unregistered dialect non_existant
         "#]];
         expected_err_msg.assert_eq(&err_msg);
 
-        let state_stream = state_stream_from_iterator(
-            "builtin".chars(),
-            parsable::State::new(&mut ctx, location::Source::InMemory),
-        );
-
-        let parsed = DialectName::parser(()).parse(state_stream).unwrap().0;
+        let parsed = parse_from_str(DialectName::parser(()), &mut ctx, "builtin").expect_ok(&ctx);
         assert_eq!(parsed.disp(&ctx).to_string(), "builtin");
     }
 }

@@ -14,12 +14,16 @@ mod r#impl {
         pub use std::backtrace::{Backtrace, BacktraceStatus};
     }
 
+    pub mod path {
+        pub use std::path::{Path, PathBuf};
+    }
+
     pub mod io {
-        pub use std::path::PathBuf;
+        pub use std::io::BufReader;
     }
 
     pub mod fs {
-        pub use std::fs::write;
+        pub use std::fs::{File, write};
     }
 
     pub mod time {
@@ -31,6 +35,10 @@ mod r#impl {
         pub use std::collections::{HashMap, HashSet, hash_map, hash_set};
         pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
         pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
+    }
+
+    pub mod utf8_chars {
+        pub use utf8_chars::BufReadCharsExt;
     }
 }
 
@@ -76,7 +84,7 @@ mod r#impl {
         }
     }
 
-    pub mod io {
+    pub mod path {
         use alloc::string::{String, ToString};
         use core::ops::{Deref, DerefMut};
 
@@ -89,6 +97,10 @@ mod r#impl {
                 s.push('/');
                 s.push_str(path.as_ref());
                 s
+            }
+
+            pub fn display(&self) -> &str {
+                &self.0
             }
         }
 
@@ -110,6 +122,12 @@ mod r#impl {
             }
         }
 
+        impl From<&Path> for PathBuf {
+            fn from(value: &Path) -> Self {
+                PathBuf(value.0.to_string())
+            }
+        }
+
         impl Deref for PathBuf {
             type Target = String;
 
@@ -124,15 +142,43 @@ mod r#impl {
             }
         }
 
-        impl PathBuf {
+        pub struct Path(str);
+
+        impl Path {
             pub fn display(&self) -> &str {
+                &self.0
+            }
+        }
+
+        impl AsRef<str> for Path {
+            fn as_ref(&self) -> &str {
                 &self.0
             }
         }
     }
 
+    pub mod io {
+        pub use super::fs::File;
+
+        pub struct BufReader<R>(core::marker::PhantomData<R>);
+
+        impl<R> BufReader<R> {
+            pub fn new(_inner: R) -> Self {
+                BufReader(core::marker::PhantomData)
+            }
+        }
+    }
+
     pub mod fs {
-        pub use super::io::PathBuf;
+        /// A dummy file handle: without `std` there's no filesystem to back it.
+        pub struct File;
+
+        impl File {
+            pub fn open<P: AsRef<str>>(_path: P) -> Result<File, ()> {
+                Ok(File)
+            }
+        }
+
         pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(_path: P, _contents: C) -> Result<(), ()> {
             Ok(())
         }
@@ -157,6 +203,29 @@ mod r#impl {
         pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
         pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
     }
+
+    pub mod utf8_chars {
+        use core::fmt;
+
+        #[derive(Debug)]
+        pub struct Utf8CharsError;
+
+        impl fmt::Display for Utf8CharsError {
+            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+                f.write_str("utf8-chars is unavailable without the `std` feature")
+            }
+        }
+
+        pub trait BufReadCharsExt {
+            fn read_char(&mut self) -> Result<Option<char>, Utf8CharsError>;
+        }
+
+        impl<R> BufReadCharsExt for super::io::BufReader<R> {
+            fn read_char(&mut self) -> Result<Option<char>, Utf8CharsError> {
+                Ok(None)
+            }
+        }
+    }
 }
 
-pub use r#impl::{backtrace, fs, hash, io, sync, time};
+pub use r#impl::{backtrace, fs, hash, io, path, sync, time, utf8_chars};
