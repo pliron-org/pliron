@@ -266,7 +266,7 @@ mod tests {
         let main_addr = jit
             .lookup_symbol("main")
             .expect("Failed to lookup 'main' symbol");
-        let main_fn = unsafe { std::mem::transmute::<u64, fn() -> u64>(main_addr) };
+        let main_fn = unsafe { core::mem::transmute::<u64, fn() -> u64>(main_addr) };
         let fp_ty_size = main_fn();
         assert_eq!(
             fp_ty_size, 8,

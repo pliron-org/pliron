@@ -373,7 +373,7 @@ mod tests {
 
     fn assert_attr_roundtrips<A>(ctx: &mut Context, attr: A)
     where
-        A: Parsable<Arg = (), Parsed = A> + Printable + PartialEq + std::fmt::Debug,
+        A: Parsable<Arg = (), Parsed = A> + Printable + PartialEq + core::fmt::Debug,
     {
         let printed = attr.disp(ctx).to_string();
         let parsed = parse_from_str(A::parser(()), ctx, &printed).expect_ok(ctx);

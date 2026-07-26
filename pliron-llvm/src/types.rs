@@ -3,6 +3,7 @@
 
 //! [Type]s defined in the LLVM dialect.
 
+use core::hash::Hash;
 use pliron::{
     builtin::type_interfaces::FunctionTypeInterface,
     combine::{Parser, between, optional, token},
@@ -23,8 +24,6 @@ use pliron::{
     verify_err_noloc,
 };
 use thiserror::Error;
-
-use std::hash::Hash;
 
 /// Represents a c-like struct type.
 /// Limitations and warnings on its usage are similar to that in MLIR.
@@ -164,7 +163,7 @@ impl Printable for StructType {
     ) -> core::fmt::Result {
         write!(f, "<")?;
 
-        use std::cell::RefCell;
+        use core::cell::RefCell;
         // Ugly, but also the simplest way to avoid infinite recursion.
         // MLIR does the same: see LLVMTypeSyntax::printStructType.
         thread_local! {
@@ -203,7 +202,7 @@ impl Printable for StructType {
 }
 
 impl Hash for StructType {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         match &self.name {
             Some(name) => name.hash(state),
             None => self
