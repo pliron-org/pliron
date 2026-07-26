@@ -121,3 +121,38 @@ fn llvm_ir_select_fastmath_flags_roundtrip() -> Result<()> {
     );
     Ok(())
 }
+
+/// A `select` without fast-math flags imported from LLVM IR must not carry a
+/// spurious empty `llvm_select_fast_math_flags` attribute
+#[test]
+fn llvm_ir_select_without_fastmath_flags_omits_attr() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+            define float @choose(i1 %c, float %a, float %b) {
+            entry:
+              %r = select i1 %c, float %a, float %b
+              ret float %r
+            }
+        "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let buf = LLVMMemoryBuffer::from_str(input, "select_no_fmf");
+    let llvm_mod =
+        LLVMModule::from_ir_in_memory_buffer(&llvm_ctx, buf).expect("LLVM IR input should parse");
+
+    let ctx = &mut Context::new();
+    let module_op = from_llvm_ir::convert_module(ctx, &llvm_mod)?;
+    verify_operation(module_op.get_operation(), ctx)?;
+
+    let pliron_text = module_op.get_operation().disp(ctx).to_string();
+    assert!(
+        pliron_text.contains("llvm.select"),
+        "expected a select op in the imported IR:\n{pliron_text}"
+    );
+    assert!(
+        !pliron_text.contains("<>"),
+        "select without fast-math flags should not print an empty attribute:\n{pliron_text}"
+    );
+
+    Ok(())
+}

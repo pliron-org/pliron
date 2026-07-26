@@ -5,7 +5,7 @@
 
 #![cfg(feature = "llvm-sys")]
 
-use std::{env, path::PathBuf, sync::LazyLock};
+use std::{env, sync::LazyLock};
 use tempfile::tempdir;
 use which::which;
 
@@ -22,6 +22,7 @@ use pliron::{
     pass::{AnalysisManager, OpPass, Pass, Passes},
     printable::Printable,
     result::ExpectOk,
+    std_deps::path::PathBuf,
 };
 use pliron_llvm::{
     from_llvm_ir,
