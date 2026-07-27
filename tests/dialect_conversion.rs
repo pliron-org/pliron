@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
+use core::cell::Cell;
+
 use pliron::{
     basic_block::BasicBlock,
     builtin::{
@@ -8,8 +10,8 @@ use pliron::{
             IsTerminatorInterface, NOpdsInterface, NResultsInterface, OneOpdInterface,
             OneResultInterface, SingleBlockRegionInterface,
         },
-        ops::ModuleOp,
-        types::{IntegerType, Signedness},
+        ops::{FuncOp, ModuleOp},
+        types::{FunctionType, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     identifier::Identifier,
@@ -21,10 +23,12 @@ use pliron::{
         inserter::Inserter,
         rewriter::Rewriter,
     },
+    linked_list::ContainsLinkedList,
     op::Op,
     operation::Operation,
     result::Result,
     r#type::{TypeHandle, Typed},
+    value::DefiningEntity,
 };
 
 use pliron::derive::pliron_op;
@@ -73,6 +77,35 @@ impl ConsumerOp {
             0,
         );
         Self { op }
+    }
+}
+
+#[pliron_op(
+    name = "test.cycle",
+    format,
+    interfaces = [OneOpdInterface, OneResultInterface],
+    verifier = "succ",
+)]
+pub struct CycleOp;
+
+impl CycleOp {
+    fn new_unconnected(ctx: &mut Context, width: u32) -> Self {
+        let ty = IntegerType::get(ctx, width, Signedness::Signed).into();
+        let op = Operation::new(
+            ctx,
+            Self::get_concrete_op_info(),
+            vec![ty],
+            vec![],
+            vec![],
+            0,
+        );
+        Self { op }
+    }
+
+    fn new(ctx: &mut Context, width: u32, operand: pliron::value::Value) -> Self {
+        let op = Self::new_unconnected(ctx, width);
+        Operation::push_operand(op.get_operation(), ctx, operand);
+        op
     }
 }
 
@@ -290,6 +323,161 @@ fn dialect_conversion_value_replacement_preserves_type_history() -> Result<()> {
     assert!(conversion.saw_consumer);
 
     Ok(())
+}
+
+#[derive(Default)]
+struct CycleWidthConversion {
+    eligibility_checks: Cell<usize>,
+    rewrites: usize,
+}
+
+impl DialectConversion for CycleWidthConversion {
+    fn can_convert_op(&self, ctx: &Context, op: Ptr<Operation>) -> bool {
+        let Some(cycle_op) = Operation::get_op::<CycleOp>(op, ctx) else {
+            return false;
+        };
+
+        let eligibility_checks = self.eligibility_checks.get() + 1;
+        self.eligibility_checks.set(eligibility_checks);
+        assert!(
+            eligibility_checks < 256,
+            "Dialect conversion appears to be stuck on a graph-region cycle"
+        );
+
+        cycle_op
+            .get_result(ctx)
+            .get_type(ctx)
+            .deref(ctx)
+            .downcast_ref::<IntegerType>()
+            .expect("expected integer type")
+            .width()
+            > 16
+    }
+
+    fn rewrite(
+        &mut self,
+        ctx: &mut Context,
+        rewriter: &mut DialectConversionRewriter,
+        op: Ptr<Operation>,
+        _operands_info: &OperandsInfo,
+    ) -> Result<()> {
+        let cycle_op = Operation::get_op::<CycleOp>(op, ctx).expect("expected cycle op");
+        let current_width = value_width(ctx, cycle_op.get_result(ctx));
+        let converted = CycleOp::new(ctx, current_width / 2, cycle_op.get_operand(ctx));
+        rewriter.insert_operation(ctx, converted.get_operation());
+        rewriter.replace_operation(ctx, op, converted.get_operation());
+        self.rewrites += 1;
+        Ok(())
+    }
+}
+
+fn value_width(ctx: &Context, value: pliron::value::Value) -> u32 {
+    value
+        .get_type(ctx)
+        .deref(ctx)
+        .downcast_ref::<IntegerType>()
+        .expect("expected integer type")
+        .width()
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn dialect_conversion_handles_mutually_referential_graph_ops() -> Result<()> {
+    let ctx = &mut Context::new();
+    let module = ModuleOp::new(
+        ctx,
+        Identifier::try_from("dialect_conversion_graph_cycle_test").unwrap(),
+    );
+    let body = module.get_body(ctx, 0);
+
+    let a = CycleOp::new_unconnected(ctx, 64);
+    let b = CycleOp::new_unconnected(ctx, 64);
+    Operation::push_operand(a.get_operation(), ctx, b.get_result(ctx));
+    Operation::push_operand(b.get_operation(), ctx, a.get_result(ctx));
+    a.get_operation().insert_at_back(body, ctx);
+    b.get_operation().insert_at_back(body, ctx);
+
+    let mut conversion = CycleWidthConversion::default();
+    apply_dialect_conversion(ctx, &mut conversion, module.get_operation())?;
+    assert_eq!(conversion.rewrites, 4);
+
+    let cycle_ops: Vec<_> = body
+        .deref(ctx)
+        .iter(ctx)
+        .filter(|op| Operation::get_op::<CycleOp>(*op, ctx).is_some())
+        .collect();
+    assert_eq!(cycle_ops.len(), 2);
+    for op in &cycle_ops {
+        let cycle_op = Operation::get_op::<CycleOp>(*op, ctx).unwrap();
+        assert_eq!(value_width(ctx, cycle_op.get_result(ctx)), 16);
+        assert_eq!(value_width(ctx, cycle_op.get_operand(ctx)), 16);
+        let def_op = cycle_op
+            .get_operand(ctx)
+            .defining_op()
+            .expect("cycle operand must be defined by an operation");
+        assert!(cycle_ops.contains(&def_op));
+        assert_ne!(*op, def_op);
+    }
+
+    Ok(())
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn dialect_conversion_handles_self_referential_graph_op() -> Result<()> {
+    let ctx = &mut Context::new();
+    let module = ModuleOp::new(
+        ctx,
+        Identifier::try_from("dialect_conversion_graph_self_cycle_test").unwrap(),
+    );
+    let body = module.get_body(ctx, 0);
+
+    let cycle = CycleOp::new_unconnected(ctx, 64);
+    Operation::push_operand(cycle.get_operation(), ctx, cycle.get_result(ctx));
+    cycle.get_operation().insert_at_back(body, ctx);
+
+    let mut conversion = CycleWidthConversion::default();
+    apply_dialect_conversion(ctx, &mut conversion, module.get_operation())?;
+    assert_eq!(conversion.rewrites, 2);
+
+    let final_op = body
+        .deref(ctx)
+        .iter(ctx)
+        .find(|op| Operation::get_op::<CycleOp>(*op, ctx).is_some())
+        .expect("converted cycle op missing");
+    let final_cycle = Operation::get_op::<CycleOp>(final_op, ctx).unwrap();
+    assert_eq!(value_width(ctx, final_cycle.get_result(ctx)), 16);
+    assert_eq!(value_width(ctx, final_cycle.get_operand(ctx)), 16);
+    assert_eq!(
+        final_cycle.get_operand(ctx).defining_entity(),
+        DefiningEntity::Op(final_op)
+    );
+
+    Ok(())
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+#[should_panic(expected = "Operation dependency cycles are only valid in graph regions")]
+fn dialect_conversion_rejects_self_referential_ssa_op() {
+    let ctx = &mut Context::new();
+    let module = ModuleOp::new(
+        ctx,
+        Identifier::try_from("dialect_conversion_ssa_cycle_test").unwrap(),
+    );
+    let func_type = FunctionType::get(ctx, vec![], vec![]);
+    let func = FuncOp::new(ctx, Identifier::try_from("self_cycle").unwrap(), func_type);
+    func.get_operation()
+        .insert_at_back(module.get_body(ctx, 0), ctx);
+
+    let cycle = CycleOp::new_unconnected(ctx, 64);
+    Operation::push_operand(cycle.get_operation(), ctx, cycle.get_result(ctx));
+    cycle
+        .get_operation()
+        .insert_at_back(func.get_entry_block(ctx), ctx);
+
+    let mut conversion = CycleWidthConversion::default();
+    apply_dialect_conversion(ctx, &mut conversion, module.get_operation()).unwrap();
 }
 
 #[derive(Default)]
