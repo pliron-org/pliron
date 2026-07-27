@@ -12,7 +12,7 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::{FPDoubleAttr, FPSingleAttr, IntegerAttr, StringAttr},
+        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
         op_interfaces::{
             AtMostOneRegionInterface, BranchOpInterface, CallOpCallable, CallOpInterface,
             OneOpdInterface, OneResultInterface, SingleBlockRegionInterface, SymbolOpInterface,
@@ -35,7 +35,7 @@ use pliron::{
     result::Result,
     std_deps::hash::{FxHashMap, hash_map},
     r#type::{Type, TypeHandle, Typed, type_cast},
-    utils::apint::APInt,
+    utils::{apfloat::float_to_f64, apint::APInt},
     value::{DefiningEntity, Value},
 };
 
@@ -242,6 +242,13 @@ trait FloatAttrToFP64: FloatAttr {
         Self: Sized,
     {
         Ok(())
+    }
+}
+
+#[attr_interface_impl]
+impl FloatAttrToFP64 for FPHalfAttr {
+    fn to_fp64(&self) -> f64 {
+        float_to_f64(self.0)
     }
 }
 

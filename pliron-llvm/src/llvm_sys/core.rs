@@ -994,7 +994,8 @@ pub fn llvm_const_real_get_double(val: LLVMValue) -> (f64, bool) {
 /// LLVMConstReal
 pub fn llvm_const_real(ty: LLVMType, n: f64) -> LLVMValue {
     assert!(
-        llvm_get_type_kind(ty) == LLVMTypeKind::LLVMFloatTypeKind
+        llvm_get_type_kind(ty) == LLVMTypeKind::LLVMHalfTypeKind
+            || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMFloatTypeKind
             || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMDoubleTypeKind
     );
     unsafe { LLVMConstReal(ty.into(), n).into() }
