@@ -6,6 +6,8 @@
 
 #[cfg(feature = "std")]
 mod r#impl {
+    pub const STD_ENABLED: bool = true;
+
     pub mod sync {
         pub use std::sync::{LazyLock, Mutex};
     }
@@ -44,6 +46,8 @@ mod r#impl {
 
 #[cfg(not(feature = "std"))]
 mod r#impl {
+    pub const STD_ENABLED: bool = false;
+
     pub mod sync {
         pub use spin::{LazyLock, Mutex};
     }
@@ -243,4 +247,4 @@ mod r#impl {
     }
 }
 
-pub use r#impl::{backtrace, fs, hash, io, path, sync, time, utf8_chars};
+pub use r#impl::{STD_ENABLED, backtrace, fs, hash, io, path, sync, time, utf8_chars};

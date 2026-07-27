@@ -8,6 +8,13 @@
 
 extern crate alloc;
 
+// A static check to ensure that `std` on pliron-llvm pulls in pliron with `std`.
+#[cfg(feature = "std")]
+const _: () = assert!(
+    pliron::std_deps::STD_ENABLED,
+    "pliron-llvm's `std` feature must forward to `pliron/std`"
+);
+
 use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
