@@ -6,6 +6,7 @@
 
 #[cfg(feature = "std")]
 mod r#impl {
+    /// Has pliron been built with `std`?
     pub const STD_ENABLED: bool = true;
 
     pub mod sync {
@@ -46,6 +47,7 @@ mod r#impl {
 
 #[cfg(not(feature = "std"))]
 mod r#impl {
+    /// Has pliron been built with `std`?
     pub const STD_ENABLED: bool = false;
 
     pub mod sync {
