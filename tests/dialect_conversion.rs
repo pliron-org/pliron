@@ -419,6 +419,49 @@ fn dialect_conversion_block_arg_type_conversion() -> Result<()> {
 
 #[test]
 #[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn dialect_conversion_dead_block_arg_type_conversion() -> Result<()> {
+    init_env_logger_for_tests!();
+    let ctx = &mut Context::new();
+
+    let module = ModuleOp::new(
+        ctx,
+        Identifier::try_from("dead_block_arg_type_conversion").unwrap(),
+    );
+    let body = module.get_body(ctx, 0);
+    let region = body
+        .deref(ctx)
+        .get_parent_region()
+        .expect("module body block must be in a region");
+
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed).into();
+
+    // Neither the entry block nor the successor of any operation, and its
+    // argument is never used: nothing would ever visit this block under the
+    // old "convert on use / convert on successor" scheme.
+    let dead_block = BasicBlock::new(
+        ctx,
+        Some(Identifier::try_from("dead").unwrap()),
+        vec![i64_ty],
+    );
+    dead_block.insert_at_back(region, ctx);
+
+    let mut conversion = ConsumerOnlyConversion::default();
+    apply_dialect_conversion(ctx, &mut conversion, module.get_operation())?;
+
+    let dead_arg = dead_block.deref(ctx).get_argument(0);
+    let dead_arg_width = dead_arg
+        .get_type(ctx)
+        .deref(ctx)
+        .downcast_ref::<IntegerType>()
+        .expect("expected integer type")
+        .width();
+    assert_eq!(dead_arg_width, 16);
+
+    Ok(())
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_successor_block_arg_type_conversion_without_uses() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
