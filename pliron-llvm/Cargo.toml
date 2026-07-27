@@ -14,12 +14,15 @@ license.workspace = true
 [features]
 default = ["llvm-sys"]
 
+llvm-sys = ["dep:llvm-sys", "std"]
+std = ["pliron/std", "bitflags/std"]
+
 [dependencies]
-pliron = { path = "../", version = "0" }
+pliron = { path = "../", version = "0", default-features = false }
 
 thiserror.workspace = true
 log.workspace = true
-bitflags = { workspace = true, features = ["std"] }
+bitflags = { workspace = true }
 
 # When upgrading the LLVM version, change the LLVM versions in
 # CI `.yml` files and the READMEs in `pliron-llvm` and `llvm-opt`.

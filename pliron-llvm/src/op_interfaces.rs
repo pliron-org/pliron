@@ -3,6 +3,8 @@
 
 //! [Op] Interfaces defined in the LLVM dialect.
 
+use alloc::{string::String, vec};
+
 use pliron::{
     builtin::{
         attributes::BoolAttr,

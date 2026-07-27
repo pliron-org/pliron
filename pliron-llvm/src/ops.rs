@@ -3,6 +3,13 @@
 
 //! [Op]s defined in the LLVM dialect
 
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use core::num::NonZero;
 
 use pliron::{

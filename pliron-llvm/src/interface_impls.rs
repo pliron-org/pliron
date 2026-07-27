@@ -3,6 +3,7 @@
 
 //! Implementation of various op interfaces for LLVM IR instructions.
 
+use alloc::{boxed::Box, vec, vec::Vec};
 use core::num::NonZero;
 use thiserror::Error;
 

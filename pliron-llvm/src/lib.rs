@@ -3,6 +3,11 @@
 
 //! LLVM Dialect for [pliron]
 
+// Without llvm-sys, we should be able to build without std.
+#![cfg_attr(not(feature = "llvm-sys"), no_std)]
+
+extern crate alloc;
+
 use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
