@@ -52,6 +52,11 @@ jobs:
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
         sudo ./llvm.sh 22 all
+        # apt falls back to downloading as root when the sandboxed `_apt`
+        # user can't write into our redirected (non-standard) cache dir,
+        # leaving root-owned files that the later cache-save step (running
+        # unprivileged) can't read. Reclaim ownership so caching works.
+        sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-archives
 
     - name: Format
       run: cargo fmt --check
