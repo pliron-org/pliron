@@ -71,3 +71,6 @@ We also plan to start work on supporting a cranelift dialect/backend soon.
 - [GitHub Discussions](https://github.com/pliron-org/pliron/discussions)
 
 ![pliron-logo](.github/workflows/pliron-logo.png)
+
+### Contributing to `pliron`
+See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
