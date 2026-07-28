@@ -30,6 +30,14 @@ jobs:
     - name: Clippy pliron-llvm - no default features
       run: cargo clippy -p pliron-llvm --all-targets --no-default-features -- -D warnings
 
+    # `std` without `llvm-sys`: Make sure that pliron is built with `std` on.
+    - name: Clippy pliron-llvm - std, no llvm-sys
+      run: cargo clippy -p pliron-llvm --no-default-features --features std -- -D warnings
+
+    # Same as the previous one
+    - name: Build pliron-llvm - std, no llvm-sys
+      run: RUSTFLAGS="-D warnings" cargo build -p pliron-llvm --no-default-features --features std --verbose
+
     - name: Test debug pliron-llvm - no default features
       run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --no-default-features --verbose
 

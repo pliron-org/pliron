@@ -3,6 +3,10 @@
 
 //! Attributes belonging to the LLVM dialect.
 
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::fmt::Display;
 use thiserror::Error;
 

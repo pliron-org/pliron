@@ -33,6 +33,19 @@ jobs:
     - name: Format
       run: cargo fmt --check
 
+    # `--all-targets` pulls in pliron-llvm as a dev-dependency and
+    # pliron-llvm's default (llvm-sys -> std) feature unifies `std` back on for
+    # pliron, even under `--no-default-features`. So those steps don't actually
+    # exercise a std-free pliron. Just `--lib` doesn't need dev-dependencies,
+    # so it genuinely checks the no_std build.
+    - name: Clippy pliron (true no_std lib check) - no default features
+      run: cargo clippy -p pliron --lib --no-default-features -- -D warnings
+
+    # Same as the previous one
+    - name: Build pliron (true no_std lib check) - no default features
+      run: RUSTFLAGS="-D warnings" cargo build -p pliron --lib --no-default-features --verbose
+
+    # Now with all targets
     - name: Clippy pliron - no default features
       run: cargo clippy -p pliron --all-targets --no-default-features -- -D warnings
 

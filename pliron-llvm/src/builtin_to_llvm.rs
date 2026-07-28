@@ -3,6 +3,8 @@
 
 //! Dialect conversion from builtin to LLVM dialect
 
+use alloc::vec::Vec;
+
 use pliron::{
     builtin::{
         op_interfaces::{OneRegionInterface, SymbolOpInterface},

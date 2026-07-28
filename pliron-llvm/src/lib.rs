@@ -3,6 +3,18 @@
 
 //! LLVM Dialect for [pliron]
 
+// Without llvm-sys, we should be able to build without std.
+#![cfg_attr(not(feature = "llvm-sys"), no_std)]
+
+extern crate alloc;
+
+// A static check to ensure that `std` on pliron-llvm pulls in pliron with `std`.
+#[cfg(feature = "std")]
+const _: () = assert!(
+    pliron::std_deps::STD_ENABLED,
+    "pliron-llvm's `std` feature must forward to `pliron/std`"
+);
+
 use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
