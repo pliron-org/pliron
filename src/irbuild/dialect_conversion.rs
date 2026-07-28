@@ -12,7 +12,6 @@ use alloc::{collections::vec_deque::VecDeque, vec, vec::Vec};
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::IsTerminatorInterface,
     common_traits::Named,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
@@ -23,7 +22,6 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     irfmt::printers::list_with_sep,
-    op::op_impls,
     operation::{OpDbg, Operation},
     pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
@@ -154,7 +152,7 @@ pub trait DialectConversion {
 // ## Algorithm
 //
 // 1. Collect:
-//    - All initially convertible operations (and terminators)
+//    - All initially convertible operations
 //    - All basic blocks structurally nested under `op`
 // 2. Convert the arguments of every collected block.
 // 3. Repeatedly pop from the front; only entries still marked `Queued` are
@@ -251,7 +249,6 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 return false;
             }
             self.conversion.can_convert_op(ctx, op)
-                || op_impls::<dyn IsTerminatorInterface>(&*Operation::get_op_dyn(op, ctx))
         }
 
         /// Collects the initial worklist of operations (into `self.worklist`)
