@@ -70,7 +70,7 @@ We also plan to start work on supporting a cranelift dialect/backend soon.
 - [Discord channel](https://discord.com/channels/1481908978978918523/) ([Invitation link](https://discord.gg/5M3K4Ujv7v))
 - [GitHub Discussions](https://github.com/pliron-org/pliron/discussions)
 
-![pliron-logo](.github/workflows/pliron-logo.png)
-
 ### Contributing to `pliron`
 See [CONTRIBUTING.md](CONTRIBUTING.md) before opening a PR.
+
+![pliron-logo](.github/workflows/pliron-logo.png)

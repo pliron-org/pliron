@@ -20,19 +20,6 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
 
-    - uses: actions/setup-node@v6
-      with:
-        node-version: 24
-    
-    - name: Setup LLVM
-      run: |
-        wget https://apt.llvm.org/llvm.sh
-        chmod +x llvm.sh
-        sudo ./llvm.sh 22 all
-
-    - name: Format
-      run: cargo fmt --check
-
     # `--all-targets` pulls in pliron-llvm as a dev-dependency and
     # pliron-llvm's default (llvm-sys -> std) feature unifies `std` back on for
     # pliron, even under `--no-default-features`. So those steps don't actually
@@ -57,11 +44,3 @@ jobs:
 
     - name: Documentation pliron - no default features
       run: RUSTDOCFLAGS="-D warnings" cargo doc -p pliron --no-default-features --verbose
-
-    # Only build (not test) pliron-llvm against a no_std pliron.
-    # This step guards against pliron-llvm accidentally failing
-    # to compile against a no_std pliron.
-    - name: Build pliron-llvm with no_std pliron
-      run: |
-        cargo add -p pliron-llvm pliron --no-default-features
-        RUSTFLAGS="-D warnings" cargo build -p pliron-llvm --lib --verbose

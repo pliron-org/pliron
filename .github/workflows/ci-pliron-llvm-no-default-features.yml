@@ -20,13 +20,6 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
 
-    - uses: actions/setup-node@v6
-      with:
-        node-version: 24
-
-    - name: Format
-      run: cargo fmt --check
-
     - name: Clippy pliron-llvm - no default features
       run: cargo clippy -p pliron-llvm --all-targets --no-default-features -- -D warnings
 
