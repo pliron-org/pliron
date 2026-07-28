@@ -178,23 +178,13 @@ mod r#impl {
     }
 
     pub mod fs {
-        use core::fmt;
+        use crate::std_deps::io;
 
         /// A dummy file handle: without `std` there's no filesystem to back it.
         pub struct File;
 
-        /// Filesystem access is unavailable without the `std` feature.
-        #[derive(Debug)]
-        pub struct NoStdFsError;
-
-        impl fmt::Display for NoStdFsError {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("filesystem access is unavailable without the `std` feature")
-            }
-        }
-
         impl File {
-            pub fn open<P: AsRef<str>>(_path: P) -> Result<File, NoStdFsError> {
+            pub fn open<P: AsRef<str>>(_path: P) -> Result<File, io::Error> {
                 Ok(File)
             }
         }
@@ -202,11 +192,11 @@ mod r#impl {
         pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(
             _path: P,
             _contents: C,
-        ) -> Result<(), NoStdFsError> {
+        ) -> Result<(), io::Error> {
             Ok(())
         }
 
-        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), NoStdFsError> {
+        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), io::Error> {
             Ok(())
         }
     }
