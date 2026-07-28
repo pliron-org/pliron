@@ -199,7 +199,6 @@ mod r#impl {
             }
         }
 
-        /// Dummy for `std::fs::write`: does nothing and never fails.
         pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(
             _path: P,
             _contents: C,
@@ -207,7 +206,6 @@ mod r#impl {
             Ok(())
         }
 
-        /// Dummy for `std::fs::create_dir_all`: does nothing and never fails.
         pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), NoStdFsError> {
             Ok(())
         }
