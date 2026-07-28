@@ -171,6 +171,7 @@ use alloc::{
     vec::Vec,
 };
 use downcast_rs::{Downcast, impl_downcast};
+use thiserror::Error;
 
 use crate::{
     arg_error_noloc,
@@ -182,6 +183,7 @@ use crate::{
     printable::Printable,
     result::Result,
     std_deps::{
+        self,
         fs::{create_dir_all, write},
         hash::{FxHashMap, FxHashSet},
         path::PathBuf,
@@ -443,22 +445,6 @@ pub type OpPass<T, P> = GuardedPass<OpGuard<T>, P>;
 /// A [GuardedPass] that allows [Operation]s that implement a specific `OpInterface`.
 pub type OpInterfacePass<T, P> = GuardedPass<OpInterfaceGuard<T>, P>;
 
-/// Write `contents` to the file `dir/file_name`, creating `dir`
-/// (including parents) if it doesn't exist.
-/// Failures are returned as errors instead of panicking.
-fn write_ir_to_file(dir: &PathBuf, file_name: String, contents: &str) -> Result<()> {
-    create_dir_all(dir).map_err(|err| {
-        arg_error_noloc!(
-            "Failed to create directory {} for printing IR: {}",
-            dir.display(),
-            err
-        )
-    })?;
-    let path = dir.join(file_name);
-    write(&path, contents.as_bytes())
-        .map_err(|err| arg_error_noloc!("Failed to write IR to file {}: {}", path.display(), err))
-}
-
 /// A [Pass] that contains, manages and runs other [Pass]es.
 /// The only requirement (that cannot be enforced by the type system)
 /// is that a [PassManager] [Pass] must run its contained [Passes] via
@@ -503,14 +489,10 @@ pub trait PassManager {
         }
 
         if pre_print_pass {
-            let ir = op.disp(ctx).to_string();
-            log::info!("IR before pass {}:\n{}", pass.name(), ir);
+            log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
             if let Some(dir) = &ir_printing_dir {
-                write_ir_to_file(
-                    dir,
-                    alloc::format!("{}-before-{}.plir", pass_run_count, pass.name()),
-                    &ir,
-                )?;
+                let filename = alloc::format!("{}-before-{}.plir", pass_run_count, pass.name());
+                print_op_to_file(ctx, dir, filename, op)?;
             }
         }
         if pre_verify_pass {
@@ -536,14 +518,10 @@ pub trait PassManager {
             );
         }
         if post_print_pass {
-            let ir = op.disp(ctx).to_string();
-            log::info!("IR after pass {}:\n{}", pass.name(), ir);
+            log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
             if let Some(dir) = &ir_printing_dir {
-                write_ir_to_file(
-                    dir,
-                    alloc::format!("{}-after-{}.plir", pass_run_count, pass.name()),
-                    &ir,
-                )?;
+                let filename = alloc::format!("{}-after-{}.plir", pass_run_count, pass.name());
+                print_op_to_file(ctx, dir, filename, op)?;
             }
         }
         if post_verify_pass {
@@ -574,7 +552,6 @@ pub struct PMConfig {
     pub print_after_all: bool,
     /// Directory to place printed IR files before and after passes.
     /// The directory is created (including parents) if it doesn't exist.
-    /// Failures to create it or write into it are returned as errors.
     pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
     pub print_before: FxHashSet<String>,
@@ -761,4 +738,27 @@ impl AnalysisManager {
     pub fn pm_data_mut(&mut self) -> &mut PMData {
         &mut self.pm_data
     }
+}
+
+#[derive(Debug, Error)]
+pub enum PrintOpToFileErr {
+    #[error("Failed to write to file {}: {}", .0.display(), .1)]
+    FileWriteError(std_deps::path::PathBuf, std_deps::io::Error),
+    #[error("Failed to create directory {}: {}", .0.display(), .1)]
+    DirCreateError(std_deps::path::PathBuf, std_deps::io::Error),
+}
+
+/// Print `op` to file `dir/file_name`.
+/// Creates `dir` (including parents) if it doesn't exist.
+fn print_op_to_file(
+    ctx: &Context,
+    dir: &PathBuf,
+    file_name: String,
+    op: Ptr<Operation>,
+) -> Result<()> {
+    create_dir_all(dir)
+        .map_err(|err| arg_error_noloc!(PrintOpToFileErr::DirCreateError(dir.clone(), err)))?;
+    let path = dir.join(file_name);
+    write(&path, op.disp(ctx).to_string().as_bytes())
+        .map_err(|err| arg_error_noloc!(PrintOpToFileErr::FileWriteError(path, err)))
 }

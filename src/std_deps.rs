@@ -23,6 +23,7 @@ mod r#impl {
 
     pub mod io {
         pub use std::io::BufReader;
+        pub use std::io::Error;
     }
 
     pub mod fs {
@@ -166,6 +167,7 @@ mod r#impl {
     pub mod io {
         pub use super::fs::File;
 
+        pub type Error = core::convert::Infallible;
         pub struct BufReader<R>(core::marker::PhantomData<R>);
 
         impl<R> BufReader<R> {
@@ -201,12 +203,12 @@ mod r#impl {
         pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(
             _path: P,
             _contents: C,
-        ) -> Result<(), core::convert::Infallible> {
+        ) -> Result<(), NoStdFsError> {
             Ok(())
         }
 
         /// Dummy for `std::fs::create_dir_all`: does nothing and never fails.
-        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), core::convert::Infallible> {
+        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), NoStdFsError> {
             Ok(())
         }
     }
