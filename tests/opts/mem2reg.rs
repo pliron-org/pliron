@@ -685,3 +685,52 @@ fn mem2reg_not_promoted_when_phi_pred_has_non_branch_successor_terminator() -> R
     assert!(after.contains("test.non_branch_succ_term"));
     Ok(())
 }
+
+#[test]
+fn mem2reg_alloca_inside_loop_body() -> Result<()> {
+    // An allocation inside a loop body, conditionally stored to. The promoted value is
+    // live at the loop entry, so placing a poison value just before the alloca isn't good
+    // enough, it must be placed in the entry block (i.e., dominate any use of the promoted
+    // value, not just the alloca itself).
+    // In other words, the places where the promoted value may be live need not be dominated
+    // by the alloca itself.
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64, builtin.integer i1) variadic = false> [] {
+      ^entry(n: builtin.integer i64, cond: builtin.integer i1):
+      size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      zero = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
+      one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      llvm.br ^header(zero)
+
+      ^header(i: builtin.integer i64):
+      continue_loop = llvm.icmp i <ULT> n : builtin.integer i1;
+      llvm.cond_br if continue_loop ^body() else ^exit()
+
+      ^body():
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
+      llvm.cond_br if cond ^then() else ^merge()
+
+      ^then():
+      v = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
+      llvm.store *alloc <- v;
+      llvm.br ^merge()
+
+      ^merge():
+      out = llvm.load alloc : builtin.integer i64;
+      next_i = llvm.add i, one <{nsw=false,nuw=false}> : builtin.integer i64;
+      llvm.br ^header(next_i)
+
+      ^exit():
+      llvm.return zero
+    }
+  "#;
+
+    let (status, _before, after) = run_mem2reg(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(!after.contains("llvm.alloca"));
+    assert!(!after.contains("llvm.store"));
+    assert!(!after.contains("llvm.load"));
+    // The uninitialized path through ^body needs a default value.
+    assert!(after.contains("llvm.poison"));
+    Ok(())
+}

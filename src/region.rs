@@ -83,6 +83,11 @@ impl Region {
         self.get_parent_op().deref(ctx).get_parent_block()
     }
 
+    /// Get the entry block of this region.
+    pub fn get_entry_block(&self) -> Option<Ptr<BasicBlock>> {
+        self.get_head()
+    }
+
     /// Find the index of this region in its parent operation.
     pub fn find_index_in_parent(&self, ctx: &Context) -> usize {
         let parent_op = self.get_parent_op();
