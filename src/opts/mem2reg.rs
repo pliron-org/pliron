@@ -54,7 +54,8 @@ pub trait PromotableAllocationInterface {
     /// Get the default value for an allocation. This is used
     /// when there's no reaching definition for a use. The `alloc_info`
     /// passed is guaranteed to be one of the entries returned by `alloc_info`.
-    /// The inserter is positioned to be just before the alloc op.
+    /// The inserter is positioned in the entry block. If the allocation
+    /// is in the entry block, the inserter position will be before it.
     fn default_value(
         &self,
         ctx: &mut Context,
@@ -341,11 +342,31 @@ fn get_or_create_default_def(
             let alloc_obj = Operation::get_op_dyn(alloc_op, ctx);
             let alloc_iface = op_cast::<dyn PromotableAllocationInterface>(alloc_obj.as_ref())
                 .expect("Alloc op must implement PromotableAllocationInterface");
-            let default_val = alloc_iface.default_value(
-                ctx,
-                &mut IRInserter::<Recorder>::new_before_operation(alloc_op),
-                &alloc_cand.alloc_info,
-            )?;
+
+            // The default value must be at a place that dominates the alloc
+            // and all places that the promoted value may be live at. The safest
+            // such point is in the entry block, before the alloc itself.
+            let alloc_block = alloc_op
+                .deref(ctx)
+                .get_parent_block()
+                .expect("Alloc op must be in a block");
+            let alloc_region = alloc_block
+                .deref(ctx)
+                .get_parent_region()
+                .expect("Alloc op must be in a region");
+
+            let alloc_region_entry = alloc_region
+                .deref(ctx)
+                .get_entry_block()
+                .expect("Region must have entry block");
+            let mut inserter = if alloc_region_entry == alloc_block {
+                IRInserter::<Recorder>::new_before_operation(alloc_op)
+            } else {
+                IRInserter::<Recorder>::new_before_block_terminator(alloc_region_entry, ctx)
+            };
+
+            let default_val =
+                alloc_iface.default_value(ctx, &mut inserter, &alloc_cand.alloc_info)?;
             entry.insert(default_val);
             Ok(default_val)
         }
