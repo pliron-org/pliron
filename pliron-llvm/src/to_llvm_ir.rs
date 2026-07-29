@@ -248,7 +248,7 @@ trait FloatAttrToFP64: FloatAttr {
 #[attr_interface_impl]
 impl FloatAttrToFP64 for FPHalfAttr {
     fn to_fp64(&self) -> f64 {
-        float_to_f64(self.0)
+        float_to_f64(self.0, &mut false)
     }
 }
 

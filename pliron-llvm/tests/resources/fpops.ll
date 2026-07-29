@@ -39,9 +39,17 @@ entry:
   %neg_sum4 = fneg float %sum4
   %final_sum = fsub float %sum5, %neg_sum4
 
+  ; Same in half precision
+  %h = fptrunc float %c to half      ; h = 6.0
+  %h2 = fmul half %h, 0.5            ; h2 = 3.0
+  %h3 = fsub half %h2, 0.5           ; h3 = 2.5
+  %h_f = fpext half %h3 to float     ; h_f = 2.5
+
   ; Cast final result to int and return
   %result2 = fptosi float %final_sum to i32
   %result1 = fptoui float %sum5 to i32
-  %result = add i32 %result2, %result1
+  %result0 = fptosi float %h_f to i32
+  %result3 = add i32 %result2, %result1
+  %result = add i32 %result3, %result0
   ret i32 %result
 }

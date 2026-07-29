@@ -82,9 +82,15 @@ pub fn f64_to_double(value: f64) -> Double {
 }
 
 /// Convert any [Float] that is convertible to [Double] into a Rust [f64].
-pub fn float_to_f64<T: FloatConvert<Double>>(value: T) -> f64 {
-    let mut loses_info = false;
-    double_to_f64(value.convert(&mut loses_info).value)
+pub fn float_to_f64<T: FloatConvert<Double>>(value: T, loses_info: &mut bool) -> f64 {
+    double_to_f64(value.convert(loses_info).value)
+}
+
+/// Convert from Rust [f64] to [rustc_apfloat]'s [Half].
+pub fn f64_to_half(value: f64) -> Half {
+    Double::from_bits(value.to_bits().into())
+        .convert(&mut false)
+        .value
 }
 
 #[derive(Debug, Error)]
@@ -1039,7 +1045,7 @@ mod tests {
         ];
 
         for (bits, expected) in cases {
-            let val = float_to_f64(Half::from_bits(bits));
+            let val = float_to_f64(Half::from_bits(bits), &mut false);
             assert_eq!(val, expected, "Failed for Half with bits {:#x}", bits);
             assert_eq!(
                 val.is_sign_negative(),
@@ -1049,13 +1055,16 @@ mod tests {
             );
         }
 
-        assert!(float_to_f64(Half::NAN).is_nan());
+        assert!(float_to_f64(Half::NAN, &mut false).is_nan());
 
         // Widening from Single and narrowing from Quad both go through the same path.
         assert_eq!(
-            float_to_f64(f32_to_single(core::f32::consts::PI)),
+            float_to_f64(f32_to_single(core::f32::consts::PI), &mut false),
             core::f32::consts::PI as f64
         );
-        assert_eq!(float_to_f64(Quad::from_str("1.5").unwrap()), 1.5);
+        assert_eq!(
+            float_to_f64(Quad::from_str("1.5").unwrap(), &mut false),
+            1.5
+        );
     }
 }

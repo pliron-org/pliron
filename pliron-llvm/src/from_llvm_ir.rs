@@ -13,7 +13,7 @@ use pliron::{
     attribute::AttrObj,
     basic_block::BasicBlock,
     builtin::{
-        attributes::{FPDoubleAttr, FPSingleAttr, IntegerAttr},
+        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{
             AtMostOneRegionInterface, CallOpCallable, OneResultInterface,
             SingleBlockRegionInterface,
@@ -36,7 +36,7 @@ use pliron::{
     result::Result,
     std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, TypedHandle, type_cast},
-    utils::apint::APInt,
+    utils::{apfloat::f64_to_half, apint::APInt},
     value::Value,
 };
 use thiserror::Error;
@@ -101,6 +101,13 @@ trait FloatAttrBuilder: FloatTypeInterface {
         Self: Sized,
     {
         Ok(())
+    }
+}
+
+#[type_interface_impl]
+impl FloatAttrBuilder for FP16Type {
+    fn value_from_f64(&self, val: f64) -> AttrObj {
+        FPHalfAttr(f64_to_half(val)).into()
     }
 }
 
