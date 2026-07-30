@@ -2603,7 +2603,7 @@ impl Verify for GlobalOp {
 
         // Check that there is at most one initializer
         if self.get_initializer_value(ctx).is_some() && self.get_initializer_region(ctx).is_some() {
-            return verify_err!(loc, GlobalOpVerifyErr::MissingType);
+            return verify_err!(loc, GlobalOpVerifyErr::InvalidInitializer);
         }
 
         Ok(())

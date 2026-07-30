@@ -11,7 +11,7 @@ use core::fmt::Display;
 use thiserror::Error;
 
 use pliron::{
-    builtin::attributes::IntegerAttr,
+    builtin::{attr_interfaces::TypedAttrInterface, attributes::IntegerAttr},
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
     context::Context,
@@ -21,6 +21,7 @@ use pliron::{
     parsable::{IntoParseResult, Parsable},
     printable::Printable,
     result::Result,
+    r#type::TypeHandle,
     verify_err_noloc,
 };
 
@@ -244,8 +245,41 @@ pub struct AlignmentAttr(pub u32);
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct AddressSpaceAttr(pub u32);
 
-/// Memory ordering for an atomic operation (`atomicrmw` / `cmpxchg` / `fence` /
-/// atomic `load` / `store`).
+/// The "zero" value of a type: a null pointer, or an all-zero-bits aggregate.
+#[pliron_attr(name = "llvm.zero", format = "$0", verifier = "succ")]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct ZeroAttr(pub TypeHandle);
+
+impl TypedAttrInterface for ZeroAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.0
+    }
+}
+
+/// The `undef` value of a type.
+#[pliron_attr(name = "llvm.undef", format = "$0", verifier = "succ")]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct UndefAttr(pub TypeHandle);
+
+impl TypedAttrInterface for UndefAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.0
+    }
+}
+
+/// The `poison` value of a type.
+#[pliron_attr(name = "llvm.poison", format = "$0", verifier = "succ")]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct PoisonAttr(pub TypeHandle);
+
+impl TypedAttrInterface for PoisonAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.0
+    }
+}
+
+/// Memory ordering for an atomic operation
+/// (`atomicrmw` / `cmpxchg` / `fence` / atomic `load` / `store`).
 #[pliron_attr(name = "llvm.atomic_ordering", verifier = "succ", format)]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AtomicOrderingAttr {

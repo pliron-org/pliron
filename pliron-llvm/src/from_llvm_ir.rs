@@ -13,7 +13,7 @@ use pliron::{
     attribute::AttrObj,
     basic_block::BasicBlock,
     builtin::{
-        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
+        attributes::{BytesAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{
             AtMostOneRegionInterface, CallOpCallable, OneResultInterface,
             SingleBlockRegionInterface,
@@ -44,15 +44,15 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, FastmathFlagsAttr,
-        ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr,
+        ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr, PoisonAttr, UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMModule, LLVMType, LLVMValue, basic_block_iter, function_iter,
         global_iter, incoming_iter, instruction_iter, llvm_can_value_use_fast_math_flags,
         llvm_const_int_get_zext_value, llvm_const_real_get_double, llvm_count_struct_element_types,
         llvm_get_aggregate_element, llvm_get_alignment, llvm_get_allocated_type,
-        llvm_get_array_length2, llvm_get_atomic_rmw_bin_op, llvm_get_atomic_sync_scope_id,
-        llvm_get_basic_block_name, llvm_get_basic_block_terminator,
+        llvm_get_array_length2, llvm_get_as_string, llvm_get_atomic_rmw_bin_op,
+        llvm_get_atomic_sync_scope_id, llvm_get_basic_block_name, llvm_get_basic_block_terminator,
         llvm_get_block_address_basic_block, llvm_get_block_address_function,
         llvm_get_called_function_type, llvm_get_called_value, llvm_get_cmpxchg_failure_ordering,
         llvm_get_cmpxchg_success_ordering, llvm_get_const_opcode, llvm_get_element_type,
@@ -125,11 +125,114 @@ impl FloatAttrBuilder for FP64Type {
     }
 }
 
-fn convert_type(
-    ctx: &mut Context,
+/// A [Type] whose LLVM constant values may be convertible into an [AttrObj]
+#[type_interface]
+trait ConstLLVMValueToAttr {
+    /// Try to convert `val` (whose [Type] is `self`) into an [AttrObj]
+    fn convert(&self, ctx: &Context, val: LLVMValue) -> Result<Option<AttrObj>>;
+
+    fn verify(_ty: &dyn Type, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+#[type_interface_impl]
+impl ConstLLVMValueToAttr for IntegerType {
+    fn convert(&self, ctx: &Context, val: LLVMValue) -> Result<Option<AttrObj>> {
+        if !llvm_is_a::constant_int(val) {
+            return Ok(None);
+        }
+        let width = self.width() as usize;
+        if width == 0 {
+            return input_err_noloc!(ConversionErr::ZeroWidthIntConst);
+        }
+        if width > 64 {
+            return input_err_noloc!(ConversionErr::IntConstTooWide(width));
+        }
+        let u64 = llvm_const_int_get_zext_value(val);
+        let self_ty = self.get_self_handle(ctx);
+        let int_ty = TypedHandle::<IntegerType>::from_handle(self_ty, ctx)?;
+        Ok(Some(Box::new(IntegerAttr::new(
+            int_ty,
+            APInt::from_u64(u64, NonZero::new(width).unwrap()),
+        ))))
+    }
+}
+
+/// Shared by the [ConstLLVMValueToAttr] impls of the float types.
+fn float_const_llvm_value_to_attr(
+    ty: &dyn FloatAttrBuilder,
+    val: LLVMValue,
+) -> Result<Option<AttrObj>> {
+    if !llvm_is_a::constant_fp(val) {
+        return Ok(None);
+    }
+    let (fp64, lost_info) = llvm_const_real_get_double(val);
+    assert!(!lost_info, "Lost information when converting FP constant");
+    Ok(Some(ty.value_from_f64(fp64)))
+}
+
+#[type_interface_impl]
+impl ConstLLVMValueToAttr for FP16Type {
+    fn convert(&self, _ctx: &Context, val: LLVMValue) -> Result<Option<AttrObj>> {
+        float_const_llvm_value_to_attr(self, val)
+    }
+}
+
+#[type_interface_impl]
+impl ConstLLVMValueToAttr for FP32Type {
+    fn convert(&self, _ctx: &Context, val: LLVMValue) -> Result<Option<AttrObj>> {
+        float_const_llvm_value_to_attr(self, val)
+    }
+}
+
+#[type_interface_impl]
+impl ConstLLVMValueToAttr for FP64Type {
+    fn convert(&self, _ctx: &Context, val: LLVMValue) -> Result<Option<AttrObj>> {
+        float_const_llvm_value_to_attr(self, val)
+    }
+}
+
+/// Try to build an [AttrObj] for the LLVM constant `val`.
+fn const_llvm_value_to_attr(
+    ctx: &Context,
     cctx: &mut ConversionContext,
-    ty: LLVMType,
-) -> Result<TypeHandle> {
+    val: LLVMValue,
+) -> Result<Option<AttrObj>> {
+    let ty = convert_type(ctx, cctx, llvm_type_of(val))?;
+
+    // `Zero`/`Undef`/`Poison` carry no data beyond their type, so they're
+    // handled uniformly here rather than through `ConstLLVMValueToAttr`.
+    match llvm_get_value_kind(val) {
+        LLVMValueKind::LLVMConstantPointerNullValueKind
+        | LLVMValueKind::LLVMConstantAggregateZeroValueKind => {
+            return Ok(Some(Box::new(ZeroAttr(ty))));
+        }
+        LLVMValueKind::LLVMUndefValueValueKind => {
+            return Ok(Some(Box::new(UndefAttr(ty))));
+        }
+        LLVMValueKind::LLVMPoisonValueKind => {
+            return Ok(Some(Box::new(PoisonAttr(ty))));
+        }
+        _ => {}
+    }
+
+    // Any sequential data which we can store as [BytesAttr]
+    if let Some(bytes) = llvm_get_as_string(val) {
+        return Ok(Some(Box::new(BytesAttr::new(bytes))));
+    }
+
+    let ty_obj = &*ty.deref(ctx);
+    let Some(conv) = type_cast::<dyn ConstLLVMValueToAttr>(ty_obj) else {
+        return Ok(None);
+    };
+    conv.convert(ctx, val)
+}
+
+fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Result<TypeHandle> {
     if let Some(cached) = cctx.type_cache.get(&ty) {
         return Ok(*cached);
     }
@@ -400,6 +503,8 @@ pub enum ConversionErr {
     UndefinedBlock(String),
     #[error("Integer constant has bit-width 0")]
     ZeroWidthIntConst,
+    #[error("Integer constant has bit-width {0}, exceeding the 64-bit limit of the LLVM-C API")]
+    IntConstTooWide(usize),
     #[error("Floating point constant not of floating point type")]
     FloatConstNotFloatType,
     #[error("Switch case value is not an integer constant")]
@@ -461,28 +566,15 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             cctx.value_map.insert(val, null_op.get_result(ctx));
         }
         LLVMValueKind::LLVMConstantIntValueKind => {
-            // TODO: Zero extend or sign extend?
-            let u64 = llvm_const_int_get_zext_value(val);
-            let int_ty = TypedHandle::<IntegerType>::from_handle(ty, ctx)?;
-            let width = int_ty.deref(ctx).width() as usize;
-            if width == 0 {
-                return input_err_noloc!(ConversionErr::ZeroWidthIntConst);
-            }
-            let val_attr =
-                IntegerAttr::new(int_ty, APInt::from_u64(u64, NonZero::new(width).unwrap()));
-            let const_op = ConstantOp::new(ctx, Box::new(val_attr));
+            let val_attr = const_llvm_value_to_attr(ctx, cctx, val)?
+                .expect("ConstantInt value's type must implement ConstLLVMValueToAttr");
+            let const_op = ConstantOp::new(ctx, val_attr);
             insert_const_inst(ctx, cctx, const_op.get_operation());
             cctx.value_map.insert(val, const_op.get_result(ctx));
         }
         LLVMValueKind::LLVMConstantFPValueKind => {
-            let (fp64, lost_info) = llvm_const_real_get_double(val);
-            assert!(!lost_info, "Lost information when converting FP constant");
-            let val_attr: AttrObj = {
-                let float_ty = &*ty.deref(ctx);
-                let Some(float_ty_attr): Option<&dyn FloatAttrBuilder> = type_cast(float_ty) else {
-                    return input_err_noloc!(ConversionErr::FloatConstNotFloatType);
-                };
-                float_ty_attr.value_from_f64(fp64)
+            let Some(val_attr) = const_llvm_value_to_attr(ctx, cctx, val)? else {
+                return input_err_noloc!(ConversionErr::FloatConstNotFloatType);
             };
             let const_op = ConstantOp::new(ctx, val_attr);
             insert_const_inst(ctx, cctx, const_op.get_operation());
@@ -1627,19 +1719,25 @@ fn convert_global(
 
     if let Some(init) = llvm_get_initializer(global) {
         assert!(!llvm_is_declaration(global));
-        // TODO: Use attribute based initializer for simple constants.
-        let init_region = op.add_initializer_region(ctx);
-        let entry_block = init_region.deref(ctx).iter(ctx).next().unwrap();
-        cctx.reset_for_region(entry_block);
 
-        // Convert the initializer.
-        process_constant(ctx, cctx, init)?;
-        let Some(m_val) = cctx.value_map.get(&init) else {
-            panic!("We just processed this constant, it must be in the map");
-        };
+        // We prefer to have an attribute based initializer than a region based one.
+        let init_attr = const_llvm_value_to_attr(ctx, cctx, init)?;
+        if let Some(attr) = init_attr {
+            op.set_initializer_value(ctx, attr);
+        } else {
+            let init_region = op.add_initializer_region(ctx);
+            let entry_block = init_region.deref(ctx).iter(ctx).next().unwrap();
+            cctx.reset_for_region(entry_block);
 
-        let return_op = ReturnOp::new(ctx, Some(*m_val));
-        return_op.get_operation().insert_at_back(entry_block, ctx);
+            // Convert the initializer.
+            process_constant(ctx, cctx, init)?;
+            let Some(m_val) = cctx.value_map.get(&init) else {
+                panic!("We just processed this constant, it must be in the map");
+            };
+
+            let return_op = ReturnOp::new(ctx, Some(*m_val));
+            return_op.get_operation().insert_at_back(entry_block, ctx);
+        }
     }
 
     Ok(op)

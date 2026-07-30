@@ -45,6 +45,7 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, ICmpPredicateAttr, LinkageAttr,
+        PoisonAttr, UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
@@ -2122,6 +2123,106 @@ impl AttrToLLVMConst for BytesAttr {
         _cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
         Ok(llvm_const_string_in_context(llvm_ctx, self.as_ref()))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for IntegerAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let int_ty_llvm = convert_type(ctx, llvm_ctx, cctx, self.get_type().into())?;
+        let ap_int_val: APInt = self.clone().into();
+        Ok(llvm_const_int(int_ty_llvm, ap_int_val.to_u64(), false))
+    }
+}
+
+/// Shared by the [AttrToLLVMConst] impls of the float attributes.
+fn float_attr_to_llvm_const(
+    value: &dyn FloatAttrToFP64,
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    cctx: &mut ConversionContext,
+) -> Result<LLVMValue> {
+    let float_ty_llvm = convert_type(ctx, llvm_ctx, cctx, value.get_type(ctx))?;
+    Ok(llvm_const_real(float_ty_llvm, value.to_fp64()))
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPHalfAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPSingleAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPDoubleAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for ZeroAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_const_null(ty))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for UndefAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_get_undef(ty))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for PoisonAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_get_poison(ty))
     }
 }
 
