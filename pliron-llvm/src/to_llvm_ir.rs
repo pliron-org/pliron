@@ -65,7 +65,7 @@ use crate::{
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
         llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_string_in_context, llvm_const_int, llvm_const_null, llvm_const_real,
+        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_string_in_context,
         llvm_const_vector, llvm_delete_global, llvm_double_type_in_context,
         llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
         llvm_get_named_function, llvm_get_param, llvm_get_pointer_address_space, llvm_get_poison,
