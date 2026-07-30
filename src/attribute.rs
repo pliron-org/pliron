@@ -419,11 +419,9 @@ impl Parsable for AttrName {
     }
 }
 
-impl Deref for AttrName {
-    type Target = Identifier;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for AttrName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 

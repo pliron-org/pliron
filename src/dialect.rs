@@ -3,9 +3,7 @@
 
 //! [Dialect]s are a mechanism to group related [Op](crate::op::Op)s, [Type](crate::type::Type)s
 //! and [Attribute](crate::attribute::Attribute)s.
-use core::{fmt::Display, ops::Deref};
-
-use alloc::string::String;
+use core::fmt::Display;
 
 use crate::{
     attribute::{AttrId, AttrParserFn},
@@ -73,7 +71,7 @@ impl Parsable for DialectName {
                 if state_stream.state.ctx.dialects.contains_key(&dialect_name) {
                     Ok(dialect_name).into_parse_result()
                 } else {
-                    input_err!(loc.clone(), "Unregistered dialect {}", *dialect_name)?
+                    input_err!(loc.clone(), "Unregistered dialect {}", dialect_name)?
                 }
             })
         });
@@ -81,11 +79,9 @@ impl Parsable for DialectName {
     }
 }
 
-impl Deref for DialectName {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for DialectName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 

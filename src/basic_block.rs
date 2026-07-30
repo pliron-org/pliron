@@ -292,7 +292,7 @@ impl BasicBlock {
             !ptr.has_pred(ctx),
             "BasicBlock {} with predecessor {} being erased",
             ptr.deref(ctx).unique_name(ctx),
-            *ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
+            ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
         );
         if let Some(op) = ptr.deref(ctx).iter(ctx).find(|op| op.deref(ctx).has_use()) {
             panic!(

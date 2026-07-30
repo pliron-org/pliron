@@ -89,11 +89,9 @@ impl OpName {
     }
 }
 
-impl Deref for OpName {
-    type Target = Identifier;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for OpName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -421,7 +419,7 @@ pub fn canonical_syntax_print(
     let operands = iter_with_sep(op.operands(), sep);
     let successors = iter_with_sep(
         op.successors()
-            .map(|succ| "^".to_string() + &succ.unique_name(ctx)),
+            .map(|succ| "^".to_string() + succ.unique_name(ctx).as_ref()),
         sep,
     );
     let op_type = TypeSig {

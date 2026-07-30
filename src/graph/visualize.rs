@@ -2,7 +2,7 @@
 // Copyright (c) The pliron contributors
 
 use alloc::{format, string::String};
-use core::{fmt::Display, ops::Deref};
+use core::fmt::Display;
 use pliron::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -260,7 +260,7 @@ fn graphviz_callback(
                 .get_region_index(region.deref(ctx).get_parent_op())
                 .unwrap();
             let op_id = Operation::get_op_dyn(parent_op, ctx).get_opid();
-            let parent_op_label = op_id.name.deref();
+            let parent_op_label = &op_id.name;
             write!(
                 graph_state.f,
                 "subgraph cluster_region_{0}_{1}{{ \n style=dotted;\n label=\"parent_op : {2}, region_idx : {1}\";\n",

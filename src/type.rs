@@ -66,7 +66,6 @@ use core::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     marker::PhantomData,
-    ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
 use pliron_derive::format;
@@ -242,11 +241,9 @@ impl TryFrom<String> for TypeName {
     }
 }
 
-impl Deref for TypeName {
-    type Target = Identifier;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for TypeName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
