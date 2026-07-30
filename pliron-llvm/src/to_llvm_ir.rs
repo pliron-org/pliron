@@ -1149,7 +1149,7 @@ impl ToLLVMValue for ConstantOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1161,7 +1161,7 @@ impl ToLLVMValue for ZeroOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1215,7 +1215,7 @@ impl ToLLVMValue for UndefOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1227,7 +1227,7 @@ impl ToLLVMValue for PoisonOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1239,7 +1239,7 @@ impl ToLLVMValue for AddressOfOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1251,7 +1251,7 @@ impl ToLLVMValue for BlockAddressOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -2096,7 +2096,7 @@ fn convert_function(
 
 /// Attributes that can be converted to a constant [LLVMValue]
 #[attr_interface]
-trait ToLLVMConst {
+trait AttrToLLVMConst {
     /// Convert from pliron [Attribute] to a constant [LLVMValue].
     fn convert(
         &self,
@@ -2114,7 +2114,7 @@ trait ToLLVMConst {
 }
 
 #[attr_interface_impl]
-impl ToLLVMConst for BytesAttr {
+impl AttrToLLVMConst for BytesAttr {
     fn convert(
         &self,
         _ctx: &Context,
@@ -2127,7 +2127,7 @@ impl ToLLVMConst for BytesAttr {
 
 /// Pliron [Op]s that can be converted to a constant [LLVMValue]
 #[op_interface]
-trait ToLLVMConstValue {
+trait OpToLLVMConstValue {
     /// Convert from pliron [Op] to a constant [LLVMValue].
     fn convert(
         &self,
@@ -2145,7 +2145,7 @@ trait ToLLVMConstValue {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for ConstantOp {
+impl OpToLLVMConstValue for ConstantOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2172,7 +2172,7 @@ impl ToLLVMConstValue for ConstantOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for UndefOp {
+impl OpToLLVMConstValue for UndefOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2185,7 +2185,7 @@ impl ToLLVMConstValue for UndefOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for PoisonOp {
+impl OpToLLVMConstValue for PoisonOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2198,7 +2198,7 @@ impl ToLLVMConstValue for PoisonOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for ZeroOp {
+impl OpToLLVMConstValue for ZeroOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2212,7 +2212,7 @@ impl ToLLVMConstValue for ZeroOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for AddressOfOp {
+impl OpToLLVMConstValue for AddressOfOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2229,7 +2229,7 @@ impl ToLLVMConstValue for AddressOfOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for BlockAddressOp {
+impl OpToLLVMConstValue for BlockAddressOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2264,7 +2264,7 @@ impl ToLLVMConstValue for BlockAddressOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for InsertValueOp {
+impl OpToLLVMConstValue for InsertValueOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2295,7 +2295,7 @@ impl ToLLVMConstValue for InsertValueOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for InsertElementOp {
+impl OpToLLVMConstValue for InsertElementOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2324,7 +2324,7 @@ impl ToLLVMConstValue for InsertElementOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for TruncOp {
+impl OpToLLVMConstValue for TruncOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2350,7 +2350,7 @@ impl ToLLVMConstValue for TruncOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for SubOp {
+impl OpToLLVMConstValue for SubOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2376,7 +2376,7 @@ impl ToLLVMConstValue for SubOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for PtrToIntOp {
+impl OpToLLVMConstValue for PtrToIntOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2410,7 +2410,7 @@ fn convert_to_llvm_const(
     match value.defining_entity() {
         DefiningEntity::Op(op) => {
             let op = Operation::get_op_dyn(op, ctx);
-            if let Some(const_trans) = op_cast::<dyn ToLLVMConstValue>(op.as_ref()) {
+            if let Some(const_trans) = op_cast::<dyn OpToLLVMConstValue>(op.as_ref()) {
                 const_trans.convert(ctx, llvm_ctx, cctx)
             } else {
                 input_err!(value.loc(ctx), ToLLVMErr::CannotEvaluateToConst)
@@ -2429,7 +2429,7 @@ fn convert_global_initializer(
     global_op: GlobalOp,
 ) -> Result<Option<LLVMValue>> {
     if let Some(initializer) = global_op.get_initializer_value(ctx) {
-        let Some(bytes) = attr_cast::<dyn ToLLVMConst>(initializer.as_ref()) else {
+        let Some(bytes) = attr_cast::<dyn AttrToLLVMConst>(initializer.as_ref()) else {
             return input_err!(
                 global_op.loc(ctx),
                 ToLLVMErr::UnsupportedGlobalInitializerAttr(initializer.get_attr_id().to_string())
