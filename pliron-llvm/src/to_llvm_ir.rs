@@ -1331,10 +1331,11 @@ impl ToLLVMValue for CallOp {
             .collect::<Result<_>>()?;
         let ty = convert_type(ctx, llvm_ctx, cctx, self.callee_type(ctx))?;
         let res = self.get_result(ctx);
-        let unique_name = res.unique_name(ctx);
+        let unique_name;
         let name = if res.get_type(ctx).deref(ctx).is::<VoidType>() {
             ""
         } else {
+            unique_name = res.unique_name(ctx);
             unique_name.as_ref()
         };
         let callee = match self.callee(ctx) {
@@ -1395,10 +1396,11 @@ impl ToLLVMValue for CallIntrinsicOp {
             .unwrap_or_else(|| llvm_add_function(cctx.cur_llvm_module, &intrinsic_name, fn_ty));
 
         let res = self.get_result(ctx);
-        let unique_name = res.unique_name(ctx);
+        let unique_name;
         let name = if res.get_type(ctx).deref(ctx).is::<VoidType>() {
             ""
         } else {
+            unique_name = res.unique_name(ctx);
             unique_name.as_ref()
         };
 

@@ -247,6 +247,12 @@ impl AsRef<str> for TypeName {
     }
 }
 
+impl AsRef<Identifier> for TypeName {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
 impl_printable_for_display!(TypeName);
 
 impl Display for TypeName {

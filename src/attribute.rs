@@ -425,6 +425,12 @@ impl AsRef<str> for AttrName {
     }
 }
 
+impl AsRef<Identifier> for AttrName {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
 impl From<Identifier> for AttrName {
     fn from(value: Identifier) -> Self {
         AttrName(value)

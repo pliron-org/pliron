@@ -95,6 +95,12 @@ impl AsRef<str> for OpName {
     }
 }
 
+impl AsRef<Identifier> for OpName {
+    fn as_ref(&self) -> &Identifier {
+        &self.0
+    }
+}
+
 impl From<Identifier> for OpName {
     fn from(value: Identifier) -> Self {
         OpName(value)
