@@ -65,7 +65,7 @@ use crate::{
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
         llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_bytes_in_context, llvm_const_int, llvm_const_null, llvm_const_real,
+        llvm_const_string_in_context, llvm_const_int, llvm_const_null, llvm_const_real,
         llvm_const_vector, llvm_delete_global, llvm_double_type_in_context,
         llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
         llvm_get_named_function, llvm_get_param, llvm_get_pointer_address_space, llvm_get_poison,
@@ -167,7 +167,7 @@ pub enum ToLLVMErr {
     #[error("GlobalOp Initializer region does not terminate with a return with value")]
     GlobalOpInitializerRegionBadReturn,
     #[error("GlobalOp initializer attribute {0} must implement LLVM conversion")]
-    UnsupportedGlobalInitializer(String),
+    UnsupportedGlobalInitializerAttr(String),
     #[error("Cannot evaluate value to a constant")]
     CannotEvaluateToConst,
     #[error("BlockAddressOp refers to missing block tag {1} in function {0}")]
@@ -2121,7 +2121,7 @@ impl ToLLVMConst for BytesAttr {
         llvm_ctx: &LLVMContext,
         _cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        Ok(llvm_const_bytes_in_context(llvm_ctx, self.as_ref()))
+        Ok(llvm_const_string_in_context(llvm_ctx, self.as_ref()))
     }
 }
 
@@ -2432,7 +2432,7 @@ fn convert_global_initializer(
         let Some(bytes) = attr_cast::<dyn ToLLVMConst>(initializer.as_ref()) else {
             return input_err!(
                 global_op.loc(ctx),
-                ToLLVMErr::UnsupportedGlobalInitializer(initializer.disp(ctx).to_string())
+                ToLLVMErr::UnsupportedGlobalInitializerAttr(initializer.get_attr_id().to_string())
             );
         };
         return Ok(Some(bytes.convert(ctx, llvm_ctx, cctx)?));

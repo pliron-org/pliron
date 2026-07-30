@@ -1007,9 +1007,7 @@ pub fn llvm_const_null(ty: LLVMType) -> LLVMValue {
 }
 
 /// LLVMConstStringInContext2
-///
-/// Builds an `[N x i8]` constant holding exactly `bytes`, with no terminator added.
-pub fn llvm_const_bytes_in_context(context: &LLVMContext, bytes: &[u8]) -> LLVMValue {
+pub fn llvm_const_string_in_context(context: &LLVMContext, bytes: &[u8]) -> LLVMValue {
     unsafe {
         LLVMConstStringInContext2(
             context.inner_ref(),

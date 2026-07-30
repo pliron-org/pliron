@@ -2481,6 +2481,8 @@ impl ZeroOp {
 pub enum GlobalOpVerifyErr {
     #[error("GlobalOp must have a type")]
     MissingType,
+    #[error("GlobalOp cannot have both an initializer value and initializer region")]
+    InvalidInitializer,
 }
 
 /// Same as MLIR's LLVM dialect [GlobalOp](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal-llvmglobalop)
@@ -2561,6 +2563,10 @@ impl GlobalOp {
 
     /// Set a simple initializer value for this global variable.
     pub fn set_initializer_value(&self, ctx: &Context, value: AttrObj) {
+        assert!(
+            self.get_initializer_region(ctx).is_none(),
+            "Attempt to add an initializer value when there already is an initializer region"
+        );
         self.set_attr_global_initializer(ctx, value);
     }
 
