@@ -5,6 +5,7 @@
 
 pub mod cloning;
 pub mod dialect_conversion;
+pub mod equivalence;
 pub mod inserter;
 pub mod listener;
 pub mod match_rewrite;

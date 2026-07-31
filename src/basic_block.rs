@@ -182,7 +182,7 @@ impl BasicBlock {
     }
 
     /// Get an iterator over the arguments
-    pub fn arguments(&self) -> impl Iterator<Item = Value> + '_ {
+    pub fn arguments(&self) -> impl Iterator<Item = Value> + Clone + '_ {
         self.args.iter().map(|arg| arg.as_value(self.self_ptr))
     }
 
