@@ -3,23 +3,24 @@
 
 //! Cloning IR entities with a value / block / op remapping.
 //!
-//! This mirrors MLIR's [`IRMapping`] + `Operation::clone(mapper)` /
-//! `Region::cloneInto(mapper)`. An [IrMapping] records, for every original IR
-//! entity, the clone that should stand in for it. Cloning an [Operation]
-//! rewrites each operand and successor through the mapping; anything *not* in
-//! the mapping is left unchanged (the MLIR `lookupOrDefault` rule), so uses of
-//! values defined outside the cloned scope correctly keep pointing at the
+//! An [IrMapping] records, for every original IR entity, the clone that stands
+//! in for it. Cloning an [Operation] rewrites each operand and successor through
+//! the mapping; anything *not* in the mapping is left unchanged. This means that
+//! uses of values defined outside the cloned scope will continue referring to the
 //! originals.
 //!
-//! Cloning a set of blocks is **order-independent**: every clone block, block
-//! argument and op result is created and recorded before any operand or
-//! successor is wired. So a reference that points "forward" in the block list
-//! (a branch to a later block, a back-edge, or an operand whose def is cloned
-//! later) still resolves to its clone, whatever order the blocks are given in.
+//! Cloning is **order-independent**, achieved conceptually in two passes.
+//! 1. Clone and map (original -> cloned) definitions first. Definitions are
+//!    op results, block arguments and basic blocks. The clones are just a "shell":
+//!    they do not have any uses (operands / successors).
+//! 2. Add mapped uses (operands / successors) to the cloned shell operations and
+//!    clone nested regions.
+//!
+//! So a reference that points "forward" (a branch to a later block, or an operand
+//! whose def isn't cloned yet) still resolves to its clone.
+//!
 //! New blocks and ops are inserted through a [Rewriter], so any listener it
 //! carries is notified.
-//!
-//! [`IRMapping`]: https://mlir.llvm.org/doxygen/classmlir_1_1IRMapping.html
 
 use alloc::vec::Vec;
 
@@ -39,12 +40,7 @@ use crate::{
     value::Value,
 };
 
-/// A mapping from original IR entities to their clones, used while cloning.
-///
-/// Holds three independent maps: [Value]s, [BasicBlock]s, and [Operation]s.
-/// While cloning, operand [Value]s are looked up in the value map and branch
-/// successor [BasicBlock]s in the block map; entries absent from a map resolve
-/// to themselves (see [IrMapping::lookup_value_or_default]).
+/// Mapping between IR entities
 #[derive(Debug, Default)]
 pub struct IrMapping {
     values: FxHashMap<Value, Value>,
@@ -73,43 +69,40 @@ impl IrMapping {
         self.ops.insert(from, to);
     }
 
-    /// The clone recorded for `from`, if any.
+    /// Look up mapping for value `from`.
     pub fn lookup_value(&self, from: Value) -> Option<Value> {
         self.values.get(&from).copied()
     }
 
-    /// The clone recorded for `from`, if any.
+    /// Look up mapping for block `from`.
     pub fn lookup_block(&self, from: Ptr<BasicBlock>) -> Option<Ptr<BasicBlock>> {
         self.blocks.get(&from).copied()
     }
 
-    /// The clone recorded for `from`, if any.
+    /// Look up mapping for op `from`.
     pub fn lookup_op(&self, from: Ptr<Operation>) -> Option<Ptr<Operation>> {
         self.ops.get(&from).copied()
     }
 
-    /// The clone recorded for `from`, or `from` itself if none was recorded.
-    /// Mirrors MLIR's `IRMapping::lookupOrDefault`.
+    /// Look up mapping for value `from`. If none exists, returns `from`.
     pub fn lookup_value_or_default(&self, from: Value) -> Value {
         self.lookup_value(from).unwrap_or(from)
     }
 
-    /// The clone recorded for `from`, or `from` itself if none was recorded.
-    /// Mirrors MLIR's `IRMapping::lookupOrDefault`.
+    /// Look up mapping for block `from`. If none exists, returns `from`.
     pub fn lookup_block_or_default(&self, from: Ptr<BasicBlock>) -> Ptr<BasicBlock> {
         self.lookup_block(from).unwrap_or(from)
     }
 }
 
-/// Clone `op` (and the contents of its regions), remapping its operands and
-/// successors through `mapper`.
+/// Clone `op` (and the contents of its regions).
 ///
-/// The returned [Operation] is **unlinked** (not in any block); the caller
-/// inserts it. New blocks created while cloning nested regions are inserted
-/// through `rewriter`, so any listener it carries is notified. Operands and
-/// successors absent from `mapper` are kept as-is, so values defined outside
-/// the cloned scope are shared with the original. The op and its results are
-/// recorded into `mapper` so later clones can refer to them.
+/// * Uses `mapper` for remapping operands and successors.
+/// * Updates `mapper` with new clones.
+///
+/// The returned [Operation] is **unlinked** (i.e., not inserted in any block).
+///
+/// See module docs for algorithm details.
 pub fn clone_operation(
     op: Ptr<Operation>,
     ctx: &mut Context,
@@ -121,18 +114,14 @@ pub fn clone_operation(
     new_op
 }
 
-/// Phase one of cloning an op: build its clone with the right result types,
-/// successors and (empty) regions, but **no operands**, then record the op and
-/// its results in `mapper`.
+/// Phase one of cloning an op:
+/// 1. Build its clone with the right result types, successors and (empty) regions
+///    but **no operands**
+/// 2. Record the op and its results in `mapper`.
 ///
-/// Splitting the operands off into a later pass ([fill_operation]) is what makes
-/// cloning a block list order-independent: a use can be cloned before its def,
-/// because the def's result is already recorded by the time operands are wired.
-/// It also keeps the source IR untouched while shells are built (an empty
-/// operand list adds no uses to any of the source's values).
-///
-/// Successors are safe to remap now: when cloning a block list, every clone
-/// block is created and recorded before any op shell is built.
+/// Note: Successors are already safe to remap: when cloning a block list, every clone
+/// block is created and recorded before any op shell is built. This implementation detail
+/// deviates from the conceptual algorithm described in the module doc.
 ///
 /// The returned op is **unlinked**.
 fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping) -> Ptr<Operation> {
@@ -168,8 +157,7 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
         new_ref.set_loc(loc);
     }
 
-    // Record the op and its results so later shells (and the operand-wiring
-    // pass) can refer to them.
+    // Record the op and its results for later use.
     mapper.map_op(op, new_op);
     let old_results: Vec<Value> = op.deref(ctx).results().collect();
     let new_results: Vec<Value> = new_op.deref(ctx).results().collect();
@@ -180,14 +168,8 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
     new_op
 }
 
-/// Phase two of cloning an op: wire the clone's operands and clone the contents
+/// Phase two of cloning an op: add the clone's operands and clone the contents
 /// of its nested regions.
-///
-/// By now [clone_op_shell] has recorded `op` and its results in `mapper`, as
-/// have the shells of any sibling ops, so every operand resolves to its clone
-/// (or, if defined outside the cloned scope, to the original via
-/// [IrMapping::lookup_value_or_default]). Cloning the nested regions is deferred
-/// to here too, matching MLIR's `Region::cloneInto`.
 fn fill_operation(
     op: Ptr<Operation>,
     ctx: &mut Context,
@@ -218,11 +200,12 @@ fn fill_operation(
     }
 }
 
-/// Clone every block of `src_region` into `dest_region`, appended at its end,
-/// remapping through `mapper`.
+/// Clone every block of `src_region` into `dest_region`, appending at its end.
 ///
-/// New blocks and ops are inserted through `rewriter`, so any listener it carries is notified.
-/// `rewriter`'s insertion point is saved on entry and restored on return.
+/// * Uses `mapper` for remapping operands and successors.
+/// * Updates `mapper` with new clones.
+///
+/// See module docs for algorithm details.
 pub fn clone_region_into(
     src_region: Ptr<Region>,
     dest_region: Ptr<Region>,
@@ -234,27 +217,13 @@ pub fn clone_region_into(
     clone_blocks_into(&blocks, dest_region, ctx, rewriter, mapper);
 }
 
-/// Clone `blocks` (and their operations) into `dest_region`, appended at its end
-/// in the given order, remapping through `mapper`.
+/// Clone `blocks` (and their operations) into `dest_region`, appending at its end
+/// in the given order.
 ///
-/// New blocks and ops are inserted through `rewriter`, so any listener it carries is notified.
-/// `rewriter`'s insertion point is saved on entry and restored on return.
-//
-// Cloning is **three-phase**, so the result does not depend on the order of
-// `blocks`:
-//
-// 1. Create every clone block and its block arguments, and record them.
-// 2. Create every clone op as a *shell* (correct results and successors, but no
-//    operands and empty regions), and record each op and its results.
-// 3. Wire each clone op's operands and clone its nested regions.
-//
-// Because every block, block argument and op result is recorded (phases 1-2)
-// before any operand or successor is wired (phase 3), a reference that points
-// "forward" in `blocks` -- a branch to a later block, a back-edge, or an
-// operand whose def is cloned later -- still resolves to its clone. Values and
-// blocks absent from `mapper` are left unchanged
-// ([IrMapping::lookup_value_or_default]), so uses of values defined outside
-// `blocks` keep pointing at the originals.
+/// * Uses `mapper` for remapping operands and successors.
+/// * Updates `mapper` with new clones.
+///
+/// See module docs for algorithm details.
 pub fn clone_blocks_into(
     blocks: &[Ptr<BasicBlock>],
     dest_region: Ptr<Region>,
@@ -312,7 +281,7 @@ pub fn clone_blocks_into(
         }
     }
 
-    // Phase 3: wire operands and clone nested regions, now that every op result
+    // Phase 3: add operands and clone nested regions, now that every op result
     // in `blocks` is recorded.
     for &src_block in blocks {
         let ops: Vec<Ptr<Operation>> = src_block.deref(ctx).iter(ctx).collect();
