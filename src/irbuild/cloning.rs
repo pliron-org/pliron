@@ -159,9 +159,9 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
 
     // Record the op and its results for later use.
     mapper.map_op(op, new_op);
-    let old_results: Vec<Value> = op.deref(ctx).results().collect();
-    let new_results: Vec<Value> = new_op.deref(ctx).results().collect();
-    for (old, new) in old_results.into_iter().zip(new_results) {
+    let old_ref = op.deref(ctx);
+    let new_ref = new_op.deref(ctx);
+    for (old, new) in old_ref.results().zip(new_ref.results()) {
         mapper.map_value(old, new);
     }
 
@@ -258,9 +258,9 @@ pub fn clone_blocks_into(
             new_ref.set_loc(loc);
         }
 
-        let old_args: Vec<Value> = src_block.deref(ctx).arguments().collect();
-        let new_args: Vec<Value> = new_block.deref(ctx).arguments().collect();
-        for (old, new) in old_args.into_iter().zip(new_args) {
+        let src_ref = src_block.deref(ctx);
+        let new_ref = new_block.deref(ctx);
+        for (old, new) in src_ref.arguments().zip(new_ref.arguments()) {
             mapper.map_value(old, new);
         }
 
