@@ -4102,7 +4102,7 @@ impl FNegOp {
 
 #[derive(Error, Debug)]
 pub enum FNegOpVerifyErr {
-    #[error("Argument must be a float")]
+    #[error("Argument must be (possibly vector of) float")]
     ArgumentMustBeFloat,
     #[error("Fast math flags must be set")]
     FastMathFlagsMustBeSet,
