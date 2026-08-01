@@ -4,7 +4,7 @@
 //! [Context] and [Ptr] together provide memory management for `pliron`.
 
 use core::{
-    any::{Any, TypeId},
+    any::Any,
     cell::{Cell, Ref, RefCell, RefMut},
     fmt::Display,
     hash::Hash,
@@ -269,7 +269,6 @@ impl<T: ArenaObj> Eq for Ptr<T> {}
 
 impl<T: ArenaObj + 'static> Hash for Ptr<T> {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
-        TypeId::of::<T>().hash(state);
         self.idx.hash(state);
     }
 }

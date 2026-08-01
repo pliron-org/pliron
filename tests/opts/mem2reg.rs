@@ -1012,20 +1012,20 @@ fn mem2reg_alloca_inside_loop_body() -> Result<()> {
             v13 = llvm.poison : builtin.integer i64;
             llvm.br ^header_block3v1(zero_v3, v13) !4
 
-          ^header_block3v1(i_v5: builtin.integer i64, alloc_v11: builtin.integer i64) !5:
+          ^header_block3v1(i_v5: builtin.integer i64, alloc_v12: builtin.integer i64) !5:
             continue_loop_v6 = llvm.icmp i_v5 <ULT> n_v0 : builtin.integer i1 !6;
             llvm.cond_br if continue_loop_v6 ^body_block5v1() else ^exit_block6v3() !7
 
           ^body_block5v1() !8:
-            llvm.cond_br if cond_v1 ^then_block7v1() else ^merge_block2v7(alloc_v11) !9
+            llvm.cond_br if cond_v1 ^then_block7v1() else ^merge_block2v7(alloc_v12) !9
 
           ^then_block7v1() !10:
             v_v8 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !11;
             llvm.br ^merge_block2v7(v_v8) !12
 
-          ^merge_block2v7(alloc_v12: builtin.integer i64) !13:
+          ^merge_block2v7(alloc_v11: builtin.integer i64) !13:
             next_i_v10 = llvm.add i_v5, one_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !14;
-            llvm.br ^header_block3v1(next_i_v10, alloc_v12) !15
+            llvm.br ^header_block3v1(next_i_v10, alloc_v11) !15
 
           ^exit_block6v3() !16:
             llvm.return zero_v3 !17
