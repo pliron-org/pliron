@@ -1,6 +1,11 @@
 ; ModuleID = 'const_struct_array'
 source_filename = "const_struct_array.ll"
 
+; A NUL-terminated byte string, which round-trips as a `builtin.string` attribute initializer.
+@const_str = private constant [15 x i8] c"const sum: %d\0A\00"
+
+declare i32 @printf(ptr, ...)
+
 define i32 @const_array() {
 entry:
   ; Create a local copy of the constant array
@@ -145,6 +150,14 @@ entry:
     )
 }
 
+; Print through a variadic call and return what printf reports it wrote.
+define i32 @const_printf() {
+entry:
+  ; "const sum: 42\n" is 14 characters, so this returns 14.
+  %n = call i32 (ptr, ...) @printf(ptr @const_str, i32 42)
+  ret i32 %n
+}
+
 define i32 @main() {
 entry:
   ; Call the const_array function
@@ -165,13 +178,17 @@ entry:
   ; Call the const_aggregate_zero function
   %result6 = call i32 @const_aggregate_zero()
 
+  ; Call the const_printf function
+  %result7 = call i32 @const_printf()
+
   ; Add the results to the final sum
   %temp_sum0 = add i32 %result1, %result2
   %temp_sum1 = add i32 %temp_sum0, %result3
   %temp_sum2 = add i32 %temp_sum1, %result4
   %temp_sum3 = add i32 %temp_sum2, %result5
   %temp_sum4 = sub i32 %temp_sum3, %result6
+  %temp_sum5 = add i32 %temp_sum4, %result7
 
   ; Return the final sum
-  ret i32 %temp_sum4
+  ret i32 %temp_sum5
 }
