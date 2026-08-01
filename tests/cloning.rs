@@ -36,9 +36,6 @@ use pliron::{
     utils::apint::{APInt, bw},
 };
 
-#[cfg(target_family = "wasm")]
-use wasm_bindgen_test::*;
-
 mod common;
 
 /// A minimal terminator that carries successors, so a test can build a small CFG
