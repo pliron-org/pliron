@@ -4039,12 +4039,12 @@ pub enum SelectOpVerifyErr {
 /// Operands:
 /// | operand | description |
 /// |-----|-------|
-/// | `arg` | float |
+/// | `arg` | float or vector of float |
 ///
 /// Result(s):
 /// | result | description |
 /// |-----|-------|
-/// | `res` | float |
+/// | `res` | float or vector of float |
 #[pliron_op(
     name = "llvm.fneg",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` : ` type($0)",
@@ -4065,7 +4065,12 @@ impl Verify for FNegOp {
 
         let loc = self.loc(ctx);
         let op = &*self.op.deref(ctx);
-        let arg_ty = op.get_operand(0).get_type(ctx);
+        let mut arg_ty = op.get_operand(0).get_type(ctx);
+
+        if let Some(vec_ty) = arg_ty.deref(ctx).downcast_ref::<VectorType>() {
+            arg_ty = vec_ty.elem_type();
+        }
+
         if !type_impls::<dyn FloatTypeInterface>(&*arg_ty.deref(ctx)) {
             return verify_err!(loc, FNegOpVerifyErr::ArgumentMustBeFloat);
         }
@@ -4097,7 +4102,7 @@ impl FNegOp {
 
 #[derive(Error, Debug)]
 pub enum FNegOpVerifyErr {
-    #[error("Argument must be a float")]
+    #[error("Argument must be (possibly vector of) float")]
     ArgumentMustBeFloat,
     #[error("Fast math flags must be set")]
     FastMathFlagsMustBeSet,
