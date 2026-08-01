@@ -4,6 +4,7 @@
 //! Test that llvm operations implement the constant folding interfaces
 //! [ConstFoldInterface] and [BranchOpFoldInterface] correctly
 
+use expect_test::expect;
 use pliron::{
     context::Context, init_env_logger_for_tests, irbuild::IRStatus, op::Op,
     operation::verify_operation, opts::constants::sccp::sccp, printable::Printable, result::Result,
@@ -13,17 +14,16 @@ use pliron_llvm::ops::FuncOp;
 
 use crate::common;
 
-fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String, String)> {
+fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let op: FuncOp = common::parse_op_verify(ctx, input)?;
 
-    let before = op.disp(ctx).to_string();
     let status = sccp(op.get_operation(), ctx)?;
     let after = op.disp(ctx).to_string();
-    log::debug!("After SCCP:\n{}", after);
+    log::trace!("After SCCP:\n{}", after);
     verify_operation(op.get_operation(), ctx)?;
-    Ok((status, before, after))
+    Ok((status, after))
 }
 
 // ---------------------------------------------------------------------------
@@ -42,9 +42,20 @@ fn add_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<7: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            sum_v3 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !3;
+            sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return sum_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -60,9 +71,20 @@ fn add_wraps_on_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<128: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <127: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
+            sum_v3 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !3;
+            sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
+            llvm.return sum_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -77,7 +99,7 @@ fn add_does_not_fold_with_non_constant_operand() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -94,7 +116,7 @@ fn add_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -111,7 +133,7 @@ fn add_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -128,9 +150,20 @@ fn add_nsw_still_folds_without_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<7: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8 !2;
+            sum_v3 = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8 !3;
+            sum_v2 = llvm.add a_v0, b_v1 <{nsw=true,nuw=true}>: builtin.integer i8 !4;
+            llvm.return sum_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -150,9 +183,20 @@ fn sub_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<6: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            diff_v3 = builtin.constant <builtin.integer <6: i64>> : builtin.integer i64 !3;
+            diff_v2 = llvm.sub a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return diff_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -168,9 +212,20 @@ fn sub_wraps_on_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<255: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
+            diff_v3 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !3;
+            diff_v2 = llvm.sub a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
+            llvm.return diff_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -185,7 +240,7 @@ fn sub_does_not_fold_with_non_constant_operand() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -205,7 +260,7 @@ fn sub_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -222,7 +277,7 @@ fn sub_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -239,9 +294,20 @@ fn sub_nsw_still_folds_without_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<6: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8 !2;
+            diff_v3 = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8 !3;
+            diff_v2 = llvm.sub a_v0, b_v1 <{nsw=true,nuw=true}>: builtin.integer i8 !4;
+            llvm.return diff_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -261,9 +327,20 @@ fn mul_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<30: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !1;
+            b_v1 = builtin.constant <builtin.integer <6: i64>> : builtin.integer i64 !2;
+            prod_v3 = builtin.constant <builtin.integer <30: i64>> : builtin.integer i64 !3;
+            prod_v2 = llvm.mul a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return prod_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -279,9 +356,20 @@ fn mul_wraps_on_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<44: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <100: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !2;
+            prod_v3 = builtin.constant <builtin.integer <44: i8>> : builtin.integer i8 !3;
+            prod_v2 = llvm.mul a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
+            llvm.return prod_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -296,7 +384,7 @@ fn mul_does_not_fold_with_non_constant_operand() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -315,7 +403,7 @@ fn mul_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -332,7 +420,7 @@ fn mul_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -349,9 +437,20 @@ fn mul_nsw_still_folds_without_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<30: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8 !2;
+            prod_v3 = builtin.constant <builtin.integer <30: i8>> : builtin.integer i8 !3;
+            prod_v2 = llvm.mul a_v0, b_v1 <{nsw=true,nuw=true}>: builtin.integer i8 !4;
+            llvm.return prod_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -371,9 +470,20 @@ fn shl_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<8: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            b_v1 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !2;
+            shifted_v3 = builtin.constant <builtin.integer <8: i64>> : builtin.integer i64 !3;
+            shifted_v2 = llvm.shl a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return shifted_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -393,9 +503,20 @@ fn shl_wraps_on_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<128: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8 !2;
+            shifted_v3 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !3;
+            shifted_v2 = llvm.shl a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
+            llvm.return shifted_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -413,7 +534,7 @@ fn shl_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -429,7 +550,7 @@ fn shl_does_not_fold_with_non_constant_operand() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -449,7 +570,7 @@ fn shl_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -471,7 +592,7 @@ fn shl_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -491,9 +612,20 @@ fn shl_nsw_nuw_still_folds_without_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<8: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !2;
+            shifted_v3 = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8 !3;
+            shifted_v2 = llvm.shl a_v0, b_v1 <{nsw=true,nuw=true}>: builtin.integer i8 !4;
+            llvm.return shifted_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -513,9 +645,20 @@ fn sdiv_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<3: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <2: i8>> : builtin.integer i8 !2;
+            q_v3 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !3;
+            q_v2 = llvm.sdiv a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return q_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -531,7 +674,7 @@ fn sdiv_does_not_fold_on_division_by_zero() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -551,7 +694,7 @@ fn sdiv_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -572,9 +715,20 @@ fn srem_folds_two_constants() -> Result<()> {
       }
     "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<1: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !2;
+            r_v3 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !3;
+            r_v2 = llvm.srem a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return r_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -590,7 +744,7 @@ fn srem_does_not_fold_on_division_by_zero() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -608,7 +762,7 @@ fn srem_does_not_fold_on_signed_overflow() -> Result<()> {
       }
     "#;
 
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -628,9 +782,20 @@ fn udiv_folds_two_constants() -> Result<()> {
         llvm.return q
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<3: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8 !2;
+            q_v3 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !3;
+            q_v2 = llvm.udiv a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return q_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -645,7 +810,7 @@ fn udiv_does_not_fold_on_division_by_zero() -> Result<()> {
         llvm.return q
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -665,9 +830,20 @@ fn urem_folds_two_constants() -> Result<()> {
         llvm.return r
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<1: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <13: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i8>> : builtin.integer i8 !2;
+            r_v3 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !3;
+            r_v2 = llvm.urem a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return r_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -682,7 +858,7 @@ fn urem_does_not_fold_on_division_by_zero() -> Result<()> {
         llvm.return r
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -703,9 +879,20 @@ fn and_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<8: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8 !3;
+            c_v2 = llvm.and a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -719,7 +906,7 @@ fn and_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -734,9 +921,19 @@ fn and_folds_to_zero_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("<0: i1>").count(), 2);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i1) !0:
+            z_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
+            c_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !2;
+            c_v2 = llvm.and x_v0, z_v1 : builtin.integer i1 !3;
+            llvm.return c_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -756,9 +953,20 @@ fn or_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<14: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <14: i8>> : builtin.integer i8 !3;
+            c_v2 = llvm.or a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -772,7 +980,7 @@ fn or_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -787,9 +995,19 @@ fn or_folds_to_one_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("<1: i1>").count(), 2);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i1) !0:
+            one_v1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            c_v3 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !2;
+            c_v2 = llvm.or x_v0, one_v1 : builtin.integer i1 !3;
+            llvm.return c_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -809,9 +1027,20 @@ fn xor_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<6: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <12: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <10: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8 !3;
+            c_v2 = llvm.xor a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -825,7 +1054,7 @@ fn xor_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -845,9 +1074,20 @@ fn lshr_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<64: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <64: i8>> : builtin.integer i8 !3;
+            c_v2 = llvm.lshr a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -861,7 +1101,7 @@ fn lshr_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -877,7 +1117,7 @@ fn lshr_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -899,9 +1139,20 @@ fn ashr_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<192: i8>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <192: i8>> : builtin.integer i8 !3;
+            c_v2 = llvm.ashr a_v0, b_v1 : builtin.integer i8 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -915,7 +1166,7 @@ fn ashr_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -931,7 +1182,7 @@ fn ashr_does_not_fold_when_shift_amount_exceeds_bitwidth() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -951,9 +1202,20 @@ fn icmp_eq_folds_to_true() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<1: i1>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
+            c_v2 = llvm.icmp a_v0 <EQ> b_v1 : builtin.integer i1 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -968,9 +1230,20 @@ fn icmp_eq_folds_to_false() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<0: i1>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <6: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !3;
+            c_v2 = llvm.icmp a_v0 <EQ> b_v1 : builtin.integer i1 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -986,9 +1259,20 @@ fn icmp_signed_predicate_treats_high_bit_as_negative() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<1: i1>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
+            c_v2 = llvm.icmp a_v0 <SLT> b_v1 : builtin.integer i1 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1005,9 +1289,20 @@ fn icmp_unsigned_predicate_treats_high_bit_as_large() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<0: i1>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            b_v1 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !2;
+            c_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !3;
+            c_v2 = llvm.icmp a_v0 <ULT> b_v1 : builtin.integer i1 !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1021,7 +1316,7 @@ fn icmp_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1040,9 +1335,19 @@ fn sext_folds_non_negative_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<5: i16>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i16() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16 !2;
+            c_v1 = llvm.sext a_v0 to builtin.integer i16 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1058,9 +1363,19 @@ fn sext_folds_negative_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<65535: i16>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i16() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <65535: i16>> : builtin.integer i16 !2;
+            c_v1 = llvm.sext a_v0 to builtin.integer i16 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1073,7 +1388,7 @@ fn sext_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1093,9 +1408,19 @@ fn zext_folds_non_negative_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<5: i16>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i16() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16 !2;
+            c_v1 = llvm.zext <nneg=false> a_v0 to builtin.integer i16 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1111,9 +1436,19 @@ fn zext_folds_high_bit_set_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<255: i16>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i16() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <255: i16>> : builtin.integer i16 !2;
+            c_v1 = llvm.zext <nneg=false> a_v0 to builtin.integer i16 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1129,7 +1464,7 @@ fn zext_nneg_does_not_fold_negative_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1145,9 +1480,19 @@ fn zext_nneg_folds_non_negative_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<5: i16>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i16() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16 !2;
+            c_v1 = llvm.zext <nneg=true> a_v0 to builtin.integer i16 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1160,7 +1505,7 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1179,9 +1524,19 @@ fn fneg_folds_constant() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("-2.5"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single -2.5> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1195,10 +1550,20 @@ fn fneg_folds_negative_zero() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The result is positive zero; it must not still be -0.0.
-    assert!(after.contains("<builtin.single 0> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single -0> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single 0> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1211,7 +1576,7 @@ fn fneg_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1226,14 +1591,19 @@ fn fneg_folds_positive_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single -Inf> : builtin.fp32")
-            .count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single -Inf> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1247,14 +1617,19 @@ fn fneg_folds_negative_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single +Inf> : builtin.fp32")
-            .count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single -Inf> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1268,12 +1643,19 @@ fn fneg_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single NaN> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1287,7 +1669,7 @@ fn fneg_nnan_does_not_fold_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1302,7 +1684,7 @@ fn fneg_ninf_does_not_fold_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1317,9 +1699,19 @@ fn fneg_nnan_still_folds_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("-2.5"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            c_v2 = builtin.constant <builtin.single -2.5> : builtin.fp32  !2;
+            c_v1 = llvm.fneg <NNAN> a_v0 : builtin.fp32  !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1338,9 +1730,20 @@ fn fadd_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 6.5> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 6.5> : builtin.fp32  !3;
+            c_v2 = llvm.fadd <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1354,7 +1757,7 @@ fn fadd_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1370,14 +1773,20 @@ fn fadd_folds_infinity_and_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single +Inf> : builtin.fp32")
-            .count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 1> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single +Inf> : builtin.fp32  !3;
+            c_v2 = llvm.fadd <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1392,12 +1801,20 @@ fn fadd_folds_opposite_infinities_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single -Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fadd <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1412,12 +1829,20 @@ fn fadd_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 1> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fadd <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1432,7 +1857,7 @@ fn fadd_ninf_does_not_fold_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1448,7 +1873,7 @@ fn fadd_nnan_does_not_fold_nan_result() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1464,9 +1889,20 @@ fn fadd_nnan_still_folds_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 6.5> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 6.5> : builtin.fp32  !3;
+            c_v2 = llvm.fadd <NNAN> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1485,9 +1921,20 @@ fn fsub_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 7.5> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2.5> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 7.5> : builtin.fp32  !3;
+            c_v2 = llvm.fsub <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1501,7 +1948,7 @@ fn fsub_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1517,14 +1964,20 @@ fn fsub_folds_finite_minus_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single -Inf> : builtin.fp32")
-            .count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 1> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single -Inf> : builtin.fp32  !3;
+            c_v2 = llvm.fsub <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1539,12 +1992,20 @@ fn fsub_folds_equal_infinities_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fsub <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1559,12 +2020,20 @@ fn fsub_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 1> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fsub <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1579,7 +2048,7 @@ fn fsub_nnan_does_not_fold_nan_result() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1599,9 +2068,20 @@ fn fmul_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 10> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1615,7 +2095,7 @@ fn fmul_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1631,9 +2111,20 @@ fn fmul_folds_negative_operands_to_positive() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single -2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single -4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 10> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1648,14 +2139,20 @@ fn fmul_folds_infinity_and_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single +Inf> : builtin.fp32")
-            .count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single +Inf> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1670,12 +2167,20 @@ fn fmul_folds_zero_times_infinity_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 0> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1690,12 +2195,20 @@ fn fmul_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1710,7 +2223,7 @@ fn fmul_ninf_does_not_fold_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1726,7 +2239,7 @@ fn fmul_nnan_does_not_fold_nan_result() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1742,9 +2255,20 @@ fn fmul_nnan_still_folds_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 10> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 10> : builtin.fp32  !3;
+            c_v2 = llvm.fmul <NNAN> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1763,9 +2287,20 @@ fn fdiv_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 2.5> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 2.5> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1779,7 +2314,7 @@ fn fdiv_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1795,14 +2330,20 @@ fn fdiv_folds_finite_by_zero_to_infinity() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after
-            .matches("<builtin.single +Inf> : builtin.fp32")
-            .count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 1> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 0> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single +Inf> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1817,12 +2358,20 @@ fn fdiv_folds_zero_by_zero_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 0> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 0> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1837,12 +2386,20 @@ fn fdiv_folds_infinity_by_infinity_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1857,9 +2414,20 @@ fn fdiv_folds_finite_by_infinity_to_zero() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 0> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 1> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 0> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1874,12 +2442,20 @@ fn fdiv_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1894,7 +2470,7 @@ fn fdiv_ninf_does_not_fold_division_by_zero() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1910,7 +2486,7 @@ fn fdiv_nnan_does_not_fold_nan_result() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1926,9 +2502,20 @@ fn fdiv_nnan_still_folds_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 2.5> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 2.5> : builtin.fp32  !3;
+            c_v2 = llvm.fdiv <NNAN> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1947,9 +2534,20 @@ fn frem_folds_two_constants() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 2> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 2> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1963,7 +2561,7 @@ fn frem_does_not_fold_with_non_constant_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -1981,9 +2579,20 @@ fn frem_result_takes_sign_of_dividend() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single -2> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single -10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single -2> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -1999,9 +2608,20 @@ fn frem_truncates_rather_than_rounding_to_nearest() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 1> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 3> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 1> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -2016,12 +2636,20 @@ fn frem_folds_by_zero_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 1> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 0> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -2036,12 +2664,20 @@ fn frem_folds_infinity_dividend_to_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        1
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single +Inf> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -2057,12 +2693,20 @@ fn frem_folds_infinity_divisor_to_dividend() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single 2.5> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single +Inf> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 2.5> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -2077,12 +2721,20 @@ fn frem_folds_nan() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(
-        after.matches("<builtin.single NaN> : builtin.fp32").count(),
-        2
-    );
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single NaN> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 2> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single NaN> : builtin.fp32  !3;
+            c_v2 = llvm.frem <> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -2097,7 +2749,7 @@ fn frem_nnan_does_not_fold_nan_result() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -2113,7 +2765,7 @@ fn frem_ninf_does_not_fold_infinite_operand() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, _after) = run_sccp_on_text(input)?;
+    let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }
@@ -2129,8 +2781,19 @@ fn frem_nnan_still_folds_finite() -> Result<()> {
         llvm.return c
       }
     "#;
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<builtin.single 2> : builtin.fp32"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
+            b_v1 = builtin.constant <builtin.single 4> : builtin.fp32  !2;
+            c_v3 = builtin.constant <builtin.single 2> : builtin.fp32  !3;
+            c_v2 = llvm.frem <NNAN> a_v0, b_v1 : builtin.fp32  !4;
+            llvm.return c_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }

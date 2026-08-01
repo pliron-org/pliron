@@ -3,6 +3,7 @@
 
 //! SCCP integration tests using textual LLVM dialect IR parsing.
 
+use expect_test::expect;
 use pliron::{
     context::Context,
     init_env_logger_for_tests,
@@ -11,7 +12,6 @@ use pliron::{
     operation::{Operation, verify_operation},
     opts::constants::sccp::sccp,
     parsable::parse_from_str,
-    printable::Printable,
     result::{ExpectOk, Result},
 };
 
@@ -38,21 +38,19 @@ pub struct TestRegionOp;
 )]
 pub struct TestTwoRegionsOp;
 
-fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String, String)> {
+fn run_sccp_on_text(input: &str) -> Result<(IRStatus, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
-    let before = op.disp(ctx).to_string();
-    log::trace!("Before SCCP:\n{}", before);
     verify_operation(op, ctx)?;
 
     let status = sccp(op, ctx)?;
 
-    let after = op.disp(ctx).to_string();
+    let after = Operation::get_op_dyn(op, ctx).disp(ctx).to_string();
     log::trace!("After SCCP:\n{}", after);
     verify_operation(op, ctx)?;
-    Ok((status, before, after))
+    Ok((status, after))
 }
 
 #[test]
@@ -67,9 +65,20 @@ fn sccp_folds_add_of_two_constants() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<7: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            b_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            sum_v3 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !3;
+            sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return sum_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -94,9 +103,32 @@ fn sccp_is_path_sensitive() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
-    assert!(after.contains("<2: i64>"));
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            y_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            one_v2 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !2;
+            llvm.cond_br if one_v2 ^bb0_block4v1(x_v0, y_v1) else ^bb1_block5v1(x_v0, y_v1) !3
+
+          ^bb0_block4v1(x0_v3: builtin.integer i64, y0_v4: builtin.integer i64) !4:
+            y0_v11 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !5;
+            llvm.br ^bb2_block3v3(y0_v11, y0_v11) !6
+
+          ^bb1_block5v1(x1_v5: builtin.integer i64, y1_v6: builtin.integer i64) !7:
+            llvm.br ^bb2_block3v3(x1_v5, y1_v6) !8
+
+          ^bb2_block3v3(x2_v7: builtin.integer i64, y2_v8: builtin.integer i64) !9:
+            y2_v13 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !10;
+            x2_v12 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !11;
+            z_v10 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !12;
+            z_v9 = llvm.add x2_v12, y2_v13 <{nsw=false,nuw=false}>: builtin.integer i64 !13;
+            llvm.return z_v10 !14
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -123,9 +155,35 @@ fn sccp_folded_condition_makes_branch_dead() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<2: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            y_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            zero_i1_v2 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !2;
+            one_i1_v3 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
+            one_v12 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !4;
+            one_v4 = llvm.add zero_i1_v2, one_i1_v3 <{nsw=false,nuw=false}>: builtin.integer i1 !5;
+            llvm.cond_br if one_v12 ^bb0_block4v1(x_v0, y_v1) else ^bb1_block5v1(x_v0, y_v1) !6
+
+          ^bb0_block4v1(x0_v5: builtin.integer i64, y0_v6: builtin.integer i64) !7:
+            y0_v14 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !8;
+            llvm.br ^bb2_block3v3(y0_v14, y0_v14) !9
+
+          ^bb1_block5v1(x1_v7: builtin.integer i64, y1_v8: builtin.integer i64) !10:
+            llvm.br ^bb2_block3v3(x1_v7, y1_v8) !11
+
+          ^bb2_block3v3(x2_v9: builtin.integer i64, y2_v10: builtin.integer i64) !12:
+            y2_v16 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !13;
+            x2_v15 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !14;
+            z_v13 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !15;
+            z_v11 = llvm.add x2_v15, y2_v16 <{nsw=false,nuw=false}>: builtin.integer i64 !16;
+            llvm.return z_v13 !17
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -154,10 +212,33 @@ fn sccp_meets_distinct_constants_from_live_predecessors_as_not_a_constant() -> R
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<10: i64>"));
-    assert!(after.contains("llvm.add"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            llvm.cond_br if cond_v0 ^bb0_block4v1() else ^bb1_block5v1() !1
+
+          ^bb0_block4v1() !2:
+            a0_v1 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !3;
+            b0_v2 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !4;
+            llvm.br ^bb2_block3v3(a0_v1, b0_v2) !5
+
+          ^bb1_block5v1() !6:
+            a1_v3 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !7;
+            b1_v4 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !8;
+            llvm.br ^bb2_block3v3(a1_v3, b1_v4) !9
+
+          ^bb2_block3v3(x_v5: builtin.integer i64, y_v6: builtin.integer i64) !10:
+            y_v11 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !11;
+            x_plus_y_v7 = llvm.add x_v5, y_v11 <{nsw=false,nuw=false}>: builtin.integer i64 !12;
+            y_plus_y_v10 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !13;
+            y_plus_y_v8 = llvm.add y_v11, y_v11 <{nsw=false,nuw=false}>: builtin.integer i64 !14;
+            result_v9 = llvm.add x_plus_y_v7, y_plus_y_v10 <{nsw=false,nuw=false}>: builtin.integer i64 !15;
+            llvm.return result_v9 !16
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -182,10 +263,31 @@ fn sccp_is_path_sensitive_2() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
-    assert!(after.contains("llvm.add"));
+    let (status, after) = run_sccp_on_text(input)?;
     // Materialized constants inserted into ^bb0, ^bb1, and ^bb2
     assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            y_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            one_v2 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !2;
+            llvm.cond_br if one_v2 ^bb1_block5v1(x_v0, y_v1) else ^bb0_block4v1(x_v0, y_v1) !3
+
+          ^bb0_block4v1(x0_v3: builtin.integer i64, y0_v4: builtin.integer i64) !4:
+            llvm.br ^bb2_block2v3(y0_v4, y0_v4) !5
+
+          ^bb1_block5v1(x1_v5: builtin.integer i64, y1_v6: builtin.integer i64) !6:
+            y1_v10 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !7;
+            llvm.br ^bb2_block2v3(x1_v5, y1_v10) !8
+
+          ^bb2_block2v3(x2_v7: builtin.integer i64, y2_v8: builtin.integer i64) !9:
+            y2_v11 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !10;
+            z_v9 = llvm.add x2_v7, y2_v11 <{nsw=false,nuw=false}>: builtin.integer i64 !11;
+            llvm.return z_v9 !12
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -204,9 +306,23 @@ fn sccp_does_not_fold_when_operands_are_nested_region_entry_args() -> Result<()>
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.add"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            test.test_region 
+            {
+              ^region_entry_block2v1(a_v0: builtin.integer i64, b_v1: builtin.integer i64) !1:
+                sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !2;
+                llvm.return sum_v2 !3
+            } !4;
+            done_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !5;
+            llvm.return done_v3 !6
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -227,9 +343,25 @@ fn sccp_folds_inside_nested_region_using_outer_constant() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(after.contains("<7: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            outer_a_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            outer_b_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            test.test_region 
+            {
+              ^region_entry_block2v1() !3:
+                inner_sum_v4 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !4;
+                inner_sum_v2 = llvm.add outer_a_v0, outer_b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !5;
+                llvm.return inner_sum_v4 !6
+            } !7;
+            done_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !8;
+            llvm.return done_v3 !9
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -256,11 +388,35 @@ fn sccp_folds_inside_two_nested_regions() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // Both inner adds should fold.
-    assert!(after.contains("<7: i64>"));
-    assert!(after.contains("<30: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            test.test_two_regions 
+            {
+              ^r0_entry_block2v1() !1:
+                a0_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !2;
+                b0_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !3;
+                sum0_v7 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !4;
+                sum0_v2 = llvm.add a0_v0, b0_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !5;
+                llvm.return sum0_v7 !6
+            } 
+            {
+              ^r1_entry_block3v1() !7:
+                a1_v3 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !8;
+                b1_v4 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !9;
+                sum1_v8 = builtin.constant <builtin.integer <30: i64>> : builtin.integer i64 !10;
+                sum1_v5 = llvm.add a1_v3, b1_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !11;
+                llvm.return sum1_v8 !12
+            } !13;
+            done_v6 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !14;
+            llvm.return done_v6 !15
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -281,10 +437,27 @@ fn sccp_folds_inside_nested_region() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The inner add should fold to 7.
-    assert!(after.contains("<7: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            test.test_region 
+            {
+              ^region_entry_block2v1() !1:
+                a_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !2;
+                b_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !3;
+                inner_sum_v4 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !4;
+                inner_sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !5;
+                llvm.return inner_sum_v4 !6
+            } !7;
+            outer_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !8;
+            llvm.return outer_v3 !9
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -301,9 +474,21 @@ fn sccp_materializes_constant_block_arg() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("constant").count(), 2);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            c_v0 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !1;
+            llvm.br ^bb1_block3v1(c_v0) !2
+
+          ^bb1_block3v1(x_v1: builtin.integer i64) !3:
+            x_v2 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !4;
+            llvm.return x_v2 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -323,9 +508,25 @@ fn sccp_materializes_multiple_constant_block_args() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("constant").count(), 6);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            a0_v1 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            b0_v2 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !2;
+            a1_v3 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !3;
+            b1_v4 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !4;
+            llvm.cond_br if cond_v0 ^bb1_block3v1(a0_v1, b0_v2) else ^bb1_block3v1(a1_v3, b1_v4) !5
+
+          ^bb1_block3v1(x_v5: builtin.integer i64, y_v6: builtin.integer i64) !6:
+            y_v8 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !7;
+            x_v7 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !8;
+            llvm.return x_v7 !9
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -345,9 +546,25 @@ fn sccp_materializes_constant_carried_through_loop_back_edge() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("constant").count(), 3);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            c_v1 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !1;
+            llvm.br ^loop_block3v1(c_v1) !2
+
+          ^loop_block3v1(x_v2: builtin.integer i64) !3:
+            x_v4 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !4;
+            llvm.cond_br if cond_v0 ^loop_block3v1(x_v4) else ^exit_block4v1(x_v4) !5
+
+          ^exit_block4v1(y_v3: builtin.integer i64) !6:
+            y_v5 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !7;
+            llvm.return y_v5 !8
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -368,9 +585,24 @@ fn sccp_loop_back_edge_with_different_constant_meets_to_not_a_constant() -> Resu
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert_eq!(after.matches("constant").count(), 2);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            c1_v1 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !1;
+            llvm.br ^loop_block3v1(c1_v1) !2
+
+          ^loop_block3v1(x_v2: builtin.integer i64) !3:
+            c2_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !4;
+            llvm.cond_br if cond_v0 ^loop_block3v1(c2_v3) else ^exit_block4v1(x_v2) !5
+
+          ^exit_block4v1(y_v4: builtin.integer i64) !6:
+            llvm.return y_v4 !7
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -392,9 +624,22 @@ fn sccp_materialization_replaces_uses_of_block_arg() -> Result<()> {
     // operand of `llvm.add` -> 3 occurrences.
     assert_eq!(input.matches("califragilistic").count(), 3);
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert_eq!(after.matches("califragilistic").count(), 6);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            c_v0 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !1;
+            llvm.br ^bb1_block3v1(c_v0) !2
+
+          ^bb1_block3v1(califragilistic_v1: builtin.integer i64) !3:
+            califragilistic_v4 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !4;
+            sum_v3 = builtin.constant <builtin.integer <84: i64>> : builtin.integer i64 !5;
+            sum_v2 = llvm.add califragilistic_v4, califragilistic_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !6;
+            llvm.return sum_v3 !7
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -412,9 +657,21 @@ fn sccp_does_not_materialize_not_a_constant_block_arg() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_sccp_on_text(input)?;
+    let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert_eq!(after.matches("constant").count(), 2);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            a0_v1 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            a1_v2 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond_v0 ^bb1_block3v1(a0_v1) else ^bb1_block3v1(a1_v2) !3
+
+          ^bb1_block3v1(x_v3: builtin.integer i64) !4:
+            llvm.return x_v3 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -457,13 +714,28 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
 
     let status = sccp(region_op, ctx)?;
     verify_operation(func_op, ctx)?;
-    let after = func_op.disp(ctx).to_string();
+    let after = Operation::get_op_dyn(func_op, ctx).disp(ctx).to_string();
 
     // Even though `outer_three` and `outer_four` are syntactically
     // `builtin.constant` ops, the analysis must treat them as NotAConstant when
     // they appear free inside the analysis root, so the inner `llvm.add` must
     // *not* fold.
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.add"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            outer_three_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
+            outer_four_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            test.test_region 
+            {
+              ^region_entry_block2v1() !3:
+                inner_sum_v2 = llvm.add outer_three_v0, outer_four_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+                llvm.return inner_sum_v2 !5
+            } !6;
+            done_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !7;
+            llvm.return done_v3 !8
+        }"#]].assert_eq(&after);
     Ok(())
 }

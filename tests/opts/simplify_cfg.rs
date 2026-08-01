@@ -3,6 +3,7 @@
 
 //! simplify-cfg integration tests using textual LLVM dialect IR parsing.
 
+use expect_test::expect;
 use pliron::{
     context::Context,
     init_env_logger_for_tests,
@@ -11,7 +12,6 @@ use pliron::{
     operation::{Operation, verify_operation},
     opts::simplify_cfg::simplify_cfg,
     parsable::parse_from_str,
-    printable::Printable,
     result::{ExpectOk, Result},
 };
 
@@ -30,21 +30,19 @@ use pliron::{
 )]
 pub struct TestRegionOp;
 
-fn run_simplify_cfg_on_text(input: &str) -> Result<(IRStatus, String, String)> {
+fn run_simplify_cfg_on_text(input: &str) -> Result<(IRStatus, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
-    let before = op.disp(ctx).to_string();
-    log::trace!("Before simplify-cfg:\n{}", before);
     verify_operation(op, ctx)?;
 
     let status = simplify_cfg(op, ctx)?;
 
-    let after = op.disp(ctx).to_string();
+    let after = Operation::get_op_dyn(op, ctx).disp(ctx).to_string();
     log::trace!("After simplify-cfg:\n{}", after);
     verify_operation(op, ctx)?;
-    Ok((status, before, after))
+    Ok((status, after))
 }
 
 /// A block whose only successor has it as its only predecessor should be merged
@@ -62,13 +60,19 @@ fn simplify_cfg_merges_single_succ_single_pred_blocks() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // ^bb1 should be merged into ^entry, so the unconditional branch goes away
     // and only the entry block remains.
-    assert!(!after.contains("llvm.br"));
-    assert!(!after.contains("^bb1"));
-    assert!(after.contains("llvm.return c"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            c_v0 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !1;
+            llvm.return c_v0 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -87,12 +91,18 @@ fn simplify_cfg_culls_unreachable_block() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The unreachable ^dead block should be removed.
-    assert!(!after.contains("^dead"));
-    assert!(!after.contains("<2: i64>"));
-    assert!(after.contains("<1: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            llvm.return a_v0 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -117,15 +127,21 @@ fn simplify_cfg_culls_untaken_branch_of_constant_cond_br() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The cond_br folds away, leaving only an unconditional branch to ^taken.
-    assert!(!after.contains("llvm.cond_br"));
     // The untaken branch becomes unreachable and is culled.
-    assert!(!after.contains("^untaken"));
-    assert!(!after.contains("<2: i64>"));
     // The taken branch survives.
-    assert!(after.contains("<1: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            a_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !2;
+            llvm.return a_v1 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -151,14 +167,22 @@ fn simplify_cfg_fold_preserves_taken_edge_args() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The branch folds and the untaken edge is culled.
-    assert!(!after.contains("llvm.cond_br"));
-    assert!(!after.contains("^untaken"));
     // The taken-edge value `pt` is forwarded into the add instead of `pf`.
-    assert!(after.contains("llvm.add pt"));
-    assert!(!after.contains("llvm.add pf"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            pt_v1 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !2;
+            pf_v2 = builtin.constant <builtin.integer <9: i64>> : builtin.integer i64 !3;
+            sum_v4 = llvm.add pt_v1, pt_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return sum_v4 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -191,18 +215,21 @@ fn simplify_cfg_culls_untaken_cases_of_constant_switch() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The switch folds away, leaving only an unconditional branch to ^bb1.
-    assert!(!after.contains("llvm.switch"));
     // The default and untaken cases become unreachable and are culled.
-    assert!(!after.contains("^default"));
-    assert!(!after.contains("^bb0"));
-    assert!(!after.contains("<100: i64>"));
-    assert!(!after.contains("<0: i64>"));
-    // The taken (non-default) case survives but gets merged into ^entry
-    assert!(after.contains("<22: i64>"));
-    assert!(!after.contains("^bb1"));
+    // The taken (non-default) case survives but gets merged into ^entry.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32 !1;
+            z1_v3 = builtin.constant <builtin.integer <22: i64>> : builtin.integer i64 !2;
+            llvm.return z1_v3 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -246,24 +273,35 @@ fn simplify_cfg_keeps_join_block_with_surviving_predecessor() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The entry branch is on a non-constant condition, so it cannot fold and
     // both ^a and ^b remain live.
-    assert!(after.contains("llvm.cond_br"));
-    assert!(after.contains("^a"));
-    assert!(after.contains("^b"));
     // Each successor's constant-conditioned branch folds, culling its untaken
     // side along with the constant defined there.
-    assert!(!after.contains("^only_a"));
-    assert!(!after.contains("^only_b"));
-    assert!(!after.contains("<55: i64>"));
-    assert!(!after.contains("<66: i64>"));
     // The shared join block survives despite losing the ^only_a / ^only_b
     // predecessors, because ^a and ^b still branch to it. With two remaining
     // predecessors it is not merged into either, so the label is preserved.
-    assert!(after.contains("^join"));
-    assert!(after.contains("<33: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(c_v0: builtin.integer i1) !0:
+            llvm.cond_br if c_v0 ^a_block4v1() else ^b_block6v1() !1
+
+          ^a_block4v1() !2:
+            ta_v1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
+            llvm.br ^join_block3v5() !4
+
+          ^b_block6v1() !5:
+            tb_v2 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !6;
+            llvm.br ^join_block3v5() !7
+
+          ^join_block3v5() !8:
+            r_v5 = builtin.constant <builtin.integer <33: i64>> : builtin.integer i64 !9;
+            llvm.return r_v5 !10
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -293,15 +331,21 @@ fn simplify_cfg_cull_enables_subsequent_merge() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // ^b is culled once the entry branch folds.
-    assert!(!after.contains("^b"));
-    assert!(!after.contains("<9: i64>"));
     // The cascade: with ^b gone, ^join has a single predecessor ^a and should
     // merge into it, forwarding va to x so `return x` becomes `return va`.
-    assert!(!after.contains("^join"));
-    assert!(after.contains("llvm.return va"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            va_v1 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !2;
+            llvm.return va_v1 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -334,18 +378,22 @@ fn simplify_cfg_culls_cases_of_constant_switch_to_default() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The constant condition matches no case, so the switch folds to an
     // unconditional branch to ^default, which is then merged into ^entry.
-    assert!(!after.contains("llvm.switch"));
     // The untaken case blocks become unreachable and are culled.
-    assert!(!after.contains("^bb0"));
-    assert!(!after.contains("^bb1"));
-    assert!(!after.contains("<0: i64>"));
-    assert!(!after.contains("<22: i64>"));
     // The default case's body survives, merged into the entry block.
-    assert!(after.contains("<100: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <5: i32>> : builtin.integer i32 !1;
+            d_v1 = builtin.constant <builtin.integer <100: i64>> : builtin.integer i64 !2;
+            llvm.return d_v1 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -374,17 +422,21 @@ fn simplify_cfg_culls_unreachable_loop() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // ^entry's branch folds to an unconditional jump to ^exit, so the loop is
-    // never reached.
-    assert!(!after.contains("llvm.cond_br"));
-    // The cyclic loop subgraph is culled in its entirety.
-    assert!(!after.contains("^loop_header"));
-    assert!(!after.contains("^loop_body"));
-    assert!(!after.contains("<77: i64>"));
+    // never reached. The cyclic loop subgraph is culled in its entirety.
     // The reachable exit survives (and is merged into the entry block).
-    assert!(after.contains("<88: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(c_v0: builtin.integer i1) !0:
+            skip_v1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            r_v3 = builtin.constant <builtin.integer <88: i64>> : builtin.integer i64 !2;
+            llvm.return r_v3 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -406,15 +458,26 @@ fn simplify_cfg_preserves_reachable_trivial_loop() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     // The non-constant back-edge can't fold and every block is reachable, so the
     // loop's structure is preserved.
-    assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("^loop"));
-    assert!(after.contains("^exit"));
     // The self-referential conditional branch is still present.
-    assert!(after.contains("llvm.cond_br"));
-    assert!(after.contains("<88: i64>"));
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(c_v0: builtin.integer i1) !0:
+            llvm.br ^loop_block3v1() !1
+
+          ^loop_block3v1() !2:
+            llvm.cond_br if c_v0 ^loop_block3v1() else ^exit_block4v1() !3
+
+          ^exit_block4v1() !4:
+            r_v1 = builtin.constant <builtin.integer <88: i64>> : builtin.integer i64 !5;
+            llvm.return r_v1 !6
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -441,15 +504,25 @@ fn simplify_cfg_culls_inside_nested_region() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The unreachable block inside the nested region is culled.
-    assert!(!after.contains("^inner_dead"));
-    assert!(!after.contains("<99: i64>"));
     // The reachable inner block and the entire outer region survive.
-    assert!(after.contains("test.test_region"));
-    assert!(after.contains("<11: i64>"));
-    assert!(after.contains("<44: i64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            test.test_region 
+            {
+              ^region_entry_block2v1() !1:
+                inner_v0 = builtin.constant <builtin.integer <11: i64>> : builtin.integer i64 !2;
+                llvm.return inner_v0 !3
+            } !4;
+            outer_v2 = builtin.constant <builtin.integer <44: i64>> : builtin.integer i64 !5;
+            llvm.return outer_v2 !6
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -475,16 +548,24 @@ fn simplify_cfg_descends_into_func_nested_in_module() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // The dead block in the func's SSA region is culled, even though the func
     // sits inside the module's graph region.
-    assert!(!after.contains("^dead"));
-    assert!(!after.contains("<99: i64>"));
     // The module, the func, and everything reachable survives.
-    assert!(after.contains("builtin.module"));
-    assert!(after.contains("llvm.func"));
-    assert!(after.contains("<11: i64>"));
+    expect![[r#"
+        builtin.module @m 
+        {
+          ^module_block_block1v1() !0:
+            llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+              [] 
+            {
+              ^entry_block2v1() !1:
+                live_v0 = builtin.constant <builtin.integer <11: i64>> : builtin.integer i64 !2;
+                llvm.return live_v0 !3
+            } !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -507,15 +588,19 @@ fn simplify_cfg_collapses_straight_line_chain() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_simplify_cfg_on_text(input)?;
+    let (status, after) = run_simplify_cfg_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // All three blocks collapse into the entry block: no branches and no
-    // intermediate block labels remain.
-    assert!(!after.contains("llvm.br"));
-    assert!(!after.contains("^mid"));
-    assert!(!after.contains("^tail"));
-    // The value `c` is forwarded through both edges (c -> m -> t), so the final
-    // return uses `c`.
-    assert!(after.contains("llvm.return c"));
+    // intermediate block labels remain. The value `c` is forwarded through
+    // both edges (c -> m -> t), so the final return uses `c`.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            c_v0 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !1;
+            llvm.return c_v0 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
