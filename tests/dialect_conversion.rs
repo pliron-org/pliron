@@ -28,8 +28,6 @@ use pliron::{
 };
 
 use pliron::derive::pliron_op;
-#[cfg(target_family = "wasm")]
-use wasm_bindgen_test::*;
 
 #[pliron_op(
     name = "test.producer",
@@ -172,7 +170,6 @@ impl DialectConversion for WidthConversion {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_defs_before_uses() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
@@ -270,7 +267,6 @@ impl DialectConversion for WidthConversionViaValueReplacement {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_value_replacement_preserves_type_history() -> Result<()> {
     let ctx = &mut Context::new();
 
@@ -393,7 +389,6 @@ impl DialectConversion for ForwardOnlyConversion {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_block_arg_type_conversion() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
@@ -418,7 +413,6 @@ fn dialect_conversion_block_arg_type_conversion() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_dead_block_arg_type_conversion() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
@@ -461,7 +455,6 @@ fn dialect_conversion_dead_block_arg_type_conversion() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_successor_block_arg_type_conversion_without_uses() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();

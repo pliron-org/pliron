@@ -22,8 +22,7 @@ mod r#impl {
     }
 
     pub mod io {
-        pub use std::io::BufReader;
-        pub use std::io::Error;
+        pub use std::io::{BufReader, Error};
     }
 
     pub mod fs {

@@ -16,6 +16,7 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::{Context, Ptr},
+    derive::{pliron_op, pliron_type},
     graph::walkers::{
         WALKCONFIG_POSTORDER_REVERSE, WALKCONFIG_PREORDER_FORWARD, WALKCONFIG_PREORDER_REVERSE,
     },
@@ -34,11 +35,6 @@ use pliron::{
     r#type::TypeHandle,
     value::Value,
 };
-
-use pliron::derive::{pliron_op, pliron_type};
-#[cfg(target_family = "wasm")]
-use wasm_bindgen_test::*;
-
 mod common;
 
 fn assert_rewrite_sequence_for_order(
@@ -108,7 +104,6 @@ fn assert_rewrite_sequence_for_order(
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn apply_match_rewrite_preorder_forward_enque_front_ordering() -> Result<()> {
     assert_rewrite_sequence_for_order(
         WALKCONFIG_PREORDER_FORWARD,
@@ -118,7 +113,6 @@ fn apply_match_rewrite_preorder_forward_enque_front_ordering() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn apply_match_rewrite_preorder_reverse_enque_back_ordering() -> Result<()> {
     assert_rewrite_sequence_for_order(
         WALKCONFIG_PREORDER_REVERSE,
@@ -128,7 +122,6 @@ fn apply_match_rewrite_preorder_reverse_enque_back_ordering() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn apply_match_rewrite_postorder_reverse_enque_front_ordering() -> Result<()> {
     assert_rewrite_sequence_for_order(
         WALKCONFIG_POSTORDER_REVERSE,
@@ -139,7 +132,6 @@ fn apply_match_rewrite_postorder_reverse_enque_front_ordering() -> Result<()> {
 
 // Testing replacing all uses of c0 with c1.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn replace_c0_with_c1() -> Result<()> {
     let ctx = &mut Context::new();
 
@@ -291,7 +283,6 @@ impl LoadOp {
 
 /// Test scoped rewriter that sets the insertion point for the duration of its lifetime.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn scoped_rewriter_test() -> Result<()> {
     let ctx = &mut Context::new();
     let (module_op, _func_op, _, _) = const_ret_in_mod(ctx).unwrap();
@@ -371,7 +362,6 @@ fn scoped_rewriter_test() -> Result<()> {
 
 /// Test that erases a function containing a constant 0 operation.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn erase_func_with_const_zero() -> Result<()> {
     let ctx = &mut Context::new();
     let (module_op, _func_op, _, _) = const_ret_in_mod(ctx).unwrap();
@@ -433,7 +423,6 @@ fn erase_func_with_const_zero() -> Result<()> {
 
 /// Test that splits a block after finding a constant 0 operation.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn split_block_after_const_zero() -> Result<()> {
     let ctx = &mut Context::new();
     let (module_op, _func_op, _, _) = const_ret_in_mod(ctx).unwrap();
@@ -519,7 +508,6 @@ fn split_block_after_const_zero() -> Result<()> {
 
 /// Test that inlines a region from one function into another.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn inline_region_on_const_zero() -> Result<()> {
     let ctx = &mut Context::new();
     let (module_op1, func_op1, _, _) = const_ret_in_mod(ctx).unwrap();
