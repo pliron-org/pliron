@@ -99,7 +99,11 @@ fn visit(ctx: &Context, state: &mut StatsState, node: IRNode) {
 }
 
 /// Format a list of counts as a single CSV field, `;`-separated.
+/// Empty renders as `-`.
 fn join_counts(counts: &[usize]) -> String {
+    if counts.is_empty() {
+        return "-".to_string();
+    }
     let mut s = String::new();
     for (i, count) in counts.iter().enumerate() {
         if i > 0 {
@@ -130,7 +134,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},0,0",
+                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},0,-",
                     join_counts(result_uses)
                 );
             }
@@ -142,7 +146,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "block,block,{id},0,0,0,{num_attrs},0,{num_args},{}",
+                    "block,block,{id},0,0,0,{num_attrs},-,{num_args},{}",
                     join_counts(arg_uses)
                 );
             }
