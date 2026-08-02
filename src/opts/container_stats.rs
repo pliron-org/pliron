@@ -19,8 +19,6 @@
 //! 9. `num_args`: number of arguments of a basic block.
 //! 10. `arg_uses`: `;`-separated number of uses of each argument of a basic
 //!     block, in argument order.
-//!
-//! Columns that don't apply to a row's `node_type` are left empty.
 
 use alloc::{
     string::{String, ToString},
@@ -38,7 +36,7 @@ use crate::{
 };
 
 /// One row of the CSV emitted by [ContainerStatsPass]: all the information
-/// collected about a single [Operation] or [BasicBlock].
+/// collected about a single [Operation] or `BasicBlock`.
 enum Row {
     Op {
         kind: String,
@@ -132,7 +130,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},,",
+                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},0,",
                     join_counts(result_uses)
                 );
             }
@@ -144,7 +142,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "block,block,{id},,,,{num_attrs},,{num_args},{}",
+                    "block,block,{id},0,0,0,{num_attrs},,{num_args},{}",
                     join_counts(arg_uses)
                 );
             }
