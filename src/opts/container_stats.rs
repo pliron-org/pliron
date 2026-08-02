@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Collects container-size statistics for every [Operation] and [BasicBlock]
+//! Collects container-size statistics for every `Operation` and `BasicBlock`
 //! reachable from a root operation.
 //!
-//! The pass walks the IR and emits one CSV row per [Operation] and one per
-//! [BasicBlock], with columns:
+//! The pass walks the IR and emits one CSV row per `Operation` and one per
+//! `BasicBlock`, with columns:
 //! 1. `node_type`: `op` or `block`.
 //! 2. `kind`: the operation's `OpId`, or `block` for a basic block.
 //! 3. `id`: a per-walk sequential id (separate numbering for ops and blocks).
@@ -162,7 +162,7 @@ fn print_csv(csv: &str) {
 fn print_csv(_csv: &str) {}
 
 #[derive(Default)]
-/// A [Pass] that walks every [Operation] and [BasicBlock] nested (transitively)
+/// A [Pass] that walks every [Operation] and `BasicBlock` nested (transitively)
 /// inside the operation it runs on, and prints CSV container-size statistics
 /// to stdout. See the module-level documentation for details.
 ///
