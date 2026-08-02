@@ -130,7 +130,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},0,",
+                    "op,{kind},{id},{num_results},{num_operands},{num_successors},{num_attrs},{},0,0",
                     join_counts(result_uses)
                 );
             }
@@ -142,7 +142,7 @@ fn render_csv(rows: &[Row]) -> String {
             } => {
                 let _ = writeln!(
                     out,
-                    "block,block,{id},0,0,0,{num_attrs},,{num_args},{}",
+                    "block,block,{id},0,0,0,{num_attrs},0,{num_args},{}",
                     join_counts(arg_uses)
                 );
             }
