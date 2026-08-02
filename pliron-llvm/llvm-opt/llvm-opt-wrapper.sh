@@ -151,7 +151,7 @@ for idx in "${!source_files[@]}"; do
     "$CLANG_BIN" "${emit_args[@]}" "$src" -S -emit-llvm -O0 -o "$input_ll"
     
     # Step 2: Optimize with llvm-opt
-    "$LLVM_OPT_BIN" -S -i "$input_ll" -o "$opt_ll" --opts o1
+    "$LLVM_OPT_BIN" -S -i "$input_ll" -o "$opt_ll" --opts o1,container-stats
     
     # Step 3: LLVM IR -> Object file (.o)
     "$CLANG_BIN" "${emit_args[@]}" -c "$opt_ll" -o "$obj"

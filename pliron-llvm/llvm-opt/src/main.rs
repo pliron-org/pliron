@@ -11,8 +11,8 @@ use pliron::{
     op::{Op, verify_op},
     operation::Operation,
     opts::{
-        constants::sccp::SCCPPass, dce::DCEPass, mem2reg::Mem2RegPass,
-        simplify_cfg::SimplifyCFGPass,
+        constants::sccp::SCCPPass, container_stats::ContainerStatsPass, dce::DCEPass,
+        mem2reg::Mem2RegPass, simplify_cfg::SimplifyCFGPass,
     },
     pass::{AnalysisManager, NestedOpsPass, OpPass, PMConfig, Pass, Passes},
     printable::Printable,
@@ -111,6 +111,7 @@ enum OptPass {
     Sccp,
     SimplifyCfg,
     O1,
+    ContainerStats,
 }
 
 impl FromStr for OptPass {
@@ -123,8 +124,9 @@ impl FromStr for OptPass {
             "sccp" => Ok(OptPass::Sccp),
             "simplify-cfg" => Ok(OptPass::SimplifyCfg),
             "o1" => Ok(OptPass::O1),
+            "container-stats" => Ok(OptPass::ContainerStats),
             other => Err(format!(
-                "unknown optimization pass '{other}'. Available passes: mem2reg, dce, sccp, simplify-cfg, o1"
+                "unknown optimization pass '{other}'. Available passes: mem2reg, dce, sccp, simplify-cfg, o1, container-stats"
             )),
         }
     }
@@ -195,6 +197,10 @@ fn run_opt_passes(
             }
             OptPass::O1 => {
                 pliron_llvm::append_o1_passes(&mut passes);
+            }
+            OptPass::ContainerStats => {
+                let container_stats_pass = OpPass::<ModuleOp, ContainerStatsPass>::default();
+                passes.add_pass(container_stats_pass);
             }
         }
     }
