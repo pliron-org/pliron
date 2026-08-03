@@ -36,11 +36,15 @@ pub mod htable {
 
     use rustc_hash::FxBuildHasher;
 
-    /// A view into a single entry of an [HMap], obtained via [HMap::entry].
+    /// A view into a single entry in a map, which may either be vacant or
+    /// occupied.
+    ///
+    /// This `enum` is constructed from the [entry](HMap::entry) method on
+    /// [HMap].
     pub enum Entry<'a, K, V> {
-        /// The entry's key is present in the map.
+        /// An occupied entry.
         Occupied(OccupiedEntry<'a, K, V>),
-        /// The entry's key is absent from the map.
+        /// A vacant entry.
         Vacant(VacantEntry<'a, K, V>),
     }
 
@@ -63,18 +67,23 @@ pub mod htable {
     }
 
     impl<'a, K: Hash, V> Entry<'a, K, V> {
-        /// Ensure a value is present, inserting `default` if it wasn't.
+        /// Ensures a value is in the entry by inserting the default if
+        /// empty, and returns a mutable reference to the value in the
+        /// entry.
         pub fn or_insert(self, default: V) -> &'a mut V {
             hashbrown::hash_map::Entry::from(self).or_insert(default)
         }
 
-        /// Ensure a value is present, inserting the result of calling
-        /// `default` if it wasn't.
+        /// Ensures a value is in the entry by inserting the result of the
+        /// default function if empty, and returns a mutable reference to
+        /// the value in the entry.
         pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
             hashbrown::hash_map::Entry::from(self).or_insert_with(default)
         }
 
-        /// Ensure a value is present, inserting `V::default()` if it wasn't.
+        /// Ensures a value is in the entry by inserting the default value
+        /// if empty, and returns a mutable reference to the value in the
+        /// entry.
         pub fn or_default(self) -> &'a mut V
         where
             V: Default,
@@ -82,13 +91,13 @@ pub mod htable {
             hashbrown::hash_map::Entry::from(self).or_default()
         }
 
-        /// Run `f` on the value if the entry is occupied, without changing
-        /// whether it's occupied.
+        /// Provides in-place mutable access to an occupied entry before
+        /// any potential inserts into the map.
         pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
             hashbrown::hash_map::Entry::from(self).and_modify(f).into()
         }
 
-        /// The key this entry refers to.
+        /// Returns a reference to this entry's key.
         pub fn key(&self) -> &K {
             match self {
                 Entry::Occupied(entry) => entry.key(),
@@ -97,58 +106,61 @@ pub mod htable {
         }
     }
 
-    /// A view into an occupied entry of an [HMap]. See [Entry::Occupied].
+    /// A view into an occupied entry in a [HMap].
     pub struct OccupiedEntry<'a, K, V>(hashbrown::hash_map::OccupiedEntry<'a, K, V, FxBuildHasher>);
 
     impl<'a, K, V> OccupiedEntry<'a, K, V> {
-        /// The key this entry refers to.
+        /// Gets a reference to the key in the entry.
         pub fn key(&self) -> &K {
             self.0.key()
         }
 
-        /// A reference to the entry's value.
+        /// Gets a reference to the value in the entry.
         pub fn get(&self) -> &V {
             self.0.get()
         }
 
-        /// A mutable reference to the entry's value.
+        /// Gets a mutable reference to the value in the entry.
         pub fn get_mut(&mut self) -> &mut V {
             self.0.get_mut()
         }
 
-        /// Convert into a mutable reference to the entry's value, tied to the
-        /// map's lifetime.
+        /// Converts the `OccupiedEntry` into a mutable reference to the
+        /// value in the entry with a lifetime bound to the map itself.
         pub fn into_mut(self) -> &'a mut V {
             self.0.into_mut()
         }
 
-        /// Replace the entry's value, returning the old one.
+        /// Sets the value of the entry, and returns the entry's old value.
         pub fn insert(&mut self, value: V) -> V {
             self.0.insert(value)
         }
 
-        /// Remove the entry, returning its value.
+        /// Takes the value out of the entry, and returns it. Keeps the
+        /// allocated memory for reuse.
         pub fn remove(self) -> V {
             self.0.remove()
         }
 
-        /// Remove the entry, returning its key and value.
+        /// Take the ownership of the key and value from the map. Keeps
+        /// the allocated memory for reuse.
         pub fn remove_entry(self) -> (K, V) {
             self.0.remove_entry()
         }
     }
 
-    /// A view into a vacant entry of an [HMap]. See [Entry::Vacant].
+    /// A view into a vacant entry in a [HMap].
     pub struct VacantEntry<'a, K, V>(hashbrown::hash_map::VacantEntry<'a, K, V, FxBuildHasher>);
 
     impl<'a, K, V> VacantEntry<'a, K, V> {
-        /// The key this entry would use if inserted into.
+        /// Gets a reference to the key that would be used when inserting a
+        /// value through the `VacantEntry`.
         pub fn key(&self) -> &K {
             self.0.key()
         }
 
-        /// Insert a value for this entry's key, returning a mutable
-        /// reference to it.
+        /// Sets the value of the entry with the `VacantEntry`'s key, and
+        /// returns a mutable reference to it.
         pub fn insert(self, value: V) -> &'a mut V
         where
             K: Hash,
@@ -168,12 +180,19 @@ pub mod htable {
     }
 
     impl<K, V> HMap<K, V> {
-        /// Create an empty map.
+        /// Creates an empty [HMap].
+        ///
+        /// The hash map is initially created with a capacity of 0, so it
+        /// will not allocate until it is first inserted into.
         pub fn new() -> Self {
             Self::default()
         }
 
-        /// Create an empty map with at least the given capacity.
+        /// Creates an empty [HMap] with the specified capacity.
+        ///
+        /// The hash map will be able to hold at least `capacity` elements
+        /// without reallocating. If `capacity` is 0, the hash map will not
+        /// allocate.
         pub fn with_capacity(capacity: usize) -> Self {
             HMap(hashbrown::HashMap::with_capacity_and_hasher(
                 capacity,
@@ -181,44 +200,65 @@ pub mod htable {
             ))
         }
 
-        /// Number of entries in the map.
+        /// Returns the number of elements in the map.
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
-        /// Is the map empty?
+        /// Returns `true` if the map contains no elements.
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
-        /// Remove all entries, keeping the allocated capacity.
+        /// Clears the map, removing all key-value pairs. Keeps the
+        /// allocated memory for reuse.
         pub fn clear(&mut self) {
             self.0.clear()
         }
 
-        /// Number of entries the map can hold without reallocating.
+        /// Returns the number of elements the map can hold without
+        /// reallocating.
+        ///
+        /// This number is a lower bound; the [HMap] might be able
+        /// to hold more, but is guaranteed to be able to hold at least this
+        /// many.
         pub fn capacity(&self) -> usize {
             self.0.capacity()
         }
     }
 
     impl<K: Eq + Hash, V> HMap<K, V> {
-        /// Reserve capacity for at least `additional` more entries.
+        /// Reserves capacity for at least `additional` more elements to be
+        /// inserted in the [HMap]. The collection may reserve more space
+        /// to avoid frequent reallocations.
         pub fn reserve(&mut self, additional: usize) {
             self.0.reserve(additional)
         }
 
-        /// Shrink the map's capacity as much as possible.
+        /// Shrinks the capacity of the map as much as possible. It will
+        /// drop down as much as possible while maintaining the internal
+        /// rules and possibly leaving some space in accordance with the
+        /// resize policy.
         pub fn shrink_to_fit(&mut self) {
             self.0.shrink_to_fit()
         }
 
-        /// Insert `value` for `key`, returning the previous value if any.
+        /// Inserts a key-value pair into the map.
+        ///
+        /// If the map did not have this key present, [None] is returned.
+        ///
+        /// If the map did have this key present, the value is updated, and
+        /// the old value is returned. The key is not updated, though; this
+        /// matters for types that can be `==` without being identical.
         pub fn insert(&mut self, key: K, value: V) -> Option<V> {
             self.0.insert(key, value)
         }
 
-        /// Look up the value for a key.
+        /// Returns a reference to the value corresponding to the key.
+        ///
+        /// The key may be any borrowed form of the map's key type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// key type.
         pub fn get<Q>(&self, key: &Q) -> Option<&V>
         where
             K: Borrow<Q>,
@@ -227,7 +267,12 @@ pub mod htable {
             self.0.get(key)
         }
 
-        /// Look up a mutable reference to the value for a key.
+        /// Returns a mutable reference to the value corresponding to the
+        /// key.
+        ///
+        /// The key may be any borrowed form of the map's key type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// key type.
         pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
         where
             K: Borrow<Q>,
@@ -236,7 +281,11 @@ pub mod htable {
             self.0.get_mut(key)
         }
 
-        /// Look up the stored key and value for a key.
+        /// Returns the key-value pair corresponding to the supplied key.
+        ///
+        /// The supplied key may be any borrowed form of the map's key type,
+        /// but [Hash] and [Eq] on the borrowed form *must* match those for
+        /// the key type.
         pub fn get_key_value<Q>(&self, key: &Q) -> Option<(&K, &V)>
         where
             K: Borrow<Q>,
@@ -245,7 +294,12 @@ pub mod htable {
             self.0.get_key_value(key)
         }
 
-        /// Does the map contain `key`?
+        /// Returns `true` if the map contains a value for the specified
+        /// key.
+        ///
+        /// The key may be any borrowed form of the map's key type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// key type.
         pub fn contains_key<Q>(&self, key: &Q) -> bool
         where
             K: Borrow<Q>,
@@ -254,7 +308,13 @@ pub mod htable {
             self.0.contains_key(key)
         }
 
-        /// Remove and return the value for `key`, if present.
+        /// Removes a key from the map, returning the value at the key if
+        /// the key was previously in the map. Keeps the allocated memory
+        /// for reuse.
+        ///
+        /// The key may be any borrowed form of the map's key type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// key type.
         pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
         where
             K: Borrow<Q>,
@@ -263,7 +323,13 @@ pub mod htable {
             self.0.remove(key)
         }
 
-        /// Remove and return the stored key and value for `key`, if present.
+        /// Removes a key from the map, returning the stored key and value
+        /// if the key was previously in the map. Keeps the allocated
+        /// memory for reuse.
+        ///
+        /// The key may be any borrowed form of the map's key type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// key type.
         pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
         where
             K: Borrow<Q>,
@@ -272,16 +338,18 @@ pub mod htable {
             self.0.remove_entry(key)
         }
 
-        /// Get the entry for `key`, for in-place insert/update.
+        /// Gets the given key's corresponding entry in the map for
+        /// in-place manipulation.
         pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
             self.0.entry(key).into()
         }
 
-        /// Keep only the entries for which `f` returns `true`.
+        /// Retains only the elements specified by the predicate. Keeps the
+        /// allocated memory for reuse.
         ///
-        /// `f` is run once per entry, in an unspecified, platform-dependent
-        /// order; it must not rely on the order in which entries are
-        /// visited.
+        /// In other words, remove all pairs `(k, v)` such that `f(&k, &mut
+        /// v)` returns `false`. The elements are visited in unsorted (and
+        /// unspecified) order.
         pub fn retain<F>(&mut self, f: F)
         where
             F: FnMut(&K, &mut V) -> bool,
@@ -344,12 +412,19 @@ pub mod htable {
     }
 
     impl<T> HSet<T> {
-        /// Create an empty set.
+        /// Creates an empty [HSet].
+        ///
+        /// The hash set is initially created with a capacity of 0, so it
+        /// will not allocate until it is first inserted into.
         pub fn new() -> Self {
             Self::default()
         }
 
-        /// Create an empty set with at least the given capacity.
+        /// Creates an empty [HSet] with the specified capacity.
+        ///
+        /// The hash set will be able to hold at least `capacity` elements
+        /// without reallocating. If `capacity` is 0, the hash set will not
+        /// allocate.
         pub fn with_capacity(capacity: usize) -> Self {
             HSet(hashbrown::HashSet::with_capacity_and_hasher(
                 capacity,
@@ -357,44 +432,58 @@ pub mod htable {
             ))
         }
 
-        /// Number of elements in the set.
+        /// Returns the number of elements in the set.
         pub fn len(&self) -> usize {
             self.0.len()
         }
 
-        /// Is the set empty?
+        /// Returns `true` if the set contains no elements.
         pub fn is_empty(&self) -> bool {
             self.0.is_empty()
         }
 
-        /// Remove all elements, keeping the allocated capacity.
+        /// Clears the set, removing all values.
         pub fn clear(&mut self) {
             self.0.clear()
         }
 
-        /// Number of elements the set can hold without reallocating.
+        /// Returns the number of elements the set can hold without
+        /// reallocating.
         pub fn capacity(&self) -> usize {
             self.0.capacity()
         }
     }
 
     impl<T: Eq + Hash> HSet<T> {
-        /// Reserve capacity for at least `additional` more elements.
+        /// Reserves capacity for at least `additional` more elements to be
+        /// inserted in the [HSet]. The collection may reserve more
+        /// space to avoid frequent reallocations.
         pub fn reserve(&mut self, additional: usize) {
             self.0.reserve(additional)
         }
 
-        /// Shrink the set's capacity as much as possible.
+        /// Shrinks the capacity of the set as much as possible. It will
+        /// drop down as much as possible while maintaining the internal
+        /// rules and possibly leaving some space in accordance with the
+        /// resize policy.
         pub fn shrink_to_fit(&mut self) {
             self.0.shrink_to_fit()
         }
 
-        /// Insert `value`, returning whether it was newly inserted.
+        /// Adds a value to the set.
+        ///
+        /// If the set did not have this value present, `true` is returned.
+        ///
+        /// If the set did have this value present, `false` is returned.
         pub fn insert(&mut self, value: T) -> bool {
             self.0.insert(value)
         }
 
-        /// Does the set contain `value`?
+        /// Returns `true` if the set contains a value.
+        ///
+        /// The value may be any borrowed form of the set's value type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// value type.
         pub fn contains<Q>(&self, value: &Q) -> bool
         where
             T: Borrow<Q>,
@@ -403,7 +492,12 @@ pub mod htable {
             self.0.contains(value)
         }
 
-        /// Get a reference to the stored value equal to `value`, if present.
+        /// Returns a reference to the value in the set, if any, that is
+        /// equal to the given value.
+        ///
+        /// The value may be any borrowed form of the set's value type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// value type.
         pub fn get<Q>(&self, value: &Q) -> Option<&T>
         where
             T: Borrow<Q>,
@@ -412,7 +506,12 @@ pub mod htable {
             self.0.get(value)
         }
 
-        /// Remove `value`, returning whether it was present.
+        /// Removes a value from the set. Returns whether the value was
+        /// present in the set.
+        ///
+        /// The value may be any borrowed form of the set's value type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// value type.
         pub fn remove<Q>(&mut self, value: &Q) -> bool
         where
             T: Borrow<Q>,
@@ -421,7 +520,12 @@ pub mod htable {
             self.0.remove(value)
         }
 
-        /// Remove and return the stored value equal to `value`, if present.
+        /// Removes and returns the value in the set, if any, that is equal
+        /// to the given one.
+        ///
+        /// The value may be any borrowed form of the set's value type, but
+        /// [Hash] and [Eq] on the borrowed form *must* match those for the
+        /// value type.
         pub fn take<Q>(&mut self, value: &Q) -> Option<T>
         where
             T: Borrow<Q>,
@@ -430,16 +534,16 @@ pub mod htable {
             self.0.take(value)
         }
 
-        /// Insert `value`, returning the previously-stored equal value if any.
+        /// Adds a value to the set, replacing the existing value, if any,
+        /// that is equal to the given one. Returns the replaced value.
         pub fn replace(&mut self, value: T) -> Option<T> {
             self.0.replace(value)
         }
 
-        /// Keep only the elements for which `f` returns `true`.
+        /// Retains only the elements specified by the predicate.
         ///
-        /// `f` is run once per element, in an unspecified,
-        /// platform-dependent order; it must not rely on the order in
-        /// which elements are visited.
+        /// In other words, remove all elements `e` such that `f(&e)`
+        /// returns `false`.
         pub fn retain<F>(&mut self, f: F)
         where
             F: FnMut(&T) -> bool,
@@ -447,17 +551,21 @@ pub mod htable {
             self.0.retain(f)
         }
 
-        /// Are `self` and `other` disjoint (share no elements)?
+        /// Returns `true` if `self` has no elements in common with
+        /// `other`. This is equivalent to checking for an empty
+        /// intersection.
         pub fn is_disjoint(&self, other: &Self) -> bool {
             self.0.is_disjoint(&other.0)
         }
 
-        /// Is `self` a subset of `other`?
+        /// Returns `true` if the set is a subset of another, i.e., `other`
+        /// contains at least all the values in `self`.
         pub fn is_subset(&self, other: &Self) -> bool {
             self.0.is_subset(&other.0)
         }
 
-        /// Is `self` a superset of `other`?
+        /// Returns `true` if the set is a superset of another, i.e.,
+        /// `self` contains at least all the values in `other`.
         pub fn is_superset(&self, other: &Self) -> bool {
             self.0.is_superset(&other.0)
         }
