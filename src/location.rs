@@ -22,8 +22,9 @@ use crate::{
     },
     parsable::Parsable,
     printable::{self, Printable},
-    std_deps::{hash::FxHashSet, path::PathBuf},
+    std_deps::path::PathBuf,
     uniqued_any::{self, UniquedKey},
+    utils::table::ISet,
 };
 
 /// Where is the source program?
@@ -132,8 +133,8 @@ impl Location {
 
     /// Get all sources that this location is associated with.
     pub fn sources(&self) -> Vec<Source> {
-        let mut res = FxHashSet::default();
-        fn sources(loc: &Location, res: &mut FxHashSet<Source>) {
+        let mut res = ISet::default();
+        fn sources(loc: &Location, res: &mut ISet<Source>) {
             match loc {
                 Location::SrcPos { src, pos: _ } => {
                     res.insert(*src);

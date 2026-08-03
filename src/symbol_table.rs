@@ -28,7 +28,7 @@ use crate::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
 };
 
 /// A utility to efficiently lookup and update [Symbol](SymbolOpInterface)s
@@ -37,7 +37,7 @@ use crate::{
 /// erase from the Operation given to it at construction.
 pub struct SymbolTable {
     symbol_table_op: Box<dyn SymbolTableInterface>,
-    symbol_table: FxHashMap<Identifier, Box<dyn SymbolOpInterface>>,
+    symbol_table: HMap<Identifier, Box<dyn SymbolOpInterface>>,
 }
 
 #[derive(Error, Debug)]
@@ -61,7 +61,7 @@ impl SymbolTable {
     /// Create a new [SymbolTable] from a [SymbolTableInterface] Op.
     pub fn new(ctx: &Context, symbol_table_op: Box<dyn SymbolTableInterface>) -> Self {
         // Go through the all operations in symbol_table_op and build a table.
-        let mut symbol_table = FxHashMap::<Identifier, Box<dyn SymbolOpInterface>>::default();
+        let mut symbol_table = HMap::<Identifier, Box<dyn SymbolOpInterface>>::default();
         let table_ops_block = symbol_table_op.get_body(ctx, 0);
         for op in table_ops_block.deref(ctx).iter(ctx) {
             if let Some(sym_op) =
@@ -236,7 +236,7 @@ pub fn walk_symbol_table<State>(
 /// See MLIR's [SymbolTableCollection](https://mlir.llvm.org/doxygen/classmlir_1_1SymbolTableCollection.html).
 #[derive(Default)]
 pub struct SymbolTableCollection {
-    symbol_tables: FxHashMap<Ptr<Operation>, SymbolTable>,
+    symbol_tables: HMap<Ptr<Operation>, SymbolTable>,
 }
 
 /// Returns the nearest symbol table from a given operation `from`

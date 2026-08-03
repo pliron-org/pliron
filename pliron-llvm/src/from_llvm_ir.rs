@@ -34,9 +34,12 @@ use pliron::{
     op::Op,
     operation::Operation,
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, TypedHandle, type_cast},
-    utils::{apfloat::f64_to_half, apint::APInt},
+    utils::{
+        apfloat::f64_to_half,
+        apint::APInt,
+        table::{HMap, HSet, IMap},
+    },
     value::Value,
 };
 use thiserror::Error;
@@ -373,13 +376,13 @@ pub fn convert_linkage(linkage: LLVMLinkage) -> LinkageAttr {
 #[derive(Default)]
 struct ConversionContext {
     /// A map from LLVM's Values to pliron's Values.
-    value_map: FxHashMap<LLVMValue, Value>,
+    value_map: HMap<LLVMValue, Value>,
     /// A map from LLVM's basic blocks to plirons'.
-    block_map: FxHashMap<LLVMBasicBlock, Ptr<BasicBlock>>,
+    block_map: HMap<LLVMBasicBlock, Ptr<BasicBlock>>,
     /// Cache already converted types.
-    type_cache: FxHashMap<LLVMType, TypeHandle>,
+    type_cache: HMap<LLVMType, TypeHandle>,
     /// Tag addressed to a (function, block) pair.
-    block_tag_map: FxHashMap<(LLVMValue, LLVMBasicBlock), u64>,
+    block_tag_map: IMap<(LLVMValue, LLVMBasicBlock), u64>,
     /// Next block tag id to assign.
     /// This is unique across all functions in the module for simplicity.
     block_tag_counter: u64,
@@ -454,13 +457,13 @@ fn successors(block: LLVMBasicBlock) -> Vec<LLVMBasicBlock> {
 
 /// Return RPO ordering of blocks in an LLVM function.
 fn rpo(function: LLVMValue) -> Vec<LLVMBasicBlock> {
-    let visited = &mut FxHashSet::<LLVMBasicBlock>::default();
+    let visited = &mut HSet::<LLVMBasicBlock>::default();
     let mut po = Vec::<LLVMBasicBlock>::new();
     let mut revpo = Vec::<LLVMBasicBlock>::new();
 
     fn walk(
         block: LLVMBasicBlock,
-        visited: &mut FxHashSet<LLVMBasicBlock>,
+        visited: &mut HSet<LLVMBasicBlock>,
         po: &mut Vec<LLVMBasicBlock>,
     ) {
         if !visited.insert(block) {
@@ -1759,7 +1762,7 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
     }
 
     // Convert functions.
-    let mut func_map = FxHashMap::default();
+    let mut func_map = HMap::default();
     for fun in function_iter(module) {
         let llvm_name = llvm_get_value_name(fun).expect("Expected function to have a name");
         if llvm_lookup_intrinsic_id(&llvm_name).is_some() {

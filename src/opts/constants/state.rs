@@ -11,7 +11,7 @@ use crate::{
     linked_list::ContainsLinkedList,
     operation::Operation,
     printable::{self, Printable},
-    std_deps::hash::{FxHashMap, FxHashSet},
+    utils::table::{HMap, ISet},
     value::Value,
 };
 
@@ -130,19 +130,19 @@ impl Constness {
 pub(super) struct SccpState {
     /// Maps each block to information about whether the block is reachable
     /// Blocks not present as keys are assumed to be unreachable.
-    block_states: FxHashMap<Ptr<BasicBlock>, BlockState>,
+    block_states: HMap<Ptr<BasicBlock>, BlockState>,
     /// Maps each [Value] to information about whether the [Value] is known to be const
     /// [Value]s not present are assumed to be undetermined.
-    val_states: FxHashMap<Value, Constness>,
+    val_states: HMap<Value, Constness>,
     /// After a [BasicBlock] has been marked as reachable, we must traverse
     /// each of its operations and process them to draw inferences.
     /// This set contains all blocks marked as reachable but not yet traversed.
-    block_worklist: FxHashSet<Ptr<BasicBlock>>,
+    block_worklist: ISet<Ptr<BasicBlock>>,
     /// When we infer information about the constness of a [Value], we must
     /// process all its uses to try to infer more information about the constness
     /// of its uses' results. This set contains such [Value]s that we have not yet
     /// processed.
-    val_worklist: FxHashSet<Value>,
+    val_worklist: ISet<Value>,
 }
 
 impl SccpState {
@@ -150,10 +150,10 @@ impl SccpState {
     /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.
     pub(super) fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
         let mut state = SccpState {
-            block_states: FxHashMap::default(),
-            val_states: FxHashMap::default(),
-            block_worklist: FxHashSet::default(),
-            val_worklist: FxHashSet::default(),
+            block_states: HMap::default(),
+            val_states: HMap::default(),
+            block_worklist: ISet::default(),
+            val_worklist: ISet::default(),
         };
         state.seed_nested_regions(root_op, ctx);
         state
@@ -240,16 +240,12 @@ impl SccpState {
 
     /// Pop an arbitrary block from the block worklist, if any.
     pub(super) fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
-        let block = self.block_worklist.iter().next().copied()?;
-        self.block_worklist.remove(&block);
-        Some(block)
+        self.block_worklist.pop()
     }
 
     /// Pop an arbitrary value from the value worklist, if any.
     pub(super) fn pop_val(&mut self) -> Option<Value> {
-        let val = self.val_worklist.iter().next().copied()?;
-        self.val_worklist.remove(&val);
-        Some(val)
+        self.val_worklist.pop()
     }
 
     /// Are both block and value worklists empty?

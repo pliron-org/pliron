@@ -13,7 +13,10 @@ use core::{
 };
 use once_vec::OnceVec;
 
-use crate::std_deps::hash::{FxHashMap, FxHasher, hash_map::Entry};
+use crate::{
+    std_deps::hash::FxHasher,
+    utils::table::htable::{Entry, HMap},
+};
 
 /// Computes the hash of a rust value and its rust type.
 /// ```rust
@@ -60,7 +63,7 @@ pub(crate) struct UniqueStore<T: 'static> {
     /// The actual store, owning the objects.
     pub(crate) unique_store: OnceVec<T>,
     /// A hash index into the store.
-    unique_stores_map: RefCell<FxHashMap<TypeValueHash, Vec<usize>>>,
+    unique_stores_map: RefCell<HMap<TypeValueHash, Vec<usize>>>,
 }
 
 impl<T: 'static> Default for UniqueStore<T> {

@@ -33,9 +33,12 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    std_deps::hash::{FxHashMap, hash_map},
     r#type::{Type, TypeHandle, Typed, type_cast},
-    utils::{apfloat::float_to_f64, apint::APInt},
+    utils::{
+        apfloat::float_to_f64,
+        apint::APInt,
+        table::{HMap, IMap, htable},
+    },
     value::{DefiningEntity, Value},
 };
 
@@ -101,22 +104,22 @@ pub struct ConversionContext<'a> {
     // The current LLVMModule being converted to.
     cur_llvm_module: &'a LLVMModule,
     // A map from pliron Values to LLVM Values.
-    value_map: FxHashMap<Value, LLVMValue>,
+    value_map: HMap<Value, LLVMValue>,
     // A map from pliron basic blocks to LLVM.
-    block_map: FxHashMap<Ptr<BasicBlock>, LLVMBasicBlock>,
+    block_map: HMap<Ptr<BasicBlock>, LLVMBasicBlock>,
     // A map from pliron functions to LLVM functions.
-    function_map: FxHashMap<Identifier, LLVMValue>,
+    function_map: HMap<Identifier, LLVMValue>,
     // A map from pliron globals to LLVM globals.
-    globals_map: FxHashMap<Identifier, LLVMValue>,
+    globals_map: HMap<Identifier, LLVMValue>,
     // A map from `(function symbol, block tag)` to the corresponding LLVM block.
-    block_tags: FxHashMap<(Identifier, u64), LLVMBasicBlock>,
+    block_tags: HMap<(Identifier, u64), LLVMBasicBlock>,
     // A map from every placeholder we insert to
     // its corresponding `(function symbol, block tag)`
-    pending_block_address_ops: FxHashMap<LLVMValue, (Identifier, u64)>,
+    pending_block_address_ops: IMap<LLVMValue, (Identifier, u64)>,
     // A map from pliron StructTypes to LLVM StructTypes.
-    structs_map: FxHashMap<Identifier, LLVMType>,
+    structs_map: HMap<Identifier, LLVMType>,
     // Type cache to avoid redundant conversions.
-    type_cache: FxHashMap<TypeHandle, LLVMType>,
+    type_cache: HMap<TypeHandle, LLVMType>,
     // The active LLVM builder.
     builder: LLVMBuilder,
     // Scratch builder in a scratch function for attempting to evaluate constants.
@@ -127,14 +130,14 @@ impl<'a> ConversionContext<'a> {
     pub fn new(llvm_ctx: &'a LLVMContext, cur_llvm_module: &'a LLVMModule) -> Self {
         Self {
             cur_llvm_module,
-            value_map: FxHashMap::default(),
-            block_map: FxHashMap::default(),
-            function_map: FxHashMap::default(),
-            globals_map: FxHashMap::default(),
-            block_tags: FxHashMap::default(),
-            pending_block_address_ops: FxHashMap::default(),
-            structs_map: FxHashMap::default(),
-            type_cache: FxHashMap::default(),
+            value_map: HMap::default(),
+            block_map: HMap::default(),
+            function_map: HMap::default(),
+            globals_map: HMap::default(),
+            block_tags: HMap::default(),
+            pending_block_address_ops: IMap::default(),
+            structs_map: HMap::default(),
+            type_cache: HMap::default(),
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
         }
@@ -393,8 +396,8 @@ impl ToLLVMType for StructType {
                 .collect::<Result<Vec<_>>>()?;
             if let Some(name) = self.name() {
                 match cctx.structs_map.entry(name) {
-                    hash_map::Entry::Occupied(entry) => Ok(*entry.get()),
-                    hash_map::Entry::Vacant(entry) => {
+                    htable::Entry::Occupied(entry) => Ok(*entry.get()),
+                    htable::Entry::Vacant(entry) => {
                         let str_ty = llvm_struct_create_named(llvm_ctx, entry.key().as_ref());
                         llvm_struct_set_body(str_ty, &field_types, false);
                         entry.insert(str_ty);

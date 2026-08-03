@@ -34,6 +34,8 @@ pliron-derive = { path = "./pliron-derive", version = "0" }
 awint.workspace = true
 rustc_apfloat.workspace = true
 rustc-hash.workspace = true
+hashbrown.workspace = true
+indexmap.workspace = true
 thiserror.workspace = true
 combine.workspace = true
 log.workspace = true
@@ -46,7 +48,6 @@ dyn-clone.workspace = true
 utf8-chars = { workspace = true, optional = true }
 
 # Only used in `no_std`, but can't express that.
-hashbrown = "0"
 spin = "0"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
@@ -76,6 +77,8 @@ proc-macro2 = "1"
 quote = "1"
 prettyplease = "0"
 rustc-hash = "2"
+hashbrown = "0"
+indexmap = { version = "2", default-features = false }
 combine = "4"
 thiserror = "2"
 tempfile = "3"

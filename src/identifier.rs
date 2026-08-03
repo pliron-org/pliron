@@ -17,7 +17,7 @@ use crate::{
     impl_printable_for_display,
     parsable::{self, Parsable, ParseResult},
     result::{self, Result},
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
@@ -169,9 +169,9 @@ impl Parsable for Identifier {
 #[derive(Default)]
 pub struct Legaliser {
     /// A map from the source strings to [Identifier]s.
-    str_to_id: FxHashMap<String, Identifier>,
+    str_to_id: HMap<String, Identifier>,
     /// Reverse map from [Identifier]s to their source string.
-    rev_str_to_id: FxHashMap<String, String>,
+    rev_str_to_id: HMap<String, String>,
     /// A counter to generate unique (within this object) ids.
     counter: usize,
 }

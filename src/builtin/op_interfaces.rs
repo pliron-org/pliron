@@ -26,10 +26,9 @@ use crate::{
     printable::Printable,
     region::Region,
     result::Result,
-    std_deps::hash::FxHashMap,
     symbol_table::{SymbolTableCollection, walk_symbol_table},
     r#type::{Type, TypeHandle, Typed, type_impls},
-    utils::const_bound_n::LessThanN,
+    utils::{const_bound_n::LessThanN, table::HMap},
     value::Value,
     verify_err, verify_error,
 };
@@ -611,7 +610,7 @@ pub trait SymbolTableInterface: SingleBlockRegionInterface + OneRegionInterface 
         let op = op_cast::<dyn SymbolTableInterface>(op).unwrap();
 
         // Check that every symbol is defined only once.
-        let mut seen = FxHashMap::<Identifier, Location>::default();
+        let mut seen = HMap::<Identifier, Location>::default();
         let table_ops_block = op.get_body(ctx, 0);
         for op in table_ops_block.deref(ctx).iter(ctx) {
             if let Some(sym_op) =

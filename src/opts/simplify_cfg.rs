@@ -44,7 +44,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
-    std_deps::hash::FxHashSet,
+    utils::table::{HSet, ISet},
     value::Value,
 };
 
@@ -192,7 +192,7 @@ pub fn remove_blocks_inside_region(
 
     let mut status = IRStatus::Unchanged;
     let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
-    let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
+    let mut visited = HSet::<Ptr<BasicBlock>>::default();
     while let Some(block) = stack.pop() {
         if !visited.insert(block) {
             continue;
@@ -205,7 +205,7 @@ pub fn remove_blocks_inside_region(
         }
     }
 
-    let dead_blocks: FxHashSet<Ptr<BasicBlock>> = region
+    let dead_blocks: ISet<Ptr<BasicBlock>> = region
         .deref(ctx)
         .iter(ctx)
         .filter(|b| !visited.contains(b))
@@ -278,7 +278,7 @@ pub fn merge_inside_region(
 
     let mut status = IRStatus::Unchanged;
     let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
-    let mut visited = FxHashSet::<Ptr<BasicBlock>>::default();
+    let mut visited = HSet::<Ptr<BasicBlock>>::default();
     while let Some(block) = stack.pop() {
         if !visited.insert(block) {
             continue;

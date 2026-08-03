@@ -17,8 +17,8 @@ use crate::{
     operation::{OpDbg, Operation},
     printable::{Printable, State},
     region::Region,
-    std_deps::hash::FxHashMap,
     r#type::Typed,
+    utils::table::IMap,
 };
 
 /// Configuration to decide what parts of the IR must be ignored.
@@ -93,10 +93,10 @@ pub fn attributes_eq(
 ) -> bool {
     let is_relevant = |attr: &AttrObj| !(ignore_config.ignore_attr)(ctx, attr.as_ref());
 
-    let lhs_relevant: FxHashMap<&Identifier, &AttrObj> =
+    let lhs_relevant: IMap<&Identifier, &AttrObj> =
         lhs.0.iter().filter(|(_, attr)| is_relevant(attr)).collect();
 
-    let rhs_relevant: FxHashMap<&Identifier, &AttrObj> =
+    let rhs_relevant: IMap<&Identifier, &AttrObj> =
         rhs.0.iter().filter(|(_, attr)| is_relevant(attr)).collect();
 
     if lhs_relevant.len() != rhs_relevant.len() {

@@ -51,9 +51,9 @@ use crate::{
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::{Error, Result},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::sync::LazyLock,
     storage_uniquer::TypeValueHash,
-    utils::trait_cast::impls_trait_static,
+    utils::{table::HMap, trait_cast::impls_trait_static},
 };
 
 use alloc::{
@@ -664,7 +664,7 @@ pub mod statics {
 /// A map from every [Type] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static TYPE_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
+    HMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_type_interface_verifiers()));
 
 /// A convenient struct to hold a type signature.

@@ -21,13 +21,11 @@ use crate::{
     printable::{self, Printable},
     region::Region,
     result::Result,
-    std_deps::{
-        hash::{FxHashMap, FxHashSet},
-        sync::LazyLock,
-    },
+    std_deps::sync::LazyLock,
     storage_uniquer::UniqueStore,
     r#type::TypeObj,
     uniqued_any::UniquedAny,
+    utils::table::{HMap, HSet, IMap},
     verify_err_noloc,
 };
 use alloc::{boxed::Box, format, string::ToString, vec, vec::Vec};
@@ -67,7 +65,7 @@ pub struct Context {
     /// Allocation pool for [Region]s.
     pub(crate) regions: Arena<Region>,
     /// Registered [Dialect]s.
-    pub(crate) dialects: FxHashMap<DialectName, Dialect>,
+    pub(crate) dialects: HMap<DialectName, Dialect>,
     /// Storage for uniqued [TypeObj]s.
     pub(crate) type_store: UniqueStore<TypeObj>,
     /// Storage for other uniqued objects.
@@ -75,7 +73,7 @@ pub struct Context {
     /// Arbitrary data storage. Use [Self::aux_data_map] for dictionary access.
     pub aux_data: SlotMap<AuxDataIndex, Box<dyn Any>>,
     /// A dictionary with keys mapping to an index in [Self::aux_data].
-    pub aux_data_map: FxHashMap<Identifier, AuxDataIndex>,
+    pub aux_data_map: HMap<Identifier, AuxDataIndex>,
 }
 
 impl Context {
@@ -113,11 +111,11 @@ impl Default for Context {
             operations: Arena::default(),
             basic_blocks: Arena::default(),
             regions: Arena::default(),
-            dialects: FxHashMap::default(),
+            dialects: HMap::default(),
             type_store: UniqueStore::default(),
             uniqued_any_store: UniqueStore::default(),
             aux_data: SlotMap::with_key(),
-            aux_data_map: FxHashMap::default(),
+            aux_data_map: HMap::default(),
         };
 
         // Verify that all dictionary keys are unique.
@@ -368,13 +366,13 @@ pub static DICT_KEYS_VERIFIER: LazyLock<Result<()>> = LazyLock::new(verify_dict_
 /// function) while deduplicating verifier function pointers.
 pub(crate) fn collect_deduped_interface_verifiers<Id, AllVerifiers, Verifier>(
     interface_verifiers: impl Iterator<Item = &'static (Id, AllVerifiers)>,
-) -> FxHashMap<Id, Vec<Verifier>>
+) -> HMap<Id, Vec<Verifier>>
 where
     Id: Eq + Hash + Clone + 'static,
     AllVerifiers: Fn() -> Vec<Verifier> + Clone + 'static,
     Verifier: Eq + Hash + Clone,
 {
-    let mut grouped = FxHashMap::default();
+    let mut grouped = IMap::default();
     for entry in interface_verifiers {
         let (id, all_verifiers_for_interface) = entry;
         grouped
@@ -392,7 +390,7 @@ where
         .into_iter()
         .map(|(id, verifiers)| {
             let mut dedupd_verifiers = Vec::new();
-            let mut seen = FxHashSet::default();
+            let mut seen = HSet::default();
             for verifier_fn_list in verifiers {
                 for verifier in verifier_fn_list() {
                     if seen.insert(verifier.clone()) {
@@ -410,7 +408,7 @@ where
 /// If any duplicate keys are found, a panic is raised with the file, line, and column
 /// information of the duplicate keys.
 pub fn verify_dict_keys() -> Result<()> {
-    let mut seen: FxHashMap<Identifier, (&'static str, u32, u32)> = FxHashMap::default();
+    let mut seen: HMap<Identifier, (&'static str, u32, u32)> = HMap::default();
     for key in get_dict_key_ids() {
         if let Some((file, line, column)) = seen.get(&key.id) {
             return verify_err_noloc!(

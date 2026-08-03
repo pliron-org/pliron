@@ -6,7 +6,7 @@
 use alloc::{vec, vec::Vec};
 use core::hash::Hash;
 
-use crate::std_deps::hash::FxHashMap;
+use crate::utils::table::HMap;
 
 /// A union-find (disjoint-set) structure over values of type `T`.
 ///
@@ -16,16 +16,16 @@ use crate::std_deps::hash::FxHashMap;
 /// ([Self::set_members]) is O(set size).
 #[derive(Clone, Debug)]
 pub struct UnionFind<T: Eq + Hash + Clone> {
-    parent: FxHashMap<T, T>,
+    parent: HMap<T, T>,
     /// Members of each set, keyed by the set's representative.
-    members: FxHashMap<T, Vec<T>>,
+    members: HMap<T, Vec<T>>,
 }
 
 impl<T: Eq + Hash + Clone> Default for UnionFind<T> {
     fn default() -> Self {
         Self {
-            parent: FxHashMap::default(),
-            members: FxHashMap::default(),
+            parent: HMap::default(),
+            members: HMap::default(),
         }
     }
 }

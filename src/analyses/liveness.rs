@@ -24,7 +24,7 @@ use crate::{
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet},
+    utils::table::{HMap, HSet},
     value::{DefiningEntity, Value},
 };
 
@@ -42,7 +42,7 @@ pub struct LivenessTq {
     /// Strict dominator subtree for each block in the region
     sdom_tree: Vec<BitSet>,
     /// Maps a block to its index in `blocks` for quick lookup.
-    block_to_index: FxHashMap<Ptr<BasicBlock>, usize>,
+    block_to_index: HMap<Ptr<BasicBlock>, usize>,
     /// For each block, the set of blocks reachable from it in the reduced CFG
     /// (i.e. excluding back edges).
     reduced_reachability: Vec<BitSet>,
@@ -61,7 +61,7 @@ impl LivenessTq {
             .reverse_post_order()
             .enumerate()
             .map(|(i, block)| (block, (block, i)))
-            .unzip::<_, _, Vec<_>, FxHashMap<_, _>>();
+            .unzip::<_, _, Vec<_>, HMap<_, _>>();
 
         let sdom_tree = Self::dom_tree_to_sdom_tree(&block_to_index, dom_tree);
 
@@ -131,14 +131,14 @@ impl LivenessTq {
 
     // Compute the strict dominator sub-tree for each node.
     fn dom_tree_to_sdom_tree(
-        block_to_index: &FxHashMap<Ptr<BasicBlock>, usize>,
+        block_to_index: &HMap<Ptr<BasicBlock>, usize>,
         dom_tree: &DomTree<Ptr<Region>, Context>,
     ) -> Vec<BitSet> {
         let mut sdom_tree = vec![BitSet::default(); block_to_index.len()];
 
         fn recurser(
             sdom_tree: &mut [BitSet],
-            block_to_index: &FxHashMap<Ptr<BasicBlock>, usize>,
+            block_to_index: &HMap<Ptr<BasicBlock>, usize>,
             dom_tree: &DomTree<Ptr<Region>, Context>,
             block: Ptr<BasicBlock>,
         ) {
@@ -473,13 +473,13 @@ pub trait RegionLiveness {
 
 /// Fast answers liveness queries, caching liveness pre-computation for regions.
 pub struct Liveness<T: RegionLiveness> {
-    regions: FxHashMap<Ptr<Region>, T>,
+    regions: HMap<Ptr<Region>, T>,
 }
 
 impl<T: RegionLiveness> Default for Liveness<T> {
     fn default() -> Self {
         Self {
-            regions: FxHashMap::default(),
+            regions: HMap::default(),
         }
     }
 }
@@ -534,7 +534,7 @@ impl<T: RegionLiveness> Liveness<T> {
             .get_insertion_block(ctx)
             .expect("Query point must be within a block for local use check");
 
-        let user_ops_in_point_block: FxHashSet<_> = value
+        let user_ops_in_point_block: HSet<_> = value
             .uses(ctx)
             .iter()
             .filter_map(|r#use| find_ancestor_op_of_op_in_block(ctx, r#use.user_op(), point_block))
