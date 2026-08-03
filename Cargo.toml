@@ -36,6 +36,7 @@ rustc_apfloat.workspace = true
 rustc-hash.workspace = true
 hashbrown.workspace = true
 indexmap.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 combine.workspace = true
 log.workspace = true
@@ -79,6 +80,7 @@ prettyplease = "0"
 rustc-hash = "2"
 hashbrown = "0"
 indexmap = { version = "2", default-features = false }
+smallvec = { version = "1", default-features = false }
 combine = "4"
 thiserror = "2"
 tempfile = "3"

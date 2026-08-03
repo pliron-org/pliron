@@ -1,21 +1,23 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Two Kinds of Hash Tables.
+//! Hash Tables.
 //!
 //! * [itable] Provides [IMap] and [ISet]. They provide all standard hash table operations,
 //!   with deterministic iteration.
 //! * [htable] Provides [HMap] and [HSet]. They provide all standard hash table operations,
 //!   except iteration.
+//! * [smalltable] Provides [SmallMap] and [SmallSet], for tables that are usually small.
 //!
-//! Both of these use [rustc_hash::FxBuildHasher], a fast, non-cryptographic hasher.
+//! All of these use [rustc_hash::FxBuildHasher], a fast, non-cryptographic hasher.
 //!
-//! If iteration is not required, Use [htable] since it is faster and uses less memory.
+//! If iteration is not required, use [htable] since it is faster and uses less memory.
 //!
 //! Currently [itable] is backed by [indexmap], and [htable] is backed by [hashbrown].
 
 pub use htable::{HMap, HSet};
 pub use itable::{IMap, ISet};
+pub use smalltable::{SmallMap, SmallSet};
 
 /// Hash table with deterministic iteration order.
 pub mod itable {
@@ -603,6 +605,608 @@ pub mod htable {
     }
 }
 
+/// Hash table optimized for the common case of very few entries.
+pub mod smalltable {
+    use alloc::boxed::Box;
+    use core::{borrow::Borrow, fmt, hash::Hash, mem};
+
+    use rustc_hash::FxBuildHasher;
+    use smallvec::SmallVec;
+
+    use super::itable::{IMap, ISet};
+
+    /// Backing storage for a [SmallMap]: either up to `N` entries inline in
+    /// a flat, linearly-scanned array, or (once grown past `N` entries) a
+    /// heap-allocated [IMap].
+    enum MapRepr<K, V, const N: usize> {
+        Inline(SmallVec<[(K, V); N]>),
+        Spilled(Box<IMap<K, V>>),
+    }
+
+    /// A hash map, with a fast non-cryptographic hasher and deterministic
+    /// iteration order, optimized for the common case of very few entries.
+    ///
+    /// Up to `N` entries are stored inline, in a flat, linearly-scanned
+    /// array, with no heap allocation and no hashing. Once an insert
+    /// grows the map past `N` entries, it transparently and permanently
+    /// promotes itself to an [IMap]
+    pub struct SmallMap<K, V, const N: usize>(MapRepr<K, V, N>);
+
+    impl<K, V, const N: usize> Default for SmallMap<K, V, N> {
+        fn default() -> Self {
+            SmallMap(MapRepr::Inline(SmallVec::new()))
+        }
+    }
+
+    impl<K, V, const N: usize> SmallMap<K, V, N> {
+        /// Creates an empty [SmallMap]. Does not allocate until it grows
+        /// past `N` entries.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Returns `true` if this map has not (yet) grown past `N`
+        /// entries, i.e., is still using inline, non-heap-allocated
+        /// storage.
+        pub fn is_inline(&self) -> bool {
+            matches!(self.0, MapRepr::Inline(_))
+        }
+
+        /// Returns the number of elements in the map.
+        pub fn len(&self) -> usize {
+            match &self.0 {
+                MapRepr::Inline(v) => v.len(),
+                MapRepr::Spilled(m) => m.len(),
+            }
+        }
+
+        /// Returns `true` if the map contains no elements.
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+
+        /// Clears the map, removing all key-value pairs. A previously
+        /// promoted map stays promoted; see the [SmallMap] documentation.
+        pub fn clear(&mut self) {
+            match &mut self.0 {
+                MapRepr::Inline(v) => v.clear(),
+                MapRepr::Spilled(m) => m.clear(),
+            }
+        }
+
+        /// Returns an iterator over the map's key-value pairs.
+        pub fn iter(&self) -> MapIter<'_, K, V> {
+            match &self.0 {
+                MapRepr::Inline(v) => MapIter::Inline(v.iter()),
+                MapRepr::Spilled(map) => MapIter::Spilled(map.iter()),
+            }
+        }
+
+        /// Returns a mutable iterator over the map's key-value pairs.
+        pub fn iter_mut(&mut self) -> MapIterMut<'_, K, V> {
+            match &mut self.0 {
+                MapRepr::Inline(v) => MapIterMut::Inline(v.iter_mut()),
+                MapRepr::Spilled(map) => MapIterMut::Spilled(map.iter_mut()),
+            }
+        }
+
+        /// Returns an iterator over the map's keys.
+        pub fn keys(&self) -> impl Iterator<Item = &K> + '_ {
+            self.iter().map(|(k, _)| k)
+        }
+
+        /// Returns an iterator over the map's values.
+        pub fn values(&self) -> impl Iterator<Item = &V> + '_ {
+            self.iter().map(|(_, v)| v)
+        }
+
+        /// Returns a mutable iterator over the map's values.
+        pub fn values_mut(&mut self) -> impl Iterator<Item = &mut V> + '_ {
+            self.iter_mut().map(|(_, v)| v)
+        }
+    }
+
+    impl<K: Hash + Eq, V, const N: usize> SmallMap<K, V, N> {
+        /// Moves from inline storage to a heap-allocated [IMap].
+        fn promote(inline: &mut SmallVec<[(K, V); N]>) -> Box<IMap<K, V>> {
+            let mut map = IMap::with_capacity_and_hasher(inline.len() + 1, FxBuildHasher);
+            for (k, v) in inline.drain(..) {
+                map.insert(k, v);
+            }
+            Box::new(map)
+        }
+
+        /// Inserts a key-value pair into the map.
+        ///
+        /// If the map did not have this key present, [None] is returned.
+        /// If the map did have this key present, the value is updated,
+        /// and the old value is returned. The key is not updated, though;
+        /// this matters for types that can be `==` without being
+        /// identical.
+        pub fn insert(&mut self, key: K, value: V) -> Option<V> {
+            match &mut self.0 {
+                MapRepr::Inline(v) => {
+                    if let Some(i) = v.iter().position(|(k, _)| *k == key) {
+                        return Some(mem::replace(&mut v[i].1, value));
+                    }
+                    if v.len() < N {
+                        v.push((key, value));
+                        None
+                    } else {
+                        let mut map = Self::promote(v);
+                        let old = map.insert(key, value);
+                        self.0 = MapRepr::Spilled(map);
+                        old
+                    }
+                }
+                MapRepr::Spilled(map) => map.insert(key, value),
+            }
+        }
+
+        /// Returns a reference to the value corresponding to the key.
+        pub fn get<Q>(&self, key: &Q) -> Option<&V>
+        where
+            K: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &self.0 {
+                MapRepr::Inline(v) => v.iter().find(|(k, _)| k.borrow() == key).map(|(_, v)| v),
+                MapRepr::Spilled(map) => map.get(key),
+            }
+        }
+
+        /// Returns a mutable reference to the value corresponding to the
+        /// key.
+        pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
+        where
+            K: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &mut self.0 {
+                MapRepr::Inline(v) => {
+                    let i = v.iter().position(|(k, _)| k.borrow() == key)?;
+                    Some(&mut v[i].1)
+                }
+                MapRepr::Spilled(map) => map.get_mut(key),
+            }
+        }
+
+        /// Returns the key-value pair corresponding to the supplied key.
+        pub fn get_key_value<Q>(&self, key: &Q) -> Option<(&K, &V)>
+        where
+            K: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &self.0 {
+                MapRepr::Inline(v) => v
+                    .iter()
+                    .find(|(k, _)| k.borrow() == key)
+                    .map(|(k, v)| (k, v)),
+                MapRepr::Spilled(map) => map.get_key_value(key),
+            }
+        }
+
+        /// Returns `true` if the map contains a value for the specified
+        /// key.
+        pub fn contains_key<Q>(&self, key: &Q) -> bool
+        where
+            K: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            self.get(key).is_some()
+        }
+
+        /// Removes a key from the map, returning the value at the key if
+        /// the key was previously in the map.
+        pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
+        where
+            K: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &mut self.0 {
+                MapRepr::Inline(v) => v
+                    .iter()
+                    .position(|(k, _)| k.borrow() == key)
+                    .map(|i| v.swap_remove(i).1),
+                MapRepr::Spilled(map) => map.swap_remove(key),
+            }
+        }
+    }
+
+    /// Iterator over the key-value pairs of a [SmallMap]. See
+    /// [SmallMap::iter].
+    pub enum MapIter<'a, K, V> {
+        Inline(core::slice::Iter<'a, (K, V)>),
+        Spilled(indexmap::map::Iter<'a, K, V>),
+    }
+
+    impl<'a, K, V> Iterator for MapIter<'a, K, V> {
+        type Item = (&'a K, &'a V);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                MapIter::Inline(it) => it.next().map(|(k, v)| (k, v)),
+                MapIter::Spilled(it) => it.next(),
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            match self {
+                MapIter::Inline(it) => it.size_hint(),
+                MapIter::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    /// Mutable iterator over the key-value pairs of a [SmallMap]. See
+    /// [SmallMap::iter_mut].
+    pub enum MapIterMut<'a, K, V> {
+        Inline(core::slice::IterMut<'a, (K, V)>),
+        Spilled(indexmap::map::IterMut<'a, K, V>),
+    }
+
+    impl<'a, K, V> Iterator for MapIterMut<'a, K, V> {
+        type Item = (&'a K, &'a mut V);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                MapIterMut::Inline(it) => it.next().map(|(k, v)| (&*k, v)),
+                MapIterMut::Spilled(it) => it.next(),
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            match self {
+                MapIterMut::Inline(it) => it.size_hint(),
+                MapIterMut::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    /// Owned iterator over the key-value pairs of a [SmallMap]. See
+    /// `IntoIterator for SmallMap`.
+    pub enum MapIntoIter<K, V, const N: usize> {
+        Inline(smallvec::IntoIter<[(K, V); N]>),
+        Spilled(indexmap::map::IntoIter<K, V>),
+    }
+
+    impl<K, V, const N: usize> Iterator for MapIntoIter<K, V, N> {
+        type Item = (K, V);
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                MapIntoIter::Inline(it) => it.next(),
+                MapIntoIter::Spilled(it) => it.next(),
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            match self {
+                MapIntoIter::Inline(it) => it.size_hint(),
+                MapIntoIter::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    impl<K, V, const N: usize> IntoIterator for SmallMap<K, V, N> {
+        type Item = (K, V);
+        type IntoIter = MapIntoIter<K, V, N>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            match self.0 {
+                MapRepr::Inline(v) => MapIntoIter::Inline(v.into_iter()),
+                MapRepr::Spilled(map) => MapIntoIter::Spilled((*map).into_iter()),
+            }
+        }
+    }
+
+    impl<'a, K, V, const N: usize> IntoIterator for &'a SmallMap<K, V, N> {
+        type Item = (&'a K, &'a V);
+        type IntoIter = MapIter<'a, K, V>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
+    }
+
+    impl<K: Hash + Eq, V, const N: usize> Extend<(K, V)> for SmallMap<K, V, N> {
+        fn extend<I: IntoIterator<Item = (K, V)>>(&mut self, iter: I) {
+            for (k, v) in iter {
+                self.insert(k, v);
+            }
+        }
+    }
+
+    impl<K: Hash + Eq, V, const N: usize> FromIterator<(K, V)> for SmallMap<K, V, N> {
+        fn from_iter<I: IntoIterator<Item = (K, V)>>(iter: I) -> Self {
+            let mut map = Self::default();
+            map.extend(iter);
+            map
+        }
+    }
+
+    impl<K: Hash + Eq, V: PartialEq, const N: usize> PartialEq for SmallMap<K, V, N> {
+        fn eq(&self, other: &Self) -> bool {
+            self.len() == other.len()
+                && self.iter().all(|(k, v)| other.get(k) == Some(v))
+        }
+    }
+
+    impl<K: Hash + Eq, V: Eq, const N: usize> Eq for SmallMap<K, V, N> {}
+
+    impl<K: fmt::Debug, V: fmt::Debug, const N: usize> fmt::Debug for SmallMap<K, V, N> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_map().entries(self.iter()).finish()
+        }
+    }
+
+    impl<K: Clone, V: Clone, const N: usize> Clone for SmallMap<K, V, N> {
+        fn clone(&self) -> Self {
+            match &self.0 {
+                MapRepr::Inline(v) => SmallMap(MapRepr::Inline(v.clone())),
+                MapRepr::Spilled(map) => SmallMap(MapRepr::Spilled(map.clone())),
+            }
+        }
+    }
+
+    /// Backing storage for a [SmallSet]: either up to `N` elements inline
+    /// in a flat, linearly-scanned array, or (once grown past `N`
+    /// elements) a heap-allocated [ISet].
+    enum SetRepr<T, const N: usize> {
+        Inline(SmallVec<[T; N]>),
+        Spilled(Box<ISet<T>>),
+    }
+
+    /// A hash set, with a fast non-cryptographic hasher and deterministic
+    /// iteration order, optimized for the common case of very few elements.
+    ///
+    /// Up to `N` entries are stored inline, in a flat, linearly-scanned
+    /// array, with no heap allocation and no hashing. Once an insert
+    /// grows the set past `N` entries, it transparently and permanently
+    /// promotes itself to an [ISet]
+    pub struct SmallSet<T, const N: usize>(SetRepr<T, N>);
+
+    impl<T, const N: usize> Default for SmallSet<T, N> {
+        fn default() -> Self {
+            SmallSet(SetRepr::Inline(SmallVec::new()))
+        }
+    }
+
+    impl<T, const N: usize> SmallSet<T, N> {
+        /// Creates an empty [SmallSet]. Does not allocate until it grows
+        /// past `N` elements.
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// Returns `true` if this set has not (yet) grown past `N`
+        /// elements, i.e., is still using inline, non-heap-allocated
+        /// storage.
+        pub fn is_inline(&self) -> bool {
+            matches!(self.0, SetRepr::Inline(_))
+        }
+
+        /// Returns the number of elements in the set.
+        pub fn len(&self) -> usize {
+            match &self.0 {
+                SetRepr::Inline(v) => v.len(),
+                SetRepr::Spilled(s) => s.len(),
+            }
+        }
+
+        /// Returns `true` if the set contains no elements.
+        pub fn is_empty(&self) -> bool {
+            self.len() == 0
+        }
+
+        /// Clears the set, removing all values. A previously promoted set
+        /// stays promoted; see the [SmallMap] documentation.
+        pub fn clear(&mut self) {
+            match &mut self.0 {
+                SetRepr::Inline(v) => v.clear(),
+                SetRepr::Spilled(s) => s.clear(),
+            }
+        }
+
+        /// Returns an iterator over the set's elements.
+        pub fn iter(&self) -> SetIter<'_, T> {
+            match &self.0 {
+                SetRepr::Inline(v) => SetIter::Inline(v.iter()),
+                SetRepr::Spilled(set) => SetIter::Spilled(set.iter()),
+            }
+        }
+    }
+
+    impl<T: Hash + Eq, const N: usize> SmallSet<T, N> {
+        /// Moves from inline storage to a heap-allocated [ISet].
+        fn promote(inline: &mut SmallVec<[T; N]>) -> Box<ISet<T>> {
+            let mut set = ISet::with_capacity_and_hasher(inline.len() + 1, FxBuildHasher);
+            for v in inline.drain(..) {
+                set.insert(v);
+            }
+            Box::new(set)
+        }
+
+        /// Adds a value to the set.
+        ///
+        /// If the set did not have this value present, `true` is
+        /// returned. If the set did have this value present, `false` is
+        /// returned.
+        pub fn insert(&mut self, value: T) -> bool {
+            match &mut self.0 {
+                SetRepr::Inline(v) => {
+                    if v.contains(&value) {
+                        return false;
+                    }
+                    if v.len() < N {
+                        v.push(value);
+                        true
+                    } else {
+                        let mut set = Self::promote(v);
+                        let inserted = set.insert(value);
+                        self.0 = SetRepr::Spilled(set);
+                        inserted
+                    }
+                }
+                SetRepr::Spilled(set) => set.insert(value),
+            }
+        }
+
+        /// Returns `true` if the set contains a value.
+        pub fn contains<Q>(&self, value: &Q) -> bool
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &self.0 {
+                SetRepr::Inline(v) => v.iter().any(|x| x.borrow() == value),
+                SetRepr::Spilled(set) => set.contains(value),
+            }
+        }
+
+        /// Returns a reference to the value in the set, if any, that is
+        /// equal to the given value.
+        pub fn get<Q>(&self, value: &Q) -> Option<&T>
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &self.0 {
+                SetRepr::Inline(v) => v.iter().find(|&x| x.borrow() == value),
+                SetRepr::Spilled(set) => set.get(value),
+            }
+        }
+
+        /// Removes a value from the set. Returns whether the value was
+        /// present.
+        pub fn remove<Q>(&mut self, value: &Q) -> bool
+        where
+            T: Borrow<Q>,
+            Q: Hash + Eq + ?Sized,
+        {
+            match &mut self.0 {
+                SetRepr::Inline(v) => match v.iter().position(|x| x.borrow() == value) {
+                    Some(i) => {
+                        v.swap_remove(i);
+                        true
+                    }
+                    None => false,
+                },
+                SetRepr::Spilled(set) => set.swap_remove(value),
+            }
+        }
+    }
+
+    /// Iterator over the elements of a [SmallSet]. See [SmallSet::iter].
+    pub enum SetIter<'a, T> {
+        Inline(core::slice::Iter<'a, T>),
+        Spilled(indexmap::set::Iter<'a, T>),
+    }
+
+    impl<'a, T> Iterator for SetIter<'a, T> {
+        type Item = &'a T;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                SetIter::Inline(it) => it.next(),
+                SetIter::Spilled(it) => it.next(),
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            match self {
+                SetIter::Inline(it) => it.size_hint(),
+                SetIter::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    /// Owned iterator over the elements of a [SmallSet]. See
+    /// `IntoIterator for SmallSet`.
+    pub enum SetIntoIter<T, const N: usize> {
+        Inline(smallvec::IntoIter<[T; N]>),
+        Spilled(indexmap::set::IntoIter<T>),
+    }
+
+    impl<T, const N: usize> Iterator for SetIntoIter<T, N> {
+        type Item = T;
+
+        fn next(&mut self) -> Option<Self::Item> {
+            match self {
+                SetIntoIter::Inline(it) => it.next(),
+                SetIntoIter::Spilled(it) => it.next(),
+            }
+        }
+
+        fn size_hint(&self) -> (usize, Option<usize>) {
+            match self {
+                SetIntoIter::Inline(it) => it.size_hint(),
+                SetIntoIter::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    impl<T, const N: usize> IntoIterator for SmallSet<T, N> {
+        type Item = T;
+        type IntoIter = SetIntoIter<T, N>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            match self.0 {
+                SetRepr::Inline(v) => SetIntoIter::Inline(v.into_iter()),
+                SetRepr::Spilled(set) => SetIntoIter::Spilled((*set).into_iter()),
+            }
+        }
+    }
+
+    impl<'a, T, const N: usize> IntoIterator for &'a SmallSet<T, N> {
+        type Item = &'a T;
+        type IntoIter = SetIter<'a, T>;
+
+        fn into_iter(self) -> Self::IntoIter {
+            self.iter()
+        }
+    }
+
+    impl<T: Hash + Eq, const N: usize> Extend<T> for SmallSet<T, N> {
+        fn extend<I: IntoIterator<Item = T>>(&mut self, iter: I) {
+            for v in iter {
+                self.insert(v);
+            }
+        }
+    }
+
+    impl<T: Hash + Eq, const N: usize> FromIterator<T> for SmallSet<T, N> {
+        fn from_iter<I: IntoIterator<Item = T>>(iter: I) -> Self {
+            let mut set = Self::default();
+            set.extend(iter);
+            set
+        }
+    }
+
+    impl<T: Hash + Eq, const N: usize> PartialEq for SmallSet<T, N> {
+        fn eq(&self, other: &Self) -> bool {
+            self.len() == other.len() && self.iter().all(|v| other.contains(v))
+        }
+    }
+
+    impl<T: Hash + Eq, const N: usize> Eq for SmallSet<T, N> {}
+
+    impl<T: fmt::Debug, const N: usize> fmt::Debug for SmallSet<T, N> {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            f.debug_set().entries(self.iter()).finish()
+        }
+    }
+
+    impl<T: Clone, const N: usize> Clone for SmallSet<T, N> {
+        fn clone(&self) -> Self {
+            match &self.0 {
+                SetRepr::Inline(v) => SmallSet(SetRepr::Inline(v.clone())),
+                SetRepr::Spilled(set) => SmallSet(SetRepr::Spilled(set.clone())),
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     mod itable {
@@ -908,6 +1512,291 @@ mod tests {
         #[test]
         fn hset_clone_is_independent() {
             let mut s1 = HSet::default();
+            s1.insert(1);
+            let mut s2 = s1.clone();
+            s2.insert(2);
+            assert_eq!(s1.len(), 1);
+            assert_eq!(s2.len(), 2);
+        }
+    }
+
+    mod smalltable {
+        use crate::utils::table::smalltable::{SmallMap, SmallSet};
+        use alloc::{vec, vec::Vec};
+
+        #[test]
+        fn smallmap_stays_inline_below_threshold() {
+            let mut m: SmallMap<i32, &str, 2> = SmallMap::new();
+            assert!(m.is_inline());
+            m.insert(1, "one");
+            assert!(m.is_inline());
+            m.insert(2, "two");
+            assert!(m.is_inline());
+            assert_eq!(m.len(), 2);
+        }
+
+        #[test]
+        fn smallmap_promotes_past_threshold() {
+            let mut m: SmallMap<i32, &str, 2> = SmallMap::new();
+            m.insert(1, "one");
+            m.insert(2, "two");
+            assert!(m.is_inline());
+            m.insert(3, "three");
+            assert!(!m.is_inline());
+            assert_eq!(m.len(), 3);
+            assert_eq!(m.get(&1), Some(&"one"));
+            assert_eq!(m.get(&2), Some(&"two"));
+            assert_eq!(m.get(&3), Some(&"three"));
+        }
+
+        #[test]
+        fn smallmap_stays_promoted_after_shrinking() {
+            let mut m: SmallMap<i32, i32, 2> = SmallMap::new();
+            m.insert(1, 1);
+            m.insert(2, 2);
+            m.insert(3, 3);
+            assert!(!m.is_inline());
+            m.remove(&3);
+            m.remove(&2);
+            assert_eq!(m.len(), 1);
+            assert!(!m.is_inline());
+        }
+
+        #[test]
+        fn smallmap_insert_overwrites_existing_key() {
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            assert_eq!(m.insert("a", 1), None);
+            assert_eq!(m.insert("a", 2), Some(1));
+            assert_eq!(m.get("a"), Some(&2));
+            assert_eq!(m.len(), 1);
+        }
+
+        #[test]
+        fn smallmap_get_mut_and_key_value() {
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            m.insert("a", 1);
+            if let Some(v) = m.get_mut("a") {
+                *v += 41;
+            }
+            assert_eq!(m.get("a"), Some(&42));
+            assert_eq!(m.get_key_value("a"), Some((&"a", &42)));
+            assert!(m.contains_key("a"));
+            assert!(!m.contains_key("missing"));
+        }
+
+        #[test]
+        fn smallmap_remove_inline_and_spilled() {
+            let mut m: SmallMap<i32, &str, 2> = SmallMap::new();
+            for i in [1, 2, 3] {
+                m.insert(i, "v");
+            }
+            assert!(!m.is_inline());
+            assert_eq!(m.remove(&1), Some("v"));
+            assert_eq!(m.remove(&1), None);
+            assert_eq!(m.len(), 2);
+
+            let mut m: SmallMap<i32, &str, 4> = SmallMap::new();
+            m.insert(1, "v");
+            assert!(m.is_inline());
+            assert_eq!(m.remove(&1), Some("v"));
+            assert!(m.is_empty());
+        }
+
+        #[test]
+        fn smallmap_from_iter_and_extend() {
+            let mut m: SmallMap<i32, i32, 2> = [(1, 10), (2, 20)].into_iter().collect();
+            assert_eq!(m.get(&1), Some(&10));
+            m.extend([(3, 30)]);
+            assert!(!m.is_inline());
+            let mut keys: Vec<_> = m.keys().copied().collect();
+            keys.sort();
+            assert_eq!(keys, vec![1, 2, 3]);
+        }
+
+        #[test]
+        fn smallmap_values_mut_and_into_iter() {
+            let mut m: SmallMap<i32, i32, 2> = SmallMap::new();
+            for i in [3, 1, 4] {
+                m.insert(i, i * i);
+            }
+            assert!(!m.is_inline());
+            for v in m.values_mut() {
+                *v += 1;
+            }
+            let mut values: Vec<_> = m.values().copied().collect();
+            values.sort();
+            assert_eq!(values, vec![2, 10, 17]);
+
+            let mut pairs: Vec<_> = (&m).into_iter().map(|(k, v)| (*k, *v)).collect();
+            pairs.sort();
+            assert_eq!(pairs, vec![(1, 2), (3, 10), (4, 17)]);
+
+            let mut pairs: Vec<_> = m.into_iter().collect();
+            pairs.sort();
+            assert_eq!(pairs, vec![(1, 2), (3, 10), (4, 17)]);
+        }
+
+        #[test]
+        fn smallmap_equality_ignores_inline_vs_spilled() {
+            let m1: SmallMap<i32, i32, 1> = [(1, 1), (2, 2)].into_iter().collect();
+            let m2: SmallMap<i32, i32, 4> = [(2, 2), (1, 1)].into_iter().collect();
+            assert!(!m1.is_inline());
+            assert!(m2.is_inline());
+            assert_eq!(m1.len(), m2.len());
+            assert!(m1.iter().all(|(k, v)| m2.get(k) == Some(v)));
+        }
+
+        #[test]
+        fn smallmap_debug_shows_contents() {
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            m.insert("a", 1);
+            let dbg = alloc::format!("{m:?}");
+            assert!(dbg.contains('a'));
+            assert!(dbg.contains('1'));
+        }
+
+        #[test]
+        fn smallmap_clone_is_independent() {
+            let mut m1: SmallMap<i32, i32, 2> = SmallMap::new();
+            m1.insert(1, 1);
+            let mut m2 = m1.clone();
+            m2.insert(2, 2);
+            assert_eq!(m1.len(), 1);
+            assert_eq!(m2.len(), 2);
+        }
+
+        #[test]
+        fn smallset_stays_inline_below_threshold() {
+            let mut s: SmallSet<i32, 2> = SmallSet::new();
+            assert!(s.is_inline());
+            s.insert(1);
+            s.insert(2);
+            assert!(s.is_inline());
+            assert_eq!(s.len(), 2);
+        }
+
+        #[test]
+        fn smallset_promotes_past_threshold() {
+            let mut s: SmallSet<i32, 2> = SmallSet::new();
+            s.insert(1);
+            s.insert(2);
+            assert!(s.is_inline());
+            s.insert(3);
+            assert!(!s.is_inline());
+            assert_eq!(s.len(), 3);
+            assert!(s.contains(&1));
+            assert!(s.contains(&2));
+            assert!(s.contains(&3));
+        }
+
+        #[test]
+        fn smallset_insert_duplicate_is_noop() {
+            let mut s: SmallSet<i32, 2> = SmallSet::new();
+            assert!(s.insert(1));
+            assert!(!s.insert(1));
+            assert_eq!(s.len(), 1);
+
+            let mut s: SmallSet<i32, 1> = SmallSet::new();
+            s.insert(1);
+            s.insert(2); // promotes
+            assert!(!s.is_inline());
+            assert!(!s.insert(1));
+            assert_eq!(s.len(), 2);
+        }
+
+        #[test]
+        fn smallset_remove_inline_and_spilled() {
+            let mut s: SmallSet<i32, 2> = [1, 2, 3].into_iter().collect();
+            assert!(!s.is_inline());
+            assert!(s.remove(&1));
+            assert!(!s.remove(&1));
+            assert_eq!(s.len(), 2);
+
+            let mut s: SmallSet<i32, 4> = SmallSet::new();
+            s.insert(1);
+            assert!(s.is_inline());
+            assert!(s.remove(&1));
+            assert!(s.is_empty());
+        }
+
+        #[test]
+        fn smallset_get_and_contains() {
+            let s: SmallSet<i32, 2> = [1, 2].into_iter().collect();
+            assert_eq!(s.get(&1), Some(&1));
+            assert_eq!(s.get(&3), None);
+            assert!(s.contains(&2));
+            assert!(!s.contains(&3));
+        }
+
+        #[test]
+        fn smallset_from_iter_and_extend() {
+            let mut s: SmallSet<i32, 2> = [1, 2].into_iter().collect();
+            assert!(s.is_inline());
+            s.extend([3]);
+            assert!(!s.is_inline());
+            let mut items: Vec<_> = s.iter().copied().collect();
+            items.sort();
+            assert_eq!(items, vec![1, 2, 3]);
+        }
+
+        #[test]
+        fn smallset_into_iter_owned_and_borrowed() {
+            let s: SmallSet<i32, 2> = [3, 1, 4].into_iter().collect();
+            assert!(!s.is_inline());
+
+            let mut items: Vec<_> = (&s).into_iter().copied().collect();
+            items.sort();
+            assert_eq!(items, vec![1, 3, 4]);
+
+            let mut items: Vec<_> = s.into_iter().collect();
+            items.sort();
+            assert_eq!(items, vec![1, 3, 4]);
+        }
+
+        #[test]
+        fn smallset_equality_ignores_inline_vs_spilled() {
+            let s1: SmallSet<i32, 1> = [1, 2].into_iter().collect();
+            let s2: SmallSet<i32, 4> = [2, 1].into_iter().collect();
+            assert!(!s1.is_inline());
+            assert!(s2.is_inline());
+            assert_eq!(s1.len(), s2.len());
+            assert!(s1.iter().all(|v| s2.contains(v)));
+        }
+
+        #[test]
+        fn smallset_partial_eq_same_n() {
+            let s1: SmallSet<i32, 4> = [1, 2, 3].into_iter().collect();
+            let mut s2: SmallSet<i32, 4> = SmallSet::new();
+            s2.insert(3);
+            s2.insert(2);
+            s2.insert(1);
+            assert_eq!(s1, s2);
+            s2.insert(4);
+            assert_ne!(s1, s2);
+        }
+
+        #[test]
+        fn smallmap_partial_eq_same_n() {
+            let m1: SmallMap<i32, i32, 4> = [(1, 1), (2, 2)].into_iter().collect();
+            let mut m2: SmallMap<i32, i32, 4> = SmallMap::new();
+            m2.insert(2, 2);
+            m2.insert(1, 1);
+            assert_eq!(m1, m2);
+            m2.insert(1, 99);
+            assert_ne!(m1, m2);
+        }
+
+        #[test]
+        fn smallset_debug_shows_contents() {
+            let mut s: SmallSet<&str, 2> = SmallSet::new();
+            s.insert("hello");
+            let dbg = alloc::format!("{s:?}");
+            assert!(dbg.contains("hello"));
+        }
+
+        #[test]
+        fn smallset_clone_is_independent() {
+            let mut s1: SmallSet<i32, 2> = SmallSet::new();
             s1.insert(1);
             let mut s2 = s1.clone();
             s2.insert(2);
