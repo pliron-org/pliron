@@ -32,12 +32,10 @@ use crate::{
     op::op_impls,
     operation::Operation,
     result::{self, Result},
-    std_deps::{
-        fs::File,
-        hash::{FxHashMap, hash_map::Entry},
-        io::BufReader,
-        path::Path,
-        utf8_chars::BufReadCharsExt,
+    std_deps::{fs::File, io::BufReader, path::Path, utf8_chars::BufReadCharsExt},
+    utils::table::{
+        HMap,
+        itable::{Entry, IMap},
     },
     value::{DefiningEntity, Value},
 };
@@ -53,7 +51,7 @@ pub struct State<'a> {
     /// The [Source] from which the input is being read.
     pub src: Source,
     /// Aribtrary state data that different parsers may want to use.
-    pub aux_data: FxHashMap<Identifier, Box<dyn Any>>,
+    pub aux_data: HMap<Identifier, Box<dyn Any>>,
 }
 
 impl<'a> State<'a> {
@@ -63,7 +61,7 @@ impl<'a> State<'a> {
             ctx,
             name_tracker: NameTracker::default(),
             src,
-            aux_data: FxHashMap::default(),
+            aux_data: HMap::default(),
         }
     }
 }
@@ -397,8 +395,8 @@ impl LabelRef {
 /// Utility for parsing SSA names and block labels.
 #[derive(Default)]
 pub(crate) struct NameTracker {
-    ssa_name_scope: Vec<FxHashMap<Identifier, Value>>,
-    block_label_scope: Vec<FxHashMap<Identifier, LabelRef>>,
+    ssa_name_scope: Vec<IMap<Identifier, Value>>,
+    block_label_scope: Vec<IMap<Identifier, LabelRef>>,
 }
 
 #[derive(Error, Debug)]
@@ -537,14 +535,14 @@ impl NameTracker {
         if op_impls::<dyn IsolatedFromAboveInterface>(
             Operation::get_op_dyn(parent_op, ctx).as_ref(),
         ) {
-            self.ssa_name_scope.push(FxHashMap::default());
+            self.ssa_name_scope.push(IMap::default());
         } else if self.ssa_name_scope.is_empty() {
             input_err!(
                 parent_op.deref(ctx).loc(),
                 ParserNameTrackerError::TopLevelOpRegionNotIsolatedFromAbove
             )?
         }
-        self.block_label_scope.push(FxHashMap::default());
+        self.block_label_scope.push(IMap::default());
         Ok(())
     }
 

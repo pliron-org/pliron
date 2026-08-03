@@ -18,7 +18,7 @@ use crate::{
     operation::Operation,
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
-    std_deps::hash::FxHashSet,
+    utils::table::HSet,
 };
 
 /// A rewriter that uses the [Recorder] listener.
@@ -85,7 +85,7 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
     // Walk the operation tree.
     walk_op(ctx, &mut state, &order.collect, op, walker_callback);
 
-    let mut erased = FxHashSet::<Ptr<Operation>>::default();
+    let mut erased = HSet::<Ptr<Operation>>::default();
     let mut rewriter = MatchRewriter::default();
     rewriter.set_listener(Recorder::default());
 

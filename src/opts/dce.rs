@@ -39,7 +39,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::Printable,
     result::Result,
-    std_deps::hash::FxHashSet,
+    utils::table::HSet,
     value::{DefiningEntity, Value},
 };
 
@@ -161,8 +161,8 @@ fn is_safe_to_erase(cand: DCECandidate, ctx: &Context) -> bool {
 /// Process the events in the recorder to note down erased operations.
 fn note_erased_ops(
     recorder: &mut Recorder,
-    erased_ops: &mut FxHashSet<Ptr<Operation>>,
-    erased_blocks: &mut FxHashSet<Ptr<BasicBlock>>,
+    erased_ops: &mut HSet<Ptr<Operation>>,
+    erased_blocks: &mut HSet<Ptr<BasicBlock>>,
 ) {
     for event in recorder.events.drain(..) {
         match event {
@@ -193,8 +193,8 @@ pub fn dce(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     let mut rewriter = IRRewriter::<Recorder>::default();
 
     let mut cemetery: Vec<DCECandidate> = Vec::new();
-    let mut erased_blocks: FxHashSet<Ptr<BasicBlock>> = FxHashSet::default();
-    let mut erased_ops: FxHashSet<Ptr<Operation>> = FxHashSet::default();
+    let mut erased_blocks: HSet<Ptr<BasicBlock>> = HSet::default();
+    let mut erased_ops: HSet<Ptr<Operation>> = HSet::default();
 
     // Step 1: Recursively walk the operation tree to collect all dead operations
     walk_op(

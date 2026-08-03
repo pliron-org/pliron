@@ -10,7 +10,7 @@
 
 use core::any::{Any, TypeId};
 
-use crate::std_deps::{hash::FxHashMap, sync::LazyLock};
+use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 
 /// Cast a [dyn Any](Any) object to a `dyn Trait` object for any
 /// trait that the contained (in [Any]) type implements, and for which
@@ -115,7 +115,7 @@ pub use statics::*;
 /// and the type_id of the trait to cast to. The map's values are
 /// the cast function pointers. This is used to avoid having to search
 /// through the distributed slice every time we want to cast an object.
-static TRAIT_CASTERS_MAP: LazyLock<FxHashMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
+static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
     LazyLock::new(|| {
         get_trait_casters()
             .map(|lazy| ((lazy.from, lazy.to), lazy.caster))

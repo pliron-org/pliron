@@ -26,8 +26,8 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, Typed},
+    utils::table::{HMap, HSet},
     value::{DefiningEntity, Value},
 };
 
@@ -184,8 +184,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         rewriter: DialectConversionRewriter,
         worklist: VecDeque<Ptr<Operation>>,
         pending_block_arg_conversions: Vec<Ptr<BasicBlock>>,
-        op_states: FxHashMap<Ptr<Operation>, OpState>,
-        previous_types: FxHashMap<Value, Vec<TypeHandle>>,
+        op_states: HMap<Ptr<Operation>, OpState>,
+        previous_types: HMap<Value, Vec<TypeHandle>>,
     }
 
     impl<'a, C: DialectConversion> Driver<'a, C> {
@@ -197,8 +197,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 rewriter,
                 worklist: VecDeque::new(),
                 pending_block_arg_conversions: Vec::new(),
-                op_states: FxHashMap::default(),
-                previous_types: FxHashMap::default(),
+                op_states: HMap::default(),
+                previous_types: HMap::default(),
             }
         }
 
@@ -348,7 +348,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 core::mem::take(&mut listener.events)
             };
 
-            let mut erased_blocks = FxHashSet::default();
+            let mut erased_blocks = HSet::default();
             for event in &events {
                 match event {
                     RecorderEvent::ErasedOperation(op) => self.mark_erased(*op),

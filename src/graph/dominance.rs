@@ -14,7 +14,7 @@ use crate::{
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet},
+    utils::table::{HMap, IMap, ISet},
     value::{DefiningEntity, Value},
 };
 
@@ -36,11 +36,11 @@ where
 {
     // An empty tree has no root.
     root: Option<G::Node>,
-    dominators_map: FxHashMap<G::Node, DomTreeNode<G, GraphContext>>,
+    dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
 }
 
 /// Maps each node to its dominance frontier
-pub struct DomFrontierMap<G, GraphContext>(FxHashMap<G::Node, FxHashSet<G::Node>>)
+pub struct DomFrontierMap<G, GraphContext>(HMap<G::Node, ISet<G::Node>>)
 where
     G: ControlFlowGraph<GraphContext>;
 
@@ -58,7 +58,7 @@ where
     let Some(entry_node) = graph.entry_node(ctx) else {
         return DomTree {
             root: None,
-            dominators_map: FxHashMap::default(),
+            dominators_map: IMap::default(),
         };
     };
 
@@ -71,7 +71,7 @@ where
         .next()
         .expect("Graph has no components, but has an entry node");
 
-    let rpo_index: FxHashMap<G::Node, usize> = rpo
+    let rpo_index: HMap<G::Node, usize> = rpo
         .iter()
         .enumerate()
         .map(|(i, node)| (node.clone(), i))
@@ -132,7 +132,7 @@ where
 
     let mut dom_tree = DomTree {
         root: Some(entry_node),
-        dominators_map: FxHashMap::default(),
+        dominators_map: IMap::default(),
     };
     let entry = DomTreeNode {
         parent: None,
@@ -233,10 +233,8 @@ where
     /// generated from `graph`
     // This method implements the algorithm from "A Simple, Fast Dominance Algorithm" by Cooper et. al.
     pub fn new(ctx: &GraphContext, graph: &G, dom_tree: &DomTree<G, GraphContext>) -> Self {
-        let mut res: FxHashMap<G::Node, FxHashSet<G::Node>> = graph
-            .nodes(ctx)
-            .map(|n| (n, FxHashSet::default()))
-            .collect();
+        let mut res: HMap<G::Node, ISet<G::Node>> =
+            graph.nodes(ctx).map(|n| (n, ISet::default())).collect();
         for b in graph.nodes(ctx) {
             if graph.num_predecessors(ctx, &b) < 2 {
                 continue;
@@ -253,7 +251,7 @@ where
     }
 
     /// Gets the set of all nodes in `n`'s dominance frontier
-    pub fn frontier<'a>(&'a self, n: &G::Node) -> &'a FxHashSet<G::Node> {
+    pub fn frontier<'a>(&'a self, n: &G::Node) -> &'a ISet<G::Node> {
         &self.0[n]
     }
 }
@@ -327,7 +325,7 @@ fn try_get_blocks_in_same_region(
 
 /// Caches dominance trees for multiple regions in a program
 #[derive(Default)]
-pub struct DomInfo(FxHashMap<Ptr<Region>, DomTree<Ptr<Region>, Context>>);
+pub struct DomInfo(HMap<Ptr<Region>, DomTree<Ptr<Region>, Context>>);
 
 impl DomInfo {
     /// If dominator tree for `region` is cached, return it.
@@ -513,7 +511,7 @@ mod tests {
     use super::*;
     use crate::{
         graph::{ControlFlowGraph, HasLabel},
-        std_deps::hash::{FxHashSet, HashSet},
+        std_deps::hash::HashSet,
     };
 
     #[derive(Clone, Debug)]
@@ -743,7 +741,7 @@ mod tests {
         let ctx = vec![n(&[])];
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
-        assert_eq!(*df.frontier(&0), FxHashSet::from_iter([]));
+        assert_eq!(*df.frontier(&0), ISet::from_iter([]));
     }
 
     #[test]
@@ -762,10 +760,10 @@ mod tests {
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
 
-        assert_eq!(*df.frontier(&0), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&1), FxHashSet::from_iter([3]));
-        assert_eq!(*df.frontier(&2), FxHashSet::from_iter([3]));
-        assert_eq!(*df.frontier(&3), FxHashSet::from_iter([]));
+        assert_eq!(*df.frontier(&0), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&1), ISet::from_iter([3]));
+        assert_eq!(*df.frontier(&2), ISet::from_iter([3]));
+        assert_eq!(*df.frontier(&3), ISet::from_iter([]));
     }
 
     #[test]
@@ -789,15 +787,15 @@ mod tests {
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
 
-        assert_eq!(*df.frontier(&0), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&1), FxHashSet::from_iter([3]));
-        assert_eq!(*df.frontier(&2), FxHashSet::from_iter([3]));
-        assert_eq!(*df.frontier(&3), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&4), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&5), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&6), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&7), FxHashSet::from_iter([]));
-        assert_eq!(*df.frontier(&8), FxHashSet::from_iter([]));
+        assert_eq!(*df.frontier(&0), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&1), ISet::from_iter([3]));
+        assert_eq!(*df.frontier(&2), ISet::from_iter([3]));
+        assert_eq!(*df.frontier(&3), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&4), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&5), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&6), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&7), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&8), ISet::from_iter([]));
     }
 
     #[test]
@@ -820,7 +818,7 @@ mod tests {
         ];
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
-        assert_eq!(*df.frontier(&4), FxHashSet::from_iter([3, 4, 11, 12]));
+        assert_eq!(*df.frontier(&4), ISet::from_iter([3, 4, 11, 12]));
     }
 
     // --- Operation-level dominance tests ---

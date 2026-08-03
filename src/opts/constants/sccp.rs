@@ -54,7 +54,7 @@ use crate::{
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
-    std_deps::hash::FxHashSet,
+    utils::table::HSet,
     value::Value,
 };
 use alloc::vec::Vec;
@@ -101,7 +101,7 @@ fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &m
     let op = branch_op.get_operation();
     let op_dyn = Operation::get_op_dyn(op, ctx);
     let attrs = operand_attrs(op, ctx, state);
-    let feasible_successors: FxHashSet<Ptr<BasicBlock>> =
+    let feasible_successors: HSet<Ptr<BasicBlock>> =
         match op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
             Some(branch_op_fold) => branch_op_fold.check_fold(ctx, &attrs).into_iter().collect(),
             None => {

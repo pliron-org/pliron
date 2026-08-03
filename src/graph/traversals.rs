@@ -4,7 +4,7 @@
 //! Control-flow-graph traversals
 
 use super::ControlFlowGraph;
-use crate::std_deps::hash::{FxHashMap, FxHashSet};
+use crate::utils::table::{HMap, HSet, IMap};
 
 /// Region traversal utilities
 pub mod region {
@@ -18,7 +18,7 @@ pub mod region {
         ctx: &GraphContext,
         graph: &G,
         node: G::Node,
-        seen_nodes: &mut FxHashSet<G::Node>,
+        seen_nodes: &mut HSet<G::Node>,
         po: &mut Vec<G::Node>,
     ) where
         G: ControlFlowGraph<GraphContext>,
@@ -79,7 +79,7 @@ pub mod region {
     where
         G: ControlFlowGraph<GraphContext>,
     {
-        let seen_nodes = &mut FxHashSet::<G::Node>::default();
+        let seen_nodes = &mut HSet::<G::Node>::default();
         let mut po_by_component = Vec::<Vec<G::Node>>::new();
 
         // Walk every node (not just entry) since we may have unreachable nodes.
@@ -118,7 +118,7 @@ pub mod region {
     where
         G: ControlFlowGraph<GraphContext>,
     {
-        let seen_nodes = &mut FxHashSet::<G::Node>::default();
+        let seen_nodes = &mut HSet::<G::Node>::default();
         let mut rpo_by_component = Vec::<Vec<G::Node>>::new();
 
         // Walk every node (not just entry) since we may have unreachable nodes.
@@ -156,7 +156,7 @@ pub mod region {
     where
         G: ControlFlowGraph<GraphContext>,
     {
-        tree: FxHashMap<G::Node, DFSNumber>,
+        tree: IMap<G::Node, DFSNumber>,
     }
 
     fn dfs_walk<G, GraphContext>(
@@ -165,7 +165,7 @@ pub mod region {
         node: G::Node,
         pre_order_counter: &mut usize,
         post_order_counter: &mut usize,
-        result: &mut FxHashMap<G::Node, DFSNumber>,
+        result: &mut IMap<G::Node, DFSNumber>,
     ) where
         G: ControlFlowGraph<GraphContext>,
     {
@@ -236,7 +236,7 @@ pub mod region {
         /// Perform DFS traversal of the graph and compute pre-order,
         /// post-order and reverse-post-order numbers for each node.
         pub fn new(ctx: &GraphContext, graph: &G) -> Self {
-            let mut result = FxHashMap::<G::Node, DFSNumber>::default();
+            let mut result = IMap::<G::Node, DFSNumber>::default();
             let mut pre_order_counter = 0;
             let mut post_order_counter = 0;
 
@@ -375,13 +375,13 @@ pub mod region {
         G: ControlFlowGraph<GraphContext>,
     {
         // DFS visit index of each visited node.
-        let mut index_of = FxHashMap::<G::Node, usize>::default();
+        let mut index_of = HMap::<G::Node, usize>::default();
         // The lowest visit index reachable from each node's DFS subtree.
-        let mut lowlink = FxHashMap::<G::Node, usize>::default();
+        let mut lowlink = HMap::<G::Node, usize>::default();
         let mut next_index = 0usize;
         // Tarjan's component stack.
         let mut scc_stack = Vec::<G::Node>::new();
-        let mut on_scc_stack = FxHashSet::<G::Node>::default();
+        let mut on_scc_stack = HSet::<G::Node>::default();
         let mut sccs = Vec::<Scc<G::Node>>::new();
 
         // Start DFS at the entry node first (if any), then cover any remaining

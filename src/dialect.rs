@@ -16,8 +16,8 @@ use crate::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
-    std_deps::hash::FxHashMap,
     r#type::{TypeId, TypeParserFn},
+    utils::table::HMap,
 };
 
 /// Dialect name: Safe wrapper around a String.
@@ -91,11 +91,11 @@ pub struct Dialect {
     /// Name of this dialect.
     pub name: DialectName,
     /// Ops that are part of this dialect.
-    pub(crate) ops: FxHashMap<OpId, OpParserFn>,
+    pub(crate) ops: HMap<OpId, OpParserFn>,
     /// Types that are part of this dialect.
-    pub(crate) types: FxHashMap<TypeId, TypeParserFn>,
+    pub(crate) types: HMap<TypeId, TypeParserFn>,
     /// Attributes that are part of this dialect.
-    pub(crate) attributes: FxHashMap<AttrId, AttrParserFn>,
+    pub(crate) attributes: HMap<AttrId, AttrParserFn>,
 }
 
 impl Printable for Dialect {
@@ -114,9 +114,9 @@ impl Dialect {
     pub fn new(name: DialectName) -> Dialect {
         Dialect {
             name,
-            ops: FxHashMap::default(),
-            types: FxHashMap::default(),
-            attributes: FxHashMap::default(),
+            ops: HMap::default(),
+            types: HMap::default(),
+            attributes: HMap::default(),
         }
     }
 

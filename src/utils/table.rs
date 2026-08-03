@@ -37,18 +37,41 @@ pub mod htable {
     use rustc_hash::FxBuildHasher;
 
     /// A view into a single entry of an [HMap], obtained via [HMap::entry].
-    pub struct Entry<'a, K, V>(hashbrown::hash_map::Entry<'a, K, V, FxBuildHasher>);
+    pub enum Entry<'a, K, V> {
+        /// The entry's key is present in the map.
+        Occupied(OccupiedEntry<'a, K, V>),
+        /// The entry's key is absent from the map.
+        Vacant(VacantEntry<'a, K, V>),
+    }
+
+    impl<'a, K, V> From<hashbrown::hash_map::Entry<'a, K, V, FxBuildHasher>> for Entry<'a, K, V> {
+        fn from(entry: hashbrown::hash_map::Entry<'a, K, V, FxBuildHasher>) -> Self {
+            match entry {
+                hashbrown::hash_map::Entry::Occupied(o) => Entry::Occupied(OccupiedEntry(o)),
+                hashbrown::hash_map::Entry::Vacant(v) => Entry::Vacant(VacantEntry(v)),
+            }
+        }
+    }
+
+    impl<'a, K, V> From<Entry<'a, K, V>> for hashbrown::hash_map::Entry<'a, K, V, FxBuildHasher> {
+        fn from(entry: Entry<'a, K, V>) -> Self {
+            match entry {
+                Entry::Occupied(o) => hashbrown::hash_map::Entry::Occupied(o.0),
+                Entry::Vacant(v) => hashbrown::hash_map::Entry::Vacant(v.0),
+            }
+        }
+    }
 
     impl<'a, K: Hash, V> Entry<'a, K, V> {
         /// Ensure a value is present, inserting `default` if it wasn't.
         pub fn or_insert(self, default: V) -> &'a mut V {
-            self.0.or_insert(default)
+            hashbrown::hash_map::Entry::from(self).or_insert(default)
         }
 
         /// Ensure a value is present, inserting the result of calling
         /// `default` if it wasn't.
         pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
-            self.0.or_insert_with(default)
+            hashbrown::hash_map::Entry::from(self).or_insert_with(default)
         }
 
         /// Ensure a value is present, inserting `V::default()` if it wasn't.
@@ -56,18 +79,81 @@ pub mod htable {
         where
             V: Default,
         {
-            self.0.or_default()
+            hashbrown::hash_map::Entry::from(self).or_default()
         }
 
         /// Run `f` on the value if the entry is occupied, without changing
         /// whether it's occupied.
         pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
-            Entry(self.0.and_modify(f))
+            hashbrown::hash_map::Entry::from(self).and_modify(f).into()
         }
 
         /// The key this entry refers to.
         pub fn key(&self) -> &K {
+            match self {
+                Entry::Occupied(entry) => entry.key(),
+                Entry::Vacant(entry) => entry.key(),
+            }
+        }
+    }
+
+    /// A view into an occupied entry of an [HMap]. See [Entry::Occupied].
+    pub struct OccupiedEntry<'a, K, V>(hashbrown::hash_map::OccupiedEntry<'a, K, V, FxBuildHasher>);
+
+    impl<'a, K, V> OccupiedEntry<'a, K, V> {
+        /// The key this entry refers to.
+        pub fn key(&self) -> &K {
             self.0.key()
+        }
+
+        /// A reference to the entry's value.
+        pub fn get(&self) -> &V {
+            self.0.get()
+        }
+
+        /// A mutable reference to the entry's value.
+        pub fn get_mut(&mut self) -> &mut V {
+            self.0.get_mut()
+        }
+
+        /// Convert into a mutable reference to the entry's value, tied to the
+        /// map's lifetime.
+        pub fn into_mut(self) -> &'a mut V {
+            self.0.into_mut()
+        }
+
+        /// Replace the entry's value, returning the old one.
+        pub fn insert(&mut self, value: V) -> V {
+            self.0.insert(value)
+        }
+
+        /// Remove the entry, returning its value.
+        pub fn remove(self) -> V {
+            self.0.remove()
+        }
+
+        /// Remove the entry, returning its key and value.
+        pub fn remove_entry(self) -> (K, V) {
+            self.0.remove_entry()
+        }
+    }
+
+    /// A view into a vacant entry of an [HMap]. See [Entry::Vacant].
+    pub struct VacantEntry<'a, K, V>(hashbrown::hash_map::VacantEntry<'a, K, V, FxBuildHasher>);
+
+    impl<'a, K, V> VacantEntry<'a, K, V> {
+        /// The key this entry would use if inserted into.
+        pub fn key(&self) -> &K {
+            self.0.key()
+        }
+
+        /// Insert a value for this entry's key, returning a mutable
+        /// reference to it.
+        pub fn insert(self, value: V) -> &'a mut V
+        where
+            K: Hash,
+        {
+            self.0.insert(value)
         }
     }
 
@@ -188,7 +274,7 @@ pub mod htable {
 
         /// Get the entry for `key`, for in-place insert/update.
         pub fn entry(&mut self, key: K) -> Entry<'_, K, V> {
-            Entry(self.0.entry(key))
+            self.0.entry(key).into()
         }
 
         /// Keep only the entries for which `f` returns `true`.
@@ -201,6 +287,19 @@ pub mod htable {
             F: FnMut(&K, &mut V) -> bool,
         {
             self.0.retain(f)
+        }
+    }
+
+    impl<K: Eq + Hash, V, Q> core::ops::Index<&Q> for HMap<K, V>
+    where
+        K: Borrow<Q>,
+        Q: Hash + Eq + ?Sized,
+    {
+        type Output = V;
+
+        /// Look up the value for a key, panicking if it isn't present.
+        fn index(&self, key: &Q) -> &V {
+            self.get(key).expect("no entry found for key")
         }
     }
 
@@ -535,6 +634,30 @@ mod tests {
         }
 
         #[test]
+        fn hmap_entry_occupied_vacant_match() {
+            use crate::utils::table::htable::Entry;
+
+            let mut m: HMap<&str, i32> = HMap::default();
+            match m.entry("a") {
+                Entry::Occupied(_) => panic!("expected vacant entry"),
+                Entry::Vacant(v) => {
+                    assert_eq!(v.key(), &"a");
+                    v.insert(1);
+                }
+            }
+            match m.entry("a") {
+                Entry::Occupied(mut o) => {
+                    assert_eq!(o.key(), &"a");
+                    assert_eq!(o.get(), &1);
+                    assert_eq!(o.insert(2), 1);
+                    assert_eq!(o.remove(), 2);
+                }
+                Entry::Vacant(_) => panic!("expected occupied entry"),
+            }
+            assert!(m.is_empty());
+        }
+
+        #[test]
         fn hmap_clear_and_capacity() {
             let mut m = HMap::with_capacity(16);
             assert!(m.capacity() >= 16);
@@ -647,6 +770,20 @@ mod tests {
             let dbg = alloc::format!("{s:?}");
             assert!(dbg.contains("len"));
             assert!(!dbg.contains("secret-value"));
+        }
+
+        #[test]
+        fn hmap_index() {
+            let mut m = HMap::default();
+            m.insert("a", 1);
+            assert_eq!(m["a"], 1);
+        }
+
+        #[test]
+        #[should_panic]
+        fn hmap_index_missing_key_panics() {
+            let m: HMap<&str, i32> = HMap::default();
+            let _ = m["missing"];
         }
 
         #[test]

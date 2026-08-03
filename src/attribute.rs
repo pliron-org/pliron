@@ -64,7 +64,7 @@ use crate::{
     printable::{self, Printable},
     result::Result,
     std_deps::{hash::FxHashMap, sync::LazyLock},
-    utils::trait_cast::impls_trait_static,
+    utils::{table::HMap, trait_cast::impls_trait_static},
 };
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
@@ -539,5 +539,5 @@ pub mod statics {
 /// A map from every [Attribute] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static ATTR_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<core::any::TypeId, Vec<AttrInterfaceVerifier>>,
+    HMap<core::any::TypeId, Vec<AttrInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_attr_interface_verifiers()));

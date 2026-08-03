@@ -35,17 +35,17 @@ use crate::{
     location::Located,
     operation::Operation,
     region::Region,
-    std_deps::hash::FxHashMap,
     r#type::Typed,
+    utils::table::HMap,
     value::Value,
 };
 
 /// Mapping between IR entities
 #[derive(Debug, Default)]
 pub struct IrMapping {
-    values: FxHashMap<Value, Value>,
-    blocks: FxHashMap<Ptr<BasicBlock>, Ptr<BasicBlock>>,
-    ops: FxHashMap<Ptr<Operation>, Ptr<Operation>>,
+    values: HMap<Value, Value>,
+    blocks: HMap<Ptr<BasicBlock>, Ptr<BasicBlock>>,
+    ops: HMap<Ptr<Operation>, Ptr<Operation>>,
 }
 
 impl IrMapping {

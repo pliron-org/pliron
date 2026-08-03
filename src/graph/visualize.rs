@@ -14,7 +14,7 @@ use pliron::{
     linked_list::ContainsLinkedList,
     operation::{self, Operation},
     region::Region,
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
 };
 
 /// Visualise an [Operation], as a graphviz DOT graph.
@@ -62,7 +62,7 @@ impl core::fmt::Display for Visualizer<'_> {
 
 /// State of graphviz generation to ensure uniqueness of nodes
 struct GraphState<'a, 'b> {
-    op_nodes: FxHashMap<Ptr<Operation>, (u32, u32)>,
+    op_nodes: HMap<Ptr<Operation>, (u32, u32)>,
     op_counter: u32,
     f: &'a mut core::fmt::Formatter<'b>,
 }
@@ -70,7 +70,7 @@ struct GraphState<'a, 'b> {
 impl<'a, 'b> GraphState<'a, 'b> {
     fn new(f: &'a mut core::fmt::Formatter<'b>) -> GraphState<'a, 'b> {
         GraphState {
-            op_nodes: FxHashMap::default(),
+            op_nodes: HMap::default(),
             op_counter: 0,
             f,
         }

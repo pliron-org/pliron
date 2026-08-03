@@ -30,8 +30,8 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet, hash_map::Entry},
     r#type::TypeHandle,
+    utils::table::{HMap, HSet, IMap, ISet, htable},
     value::Value,
 };
 
@@ -200,15 +200,15 @@ fn prune_candidates(candidates: &mut Vec<AllocCandidate>, ctx: &Context) {
 fn compute_candidate_live_in_and_defining_blocks(
     ctx: &Context,
     cand: &AllocCandidate,
-) -> (FxHashSet<Ptr<BasicBlock>>, FxHashSet<Ptr<BasicBlock>>) {
+) -> (HSet<Ptr<BasicBlock>>, ISet<Ptr<BasicBlock>>) {
     let ptr = cand.alloc_info.ptr;
 
-    let mut defining_blocks: FxHashSet<Ptr<BasicBlock>> = FxHashSet::default();
-    let mut live_in: FxHashSet<Ptr<BasicBlock>> = FxHashSet::default();
+    let mut defining_blocks: ISet<Ptr<BasicBlock>> = ISet::default();
+    let mut live_in: HSet<Ptr<BasicBlock>> = HSet::default();
     let mut live_in_worklist: Vec<Ptr<BasicBlock>> = Vec::new();
 
     // Compute blocks that contain uses of this pointer.
-    let mut user_blocks: FxHashSet<Ptr<BasicBlock>> = FxHashSet::default();
+    let mut user_blocks: ISet<Ptr<BasicBlock>> = ISet::default();
     for u in ptr.uses(ctx) {
         if let Some(block) = u.user_op().deref(ctx).get_parent_block() {
             user_blocks.insert(block);
@@ -269,11 +269,11 @@ fn compute_candidate_live_in_and_defining_blocks(
 /// dominance frontier and keeps only blocks where the candidate is live-in.
 fn compute_candidate_phi_blocks(
     df_map: &DomFrontierMap<Ptr<Region>, Context>,
-    live_in: &FxHashSet<Ptr<BasicBlock>>,
-    defining_blocks: &FxHashSet<Ptr<BasicBlock>>,
-) -> FxHashSet<Ptr<BasicBlock>> {
+    live_in: &HSet<Ptr<BasicBlock>>,
+    defining_blocks: &ISet<Ptr<BasicBlock>>,
+) -> ISet<Ptr<BasicBlock>> {
     // Compute liveness-pruned IDF for this candidate.
-    let mut phi_blocks: FxHashSet<Ptr<BasicBlock>> = FxHashSet::default();
+    let mut phi_blocks: ISet<Ptr<BasicBlock>> = ISet::default();
     let mut worklist: Vec<Ptr<BasicBlock>> = defining_blocks.iter().cloned().collect();
     while let Some(block) = worklist.pop() {
         for &df_block in df_map.frontier(&block) {
@@ -303,10 +303,10 @@ fn compute_candidate_phi_blocks(
 fn prune_candidates_with_unknown_branch_from_pred(
     ctx: &Context,
     alloc_candidates: &mut Vec<AllocCandidate>,
-    phi_blocks: &mut FxHashMap<Value, FxHashSet<Ptr<BasicBlock>>>,
+    phi_blocks: &mut HMap<Value, ISet<Ptr<BasicBlock>>>,
 ) {
     // Track invalid individual candidates by their allocation pointer.
-    let mut invalid_ptrs: FxHashSet<Value> = FxHashSet::default();
+    let mut invalid_ptrs: HSet<Value> = HSet::default();
     for cand in alloc_candidates.iter() {
         let ptr = cand.alloc_info.ptr;
         let invalid = phi_blocks
@@ -333,11 +333,11 @@ fn prune_candidates_with_unknown_branch_from_pred(
 fn get_or_create_default_def(
     alloc_cand: &AllocCandidate,
     ctx: &mut Context,
-    default_defs: &mut FxHashMap<Value, Value>,
+    default_defs: &mut HMap<Value, Value>,
 ) -> Result<Value> {
     match default_defs.entry(alloc_cand.alloc_info.ptr) {
-        Entry::Occupied(entry) => Ok(*entry.get()),
-        Entry::Vacant(entry) => {
+        htable::Entry::Occupied(entry) => Ok(*entry.get()),
+        htable::Entry::Vacant(entry) => {
             let alloc_op = alloc_cand.alloc_op;
             let alloc_obj = Operation::get_op_dyn(alloc_op, ctx);
             let alloc_iface = op_cast::<dyn PromotableAllocationInterface>(alloc_obj.as_ref())
@@ -374,7 +374,7 @@ fn get_or_create_default_def(
 }
 
 /// Process the events in the recorder to note down erased operations.
-fn note_erased_ops(recorder: &mut Recorder, erased: &mut FxHashSet<Ptr<Operation>>) {
+fn note_erased_ops(recorder: &mut Recorder, erased: &mut HSet<Ptr<Operation>>) {
     for event in recorder.events.drain(..) {
         match event {
             RecorderEvent::ErasedOperation(op) => {
@@ -397,7 +397,7 @@ fn note_erased_ops(recorder: &mut Recorder, erased: &mut FxHashSet<Ptr<Operation
 }
 
 /// For each promotable allocation pointer, stores the current reaching definition.
-type ReachingDefMap = FxHashMap<Value, Option<Value>>;
+type ReachingDefMap = IMap<Value, Option<Value>>;
 
 /// Process one block during SSA rename for mem2reg.
 ///
@@ -407,9 +407,9 @@ type ReachingDefMap = FxHashMap<Value, Option<Value>>;
 fn process_rename_block(
     ctx: &mut Context,
     block: Ptr<BasicBlock>,
-    new_phis_in_block: &FxHashMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
+    new_phis_in_block: &HMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
     incoming_reaching_def_map: &ReachingDefMap,
-    default_def_map: &mut FxHashMap<Value, Value>,
+    default_def_map: &mut HMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
 ) -> Result<ReachingDefMap> {
     let mut reaching_def_map = incoming_reaching_def_map
@@ -423,7 +423,7 @@ fn process_rename_block(
                 stack
             })
         })
-        .collect::<FxHashMap<_, _>>();
+        .collect::<IMap<_, _>>();
 
     // Push phi args for this block.
     for &(ref cand, arg_idx) in new_phis_in_block.get(&block).into_iter().flatten() {
@@ -435,7 +435,7 @@ fn process_rename_block(
     }
 
     let ops: Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
-    let mut erased_ops = FxHashSet::default();
+    let mut erased_ops = HSet::default();
     for &op in &ops {
         if erased_ops.contains(&op) {
             continue;
@@ -520,9 +520,9 @@ fn rename_blocks(
     ctx: &mut Context,
     entry_block: Ptr<BasicBlock>,
     dom_tree: &DomTree<Ptr<Region>, Context>,
-    new_phis_in_block: &FxHashMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
+    new_phis_in_block: &HMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
     reaching_def_map: &ReachingDefMap,
-    default_def_map: &mut FxHashMap<Value, Value>,
+    default_def_map: &mut HMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
 ) -> Result<()> {
     type RenameWorkItem = (Ptr<BasicBlock>, Rc<ReachingDefMap>);
@@ -569,7 +569,7 @@ pub fn mem2reg(
     // Categorize by region for efficiency.
     // We process all candidates in a region together to amortize
     // the cost of computing dominator trees, frontiers, etc.
-    let mut by_region: FxHashMap<Ptr<Region>, Vec<AllocCandidate>> = FxHashMap::default();
+    let mut by_region: IMap<Ptr<Region>, Vec<AllocCandidate>> = IMap::default();
     for cand in candidates {
         let region = cand
             .alloc_op
@@ -588,7 +588,7 @@ pub fn mem2reg(
         let df_map = DomFrontierMap::new(ctx, &region, dom_tree);
 
         // Compute liveness and phi-placement per candidate.
-        let mut phi_blocks: FxHashMap<Value, FxHashSet<Ptr<BasicBlock>>> = FxHashMap::default();
+        let mut phi_blocks: HMap<Value, ISet<Ptr<BasicBlock>>> = HMap::default();
         for cand in alloc_candidates.iter() {
             let ptr = cand.alloc_info.ptr;
             let (live_in, defining_blocks) =
@@ -606,8 +606,8 @@ pub fn mem2reg(
         opt_status |= IRStatus::Changed;
 
         // Add block arguments for phis, record arg indices.
-        let mut new_phis_in_block: FxHashMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>> =
-            FxHashMap::default();
+        let mut new_phis_in_block: HMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>> =
+            HMap::default();
         for cand in alloc_candidates.iter() {
             let ptr = cand.alloc_info.ptr;
             if let Some(needed_blocks) = phi_blocks.get(&ptr) {
@@ -628,7 +628,7 @@ pub fn mem2reg(
             .iter()
             .map(|c| (c.alloc_info.ptr, None))
             .collect();
-        let mut default_def_map: FxHashMap<Value, Value> = FxHashMap::default();
+        let mut default_def_map: HMap<Value, Value> = HMap::default();
 
         // SSA rename via dominator tree walk, starting from the entry block.
         let entry_block = region
@@ -647,7 +647,7 @@ pub fn mem2reg(
 
         // "Promote" (remove) the allocations themselves. Group them into
         // a single promote call per alloc op and then invoke the interface method.
-        let mut alloc_op_to_infos: FxHashMap<Ptr<Operation>, Vec<AllocInfo>> = FxHashMap::default();
+        let mut alloc_op_to_infos: IMap<Ptr<Operation>, Vec<AllocInfo>> = IMap::default();
         let rewriter = &mut IRRewriter::default();
 
         for cand in alloc_candidates.iter() {
@@ -657,7 +657,7 @@ pub fn mem2reg(
                 .push(cand.alloc_info.clone());
         }
 
-        let mut erased_ops = FxHashSet::default();
+        let mut erased_ops = HSet::default();
         for (op, infos) in alloc_op_to_infos {
             if erased_ops.contains(&op) {
                 panic!("Alloc op was already erased during promotion of another candidate");

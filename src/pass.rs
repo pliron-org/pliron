@@ -185,10 +185,12 @@ use crate::{
     std_deps::{
         self,
         fs::{create_dir_all, write},
-        hash::{FxHashMap, FxHashSet},
         path::PathBuf,
     },
-    utils::timer::Timer,
+    utils::{
+        table::{HMap, HSet, IMap},
+        timer::Timer,
+    },
 };
 
 #[derive(Default)]
@@ -200,7 +202,7 @@ use crate::{
 /// [IRStatus::Unchanged] implies all analyses are preserved.
 pub struct PassResult {
     pub ir_changed: IRStatus,
-    preserved_analyses: FxHashSet<core::any::TypeId>,
+    preserved_analyses: HSet<core::any::TypeId>,
 }
 
 impl PassResult {
@@ -554,25 +556,25 @@ pub struct PMConfig {
     /// The directory is created (including parents) if it doesn't exist.
     pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
-    pub print_before: FxHashSet<String>,
+    pub print_before: HSet<String>,
     /// Set of pass names for which to print the IR after execution.
-    pub print_after: FxHashSet<String>,
+    pub print_after: HSet<String>,
     /// If true, verify the IR before running each pass.
     pub verify_before_all: bool,
     /// If true, verify the IR after running each pass.
     pub verify_after_all: bool,
     /// Set of pass names for which to verify the IR before execution.
-    pub verify_before: FxHashSet<String>,
+    pub verify_before: HSet<String>,
     /// Set of pass names for which to verify the IR after execution.
-    pub verify_after: FxHashSet<String>,
+    pub verify_after: HSet<String>,
     /// If true, time the execution of each pass.
     pub time_all_passes: bool,
     /// Set of pass names for which to time the execution.
-    pub time_passes: FxHashSet<String>,
+    pub time_passes: HSet<String>,
     /// Set of pass names to skip execution.
-    pub skip_passes: FxHashSet<String>,
+    pub skip_passes: HSet<String>,
     /// Custom configuration for extensibility.
-    pub custom_config: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    pub custom_config: HMap<Identifier, Box<dyn core::any::Any>>,
 }
 
 /// Internal state maintained across [PassManager]s.
@@ -582,9 +584,9 @@ pub struct PMState {
     /// Statistics reported by passes, keyed by pass name.
     /// These statistics are printed (as requested in [PMConfig])
     /// at the end of a pass.
-    pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
+    pub stats: IMap<&'static str, Box<dyn Printable>>,
     /// Custom state for extensibility.
-    pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    pub custom_state: HMap<Identifier, Box<dyn core::any::Any>>,
     /// A count of the number of non-manager passes run so far
     pub pass_run_count: usize,
 }
@@ -642,7 +644,7 @@ pub struct AnalysisManager {
     /// Common data across [PassManager]s.
     pub pm_data: PMData,
     /// Cached analyses keyed by (TypeId of the analysis, Operation).
-    analyses: FxHashMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
+    analyses: IMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
 }
 
 impl AnalysisManager {
@@ -720,7 +722,7 @@ impl AnalysisManager {
     }
 
     /// Get a list of all analyses currently cached.
-    fn list_analyses(&self) -> FxHashSet<core::any::TypeId> {
+    fn list_analyses(&self) -> HSet<core::any::TypeId> {
         self.analyses.keys().map(|(type_id, _)| *type_id).collect()
     }
 

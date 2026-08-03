@@ -73,9 +73,9 @@ use crate::{
     printable::{self, Printable},
     region::Region,
     result::{Error, Result},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::sync::LazyLock,
     r#type::{TypeSig, Typed},
-    utils::trait_cast::impls_trait_static,
+    utils::{table::HMap, trait_cast::impls_trait_static},
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -406,9 +406,8 @@ pub mod statics {
 #[doc(hidden)]
 /// A map from every [Op] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
-pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<core::any::TypeId, Vec<OpInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
+pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<HMap<core::any::TypeId, Vec<OpInterfaceVerifier>>> =
+    LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
 
 /// Printer for an [Op] in canonical syntax.
 /// `res_1, res_2, ... res_n =
