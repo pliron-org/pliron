@@ -8,10 +8,11 @@
 //! * [htable] Provides [HMap] and [HSet]. They provide all standard hash table operations,
 //!   except iteration.
 //!
+//! Both of these use [rustc_hash::FxBuildHasher], a fast, non-cryptographic hasher.
+//!
 //! If iteration is not required, Use [htable] since it is faster and uses less memory.
 //!
 //! Currently [itable] is backed by [indexmap], and [htable] is backed by [hashbrown].
-//! They both use [rustc_hash::FxBuildHasher], a fast, non-cryptographic hash function.
 
 pub use htable::{HMap, HSet};
 pub use itable::{IMap, ISet};
