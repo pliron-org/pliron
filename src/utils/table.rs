@@ -674,6 +674,17 @@ pub mod smalltable {
             }
         }
 
+        /// Retains only the elements specified by the predicate.
+        ///
+        /// In other words, remove all pairs `(k, v)` such that `f(&k, &mut
+        /// v)` returns `false`.
+        pub fn retain<F: FnMut(&K, &mut V) -> bool>(&mut self, mut f: F) {
+            match &mut self.0 {
+                MapRepr::Inline(v) => v.retain(|(k, v)| f(k, v)),
+                MapRepr::Spilled(m) => m.retain(f),
+            }
+        }
+
         /// Returns an iterator over the map's key-value pairs.
         pub fn iter(&self) -> MapIter<'_, K, V> {
             match &self.0 {
@@ -1048,6 +1059,15 @@ pub mod smalltable {
         }
     }
 
+    impl<'a, K, V> Clone for MapIter<'a, K, V> {
+        fn clone(&self) -> Self {
+            match self {
+                MapIter::Inline(it) => MapIter::Inline(it.clone()),
+                MapIter::Spilled(it) => MapIter::Spilled(it.clone()),
+            }
+        }
+    }
+
     /// Mutable iterator over the key-value pairs of a [SmallMap]. See
     /// [SmallMap::iter_mut].
     pub enum MapIterMut<'a, K, V> {
@@ -1217,6 +1237,17 @@ pub mod smalltable {
             }
         }
 
+        /// Retains only the elements specified by the predicate.
+        ///
+        /// In other words, remove all values `v` such that `f(&v)` returns
+        /// `false`.
+        pub fn retain<F: FnMut(&T) -> bool>(&mut self, mut f: F) {
+            match &mut self.0 {
+                SetRepr::Inline(v) => v.retain(|v| f(v)),
+                SetRepr::Spilled(s) => s.retain(f),
+            }
+        }
+
         /// Returns an iterator over the set's elements.
         pub fn iter(&self) -> SetIter<'_, T> {
             match &self.0 {
@@ -1326,6 +1357,15 @@ pub mod smalltable {
             match self {
                 SetIter::Inline(it) => it.size_hint(),
                 SetIter::Spilled(it) => it.size_hint(),
+            }
+        }
+    }
+
+    impl<'a, T> Clone for SetIter<'a, T> {
+        fn clone(&self) -> Self {
+            match self {
+                SetIter::Inline(it) => SetIter::Inline(it.clone()),
+                SetIter::Spilled(it) => SetIter::Spilled(it.clone()),
             }
         }
     }
@@ -1883,6 +1923,32 @@ mod tests {
         }
 
         #[test]
+        fn smallmap_retain_inline_and_spilled() {
+            let mut m: SmallMap<i32, i32, 4> = SmallMap::new();
+            for i in 1..=3 {
+                m.insert(i, i * 10);
+            }
+            assert!(m.is_inline());
+            m.retain(|k, _| k % 2 == 1);
+            assert!(m.is_inline());
+            let mut keys: Vec<_> = m.keys().copied().collect();
+            keys.sort();
+            assert_eq!(keys, vec![1, 3]);
+
+            let mut m: SmallMap<i32, i32, 2> = SmallMap::new();
+            for i in 1..=4 {
+                m.insert(i, i * 10);
+            }
+            assert!(!m.is_inline());
+            m.retain(|k, _| k % 2 == 1);
+            // A promoted map stays promoted.
+            assert!(!m.is_inline());
+            let mut keys: Vec<_> = m.keys().copied().collect();
+            keys.sort();
+            assert_eq!(keys, vec![1, 3]);
+        }
+
+        #[test]
         fn smallmap_from_iter_and_extend() {
             let mut m: SmallMap<i32, i32, 2> = [(1, 10), (2, 20)].into_iter().collect();
             assert_eq!(m.get(&1), Some(&10));
@@ -1914,6 +1980,29 @@ mod tests {
             let mut pairs: Vec<_> = m.into_iter().collect();
             pairs.sort();
             assert_eq!(pairs, vec![(1, 2), (3, 10), (4, 17)]);
+        }
+
+        #[test]
+        fn smallmap_iter_is_clone() {
+            let m: SmallMap<i32, i32, 4> = [(3, 30), (1, 10), (4, 40)].into_iter().collect();
+            assert!(m.is_inline());
+            let it = m.iter();
+            let mut a: Vec<_> = it.clone().map(|(k, v)| (*k, *v)).collect();
+            let mut b: Vec<_> = it.map(|(k, v)| (*k, *v)).collect();
+            a.sort();
+            b.sort();
+            assert_eq!(a, vec![(1, 10), (3, 30), (4, 40)]);
+            assert_eq!(a, b);
+
+            let m: SmallMap<i32, i32, 2> = [(3, 30), (1, 10), (4, 40)].into_iter().collect();
+            assert!(!m.is_inline());
+            let it = m.iter();
+            let mut a: Vec<_> = it.clone().map(|(k, v)| (*k, *v)).collect();
+            let mut b: Vec<_> = it.map(|(k, v)| (*k, *v)).collect();
+            a.sort();
+            b.sort();
+            assert_eq!(a, vec![(1, 10), (3, 30), (4, 40)]);
+            assert_eq!(a, b);
         }
 
         #[test]
@@ -2000,6 +2089,26 @@ mod tests {
         }
 
         #[test]
+        fn smallset_retain_inline_and_spilled() {
+            let mut s: SmallSet<i32, 4> = [1, 2, 3].into_iter().collect();
+            assert!(s.is_inline());
+            s.retain(|v| v % 2 == 1);
+            assert!(s.is_inline());
+            let mut vals: Vec<_> = s.iter().copied().collect();
+            vals.sort();
+            assert_eq!(vals, vec![1, 3]);
+
+            let mut s: SmallSet<i32, 2> = [1, 2, 3, 4].into_iter().collect();
+            assert!(!s.is_inline());
+            s.retain(|v| v % 2 == 1);
+            // A promoted set stays promoted.
+            assert!(!s.is_inline());
+            let mut vals: Vec<_> = s.iter().copied().collect();
+            vals.sort();
+            assert_eq!(vals, vec![1, 3]);
+        }
+
+        #[test]
         fn smallset_get_and_contains() {
             let s: SmallSet<i32, 2> = [1, 2].into_iter().collect();
             assert_eq!(s.get(&1), Some(&1));
@@ -2031,6 +2140,29 @@ mod tests {
             let mut items: Vec<_> = s.into_iter().collect();
             items.sort();
             assert_eq!(items, vec![1, 3, 4]);
+        }
+
+        #[test]
+        fn smallset_iter_is_clone() {
+            let s: SmallSet<i32, 4> = [3, 1, 4].into_iter().collect();
+            assert!(s.is_inline());
+            let it = s.iter();
+            let mut a: Vec<_> = it.clone().copied().collect();
+            let mut b: Vec<_> = it.copied().collect();
+            a.sort();
+            b.sort();
+            assert_eq!(a, vec![1, 3, 4]);
+            assert_eq!(a, b);
+
+            let s: SmallSet<i32, 2> = [3, 1, 4].into_iter().collect();
+            assert!(!s.is_inline());
+            let it = s.iter();
+            let mut a: Vec<_> = it.clone().copied().collect();
+            let mut b: Vec<_> = it.copied().collect();
+            a.sort();
+            b.sort();
+            assert_eq!(a, vec![1, 3, 4]);
+            assert_eq!(a, b);
         }
 
         #[test]
