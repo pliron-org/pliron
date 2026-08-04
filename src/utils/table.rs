@@ -811,6 +811,216 @@ pub mod smalltable {
                 MapRepr::Spilled(map) => map.swap_remove(key),
             }
         }
+
+        /// Gets the given key's corresponding entry in the map for
+        /// in-place manipulation.
+        pub fn entry(&mut self, key: K) -> Entry<'_, K, V, N> {
+            if let MapRepr::Inline(v) = &self.0 {
+                if let Some(index) = v.iter().position(|(k, _)| *k == key) {
+                    let MapRepr::Inline(v) = &mut self.0 else {
+                        unreachable!()
+                    };
+                    return Entry::Occupied(OccupiedEntry(OccupiedEntryRepr::Inline {
+                        vec: v,
+                        index,
+                    }));
+                }
+                return Entry::Vacant(VacantEntry(VacantEntryRepr::Inline {
+                    repr: &mut self.0,
+                    key,
+                }));
+            }
+            let MapRepr::Spilled(map) = &mut self.0 else {
+                unreachable!()
+            };
+            match map.entry(key) {
+                indexmap::map::Entry::Occupied(e) => {
+                    Entry::Occupied(OccupiedEntry(OccupiedEntryRepr::Spilled(e)))
+                }
+                indexmap::map::Entry::Vacant(e) => {
+                    Entry::Vacant(VacantEntry(VacantEntryRepr::Spilled(e)))
+                }
+            }
+        }
+    }
+
+    /// A view into a single entry in a [SmallMap], which may either be
+    /// vacant or occupied. Obtained via [SmallMap::entry].
+    pub enum Entry<'a, K, V, const N: usize> {
+        /// An occupied entry.
+        Occupied(OccupiedEntry<'a, K, V, N>),
+        /// A vacant entry.
+        Vacant(VacantEntry<'a, K, V, N>),
+    }
+
+    impl<'a, K, V, const N: usize> Entry<'a, K, V, N> {
+        /// Provides in-place mutable access to an occupied entry before
+        /// any potential inserts into the map.
+        pub fn and_modify<F: FnOnce(&mut V)>(self, f: F) -> Self {
+            match self {
+                Entry::Occupied(mut e) => {
+                    f(e.get_mut());
+                    Entry::Occupied(e)
+                }
+                Entry::Vacant(e) => Entry::Vacant(e),
+            }
+        }
+
+        /// Returns a reference to this entry's key.
+        pub fn key(&self) -> &K {
+            match self {
+                Entry::Occupied(e) => e.key(),
+                Entry::Vacant(e) => e.key(),
+            }
+        }
+    }
+
+    impl<'a, K: Hash + Eq, V, const N: usize> Entry<'a, K, V, N> {
+        /// Ensures a value is in the entry by inserting the default if
+        /// empty, and returns a mutable reference to the value in the
+        /// entry.
+        pub fn or_insert(self, default: V) -> &'a mut V {
+            match self {
+                Entry::Occupied(e) => e.into_mut(),
+                Entry::Vacant(e) => e.insert(default),
+            }
+        }
+
+        /// Ensures a value is in the entry by inserting the result of the
+        /// default function if empty, and returns a mutable reference to
+        /// the value in the entry.
+        pub fn or_insert_with<F: FnOnce() -> V>(self, default: F) -> &'a mut V {
+            match self {
+                Entry::Occupied(e) => e.into_mut(),
+                Entry::Vacant(e) => e.insert(default()),
+            }
+        }
+
+        /// Ensures a value is in the entry by inserting the default value
+        /// if empty, and returns a mutable reference to the value in the
+        /// entry.
+        pub fn or_default(self) -> &'a mut V
+        where
+            V: Default,
+        {
+            self.or_insert_with(V::default)
+        }
+    }
+
+    enum OccupiedEntryRepr<'a, K, V, const N: usize> {
+        Inline {
+            vec: &'a mut SmallVec<[(K, V); N]>,
+            index: usize,
+        },
+        Spilled(indexmap::map::OccupiedEntry<'a, K, V>),
+    }
+
+    /// A view into an occupied entry in a [SmallMap].
+    pub struct OccupiedEntry<'a, K, V, const N: usize>(OccupiedEntryRepr<'a, K, V, N>);
+
+    impl<'a, K, V, const N: usize> OccupiedEntry<'a, K, V, N> {
+        /// Gets a reference to the key in the entry.
+        pub fn key(&self) -> &K {
+            match &self.0 {
+                OccupiedEntryRepr::Inline { vec, index } => &vec[*index].0,
+                OccupiedEntryRepr::Spilled(e) => e.key(),
+            }
+        }
+
+        /// Gets a reference to the value in the entry.
+        pub fn get(&self) -> &V {
+            match &self.0 {
+                OccupiedEntryRepr::Inline { vec, index } => &vec[*index].1,
+                OccupiedEntryRepr::Spilled(e) => e.get(),
+            }
+        }
+
+        /// Gets a mutable reference to the value in the entry.
+        pub fn get_mut(&mut self) -> &mut V {
+            match &mut self.0 {
+                OccupiedEntryRepr::Inline { vec, index } => &mut vec[*index].1,
+                OccupiedEntryRepr::Spilled(e) => e.get_mut(),
+            }
+        }
+
+        /// Converts the `OccupiedEntry` into a mutable reference to the
+        /// value in the entry with a lifetime bound to the map itself.
+        pub fn into_mut(self) -> &'a mut V {
+            match self.0 {
+                OccupiedEntryRepr::Inline { vec, index } => &mut vec[index].1,
+                OccupiedEntryRepr::Spilled(e) => e.into_mut(),
+            }
+        }
+
+        /// Sets the value of the entry, and returns the entry's old value.
+        pub fn insert(&mut self, value: V) -> V {
+            mem::replace(self.get_mut(), value)
+        }
+
+        /// Takes the value out of the entry, and returns it.
+        pub fn remove(self) -> V {
+            match self.0 {
+                OccupiedEntryRepr::Inline { vec, index } => vec.swap_remove(index).1,
+                OccupiedEntryRepr::Spilled(e) => e.swap_remove(),
+            }
+        }
+    }
+
+    enum VacantEntryRepr<'a, K, V, const N: usize> {
+        Inline {
+            repr: &'a mut MapRepr<K, V, N>,
+            key: K,
+        },
+        Spilled(indexmap::map::VacantEntry<'a, K, V>),
+    }
+
+    /// A view into a vacant entry in a [SmallMap].
+    pub struct VacantEntry<'a, K, V, const N: usize>(VacantEntryRepr<'a, K, V, N>);
+
+    impl<'a, K, V, const N: usize> VacantEntry<'a, K, V, N> {
+        /// Gets a reference to the key that would be used when inserting a
+        /// value through the `VacantEntry`.
+        pub fn key(&self) -> &K {
+            match &self.0 {
+                VacantEntryRepr::Inline { key, .. } => key,
+                VacantEntryRepr::Spilled(e) => e.key(),
+            }
+        }
+    }
+
+    impl<'a, K: Hash + Eq, V, const N: usize> VacantEntry<'a, K, V, N> {
+        /// Sets the value of the entry with the `VacantEntry`'s key, and
+        /// returns a mutable reference to it.
+        pub fn insert(self, value: V) -> &'a mut V {
+            match self.0 {
+                VacantEntryRepr::Inline { repr, key } => {
+                    let needs_promotion = match &*repr {
+                        MapRepr::Inline(v) => v.len() >= N,
+                        MapRepr::Spilled(_) => unreachable!(),
+                    };
+                    if !needs_promotion {
+                        let MapRepr::Inline(v) = repr else {
+                            unreachable!()
+                        };
+                        v.push((key, value));
+                        &mut v.last_mut().unwrap().1
+                    } else {
+                        let MapRepr::Inline(v) = &mut *repr else {
+                            unreachable!()
+                        };
+                        let mut map = SmallMap::<K, V, N>::promote(v);
+                        map.insert(key, value);
+                        *repr = MapRepr::Spilled(map);
+                        let MapRepr::Spilled(map) = repr else {
+                            unreachable!()
+                        };
+                        let index = map.len() - 1;
+                        map.get_index_mut(index).unwrap().1
+                    }
+                }
+                VacantEntryRepr::Spilled(e) => e.insert(value),
+            }
+        }
     }
 
     /// Iterator over the key-value pairs of a [SmallMap]. See
@@ -927,8 +1137,7 @@ pub mod smalltable {
 
     impl<K: Hash + Eq, V: PartialEq, const N: usize> PartialEq for SmallMap<K, V, N> {
         fn eq(&self, other: &Self) -> bool {
-            self.len() == other.len()
-                && self.iter().all(|(k, v)| other.get(k) == Some(v))
+            self.len() == other.len() && self.iter().all(|(k, v)| other.get(k) == Some(v))
         }
     }
 
@@ -1582,6 +1791,77 @@ mod tests {
             assert_eq!(m.get_key_value("a"), Some((&"a", &42)));
             assert!(m.contains_key("a"));
             assert!(!m.contains_key("missing"));
+        }
+
+        #[test]
+        fn smallmap_entry_api_inline() {
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            *m.entry("a").or_insert(0) += 1;
+            *m.entry("a").or_insert(0) += 1;
+            *m.entry("b").or_insert(5) += 1;
+            assert!(m.is_inline());
+            assert_eq!(m.get("a"), Some(&2));
+            assert_eq!(m.get("b"), Some(&6));
+
+            let mut counts: SmallMap<&str, i32, 2> = SmallMap::new();
+            *counts.entry("x").or_default() += 1;
+            assert_eq!(counts.get("x"), Some(&1));
+        }
+
+        #[test]
+        fn smallmap_entry_api_triggers_promotion() {
+            let mut m: SmallMap<i32, i32, 2> = SmallMap::new();
+            m.entry(1).or_insert(1);
+            m.entry(2).or_insert(2);
+            assert!(m.is_inline());
+            // A third distinct key should promote to the spilled repr.
+            *m.entry(3).or_insert(0) += 3;
+            assert!(!m.is_inline());
+            assert_eq!(m.get(&1), Some(&1));
+            assert_eq!(m.get(&2), Some(&2));
+            assert_eq!(m.get(&3), Some(&3));
+        }
+
+        #[test]
+        fn smallmap_entry_api_spilled() {
+            let mut m: SmallMap<i32, i32, 1> = [(1, 10), (2, 20)].into_iter().collect();
+            assert!(!m.is_inline());
+            *m.entry(1).or_insert(0) += 1;
+            m.entry(3).or_insert(30);
+            assert_eq!(m.get(&1), Some(&11));
+            assert_eq!(m.get(&3), Some(&30));
+        }
+
+        #[test]
+        fn smallmap_entry_and_modify() {
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            m.entry("a").and_modify(|v| *v += 1).or_insert(1);
+            m.entry("a").and_modify(|v| *v += 1).or_insert(1);
+            assert_eq!(m.get("a"), Some(&2));
+        }
+
+        #[test]
+        fn smallmap_entry_occupied_vacant_match() {
+            use crate::utils::table::smalltable::Entry;
+
+            let mut m: SmallMap<&str, i32, 2> = SmallMap::new();
+            match m.entry("a") {
+                Entry::Occupied(_) => panic!("expected vacant entry"),
+                Entry::Vacant(v) => {
+                    assert_eq!(v.key(), &"a");
+                    v.insert(1);
+                }
+            }
+            match m.entry("a") {
+                Entry::Occupied(mut o) => {
+                    assert_eq!(o.key(), &"a");
+                    assert_eq!(o.get(), &1);
+                    assert_eq!(o.insert(2), 1);
+                    assert_eq!(o.remove(), 2);
+                }
+                Entry::Vacant(_) => panic!("expected occupied entry"),
+            }
+            assert!(m.is_empty());
         }
 
         #[test]
