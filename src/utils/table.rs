@@ -17,6 +17,7 @@
 
 pub use htable::{HMap, HSet};
 pub use itable::{IMap, ISet};
+pub use rustc_hash::FxHasher;
 pub use smalltable::{SmallMap, SmallSet};
 
 /// Hash table with deterministic iteration order.

@@ -23,7 +23,6 @@ use crate::{
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
     result::Result,
-    std_deps::hash::FxHashSet,
     r#type::{TypeHandle, Typed},
     utils::table::SmallSet,
     verify_err, verify_error,
@@ -239,7 +238,7 @@ impl Value {
         other: &Value,
     ) {
         // We collect because we don't want to keep the defnode locked up.
-        let touched_uses: FxHashSet<_> = self
+        let touched_uses: Vec<_> = self
             .get_defnode_ref(ctx)
             .uses
             .iter()
@@ -483,7 +482,7 @@ impl Ptr<BasicBlock> {
         };
 
         // We collect because we don't want to keep the defnode locked up.
-        let touched_uses: FxHashSet<_> = self
+        let touched_uses: Vec<_> = self
             .get_defnode_ref(ctx)
             .uses
             .iter()

@@ -33,13 +33,6 @@ mod r#impl {
         pub use std::time::Instant;
     }
 
-    pub mod hash {
-        pub use rustc_hash::FxHasher;
-        pub use std::collections::{HashMap, HashSet, hash_map, hash_set};
-        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
-        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
-    }
-
     pub mod utf8_chars {
         pub use utf8_chars::BufReadCharsExt;
     }
@@ -213,13 +206,6 @@ mod r#impl {
         }
     }
 
-    pub mod hash {
-        pub use hashbrown::{HashMap, HashSet, hash_map, hash_set};
-        pub use rustc_hash::FxHasher;
-        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
-        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
-    }
-
     pub mod utf8_chars {
         use core::fmt;
 
@@ -244,4 +230,4 @@ mod r#impl {
     }
 }
 
-pub use r#impl::{STD_ENABLED, backtrace, fs, hash, io, path, sync, time, utf8_chars};
+pub use r#impl::{STD_ENABLED, backtrace, fs, io, path, sync, time, utf8_chars};

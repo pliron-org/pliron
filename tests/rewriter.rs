@@ -348,7 +348,7 @@ fn scoped_rewriter_test() -> Result<()> {
         builtin.module @bar 
         {
           ^block1v1():
-            v1 = test.global () [] [test_global_op_const_val: builtin.integer <0: si64>, sym_name: builtin.identifier global_0]: <() -> (test.ptr )>;
+            v1 = test.global () [] [sym_name: builtin.identifier global_0, test_global_op_const_val: builtin.integer <0: si64>]: <() -> (test.ptr )>;
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():

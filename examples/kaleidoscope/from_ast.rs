@@ -30,7 +30,7 @@ use pliron::{
     location::Location,
     op::Op,
     result::Result,
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
     value::Value,
 };
 
@@ -47,7 +47,7 @@ use crate::{
 type OpInserter = IRInserter<DummyListener>;
 
 /// Maps variable names to the slot-pointer [`Value`] produced by their [`DeclOp`].
-type VarMap = FxHashMap<String, Value>;
+type VarMap = HMap<String, Value>;
 // ANCHOR_END: type_aliases
 
 // ─── Public API ─────────────────────────────────────────────────────────────

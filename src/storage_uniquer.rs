@@ -13,9 +13,9 @@ use core::{
 };
 use once_vec::OnceVec;
 
-use crate::{
-    std_deps::hash::FxHasher,
-    utils::table::htable::{Entry, HMap},
+use crate::utils::table::{
+    FxHasher,
+    htable::{Entry, HMap},
 };
 
 /// Computes the hash of a rust value and its rust type.
