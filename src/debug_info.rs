@@ -17,8 +17,7 @@ use crate::{
     operation::Operation,
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
-    std_deps::hash::hash_map::Entry,
-    utils::vec_exns::VecExtns,
+    utils::{table::smalltable::Entry, vec_exns::VecExtns},
 };
 
 #[pliron_attr(name = "builtin.debug_info", verifier = "succ")]

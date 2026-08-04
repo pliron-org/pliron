@@ -25,6 +25,7 @@ use crate::{
     result::Result,
     std_deps::hash::FxHashSet,
     r#type::{TypeHandle, Typed},
+    utils::table::SmallSet,
     verify_err, verify_error,
 };
 use alloc::{format, vec::Vec};
@@ -42,14 +43,14 @@ impl DefUseParticipant for Ptr<BasicBlock> {}
 /// A def node contains a list of its uses.
 pub(crate) struct DefNode<T: DefUseParticipant> {
     /// The list of uses of this Def.
-    uses: FxHashSet<Use<T>>,
+    uses: SmallSet<Use<T>, 1>,
 }
 
 impl<T: DefUseParticipant> DefNode<T> {
     /// Create a new definition.
     pub(crate) fn new() -> DefNode<T> {
         DefNode {
-            uses: FxHashSet::default(),
+            uses: SmallSet::default(),
         }
     }
 

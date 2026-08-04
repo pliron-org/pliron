@@ -63,8 +63,11 @@ use crate::{
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
-    std_deps::{hash::FxHashMap, sync::LazyLock},
-    utils::{table::HMap, trait_cast::impls_trait_static},
+    std_deps::sync::LazyLock,
+    utils::{
+        table::{HMap, SmallMap},
+        trait_cast::impls_trait_static,
+    },
 };
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
@@ -137,9 +140,11 @@ impl Parsable for AttributeDict {
     }
 }
 
+pub type AttributeDictContainer = SmallMap<Identifier, AttrObj, 1>;
+
 /// A dictionary of attributes, mapping keys to attribute objects.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
-pub struct AttributeDict(pub FxHashMap<Identifier, AttrObj>);
+pub struct AttributeDict(pub AttributeDictContainer);
 
 impl AttributeDict {
     /// Get reference to attribute value that is mapped to key `k`.
@@ -173,13 +178,13 @@ impl AttributeDict {
                     Some((k.clone(), dyn_clone::clone_box(&**v)))
                 }
             })
-            .collect::<FxHashMap<Identifier, AttrObj>>()
+            .collect::<AttributeDictContainer>()
             .into()
     }
 }
 
-impl From<FxHashMap<Identifier, AttrObj>> for AttributeDict {
-    fn from(value: FxHashMap<Identifier, AttrObj>) -> Self {
+impl From<AttributeDictContainer> for AttributeDict {
+    fn from(value: AttributeDictContainer) -> Self {
         AttributeDict(value)
     }
 }
