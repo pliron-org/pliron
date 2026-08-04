@@ -18,6 +18,7 @@ proc-macro = true
 proc-macro2.workspace = true
 quote.workspace = true
 combine.workspace = true
+indexmap.workspace = true
 rustc-hash.workspace = true
 convert_case = "0.11"
 
