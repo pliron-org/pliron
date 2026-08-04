@@ -51,9 +51,9 @@ use crate::{
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::{Error, Result},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::sync::LazyLock,
     storage_uniquer::TypeValueHash,
-    utils::trait_cast::impls_trait_static,
+    utils::{table::HMap, trait_cast::impls_trait_static},
 };
 
 use alloc::{
@@ -66,7 +66,6 @@ use core::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     marker::PhantomData,
-    ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
 use pliron_derive::format;
@@ -242,10 +241,14 @@ impl TryFrom<String> for TypeName {
     }
 }
 
-impl Deref for TypeName {
-    type Target = Identifier;
+impl AsRef<str> for TypeName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
+impl AsRef<Identifier> for TypeName {
+    fn as_ref(&self) -> &Identifier {
         &self.0
     }
 }
@@ -661,7 +664,7 @@ pub mod statics {
 /// A map from every [Type] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
 pub static TYPE_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
+    HMap<core::any::TypeId, Vec<TypeInterfaceVerifier>>,
 > = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_type_interface_verifiers()));
 
 /// A convenient struct to hold a type signature.

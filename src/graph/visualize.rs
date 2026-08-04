@@ -2,7 +2,7 @@
 // Copyright (c) The pliron contributors
 
 use alloc::{format, string::String};
-use core::{fmt::Display, ops::Deref};
+use core::fmt::Display;
 use pliron::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -14,7 +14,7 @@ use pliron::{
     linked_list::ContainsLinkedList,
     operation::{self, Operation},
     region::Region,
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
 };
 
 /// Visualise an [Operation], as a graphviz DOT graph.
@@ -62,7 +62,7 @@ impl core::fmt::Display for Visualizer<'_> {
 
 /// State of graphviz generation to ensure uniqueness of nodes
 struct GraphState<'a, 'b> {
-    op_nodes: FxHashMap<Ptr<Operation>, (u32, u32)>,
+    op_nodes: HMap<Ptr<Operation>, (u32, u32)>,
     op_counter: u32,
     f: &'a mut core::fmt::Formatter<'b>,
 }
@@ -70,7 +70,7 @@ struct GraphState<'a, 'b> {
 impl<'a, 'b> GraphState<'a, 'b> {
     fn new(f: &'a mut core::fmt::Formatter<'b>) -> GraphState<'a, 'b> {
         GraphState {
-            op_nodes: FxHashMap::default(),
+            op_nodes: HMap::default(),
             op_counter: 0,
             f,
         }
@@ -260,7 +260,7 @@ fn graphviz_callback(
                 .get_region_index(region.deref(ctx).get_parent_op())
                 .unwrap();
             let op_id = Operation::get_op_dyn(parent_op, ctx).get_opid();
-            let parent_op_label = op_id.name.deref();
+            let parent_op_label = &op_id.name;
             write!(
                 graph_state.f,
                 "subgraph cluster_region_{0}_{1}{{ \n style=dotted;\n label=\"parent_op : {2}, region_idx : {1}\";\n",

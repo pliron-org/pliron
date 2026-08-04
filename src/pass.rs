@@ -171,8 +171,10 @@ use alloc::{
     vec::Vec,
 };
 use downcast_rs::{Downcast, impl_downcast};
+use thiserror::Error;
 
 use crate::{
+    arg_error_noloc,
     context::{Context, Ptr},
     identifier::Identifier,
     irbuild::IRStatus,
@@ -181,11 +183,14 @@ use crate::{
     printable::Printable,
     result::Result,
     std_deps::{
-        fs::write,
-        hash::{FxHashMap, FxHashSet},
+        self,
+        fs::{create_dir_all, write},
         path::PathBuf,
     },
-    utils::timer::Timer,
+    utils::{
+        table::{HMap, HSet, IMap},
+        timer::Timer,
+    },
 };
 
 #[derive(Default)]
@@ -197,7 +202,7 @@ use crate::{
 /// [IRStatus::Unchanged] implies all analyses are preserved.
 pub struct PassResult {
     pub ir_changed: IRStatus,
-    preserved_analyses: FxHashSet<core::any::TypeId>,
+    preserved_analyses: HSet<core::any::TypeId>,
 }
 
 impl PassResult {
@@ -487,13 +492,9 @@ pub trait PassManager {
 
         if pre_print_pass {
             log::info!("IR before pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &ir_printing_dir {
-                let path = path.join(alloc::format!(
-                    "{}-before-{}.plir",
-                    pass_run_count,
-                    pass.name()
-                ));
-                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            if let Some(dir) = &ir_printing_dir {
+                let filename = alloc::format!("{}-before-{}.plir", pass_run_count, pass.name());
+                print_op_to_file(ctx, dir, filename, op)?;
             }
         }
         if pre_verify_pass {
@@ -520,13 +521,9 @@ pub trait PassManager {
         }
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
-            if let Some(path) = &ir_printing_dir {
-                let path = path.join(alloc::format!(
-                    "{}-after-{}.plir",
-                    pass_run_count,
-                    pass.name()
-                ));
-                write(path, op.disp(ctx).to_string().as_bytes()).unwrap();
+            if let Some(dir) = &ir_printing_dir {
+                let filename = alloc::format!("{}-after-{}.plir", pass_run_count, pass.name());
+                print_op_to_file(ctx, dir, filename, op)?;
             }
         }
         if post_verify_pass {
@@ -556,27 +553,28 @@ pub struct PMConfig {
     /// If true, print the IR after running each pass.
     pub print_after_all: bool,
     /// Directory to place printed IR files before and after passes.
+    /// The directory is created (including parents) if it doesn't exist.
     pub ir_printing_dir: Option<PathBuf>,
     /// Set of pass names for which to print the IR before execution.
-    pub print_before: FxHashSet<String>,
+    pub print_before: HSet<String>,
     /// Set of pass names for which to print the IR after execution.
-    pub print_after: FxHashSet<String>,
+    pub print_after: HSet<String>,
     /// If true, verify the IR before running each pass.
     pub verify_before_all: bool,
     /// If true, verify the IR after running each pass.
     pub verify_after_all: bool,
     /// Set of pass names for which to verify the IR before execution.
-    pub verify_before: FxHashSet<String>,
+    pub verify_before: HSet<String>,
     /// Set of pass names for which to verify the IR after execution.
-    pub verify_after: FxHashSet<String>,
+    pub verify_after: HSet<String>,
     /// If true, time the execution of each pass.
     pub time_all_passes: bool,
     /// Set of pass names for which to time the execution.
-    pub time_passes: FxHashSet<String>,
+    pub time_passes: HSet<String>,
     /// Set of pass names to skip execution.
-    pub skip_passes: FxHashSet<String>,
+    pub skip_passes: HSet<String>,
     /// Custom configuration for extensibility.
-    pub custom_config: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    pub custom_config: HMap<Identifier, Box<dyn core::any::Any>>,
 }
 
 /// Internal state maintained across [PassManager]s.
@@ -586,9 +584,9 @@ pub struct PMState {
     /// Statistics reported by passes, keyed by pass name.
     /// These statistics are printed (as requested in [PMConfig])
     /// at the end of a pass.
-    pub stats: FxHashMap<&'static str, Box<dyn Printable>>,
+    pub stats: IMap<&'static str, Box<dyn Printable>>,
     /// Custom state for extensibility.
-    pub custom_state: FxHashMap<Identifier, Box<dyn core::any::Any>>,
+    pub custom_state: HMap<Identifier, Box<dyn core::any::Any>>,
     /// A count of the number of non-manager passes run so far
     pub pass_run_count: usize,
 }
@@ -646,7 +644,7 @@ pub struct AnalysisManager {
     /// Common data across [PassManager]s.
     pub pm_data: PMData,
     /// Cached analyses keyed by (TypeId of the analysis, Operation).
-    analyses: FxHashMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
+    analyses: IMap<AnalysisManagerKey, Box<RefCell<dyn Analysis>>>,
 }
 
 impl AnalysisManager {
@@ -724,7 +722,7 @@ impl AnalysisManager {
     }
 
     /// Get a list of all analyses currently cached.
-    fn list_analyses(&self) -> FxHashSet<core::any::TypeId> {
+    fn list_analyses(&self) -> HSet<core::any::TypeId> {
         self.analyses.keys().map(|(type_id, _)| *type_id).collect()
     }
 
@@ -742,4 +740,27 @@ impl AnalysisManager {
     pub fn pm_data_mut(&mut self) -> &mut PMData {
         &mut self.pm_data
     }
+}
+
+#[derive(Debug, Error)]
+pub enum PrintOpToFileErr {
+    #[error("Failed to write to file {}: {}", .0.display(), .1)]
+    FileWriteError(std_deps::path::PathBuf, std_deps::io::Error),
+    #[error("Failed to create directory {}: {}", .0.display(), .1)]
+    DirCreateError(std_deps::path::PathBuf, std_deps::io::Error),
+}
+
+/// Print `op` to file `dir/file_name`.
+/// Creates `dir` (including parents) if it doesn't exist.
+fn print_op_to_file(
+    ctx: &Context,
+    dir: &PathBuf,
+    file_name: String,
+    op: Ptr<Operation>,
+) -> Result<()> {
+    create_dir_all(dir)
+        .map_err(|err| arg_error_noloc!(PrintOpToFileErr::DirCreateError(dir.clone(), err)))?;
+    let path = dir.join(file_name);
+    write(&path, op.disp(ctx).to_string().as_bytes())
+        .map_err(|err| arg_error_noloc!(PrintOpToFileErr::FileWriteError(path, err)))
 }

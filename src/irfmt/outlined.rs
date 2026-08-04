@@ -23,8 +23,10 @@ use crate::{
     parsable::{Parsable, StateStream},
     printable::{self, Printable},
     result::Result,
-    std_deps::hash::FxHashMap,
-    utils::vec_exns::VecExtns,
+    utils::{
+        table::{HMap, IMap},
+        vec_exns::VecExtns,
+    },
 };
 
 use super::parsers::{delimited_list_parser, location, spaced, zero_or_more_parser};
@@ -81,7 +83,7 @@ struct OutlinePrintState {
     /// Items (operations or blocks) that have some outline item to be printed.
     outlined_items: Vec<OutlinedItem>,
     /// [PrintOnceAttr]s, mapped to their outindex.
-    print_once_attrs: FxHashMap<PrintOnceAttrWrapper, usize>,
+    print_once_attrs: IMap<PrintOnceAttrWrapper, usize>,
 }
 
 dict_key!(OUTLINED_STATE, "outlined_state");
@@ -190,7 +192,7 @@ pub(crate) fn print_outlines(
     fn print_outlined_attrs_for(
         ctx: &Context,
         f: &mut core::fmt::Formatter<'_>,
-        print_once_attrs: &mut FxHashMap<PrintOnceAttrWrapper, usize>,
+        print_once_attrs: &mut IMap<PrintOnceAttrWrapper, usize>,
         print_once_attr_indices: &mut usize,
         attributes: &AttributeDict,
         loc: Location,
@@ -271,9 +273,9 @@ pub(crate) fn print_outlines(
 #[derive(Default)]
 struct OutlineParseState {
     /// Map an outline item number to the [Operation] it refers to.
-    outindex_op_map: FxHashMap<usize, Ptr<Operation>>,
+    outindex_op_map: HMap<usize, Ptr<Operation>>,
     /// Map an outline item number to the [BasicBlock] it refers to.
-    outindex_block_map: FxHashMap<usize, Ptr<BasicBlock>>,
+    outindex_block_map: HMap<usize, Ptr<BasicBlock>>,
 }
 
 /// Each [Operation] is associated with an optional [Location] and
@@ -421,7 +423,7 @@ pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
             })?;
 
     // Separate the two kinds of entries we have.
-    let print_once_entries: FxHashMap<_, _> = entries
+    let print_once_entries: HMap<_, _> = entries
         .extract_if(0..entries.len(), |e| {
             matches!(e.1, OutlineEntry::PrintOnceAttr(_))
         })

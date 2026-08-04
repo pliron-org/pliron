@@ -344,7 +344,7 @@ fn test_consts() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("consts.ll").to_str().unwrap(),
         Passes::default(),
-        203,
+        217,
     );
 }
 
@@ -404,7 +404,7 @@ fn test_fpops() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("fpops.ll").to_str().unwrap(),
         Passes::default(),
-        45,
+        47,
     );
 }
 

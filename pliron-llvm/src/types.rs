@@ -3,6 +3,7 @@
 
 //! [Type]s defined in the LLVM dialect.
 
+use alloc::{boxed::Box, string::String, vec, vec::Vec};
 use core::hash::Hash;
 use pliron::{
     builtin::type_interfaces::FunctionTypeInterface,
@@ -10,6 +11,7 @@ use pliron::{
     common_traits::Verify,
     context::Context,
     derive::{format, pliron_type, type_interface_impl},
+    dict_key,
     identifier::Identifier,
     input_err_noloc,
     irfmt::{
@@ -154,6 +156,39 @@ impl Verify for StructType {
     }
 }
 
+dict_key!(STRUCT_TYPE_IN_PRINTING, "llvm_struct_type_in_printing");
+
+/// Record that we're now printing `name`, returning `true` if it's already
+/// being printed higher up the stack (i.e., we've hit a recursive struct).
+fn struct_type_start_printing(state: &printable::State, name: &Identifier) -> bool {
+    let mut aux_data = state.aux_data_mut();
+    let in_printing = aux_data
+        .entry(STRUCT_TYPE_IN_PRINTING.clone())
+        // We use a vec instead of a set hoping that this isn't
+        // going to be large, in which case vec would be faster.
+        .or_insert_with(|| Box::new(Vec::<Identifier>::new()))
+        .downcast_mut::<Vec<Identifier>>()
+        .expect("failed to downcast struct-type-in-printing state");
+    if in_printing.contains(name) {
+        true
+    } else {
+        in_printing.push(name.clone());
+        false
+    }
+}
+
+// We're done printing `name`, so remove it from the list of "under printing" struct types.
+fn struct_type_done_printing(state: &printable::State, name: &Identifier) {
+    let mut aux_data = state.aux_data_mut();
+    let in_printing = aux_data
+        .get_mut(&*STRUCT_TYPE_IN_PRINTING)
+        .expect("struct-type-in-printing state must have been created by now")
+        .downcast_mut::<Vec<Identifier>>()
+        .expect("failed to downcast struct-type-in-printing state");
+    assert!(in_printing.last().unwrap() == name);
+    in_printing.pop();
+}
+
 impl Printable for StructType {
     fn fmt(
         &self,
@@ -163,20 +198,11 @@ impl Printable for StructType {
     ) -> core::fmt::Result {
         write!(f, "<")?;
 
-        use core::cell::RefCell;
-        // Ugly, but also the simplest way to avoid infinite recursion.
-        // MLIR does the same: see LLVMTypeSyntax::printStructType.
-        thread_local! {
-            // We use a vec instead of a HashMap hoping that this isn't
-            // going to be large, in which case vec would be faster.
-            static IN_PRINTING: RefCell<Vec<Identifier>>  = const { RefCell::new(vec![]) };
-        }
         if let Some(name) = &self.name {
-            let in_printing = IN_PRINTING.with(|f| f.borrow().contains(name));
-            if in_printing {
+            if struct_type_start_printing(state, name) {
                 return write!(f, "{}>", name.clone());
             }
-            IN_PRINTING.with(|f| f.borrow_mut().push(name.clone()));
+            // This is the first time we're seeing this struct in this session.
             write!(f, "{name}")?;
             if !self.is_opaque() {
                 write!(f, " ")?;
@@ -194,8 +220,7 @@ impl Printable for StructType {
 
         // Done processing this struct. Remove it from the stack.
         if let Some(name) = &self.name {
-            assert!(IN_PRINTING.with(|f| f.borrow().last().unwrap() == name));
-            IN_PRINTING.with(|f| f.borrow_mut().pop());
+            struct_type_done_printing(state, name);
         }
         write!(f, ">")
     }
@@ -411,6 +436,8 @@ impl VectorType {
 #[cfg(test)]
 mod tests {
 
+    use alloc::{format, string::ToString, vec};
+
     use crate::types::{FuncType, PointerType, StructType, VoidType};
     use expect_test::expect;
     use pliron::{
@@ -493,10 +520,10 @@ mod tests {
         fn fmt(
             &self,
             ctx: &Context,
-            _state: &printable::State,
+            state: &printable::State,
             f: &mut core::fmt::Formatter<'_>,
         ) -> core::fmt::Result {
-            write!(f, "<{}>", self.to.disp(ctx))
+            write!(f, "<{}>", self.to.print(ctx, state))
         }
     }
 

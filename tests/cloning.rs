@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Tests for IR cloning ([pliron::irbuild::cloning]).
+//! Tests for IR cloning ([pliron::irbuild::cloning]) and equivalence
+//! ([pliron::irbuild::equivalence]). The two are exercised together where it
+//! makes sense: a clone must always be equivalent to its original.
 
 use common::{ConstantOp, ReturnOp, const_ret_in_mod};
 use pliron::{
+    attribute::Attribute,
     basic_block::BasicBlock,
     builtin::{
         attributes::IntegerAttr,
@@ -21,17 +24,17 @@ use pliron::{
     identifier::Identifier,
     irbuild::{
         cloning::{IrMapping, clone_blocks_into, clone_operation},
+        equivalence::{EqResult, IgnoreConfig, basic_block_eq, operation_eq, region_eq},
         listener::{DummyListener, Recorder, RecorderEvent},
         rewriter::IRRewriter,
     },
+    location::{Located, Location},
     op::Op,
     operation::{Operation, verify_operation},
+    printable::Printable,
     result::Result,
     utils::apint::{APInt, bw},
 };
-
-#[cfg(target_family = "wasm")]
-use wasm_bindgen_test::*;
 
 mod common;
 
@@ -49,11 +52,71 @@ fn sole_successor(ctx: &Context, term: Ptr<Operation>) -> Ptr<BasicBlock> {
     first
 }
 
+/// Build, in a fresh module named `mod_name`,
+/// `fn foo() { A: c = const val; br -> B;  B: return c }`
+fn branch_and_return_fn(
+    ctx: &mut Context,
+    mod_name: &str,
+    val: u64,
+) -> Result<(FuncOp, Ptr<Operation>)> {
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+    let module = ModuleOp::new(ctx, mod_name.try_into().unwrap());
+    let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
+    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    module.append_operation(ctx, func.get_operation(), 0);
+    let region = func.get_region(ctx);
+
+    let block_a = func.get_entry_block(ctx);
+    let c = ConstantOp::new(ctx, val);
+    c.get_operation().insert_at_back(block_a, ctx);
+    let block_b = BasicBlock::new(ctx, None, vec![]);
+    block_b.insert_at_back(region, ctx);
+    Operation::new(
+        ctx,
+        BranchOp::get_concrete_op_info(),
+        vec![],
+        vec![],
+        vec![block_b],
+        0,
+    )
+    .insert_at_back(block_a, ctx);
+    ReturnOp::new(ctx, c.get_result(ctx))
+        .get_operation()
+        .insert_at_back(block_b, ctx);
+
+    Ok((func, c.get_operation()))
+}
+
+/// Never ignore any attribute; used as the default [IgnoreConfig::ignore_attr].
+fn never_ignore(_ctx: &Context, _attr: &dyn Attribute) -> bool {
+    false
+}
+
+/// Ignore any [IntegerAttr], regardless of its value.
+fn ignore_integer_attrs(_ctx: &Context, attr: &dyn Attribute) -> bool {
+    attr.downcast_ref::<IntegerAttr>().is_some()
+}
+
+/// Panic with a useful message unless `result` is [EqResult::Eq].
+fn assert_equivalent(ctx: &Context, result: EqResult) {
+    match result {
+        EqResult::Eq => {}
+        _ => panic!("{}", result.disp(ctx)),
+    }
+}
+
+/// Panic unless `result` reports a mismatch.
+fn assert_not_equivalent(result: EqResult) {
+    assert!(
+        !matches!(result, EqResult::Eq),
+        "expected a mismatch, but the two were reported equivalent"
+    );
+}
+
 /// Cloning a function deep-copies its body and remaps intra-region operands:
 /// the cloned `return` must use the cloned constant, while the original is left
 /// untouched.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_function_remaps_operands() -> Result<()> {
     let ctx = &mut Context::new();
 
@@ -94,7 +157,6 @@ fn clone_function_remaps_operands() -> Result<()> {
 /// Cloning the same op twice with independent mappings yields independent
 /// clones (no shared state leaks through [IrMapping]).
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_is_independent_per_mapping() -> Result<()> {
     let ctx = &mut Context::new();
     let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
@@ -117,25 +179,27 @@ fn clone_is_independent_per_mapping() -> Result<()> {
     assert_ne!(second, func.get_operation());
     assert_ne!(first, second);
 
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_equivalent(
+        ctx,
+        operation_eq(ctx, &mut IrMapping::new(), first, second, &ignore),
+    );
+
     Ok(())
 }
 
-/// Cloning a set of blocks is two-phase: every clone block and its block
-/// arguments are recorded first, then ops are cloned. So a branch that points
-/// "forward" to a later block, and an op that uses a block argument, both resolve
-/// to their clones. We build
+/// Check that a branch that points "forward" to a later block,
+/// and an op that uses a block argument, both resolve to their clones.
+/// We build:
 ///
 /// ```text
 ///   A:        c = const 7;  br [c] -> B
 ///   B(arg):   return arg
 /// ```
-///
-/// clone both blocks, and check the clone of A branches to the clone of B (the
-/// forward reference is resolved), carries the cloned constant (operand
-/// remapped), and the clone of B returns its own fresh argument (block-arg
-/// remapped).
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
@@ -170,8 +234,8 @@ fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     );
     br.insert_at_back(block_a, ctx);
 
-    // Clone both blocks into the region. The order is irrelevant (the clone is
-    // three-phase), but pass them A-before-B here.
+    // Clone both blocks into the region.
+    // The order should be irrelevant so pass them A-before-B here.
     let mut mapper = IrMapping::new();
     let mut rewriter = IRRewriter::<DummyListener>::default();
     clone_blocks_into(&[block_a, block_b], region, ctx, &mut rewriter, &mut mapper);
@@ -208,12 +272,8 @@ fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     Ok(())
 }
 
-/// The two-phase clone also resolves *back* references (a block branching to an
-/// earlier block in the list), not just forward ones. Build a two-block loop
-/// `A -> B -> A`, clone both, and check the clone of B branches back to the clone
-/// of A, not the original A.
+/// Check that back references are resolved.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_blocks_resolves_back_edge() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
@@ -263,23 +323,15 @@ fn clone_blocks_resolves_back_edge() -> Result<()> {
     Ok(())
 }
 
-/// The clone is **order-independent** for op results too, not just block
-/// arguments and branches: even when blocks are given in a non-dominance order
-/// (a use listed before its def), a cross-block op-result operand still resolves
-/// to the clone, not the original. Build
+/// Check that clone is **order-independent** for op results too.
+///
+/// We Build:
 ///
 /// ```text
 ///   A:   c = const 7;  br -> B
 ///   B:   return c
 /// ```
-///
-/// and clone both blocks in the order `[B, A]` (B, the use, before A, the def).
-/// A single-pass clone would wire B's `return` to A's *original* constant
-/// (silently leaving the clone pointing into the source IR); the three-phase
-/// clone records the cloned constant before wiring any operand, so it resolves
-/// to the clone.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_blocks_resolves_op_result_forward_ref_in_any_order() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
@@ -330,12 +382,9 @@ fn clone_blocks_resolves_op_result_forward_ref_in_any_order() -> Result<()> {
     Ok(())
 }
 
-/// Cloning inserts the new blocks and ops through the rewriter, so a listener it
-/// carries is notified for each one. A raw linked-list insertion would bypass
-/// the listener entirely. Clone a single block `c = const 7; return c` with a
-/// recording rewriter and check it saw one inserted block and two inserted ops.
+/// Check listner notifications
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+
 fn clone_blocks_notifies_rewriter_listener() -> Result<()> {
     let ctx = &mut Context::new();
 
@@ -365,12 +414,8 @@ fn clone_blocks_notifies_rewriter_listener() -> Result<()> {
     Ok(())
 }
 
-/// A value defined outside the cloned set must stay shared (MLIR's
-/// `lookupOrDefault`): the clone keeps pointing at the original, and the mapping
-/// has no entry for it. Build `A: c = const 7; br -> B` and `B: return c`, but
-/// clone ONLY B. B's clone must still return A's original constant.
+/// References to external (outside the cloned region) values must remain as-is.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_blocks_keeps_external_value_shared() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
@@ -408,21 +453,26 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
 
     let b2 = mapper.lookup_block(block_b).expect("B should be mapped");
     let b2_term = b2.deref(ctx).get_terminator(ctx).expect("B' terminator");
-    // The clone still returns A's original constant (shared, not remapped)...
+    // The clone still returns A's original constant.
     assert_eq!(b2_term.deref(ctx).get_operand(0), c_val);
     // ...and the mapping has no entry for that external value.
     assert_eq!(mapper.lookup_value(c_val), None);
 
+    // B and its clone are equivalent.
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_equivalent(
+        ctx,
+        basic_block_eq(ctx, &mut IrMapping::new(), block_b, b2, &ignore),
+    );
+
     Ok(())
 }
 
-/// The clone carries over the source block's attributes (debug info, block
-/// argument names, ...) and its label, the same way op attributes are copied.
-/// The label is the block's `given_name`; the clone gets a fresh `unique_name`
-/// (label + a new id), so it stays a distinct block while still showing where it
-/// came from.
+/// Check that attributes are cloned correctly.
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn clone_blocks_copies_block_label_and_attributes() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
@@ -463,6 +513,187 @@ fn clone_blocks_copies_block_label_and_attributes() -> Result<()> {
         src.deref(ctx).unique_name(ctx),
         "the clone must be a distinct block with its own unique_name"
     );
+
+    Ok(())
+}
+
+#[test]
+fn clone_is_equivalent_to_original() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
+
+    let mut clone_mapper = IrMapping::new();
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    let cloned_func = clone_operation(func.get_operation(), ctx, &mut rewriter, &mut clone_mapper);
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut eq_mapper = IrMapping::new();
+    assert_equivalent(
+        ctx,
+        operation_eq(
+            ctx,
+            &mut eq_mapper,
+            func.get_operation(),
+            cloned_func,
+            &ignore,
+        ),
+    );
+
+    Ok(())
+}
+
+/// Two structurally identical functions, built independently, must be are equivalent.
+#[test]
+fn equivalent_functions_with_a_forward_branch_are_equal() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, _) = branch_and_return_fn(ctx, "m2", 7)?;
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+
+    // The whole function, through operation_eq (which recurses into the
+    // region and both blocks).
+    let mut mapper = IrMapping::new();
+    assert_equivalent(
+        ctx,
+        operation_eq(
+            ctx,
+            &mut mapper,
+            func1.get_operation(),
+            func2.get_operation(),
+            &ignore,
+        ),
+    );
+
+    // The same, driven directly through region_eq.
+    let mut mapper = IrMapping::new();
+    assert_equivalent(
+        ctx,
+        region_eq(
+            ctx,
+            &mut mapper,
+            func1.get_region(ctx),
+            func2.get_region(ctx),
+            &ignore,
+        ),
+    );
+
+    Ok(())
+}
+
+/// Check that an attribute difference deep down is flagged.
+#[test]
+fn differing_constant_value_is_not_equivalent() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, _) = branch_and_return_fn(ctx, "m2", 9)?;
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+    assert_not_equivalent(operation_eq(
+        ctx,
+        &mut mapper,
+        func1.get_operation(),
+        func2.get_operation(),
+        &ignore,
+    ));
+
+    Ok(())
+}
+
+#[test]
+fn region_and_block_mismatches_report_their_own_variant() -> Result<()> {
+    let ctx = &mut Context::new();
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+
+    // Two regions with a differing number of blocks.
+    let single_block_func = const_ret_in_mod(ctx).map(|(_, f, _, _)| f)?;
+    let (branching_func, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    let mut mapper = IrMapping::new();
+    let result = region_eq(
+        ctx,
+        &mut mapper,
+        single_block_func.get_region(ctx),
+        branching_func.get_region(ctx),
+        &ignore,
+    );
+    assert!(
+        matches!(result, EqResult::FirstNEQRegions(_)),
+        "a block-count mismatch should be reported at the region level"
+    );
+
+    // Two blocks with a differing number of arguments.
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+    let with_arg = BasicBlock::new(ctx, None, vec![i64_ty.into()]);
+    let without_arg = BasicBlock::new(ctx, None, vec![]);
+    let mut mapper = IrMapping::new();
+    let result = basic_block_eq(ctx, &mut mapper, with_arg, without_arg, &ignore);
+    assert!(
+        matches!(result, EqResult::FirstNEQBlocks(_)),
+        "an argument-count mismatch should be reported at the block level"
+    );
+
+    Ok(())
+}
+
+/// Test [IgnoreConfig] behaviour.
+#[test]
+fn ignore_config_skips_location_and_chosen_attributes() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, const1) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, const2) = branch_and_return_fn(ctx, "m2", 9)?;
+
+    const1.deref_mut(ctx).set_loc(Location::Named {
+        name: "one".into(),
+        child_loc: Box::new(Location::Unknown),
+    });
+    const2.deref_mut(ctx).set_loc(Location::Named {
+        name: "two".into(),
+        child_loc: Box::new(Location::Unknown),
+    });
+
+    // Ignoring both the location and the (only) attribute in play: equivalent.
+    let ignore_both = IgnoreConfig {
+        ignore_loc: true,
+        ignore_attr: ignore_integer_attrs,
+    };
+    let mut mapper = IrMapping::new();
+    assert_equivalent(
+        ctx,
+        operation_eq(
+            ctx,
+            &mut mapper,
+            func1.get_operation(),
+            func2.get_operation(),
+            &ignore_both,
+        ),
+    );
+
+    // Ignoring neither: the location (and the attribute) differences surface.
+    let ignore_neither = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+    assert_not_equivalent(operation_eq(
+        ctx,
+        &mut mapper,
+        func1.get_operation(),
+        func2.get_operation(),
+        &ignore_neither,
+    ));
 
     Ok(())
 }

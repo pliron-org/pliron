@@ -37,7 +37,7 @@ use rustc_apfloat::ieee::{self, IeeeFloat, NonfiniteBehavior};
 use thiserror::Error;
 
 pub use rustc_apfloat::{
-    Category, ExpInt, Float, Round, StatusAnd,
+    Category, ExpInt, Float, FloatConvert, Round, StatusAnd,
     ieee::{BFloat, Double, Float8E4M3FN, Float8E5M2, Half, Quad, Single, X87DoubleExtended},
 };
 
@@ -79,6 +79,18 @@ pub fn double_to_f64(value: Double) -> f64 {
 /// Convert from Rust [f64] to [rustc_apfloat]'s [Double].
 pub fn f64_to_double(value: f64) -> Double {
     Double::from_bits(value.to_bits().into())
+}
+
+/// Convert any [Float] that is convertible to [Double] into a Rust [f64].
+pub fn float_to_f64<T: FloatConvert<Double>>(value: T, loses_info: &mut bool) -> f64 {
+    double_to_f64(value.convert(loses_info).value)
+}
+
+/// Convert from Rust [f64] to [rustc_apfloat]'s [Half].
+pub fn f64_to_half(value: f64) -> Half {
+    Double::from_bits(value.to_bits().into())
+        .convert(&mut false)
+        .value
 }
 
 #[derive(Debug, Error)]
@@ -757,11 +769,14 @@ mod tests {
         parsable::parse_from_str,
         printable::Printable,
         result::ExpectOk,
-        utils::apfloat::{double_to_f64, f32_to_single, f64_to_double, single_to_f32},
+        utils::apfloat::{
+            double_to_f64, f32_to_single, f64_to_double, float_to_f64, single_to_f32,
+        },
     };
 
     use super::{
-        BFloat, Double, Float8E4M3FN, Float8E5M2, Half, Parsable, Quad, Single, X87DoubleExtended,
+        BFloat, Double, Float, Float8E4M3FN, Float8E5M2, Half, Parsable, Quad, Single,
+        X87DoubleExtended,
     };
 
     fn print_and_parse<T>(value: T, ctx: &mut Context)
@@ -1013,5 +1028,43 @@ mod tests {
         let double = f64_to_double(val);
         let back = double_to_f64(double);
         assert_eq!(val, back);
+    }
+
+    #[test]
+    fn test_float_to_f64() {
+        // Every Half is exactly representable as an f64.
+        let cases: [(u128, f64); 8] = [
+            (0x0000, 0.0),                  // +0.0
+            (0x8000, -0.0),                 // -0.0
+            (0x3C00, 1.0),                  // 1.0
+            (0xC000, -2.0),                 // -2.0
+            (0x3555, 0.333251953125),       // nearest Half to 1/3
+            (0x7BFF, 65504.0),              // largest finite Half
+            (0x0001, 5.960464477539063e-8), // smallest positive subnormal Half
+            (0x7C00, f64::INFINITY),        // +Inf
+        ];
+
+        for (bits, expected) in cases {
+            let val = float_to_f64(Half::from_bits(bits), &mut false);
+            assert_eq!(val, expected, "Failed for Half with bits {:#x}", bits);
+            assert_eq!(
+                val.is_sign_negative(),
+                expected.is_sign_negative(),
+                "Sign mismatch for Half with bits {:#x}",
+                bits
+            );
+        }
+
+        assert!(float_to_f64(Half::NAN, &mut false).is_nan());
+
+        // Widening from Single and narrowing from Quad both go through the same path.
+        assert_eq!(
+            float_to_f64(f32_to_single(core::f32::consts::PI), &mut false),
+            core::f32::consts::PI as f64
+        );
+        assert_eq!(
+            float_to_f64(Quad::from_str("1.5").unwrap(), &mut false),
+            1.5
+        );
     }
 }

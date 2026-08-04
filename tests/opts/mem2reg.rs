@@ -3,6 +3,7 @@
 
 //! Tests for the `mem2reg` optimization pass.
 
+use expect_test::expect;
 use pliron::{
     builtin::op_interfaces::{IsTerminatorInterface, NOpdsInterface, NResultsInterface},
     context::Context,
@@ -14,7 +15,6 @@ use pliron::{
     opts::mem2reg::{AllocInfo, PromotableOpInterface, PromotableOpKind, mem2reg},
     parsable::parse_from_str,
     pass::AnalysisManager,
-    printable::Printable,
     result::{ExpectOk, Result},
 };
 
@@ -69,22 +69,20 @@ impl PromotableOpInterface for NonPromotableUseOp {
     }
 }
 
-fn run_mem2reg(input: &str) -> Result<(IRStatus, String, String)> {
+fn run_mem2reg(input: &str) -> Result<(IRStatus, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
-    let before = op.disp(ctx).to_string();
-    log::trace!("Before mem2reg:\n{}", before);
     verify_operation(op, ctx)?;
 
     let mut analyses = AnalysisManager::default();
     let status = mem2reg(op, ctx, &mut analyses)?;
 
-    let after = op.disp(ctx).to_string();
+    let after = Operation::get_op_dyn(op, ctx).disp(ctx).to_string();
     log::trace!("After mem2reg:\n{}", after);
     verify_operation(op, ctx)?;
-    Ok((status, before, after))
+    Ok((status, after))
 }
 
 #[test]
@@ -103,14 +101,21 @@ fn mem2reg_basic_store_and_load() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Alloca should be removed
-    assert!(!after.contains("llvm.alloca"));
-    // Store should be removed
-    assert!(!after.contains("llvm.store"));
-    // Load should be removed (replaced with constant)
-    assert!(!after.contains("llvm.load"));
+    // Alloca should be removed.
+    // Store should be removed.
+    // Load should be removed (replaced with the constant).
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            stored_val_v2 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !2;
+            llvm.return stored_val_v2 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -132,13 +137,21 @@ fn mem2reg_multiple_stores_one_load() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Should contain the final stored value
-    assert!(after.contains("<42: i64>"));
-    // Alloca and stores removed
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
+    // Should contain the final stored value.
+    // Alloca and stores removed.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val1_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !2;
+            val2_v3 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !3;
+            llvm.return val2_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -156,14 +169,21 @@ fn mem2reg_no_store_uses_default() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Alloca removed
-    assert!(!after.contains("llvm.alloca"));
-    // Load removed
-    assert!(!after.contains("llvm.load"));
-    // Should have poison operation
-    assert!(after.contains("llvm.poison"));
+    // Alloca removed.
+    // Load removed.
+    // Should have a poison operation.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            loaded_v3 = llvm.poison : builtin.integer i64 !2;
+            llvm.return loaded_v3 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -183,11 +203,20 @@ fn mem2reg_no_load_dead_allocation() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Alloca and store should be removed
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
+    // Alloca and store should be removed.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val_v2 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !2;
+            dead_val_v3 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !3;
+            llvm.return dead_val_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -218,16 +247,32 @@ fn mem2reg_phi_with_conditional_branch() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Alloca removed
-    assert!(!after.contains("llvm.alloca"));
-    // Stores removed (phis created instead)
-    assert!(!after.contains("llvm.store"));
-    // Load removed
-    assert!(!after.contains("llvm.load"));
+    // Alloca removed.
+    // Stores removed (phis created instead).
+    // Load removed.
     // Merge still exists and branch forwarding got materialized via successor operands.
-    assert!(after.contains("llvm.br ^") && after.contains("llvm.return"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            llvm.cond_br if cond_v0 ^then_block4v1() else ^else_block5v1() !2
+
+          ^then_block4v1() !3:
+            val_then_v3 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !4;
+            llvm.br ^merge_block3v3(val_then_v3) !5
+
+          ^else_block5v1() !6:
+            val_else_v4 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !7;
+            llvm.br ^merge_block3v3(val_else_v4) !8
+
+          ^merge_block3v3(alloc_v6: builtin.integer i64) !9:
+            llvm.return alloc_v6 !10
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -252,16 +297,24 @@ fn mem2reg_multiple_allocations() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Both allocas removed
-    assert!(!after.contains("llvm.alloca"));
-    // All stores removed
-    assert!(!after.contains("llvm.store"));
-    // Both loads removed
-    assert!(!after.contains("llvm.load"));
-    // Add operation should work with the promoted values
-    assert!(after.contains("llvm.add"));
+    // Both allocas removed.
+    // All stores removed.
+    // Both loads removed.
+    // The add operation should work with the promoted values.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val1_v3 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !2;
+            val2_v4 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !3;
+            result_v7 = llvm.add val1_v3, val2_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return result_v7 !5
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -281,11 +334,18 @@ fn mem2reg_linear_chain_of_stores_and_loads() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
-    assert!(!after.contains("llvm.load"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val1_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !2;
+            llvm.return val1_v2 !3
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -317,11 +377,29 @@ fn mem2reg_diamond_pattern() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
-    assert!(!after.contains("llvm.load"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            init_val_v3 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond_v0 ^then_block4v1() else ^else_block5v1() !3
+
+          ^then_block4v1() !4:
+            then_val_v4 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !5;
+            llvm.br ^merge_block3v3(then_val_v4) !6
+
+          ^else_block5v1() !7:
+            else_val_v5 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !8;
+            llvm.br ^merge_block3v3(else_val_v5) !9
+
+          ^merge_block3v3(alloc_v7: builtin.integer i64) !10:
+            llvm.return alloc_v7 !11
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -363,11 +441,36 @@ fn mem2reg_nested_branches() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
-    assert!(!after.contains("llvm.load"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1, builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond1_v0: builtin.integer i1, cond2_v1: builtin.integer i1) !0:
+            size_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val0_v4 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond1_v0 ^if1_then_block4v1() else ^if1_else_block5v3() !3
+
+          ^if1_then_block4v1() !4:
+            val1_v5 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !5;
+            llvm.cond_br if cond2_v1 ^if2_then_block6v1() else ^if2_else_block7v1() !6
+
+          ^if2_then_block6v1() !7:
+            val2_v6 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !8;
+            llvm.br ^merge_block3v3(val2_v6) !9
+
+          ^if2_else_block7v1() !10:
+            val3_v7 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !11;
+            llvm.br ^merge_block3v3(val3_v7) !12
+
+          ^if1_else_block5v3() !13:
+            val4_v8 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !14;
+            llvm.br ^merge_block3v3(val4_v8) !15
+
+          ^merge_block3v3(alloc_v10: builtin.integer i64) !16:
+            llvm.return alloc_v10 !17
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -399,9 +502,30 @@ fn mem2reg_unused_block_arguments() -> Result<()> {
     }
   "#;
 
-    let (_status, _before, _after) = run_mem2reg(input)?;
-    // Should be changed (stores are dead, can be eliminated)
-    // The exact behavior may vary, but alloca should be gone
+    let (status, after) = run_mem2reg(input)?;
+    // Stores are dead once promoted, so they should be eliminated along with the alloca.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            val_then_v3 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !2;
+            val_else_v4 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !3;
+            llvm.cond_br if cond_v0 ^then_block4v1() else ^else_block5v1() !4
+
+          ^then_block4v1() !5:
+            llvm.br ^merge_block3v3(val_then_v3) !6
+
+          ^else_block5v1() !7:
+            llvm.br ^merge_block3v3(val_else_v4) !8
+
+          ^merge_block3v3(alloc_v7: builtin.integer i64) !9:
+            ret_val_v6 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !10;
+            llvm.return ret_val_v6 !11
+        }"#]]
+    .assert_eq(&after);
+    assert_eq!(status, IRStatus::Changed);
     Ok(())
 }
 
@@ -443,10 +567,36 @@ fn mem2reg_multiple_paths_convergence() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1, builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond1_v0: builtin.integer i1, cond2_v1: builtin.integer i1) !0:
+            size_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            v0_v4 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond1_v0 ^path1_block4v1() else ^path2_block5v3() !3
+
+          ^path1_block4v1() !4:
+            v1_v5 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !5;
+            llvm.cond_br if cond2_v1 ^path1a_block6v1() else ^path1b_block7v1() !6
+
+          ^path1a_block6v1() !7:
+            v1a_v6 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !8;
+            llvm.br ^merge_block3v3(v1a_v6) !9
+
+          ^path1b_block7v1() !10:
+            v1b_v7 = builtin.constant <builtin.integer <11: i64>> : builtin.integer i64 !11;
+            llvm.br ^merge_block3v3(v1b_v7) !12
+
+          ^path2_block5v3() !13:
+            v2_v8 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !14;
+            llvm.br ^merge_block3v3(v2_v8) !15
+
+          ^merge_block3v3(alloc_v10: builtin.integer i64) !16:
+            llvm.return alloc_v10 !17
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -467,13 +617,20 @@ fn mem2reg_load_before_any_store() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
-    assert!(!after.contains("llvm.store"));
-    assert!(!after.contains("llvm.load"));
-    // Should have poison for uninitialized load
-    assert!(after.contains("llvm.poison"));
+    // Should have poison for the uninitialized load.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            first_load_v6 = llvm.poison : builtin.integer i64 !2;
+            store_val_v3 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !3;
+            result_v5 = llvm.add first_load_v6, store_val_v3 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
+            llvm.return result_v5 !5
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -508,9 +665,29 @@ fn mem2reg_complex_liveness() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            init_v3 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond_v0 ^then_block4v1() else ^else_block5v1() !3
+
+          ^then_block4v1() !4:
+            val_then_v5 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !5;
+            llvm.br ^merge_block3v3(val_then_v5) !6
+
+          ^else_block5v1() !7:
+            val_else_v6 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !8;
+            llvm.br ^merge_block3v3(val_else_v6) !9
+
+          ^merge_block3v3(alloc_v10: builtin.integer i64) !10:
+            result_v9 = llvm.add alloc_v10, alloc_v10 <{nsw=false,nuw=false}>: builtin.integer i64 !11;
+            llvm.return result_v9 !12
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -532,11 +709,24 @@ fn mem2reg_no_promotion_when_alloca_address_escapes() -> Result<()> {
     }
   "#;
 
-    let (_status, _before, after) = run_mem2reg(input)?;
-    // The allocation should not be promoted because its address is used
-    // However, some loads/stores might still be promotable depending on implementation
-    // This test documents the expected behavior
-    assert!(after.contains("llvm.alloca"));
+    // The allocation should not be promoted because its address is used.
+    // However, some loads/stores might still be promotable depending on implementation.
+    // This test documents the expected behavior.
+    let (_status, after) = run_mem2reg(input)?;
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            alloc_v1 = llvm.alloca [builtin.integer i64 x size_v0]  : llvm.ptr (0) !2;
+            val_v2 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !3;
+            llvm.store *alloc_v1 <- val_v2  !4;
+            loaded_v3 = llvm.load alloc_v1  : builtin.integer i64 !5;
+            casted_v4 = llvm.ptrtoint alloc_v1 to builtin.integer i64 !6;
+            result_v5 = llvm.add loaded_v3, casted_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !7;
+            llvm.return result_v5 !8
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -568,9 +758,28 @@ fn mem2reg_repeated_forward_edges() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("llvm.alloca"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1, builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond1_v0: builtin.integer i1, cond2_v1: builtin.integer i1) !0:
+            size_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            v0_v4 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            llvm.cond_br if cond1_v0 ^block_a_block4v1() else ^block_b_block5v1() !3
+
+          ^block_a_block4v1() !4:
+            v_a_v5 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !5;
+            llvm.cond_br if cond2_v1 ^merge_block3v3(v_a_v5) else ^merge_block3v3(v_a_v5) !6
+
+          ^block_b_block5v1() !7:
+            v_b_v6 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !8;
+            llvm.br ^merge_block3v3(v_b_v6) !9
+
+          ^merge_block3v3(alloc_v8: builtin.integer i64) !10:
+            llvm.return alloc_v8 !11
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -593,10 +802,26 @@ fn mem2reg_not_promoted_when_load_is_in_nested_region() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.alloca"));
-    assert!(after.contains("llvm.load alloc"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            alloc_v1 = llvm.alloca [builtin.integer i64 x size_v0]  : llvm.ptr (0) !2;
+            v_v2 = builtin.constant <builtin.integer <9: i64>> : builtin.integer i64 !3;
+            llvm.store *alloc_v1 <- v_v2  !4;
+            test.region_carrier 
+            {
+              ^nested_block2v1() !5:
+                inner_v3 = llvm.load alloc_v1  : builtin.integer i64 !6;
+                test.region_term term !7
+            } !8;
+            llvm.return v_v2 !9
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -619,11 +844,26 @@ fn mem2reg_not_promoted_when_store_is_in_nested_region() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.alloca"));
-    assert!(after.contains("llvm.store *alloc"));
-    assert!(after.contains("llvm.load alloc"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            alloc_v1 = llvm.alloca [builtin.integer i64 x size_v0]  : llvm.ptr (0) !2;
+            v_v2 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !3;
+            test.region_carrier 
+            {
+              ^nested_block2v1() !4:
+                llvm.store *alloc_v1 <- v_v2  !5;
+                test.region_term term !6
+            } !7;
+            out_v3 = llvm.load alloc_v1  : builtin.integer i64 !8;
+            llvm.return out_v3 !9
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -643,10 +883,22 @@ fn mem2reg_not_promoted_for_interface_declared_non_promotable_use() -> Result<()
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.alloca"));
-    assert!(after.contains("test.non_promotable_use"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            size_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            alloc_v1 = llvm.alloca [builtin.integer i64 x size_v0]  : llvm.ptr (0) !2;
+            v_v2 = builtin.constant <builtin.integer <13: i64>> : builtin.integer i64 !3;
+            llvm.store *alloc_v1 <- v_v2  !4;
+            test.non_promotable_use alloc_v1 !5;
+            out_v3 = llvm.load alloc_v1  : builtin.integer i64 !6;
+            llvm.return out_v3 !7
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -678,10 +930,105 @@ fn mem2reg_not_promoted_when_phi_pred_has_non_branch_successor_terminator() -> R
     }
   "#;
 
-    let (status, _before, after) = run_mem2reg(input)?;
+    let (status, after) = run_mem2reg(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("llvm.alloca"));
-    assert!(after.contains("llvm.load alloc"));
-    assert!(after.contains("test.non_branch_succ_term"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            alloc_v2 = llvm.alloca [builtin.integer i64 x size_v1]  : llvm.ptr (0) !2;
+            llvm.cond_br if cond_v0 ^left_block4v1() else ^right_block5v1() !3
+
+          ^left_block4v1() !4:
+            lv_v3 = builtin.constant <builtin.integer <11: i64>> : builtin.integer i64 !5;
+            llvm.store *alloc_v2 <- lv_v3  !6;
+            llvm.br ^merge_block3v3() !7
+
+          ^right_block5v1() !8:
+            rv_v4 = builtin.constant <builtin.integer <22: i64>> : builtin.integer i64 !9;
+            llvm.store *alloc_v2 <- rv_v4  !10;
+            test.non_branch_succ_term ^merge_block3v3() !11
+
+          ^merge_block3v3() !12:
+            out_v5 = llvm.load alloc_v2  : builtin.integer i64 !13;
+            llvm.return out_v5 !14
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn mem2reg_alloca_inside_loop_body() -> Result<()> {
+    // An allocation inside a loop body, conditionally stored to. The promoted value is
+    // live at the loop entry, so placing a poison value just before the alloca isn't good
+    // enough, it must be placed in the entry block (i.e., dominate any use of the promoted
+    // value, not just the alloca itself).
+    // In other words, the places where the promoted value may be live need not be dominated
+    // by the alloca itself.
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64, builtin.integer i1) variadic = false> [] {
+      ^entry(n: builtin.integer i64, cond: builtin.integer i1):
+      size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      zero = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
+      one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      llvm.br ^header(zero)
+
+      ^header(i: builtin.integer i64):
+      continue_loop = llvm.icmp i <ULT> n : builtin.integer i1;
+      llvm.cond_br if continue_loop ^body() else ^exit()
+
+      ^body():
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
+      llvm.cond_br if cond ^then() else ^merge()
+
+      ^then():
+      v = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
+      llvm.store *alloc <- v;
+      llvm.br ^merge()
+
+      ^merge():
+      out = llvm.load alloc : builtin.integer i64;
+      next_i = llvm.add i, one <{nsw=false,nuw=false}> : builtin.integer i64;
+      llvm.br ^header(next_i)
+
+      ^exit():
+      llvm.return zero
+    }
+  "#;
+
+    let (status, after) = run_mem2reg(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    // The uninitialized path through ^body needs a default value.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64, builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(n_v0: builtin.integer i64, cond_v1: builtin.integer i1) !0:
+            size_v2 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            zero_v3 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64 !2;
+            one_v4 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !3;
+            v13 = llvm.poison : builtin.integer i64;
+            llvm.br ^header_block3v1(zero_v3, v13) !4
+
+          ^header_block3v1(i_v5: builtin.integer i64, alloc_v12: builtin.integer i64) !5:
+            continue_loop_v6 = llvm.icmp i_v5 <ULT> n_v0 : builtin.integer i1 !6;
+            llvm.cond_br if continue_loop_v6 ^body_block5v1() else ^exit_block6v3() !7
+
+          ^body_block5v1() !8:
+            llvm.cond_br if cond_v1 ^then_block7v1() else ^merge_block2v7(alloc_v12) !9
+
+          ^then_block7v1() !10:
+            v_v8 = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64 !11;
+            llvm.br ^merge_block2v7(v_v8) !12
+
+          ^merge_block2v7(alloc_v11: builtin.integer i64) !13:
+            next_i_v10 = llvm.add i_v5, one_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !14;
+            llvm.br ^header_block3v1(next_i_v10, alloc_v11) !15
+
+          ^exit_block6v3() !16:
+            llvm.return zero_v3 !17
+        }"#]].assert_eq(&after);
     Ok(())
 }

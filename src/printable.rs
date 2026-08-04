@@ -10,9 +10,7 @@ use core::{
     fmt::{self, Display},
 };
 
-use crate::{
-    common_traits::RcShare, context::Context, identifier::Identifier, std_deps::hash::FxHashMap,
-};
+use crate::{common_traits::RcShare, context::Context, identifier::Identifier, utils::table::HMap};
 
 struct StateInner {
     // Number of spaces per indentation
@@ -20,7 +18,7 @@ struct StateInner {
     // Current indentation
     cur_indent: u16,
     // Aribtrary state data that different printers may want to use.
-    aux_data: FxHashMap<Identifier, Box<dyn Any>>,
+    aux_data: HMap<Identifier, Box<dyn Any>>,
 }
 
 impl Default for StateInner {
@@ -28,7 +26,7 @@ impl Default for StateInner {
         Self {
             indent_width: 2,
             cur_indent: 0,
-            aux_data: FxHashMap::default(),
+            aux_data: HMap::default(),
         }
     }
 }
@@ -73,13 +71,13 @@ impl State {
 
     /// Get a reference to the aux data table. The returned [Ref] is borrowed
     /// from the entire [State] object, so release it at the earliest.
-    pub fn aux_data_ref(&self) -> Ref<'_, FxHashMap<Identifier, Box<dyn Any>>> {
+    pub fn aux_data_ref(&self) -> Ref<'_, HMap<Identifier, Box<dyn Any>>> {
         Ref::map(self.0.borrow(), |inner| &inner.aux_data)
     }
 
     /// Get a mutable reference to the aux data table. The returned [RefMut] is borrowed
     /// from the entire [State] object, so release it at the earliest.
-    pub fn aux_data_mut(&self) -> RefMut<'_, FxHashMap<Identifier, Box<dyn Any>>> {
+    pub fn aux_data_mut(&self) -> RefMut<'_, HMap<Identifier, Box<dyn Any>>> {
         RefMut::map(self.0.borrow_mut(), |inner| &mut inner.aux_data)
     }
 }

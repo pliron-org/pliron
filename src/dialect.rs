@@ -3,9 +3,7 @@
 
 //! [Dialect]s are a mechanism to group related [Op](crate::op::Op)s, [Type](crate::type::Type)s
 //! and [Attribute](crate::attribute::Attribute)s.
-use core::{fmt::Display, ops::Deref};
-
-use alloc::string::String;
+use core::fmt::Display;
 
 use crate::{
     attribute::{AttrId, AttrParserFn},
@@ -18,8 +16,8 @@ use crate::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
-    std_deps::hash::FxHashMap,
     r#type::{TypeId, TypeParserFn},
+    utils::table::HMap,
 };
 
 /// Dialect name: Safe wrapper around a String.
@@ -73,7 +71,7 @@ impl Parsable for DialectName {
                 if state_stream.state.ctx.dialects.contains_key(&dialect_name) {
                     Ok(dialect_name).into_parse_result()
                 } else {
-                    input_err!(loc.clone(), "Unregistered dialect {}", *dialect_name)?
+                    input_err!(loc.clone(), "Unregistered dialect {}", dialect_name)?
                 }
             })
         });
@@ -81,11 +79,9 @@ impl Parsable for DialectName {
     }
 }
 
-impl Deref for DialectName {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
+impl AsRef<str> for DialectName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
     }
 }
 
@@ -95,11 +91,11 @@ pub struct Dialect {
     /// Name of this dialect.
     pub name: DialectName,
     /// Ops that are part of this dialect.
-    pub(crate) ops: FxHashMap<OpId, OpParserFn>,
+    pub(crate) ops: HMap<OpId, OpParserFn>,
     /// Types that are part of this dialect.
-    pub(crate) types: FxHashMap<TypeId, TypeParserFn>,
+    pub(crate) types: HMap<TypeId, TypeParserFn>,
     /// Attributes that are part of this dialect.
-    pub(crate) attributes: FxHashMap<AttrId, AttrParserFn>,
+    pub(crate) attributes: HMap<AttrId, AttrParserFn>,
 }
 
 impl Printable for Dialect {
@@ -118,9 +114,9 @@ impl Dialect {
     pub fn new(name: DialectName) -> Dialect {
         Dialect {
             name,
-            ops: FxHashMap::default(),
-            types: FxHashMap::default(),
-            attributes: FxHashMap::default(),
+            ops: HMap::default(),
+            types: HMap::default(),
+            attributes: HMap::default(),
         }
     }
 

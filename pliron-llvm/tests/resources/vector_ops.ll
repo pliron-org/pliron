@@ -1,6 +1,7 @@
 ; LLVM IR test: vector_ops.ll
 ; Tests vector operations including constant vectors, shufflevector,
-; insertelement/extractelement, integer and floating-point vector ops.
+; insertelement/extractelement, integer and floating-point vector ops,
+; and floating-point vector comparisons (fcmp yielding <N x i1>).
 ; main returns 0 on success, 1 on failure.
 
 ; ModuleID and source filename (optional)
@@ -30,12 +31,21 @@ entry:
   %c1 = icmp eq i32 %s2, 33
   %c1b = icmp eq i32 %sh0, 33
 
-  ; floating-point vector add and convert
+  ; floating-point vector add, neg, and convert
   %fvec = load <2 x double>, <2 x double>* @const_f64x2
   %fadd = fadd <2 x double> %fvec, <double 3.0, double 4.0> ; <4.0,6.0>
-  %fe0 = extractelement <2 x double> %fadd, i32 0
+  %fneg1 = fneg <2 x double> %fadd; <-4.0,-6.0>
+  %fneg2 = fneg <2 x double> %fneg1; <4.0,6.0>
+  %fe0 = extractelement <2 x double> %fneg2, i32 0
   %fe0_i = fptosi double %fe0 to i32                  ; 4
   %c2 = icmp eq i32 %fe0_i, 4
+
+  ; float vector comparison
+  %fcmp = fcmp olt <2 x double> %fneg2, <double 5.0, double 5.0> ; <true,false>
+  %fc0 = extractelement <2 x i1> %fcmp, i32 0           ; true
+  %fc1 = extractelement <2 x i1> %fcmp, i32 1           ; false
+  %fc1n = xor i1 %fc1, true
+  %c4 = and i1 %fc0, %fc1n
 
   ; insertelement / extractelement test
   %vundef = insertelement <4 x i32> undef, i32 7, i32 0
@@ -46,7 +56,8 @@ entry:
   ; combine all checks -> return 0 on success, 1 on failure
   %a1 = and i1 %c1, %c1b
   %a2 = and i1 %a1, %c2
-  %all = and i1 %a2, %c3
+  %a3 = and i1 %a2, %c3
+  %all = and i1 %a3, %c4
   %ret = select i1 %all, i32 0, i32 1
   ret i32 %ret
 }

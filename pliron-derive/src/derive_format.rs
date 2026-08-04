@@ -3,12 +3,14 @@
 
 use proc_macro2::{Span, TokenStream};
 use quote::{ToTokens, format_ident, quote};
-use rustc_hash::{FxHashMap, FxHashSet};
 use syn::{Data, DeriveInput, Generics, LitStr, Result, spanned::Spanned};
 
-use crate::irfmt::{
-    Directive, Elem, FieldIdent, FmtData, Format, Lit, UnnamedVar, Var, canonical_format_for_enums,
-    canonical_format_for_structs, canonical_op_format,
+use crate::{
+    IMap, ISet,
+    irfmt::{
+        Directive, Elem, FieldIdent, FmtData, Format, Lit, UnnamedVar, Var,
+        canonical_format_for_enums, canonical_format_for_structs, canonical_op_format,
+    },
 };
 
 /// Data parsed from the macro to derive formatting for Rust types
@@ -532,7 +534,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             };
             Ok(quote! {
                 let succ = self.get_operation().deref(ctx).get_successor(#index);
-                let succ_name = ::pliron::alloc::string::ToString::to_string("^") + &succ.unique_name(ctx);
+                let succ_name = ::pliron::alloc::string::ToString::to_string("^") + succ.unique_name(ctx).as_ref();
                 ::pliron::printable::Printable::fmt(&succ_name, ctx, state, fmt)?;
             })
         } else if d.name == "successors" {
@@ -551,7 +553,8 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let sep = directive_to_list_separator(sep, true, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
-                let succs = op.successors().map(|succ| ::pliron::alloc::string::ToString::to_string("^") + &succ.unique_name(ctx));
+                let succs = op.successors().map(|succ|
+                    ::pliron::alloc::string::ToString::to_string("^") + succ.unique_name(ctx).as_ref());
                 let succs = ::pliron::irfmt::printers::iter_with_sep(succs, #sep);
                 ::pliron::printable::Printable::fmt(&succs, ctx, state, fmt)?;
             })
@@ -1069,13 +1072,13 @@ impl ParsableBuilder<()> for DeriveBaseParsable {}
 
 /// Specify various elements individually or all at once.
 enum ElementSpec<T> {
-    Individual(FxHashMap<T, syn::Ident>),
+    Individual(IMap<T, syn::Ident>),
     All(syn::Ident),
 }
 
 impl<T> Default for ElementSpec<T> {
     fn default() -> Self {
-        ElementSpec::Individual(FxHashMap::default())
+        ElementSpec::Individual(IMap::default())
     }
 }
 
@@ -1091,7 +1094,7 @@ struct OpParserState {
     operand_types: ElementSpec<usize>,
     result_types: ElementSpec<usize>,
     // The second element specifies attribtues that are specified as optional.
-    attributes: (ElementSpec<String>, FxHashSet<String>),
+    attributes: (ElementSpec<String>, ISet<String>),
     regions: ElementSpec<usize>,
 }
 

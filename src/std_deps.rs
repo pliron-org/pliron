@@ -6,6 +6,9 @@
 
 #[cfg(feature = "std")]
 mod r#impl {
+    /// Has pliron been built with `std`?
+    pub const STD_ENABLED: bool = true;
+
     pub mod sync {
         pub use std::sync::{LazyLock, Mutex};
     }
@@ -19,22 +22,15 @@ mod r#impl {
     }
 
     pub mod io {
-        pub use std::io::BufReader;
+        pub use std::io::{BufReader, Error};
     }
 
     pub mod fs {
-        pub use std::fs::{File, write};
+        pub use std::fs::{File, create_dir_all, write};
     }
 
     pub mod time {
         pub use std::time::Instant;
-    }
-
-    pub mod hash {
-        pub use rustc_hash::FxHasher;
-        pub use std::collections::{HashMap, HashSet, hash_map, hash_set};
-        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
-        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
     }
 
     pub mod utf8_chars {
@@ -44,6 +40,9 @@ mod r#impl {
 
 #[cfg(not(feature = "std"))]
 mod r#impl {
+    /// Has pliron been built with `std`?
+    pub const STD_ENABLED: bool = false;
+
     pub mod sync {
         pub use spin::{LazyLock, Mutex};
     }
@@ -160,6 +159,7 @@ mod r#impl {
     pub mod io {
         pub use super::fs::File;
 
+        pub type Error = core::convert::Infallible;
         pub struct BufReader<R>(core::marker::PhantomData<R>);
 
         impl<R> BufReader<R> {
@@ -170,16 +170,25 @@ mod r#impl {
     }
 
     pub mod fs {
+        use crate::std_deps::io;
+
         /// A dummy file handle: without `std` there's no filesystem to back it.
         pub struct File;
 
         impl File {
-            pub fn open<P: AsRef<str>>(_path: P) -> Result<File, ()> {
+            pub fn open<P: AsRef<str>>(_path: P) -> Result<File, io::Error> {
                 Ok(File)
             }
         }
 
-        pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(_path: P, _contents: C) -> Result<(), ()> {
+        pub fn write<P: AsRef<str>, C: AsRef<[u8]>>(
+            _path: P,
+            _contents: C,
+        ) -> Result<(), io::Error> {
+            Ok(())
+        }
+
+        pub fn create_dir_all<P: AsRef<str>>(_path: P) -> Result<(), io::Error> {
             Ok(())
         }
     }
@@ -195,13 +204,6 @@ mod r#impl {
                 core::time::Duration::from_secs(0)
             }
         }
-    }
-
-    pub mod hash {
-        pub use hashbrown::{HashMap, HashSet, hash_map, hash_set};
-        pub use rustc_hash::FxHasher;
-        pub type FxHashMap<K, V> = HashMap<K, V, rustc_hash::FxBuildHasher>;
-        pub type FxHashSet<V> = HashSet<V, rustc_hash::FxBuildHasher>;
     }
 
     pub mod utf8_chars {
@@ -228,4 +230,4 @@ mod r#impl {
     }
 }
 
-pub use r#impl::{backtrace, fs, hash, io, path, sync, time, utf8_chars};
+pub use r#impl::{STD_ENABLED, backtrace, fs, io, path, sync, time, utf8_chars};

@@ -144,6 +144,40 @@ impl Parsable for StringAttr {
     }
 }
 
+/// An attribute containing a sequence of bytes.
+#[pliron_attr(
+    name = "builtin.bytes",
+    format = "`[` vec($0, CharSpace(`,`)) `]`",
+    verifier = "succ"
+)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct BytesAttr(Vec<u8>);
+
+impl BytesAttr {
+    /// Create a new [BytesAttr].
+    pub fn new(bytes: Vec<u8>) -> Self {
+        BytesAttr(bytes)
+    }
+}
+
+impl From<BytesAttr> for Vec<u8> {
+    fn from(value: BytesAttr) -> Self {
+        value.0
+    }
+}
+
+impl From<Vec<u8>> for BytesAttr {
+    fn from(value: Vec<u8>) -> Self {
+        BytesAttr::new(value)
+    }
+}
+
+impl AsRef<Vec<u8>> for BytesAttr {
+    fn as_ref(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
 /// A boolean attribute
 #[pliron_attr(name = "builtin.bool", format = "$0", verifier = "succ")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]

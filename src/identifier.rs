@@ -7,10 +7,7 @@ use alloc::{
     format,
     string::{String, ToString},
 };
-use core::{
-    fmt::Display,
-    ops::{Add, Deref},
-};
+use core::{fmt::Display, ops::Add};
 use thiserror::Error;
 
 use crate::{
@@ -20,7 +17,7 @@ use crate::{
     impl_printable_for_display,
     parsable::{self, Parsable, ParseResult},
     result::{self, Result},
-    std_deps::hash::FxHashMap,
+    utils::table::HMap,
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
@@ -101,10 +98,8 @@ impl From<Identifier> for String {
     }
 }
 
-impl Deref for Identifier {
-    type Target = String;
-
-    fn deref(&self) -> &Self::Target {
+impl AsRef<str> for Identifier {
+    fn as_ref(&self) -> &str {
         &self.0
     }
 }
@@ -147,36 +142,36 @@ impl Parsable for Identifier {
 /// use pliron::identifier::{Legaliser, Identifier};
 /// let mut legaliser = Legaliser::default();
 /// let id1 = legaliser.legalise("hello_");
-/// assert_eq!(*id1, "hello_");
+/// assert_eq!(id1.as_ref(), "hello_");
 /// assert_eq!(legaliser.source_name(&id1).unwrap(), "hello_");
 /// let id2 = legaliser.legalise("hello.");
-/// assert_eq!(*id2, "hello__0");
+/// assert_eq!(id2.as_ref(), "hello__0");
 /// assert_eq!(legaliser.source_name(&id2).unwrap(), "hello.");
 /// let id3 = legaliser.legalise("hello__0");
-/// assert_eq!(*id3, "hello__0_1");
+/// assert_eq!(id3.as_ref(), "hello__0_1");
 /// assert_eq!(legaliser.source_name(&id3).unwrap(), "hello__0");
 /// let id4 = legaliser.legalise("");
-/// assert_eq!(*id4, "_");
+/// assert_eq!(id4.as_ref(), "_");
 /// assert_eq!(legaliser.source_name(&id4).unwrap(), "");
 /// let id5 = legaliser.legalise("_");
-/// assert_eq!(*id5, "__2");
+/// assert_eq!(id5.as_ref(), "__2");
 /// assert_eq!(legaliser.source_name(&id5).unwrap(), "_");
 ///
 /// let mut another_legaliser = Legaliser::default();
 /// let id6 = another_legaliser.legalise("_");
-/// assert_eq!(*id6, "_");
+/// assert_eq!(id6.as_ref(), "_");
 /// assert_eq!(another_legaliser.source_name(&id6).unwrap(), "_");
 /// let id7 = another_legaliser.legalise("");
-/// assert_eq!(*id7, "__0");
+/// assert_eq!(id7.as_ref(), "__0");
 /// assert_eq!(another_legaliser.source_name(&id7).unwrap(), "");
 ///
 /// ```
 #[derive(Default)]
 pub struct Legaliser {
     /// A map from the source strings to [Identifier]s.
-    str_to_id: FxHashMap<String, Identifier>,
+    str_to_id: HMap<String, Identifier>,
     /// Reverse map from [Identifier]s to their source string.
-    rev_str_to_id: FxHashMap<String, String>,
+    rev_str_to_id: HMap<String, String>,
     /// A counter to generate unique (within this object) ids.
     counter: usize,
 }

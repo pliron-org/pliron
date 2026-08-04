@@ -12,7 +12,7 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::{FPDoubleAttr, FPSingleAttr, IntegerAttr, StringAttr},
+        attributes::{BytesAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
         op_interfaces::{
             AtMostOneRegionInterface, BranchOpInterface, CallOpCallable, CallOpInterface,
             OneOpdInterface, OneResultInterface, SingleBlockRegionInterface, SymbolOpInterface,
@@ -33,9 +33,12 @@ use pliron::{
     operation::Operation,
     printable::Printable,
     result::Result,
-    std_deps::hash::{FxHashMap, hash_map},
     r#type::{Type, TypeHandle, Typed, type_cast},
-    utils::apint::APInt,
+    utils::{
+        apfloat::float_to_f64,
+        apint::APInt,
+        table::{HMap, IMap, htable},
+    },
     value::{DefiningEntity, Value},
 };
 
@@ -45,6 +48,7 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, ICmpPredicateAttr, LinkageAttr,
+        PoisonAttr, UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
@@ -65,11 +69,12 @@ use crate::{
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
         llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_vector, llvm_delete_global,
-        llvm_double_type_in_context, llvm_float_type_in_context, llvm_function_type,
-        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param,
-        llvm_get_pointer_address_space, llvm_get_poison, llvm_get_sync_scope_id, llvm_get_undef,
-        llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
+        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_string_in_context,
+        llvm_const_vector, llvm_delete_global, llvm_double_type_in_context,
+        llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
+        llvm_get_named_function, llvm_get_param, llvm_get_pointer_address_space, llvm_get_poison,
+        llvm_get_sync_scope_id, llvm_get_undef, llvm_half_type_in_context,
+        llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
         llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
@@ -99,22 +104,22 @@ pub struct ConversionContext<'a> {
     // The current LLVMModule being converted to.
     cur_llvm_module: &'a LLVMModule,
     // A map from pliron Values to LLVM Values.
-    value_map: FxHashMap<Value, LLVMValue>,
+    value_map: HMap<Value, LLVMValue>,
     // A map from pliron basic blocks to LLVM.
-    block_map: FxHashMap<Ptr<BasicBlock>, LLVMBasicBlock>,
+    block_map: HMap<Ptr<BasicBlock>, LLVMBasicBlock>,
     // A map from pliron functions to LLVM functions.
-    function_map: FxHashMap<Identifier, LLVMValue>,
+    function_map: HMap<Identifier, LLVMValue>,
     // A map from pliron globals to LLVM globals.
-    globals_map: FxHashMap<Identifier, LLVMValue>,
+    globals_map: HMap<Identifier, LLVMValue>,
     // A map from `(function symbol, block tag)` to the corresponding LLVM block.
-    block_tags: FxHashMap<(Identifier, u64), LLVMBasicBlock>,
+    block_tags: HMap<(Identifier, u64), LLVMBasicBlock>,
     // A map from every placeholder we insert to
     // its corresponding `(function symbol, block tag)`
-    pending_block_address_ops: FxHashMap<LLVMValue, (Identifier, u64)>,
+    pending_block_address_ops: IMap<LLVMValue, (Identifier, u64)>,
     // A map from pliron StructTypes to LLVM StructTypes.
-    structs_map: FxHashMap<Identifier, LLVMType>,
+    structs_map: HMap<Identifier, LLVMType>,
     // Type cache to avoid redundant conversions.
-    type_cache: FxHashMap<TypeHandle, LLVMType>,
+    type_cache: HMap<TypeHandle, LLVMType>,
     // The active LLVM builder.
     builder: LLVMBuilder,
     // Scratch builder in a scratch function for attempting to evaluate constants.
@@ -125,14 +130,14 @@ impl<'a> ConversionContext<'a> {
     pub fn new(llvm_ctx: &'a LLVMContext, cur_llvm_module: &'a LLVMModule) -> Self {
         Self {
             cur_llvm_module,
-            value_map: FxHashMap::default(),
-            block_map: FxHashMap::default(),
-            function_map: FxHashMap::default(),
-            globals_map: FxHashMap::default(),
-            block_tags: FxHashMap::default(),
-            pending_block_address_ops: FxHashMap::default(),
-            structs_map: FxHashMap::default(),
-            type_cache: FxHashMap::default(),
+            value_map: HMap::default(),
+            block_map: HMap::default(),
+            function_map: HMap::default(),
+            globals_map: HMap::default(),
+            block_tags: HMap::default(),
+            pending_block_address_ops: IMap::default(),
+            structs_map: HMap::default(),
+            type_cache: HMap::default(),
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
         }
@@ -165,6 +170,8 @@ pub enum ToLLVMErr {
     InsertExtractValueIndices,
     #[error("GlobalOp Initializer region does not terminate with a return with value")]
     GlobalOpInitializerRegionBadReturn,
+    #[error("GlobalOp initializer attribute {0} must implement LLVM conversion")]
+    UnsupportedGlobalInitializerAttr(String),
     #[error("Cannot evaluate value to a constant")]
     CannotEvaluateToConst,
     #[error("BlockAddressOp refers to missing block tag {1} in function {0}")]
@@ -242,6 +249,13 @@ trait FloatAttrToFP64: FloatAttr {
         Self: Sized,
     {
         Ok(())
+    }
+}
+
+#[attr_interface_impl]
+impl FloatAttrToFP64 for FPHalfAttr {
+    fn to_fp64(&self) -> f64 {
+        float_to_f64(self.0, &mut false)
     }
 }
 
@@ -374,7 +388,7 @@ impl ToLLVMType for StructType {
     ) -> Result<LLVMType> {
         if self.is_opaque() {
             let name = self.name().expect("Opaqaue struct must have a name");
-            Ok(llvm_struct_create_named(llvm_ctx, name.as_str()))
+            Ok(llvm_struct_create_named(llvm_ctx, name.as_ref()))
         } else {
             let field_types = self
                 .fields()
@@ -382,9 +396,9 @@ impl ToLLVMType for StructType {
                 .collect::<Result<Vec<_>>>()?;
             if let Some(name) = self.name() {
                 match cctx.structs_map.entry(name) {
-                    hash_map::Entry::Occupied(entry) => Ok(*entry.get()),
-                    hash_map::Entry::Vacant(entry) => {
-                        let str_ty = llvm_struct_create_named(llvm_ctx, entry.key());
+                    htable::Entry::Occupied(entry) => Ok(*entry.get()),
+                    htable::Entry::Vacant(entry) => {
+                        let str_ty = llvm_struct_create_named(llvm_ctx, entry.key().as_ref());
                         llvm_struct_set_body(str_ty, &field_types, false);
                         entry.insert(str_ty);
                         Ok(str_ty)
@@ -518,7 +532,7 @@ macro_rules! to_llvm_value_int_bin_op {
                     &cctx.builder,
                     lhs,
                     rhs,
-                    &self.get_result(ctx).unique_name(ctx),
+                    self.get_result(ctx).unique_name(ctx).as_ref(),
                 ))
             }
         }
@@ -553,7 +567,7 @@ impl ToLLVMValue for AllocaOp {
             &cctx.builder,
             ty,
             size,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(alloca_op, alignment);
@@ -576,7 +590,7 @@ impl ToLLVMValue for BitcastOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(bitcast_op)
     }
@@ -596,7 +610,7 @@ impl ToLLVMValue for AddrSpaceCastOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(addrspacecast_op)
     }
@@ -786,7 +800,7 @@ impl ToLLVMValue for LoadOp {
             &cctx.builder,
             pointee_ty,
             ptr,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(load_op, alignment);
@@ -963,7 +977,12 @@ impl ToLLVMValue for AtomicLoadOp {
         };
         let pointee_ty = convert_type(ctx, llvm_ctx, cctx, result_val.get_type(ctx))?;
         let ptr = convert_value_operand(cctx, ctx, &ptr_opd)?;
-        let load = llvm_build_load2(&cctx.builder, pointee_ty, ptr, &result_val.unique_name(ctx));
+        let load = llvm_build_load2(
+            &cctx.builder,
+            pointee_ty,
+            ptr,
+            result_val.unique_name(ctx).as_ref(),
+        );
         let ordering = convert_atomic_ordering(
             &self
                 .get_attr_llvm_ld_ordering(ctx)
@@ -1095,7 +1114,7 @@ impl ToLLVMValue for ICmpOp {
             predicate,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(icmp_op)
     }
@@ -1139,7 +1158,7 @@ impl ToLLVMValue for ConstantOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1151,7 +1170,7 @@ impl ToLLVMValue for ZeroOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1170,7 +1189,7 @@ impl ToLLVMValue for IntToPtrOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(inttoptr_op)
     }
@@ -1191,7 +1210,7 @@ impl ToLLVMValue for PtrToIntOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(ptrtoint_op)
     }
@@ -1205,7 +1224,7 @@ impl ToLLVMValue for UndefOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1217,7 +1236,7 @@ impl ToLLVMValue for PoisonOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1229,7 +1248,7 @@ impl ToLLVMValue for AddressOfOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1241,7 +1260,7 @@ impl ToLLVMValue for BlockAddressOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        <Self as ToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
+        <Self as OpToLLVMConstValue>::convert(self, ctx, llvm_ctx, cctx)
     }
 }
 
@@ -1292,8 +1311,11 @@ impl ToLLVMValue for FreezeOp {
     ) -> Result<LLVMValue> {
         let op = self.get_operation().deref(ctx);
         let arg = convert_value_operand(cctx, ctx, &op.get_operand(0))?;
-        let freeze_op =
-            llvm_build_freeze(&cctx.builder, arg, &self.get_result(ctx).unique_name(ctx));
+        let freeze_op = llvm_build_freeze(
+            &cctx.builder,
+            arg,
+            self.get_result(ctx).unique_name(ctx).as_ref(),
+        );
         Ok(freeze_op)
     }
 }
@@ -1313,10 +1335,12 @@ impl ToLLVMValue for CallOp {
             .collect::<Result<_>>()?;
         let ty = convert_type(ctx, llvm_ctx, cctx, self.callee_type(ctx))?;
         let res = self.get_result(ctx);
+        let unique_name;
         let name = if res.get_type(ctx).deref(ctx).is::<VoidType>() {
             ""
         } else {
-            &res.unique_name(ctx)
+            unique_name = res.unique_name(ctx);
+            unique_name.as_ref()
         };
         let callee = match self.callee(ctx) {
             CallOpCallable::Direct(callee_sym) => {
@@ -1376,10 +1400,12 @@ impl ToLLVMValue for CallIntrinsicOp {
             .unwrap_or_else(|| llvm_add_function(cctx.cur_llvm_module, &intrinsic_name, fn_ty));
 
         let res = self.get_result(ctx);
+        let unique_name;
         let name = if res.get_type(ctx).deref(ctx).is::<VoidType>() {
             ""
         } else {
-            &res.unique_name(ctx)
+            unique_name = res.unique_name(ctx);
+            unique_name.as_ref()
         };
 
         let intrinsic_op = llvm_build_call2(&cctx.builder, fn_ty, intrinsic_fn, &args, name);
@@ -1409,7 +1435,7 @@ impl ToLLVMValue for SExtOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(sext_op)
     }
@@ -1430,7 +1456,7 @@ impl ToLLVMValue for ZExtOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_is_a::instruction(zext_op) {
@@ -1456,7 +1482,7 @@ impl ToLLVMValue for TruncOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(trunc_op)
     }
@@ -1491,7 +1517,7 @@ impl ToLLVMValue for GetElementPtrOp {
             src_elem_type,
             base,
             &indices,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(gep_op)
     }
@@ -1517,7 +1543,7 @@ impl ToLLVMValue for InsertValueOp {
             base,
             value,
             indices[0],
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(insert_op)
     }
@@ -1541,7 +1567,7 @@ impl ToLLVMValue for ExtractValueOp {
             &cctx.builder,
             base,
             indices[0],
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(extract_op)
     }
@@ -1563,7 +1589,7 @@ impl ToLLVMValue for InsertElementOp {
             base,
             value,
             index,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(insert_op)
     }
@@ -1583,7 +1609,7 @@ impl ToLLVMValue for ExtractElementOp {
             &cctx.builder,
             base,
             index,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(extract_op)
     }
@@ -1617,7 +1643,7 @@ impl ToLLVMValue for ShuffleVectorOp {
             vec1,
             vec2,
             mask,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(shuffle_op)
     }
@@ -1640,7 +1666,7 @@ impl ToLLVMValue for SelectOp {
             cond,
             true_val,
             false_val,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if let Some(fmf) = self.get_attr_llvm_select_fast_math_flags(ctx)
@@ -1668,7 +1694,7 @@ impl ToLLVMValue for FAddOp {
             &cctx.builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
@@ -1695,7 +1721,7 @@ impl ToLLVMValue for FSubOp {
             &cctx.builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
@@ -1722,7 +1748,7 @@ impl ToLLVMValue for FMulOp {
             &cctx.builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
@@ -1749,7 +1775,7 @@ impl ToLLVMValue for FDivOp {
             &cctx.builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
@@ -1776,7 +1802,7 @@ impl ToLLVMValue for FRemOp {
             &cctx.builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
@@ -1804,7 +1830,7 @@ impl ToLLVMValue for FCmpOp {
             predicate,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(fcmp_op) {
@@ -1825,7 +1851,11 @@ impl ToLLVMValue for FNegOp {
     ) -> Result<LLVMValue> {
         let op = self.get_operation().deref(ctx);
         let arg = convert_value_operand(cctx, ctx, &op.get_operand(0))?;
-        let inst = llvm_build_fneg(&cctx.builder, arg, &self.get_result(ctx).unique_name(ctx));
+        let inst = llvm_build_fneg(
+            &cctx.builder,
+            arg,
+            self.get_result(ctx).unique_name(ctx).as_ref(),
+        );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(inst) {
             let fastmath = self.fast_math_flags(ctx);
@@ -1850,7 +1880,7 @@ impl ToLLVMValue for FPExtOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(fpext_op) {
@@ -1876,7 +1906,7 @@ impl ToLLVMValue for FPTruncOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_can_value_use_fast_math_flags(fptrunc_op) {
@@ -1901,7 +1931,7 @@ impl ToLLVMValue for FPToSIOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(fptosi_op)
     }
@@ -1922,7 +1952,7 @@ impl ToLLVMValue for SIToFPOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(sitofp_op)
     }
@@ -1943,7 +1973,7 @@ impl ToLLVMValue for FPToUIOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(fptoui_op)
     }
@@ -1964,7 +1994,7 @@ impl ToLLVMValue for UIToFPOp {
             &cctx.builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         // The built value may not even be an instruction, but a folded constant.
         if llvm_is_a::instruction(uitofp_op) {
@@ -1991,7 +2021,7 @@ impl ToLLVMValue for VAArgOp {
             &cctx.builder,
             opd,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         Ok(vaarg_op)
     }
@@ -2057,7 +2087,7 @@ fn convert_function(
         let llvm_entry_block = llvm_append_basic_block_in_context(
             llvm_ctx,
             func_llvm,
-            &entry.deref(ctx).unique_name(ctx),
+            entry.deref(ctx).unique_name(ctx).as_ref(),
         );
         cctx.block_map.insert(entry, llvm_entry_block);
     }
@@ -2065,12 +2095,12 @@ fn convert_function(
         let llvm_block = llvm_append_basic_block_in_context(
             llvm_ctx,
             func_llvm,
-            &block.deref(ctx).unique_name(ctx),
+            block.deref(ctx).unique_name(ctx).as_ref(),
         );
         llvm_position_builder_at_end(&cctx.builder, llvm_block);
         for arg in block.deref(ctx).arguments() {
             let arg_type = convert_type(ctx, llvm_ctx, cctx, arg.get_type(ctx))?;
-            let phi = llvm_build_phi(&cctx.builder, arg_type, &arg.unique_name(ctx));
+            let phi = llvm_build_phi(&cctx.builder, arg_type, arg.unique_name(ctx).as_ref());
             cctx.value_map.insert(arg, phi);
         }
         cctx.block_map.insert(block, llvm_block);
@@ -2084,8 +2114,140 @@ fn convert_function(
     Ok(func_llvm)
 }
 
+/// Attributes that can be converted to a constant [LLVMValue]
+#[attr_interface]
+trait AttrToLLVMConst {
+    /// Convert from pliron [Attribute] to a constant [LLVMValue].
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue>;
+
+    fn verify(_op: &dyn Attribute, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for BytesAttr {
+    fn convert(
+        &self,
+        _ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        _cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        Ok(llvm_const_string_in_context(llvm_ctx, self.as_ref()))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for IntegerAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let int_ty_llvm = convert_type(ctx, llvm_ctx, cctx, self.get_type().into())?;
+        let ap_int_val: APInt = self.clone().into();
+        Ok(llvm_const_int(int_ty_llvm, ap_int_val.to_u64(), false))
+    }
+}
+
+/// Shared by the [AttrToLLVMConst] impls of the float attributes.
+fn float_attr_to_llvm_const(
+    value: &dyn FloatAttrToFP64,
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    cctx: &mut ConversionContext,
+) -> Result<LLVMValue> {
+    let float_ty_llvm = convert_type(ctx, llvm_ctx, cctx, value.get_type(ctx))?;
+    Ok(llvm_const_real(float_ty_llvm, value.to_fp64()))
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPHalfAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPSingleAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPDoubleAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for ZeroAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_const_null(ty))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for UndefAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_get_undef(ty))
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for PoisonAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = convert_type(ctx, llvm_ctx, cctx, self.0)?;
+        Ok(llvm_get_poison(ty))
+    }
+}
+
+/// Pliron [Op]s that can be converted to a constant [LLVMValue]
 #[op_interface]
-trait ToLLVMConstValue {
+trait OpToLLVMConstValue {
     /// Convert from pliron [Op] to a constant [LLVMValue].
     fn convert(
         &self,
@@ -2103,7 +2265,7 @@ trait ToLLVMConstValue {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for ConstantOp {
+impl OpToLLVMConstValue for ConstantOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2130,7 +2292,7 @@ impl ToLLVMConstValue for ConstantOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for UndefOp {
+impl OpToLLVMConstValue for UndefOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2143,7 +2305,7 @@ impl ToLLVMConstValue for UndefOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for PoisonOp {
+impl OpToLLVMConstValue for PoisonOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2156,7 +2318,7 @@ impl ToLLVMConstValue for PoisonOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for ZeroOp {
+impl OpToLLVMConstValue for ZeroOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2170,7 +2332,7 @@ impl ToLLVMConstValue for ZeroOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for AddressOfOp {
+impl OpToLLVMConstValue for AddressOfOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2187,7 +2349,7 @@ impl ToLLVMConstValue for AddressOfOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for BlockAddressOp {
+impl OpToLLVMConstValue for BlockAddressOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2222,7 +2384,7 @@ impl ToLLVMConstValue for BlockAddressOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for InsertValueOp {
+impl OpToLLVMConstValue for InsertValueOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2243,7 +2405,7 @@ impl ToLLVMConstValue for InsertValueOp {
             base,
             value,
             indices[0],
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if !llvm_is_a::constant(insert_op) {
             return input_err!(op.loc(), ToLLVMErr::CannotEvaluateToConst);
@@ -2253,7 +2415,7 @@ impl ToLLVMConstValue for InsertValueOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for InsertElementOp {
+impl OpToLLVMConstValue for InsertElementOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2272,7 +2434,7 @@ impl ToLLVMConstValue for InsertElementOp {
             base,
             value,
             index,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if !llvm_is_a::constant(insert_op) {
             return input_err!(op.loc(), ToLLVMErr::CannotEvaluateToConst);
@@ -2282,7 +2444,7 @@ impl ToLLVMConstValue for InsertElementOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for TruncOp {
+impl OpToLLVMConstValue for TruncOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2298,7 +2460,7 @@ impl ToLLVMConstValue for TruncOp {
             &cctx.scratch_builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if !llvm_is_a::constant(trunc_op) {
             return input_err!(op.loc(), ToLLVMErr::CannotEvaluateToConst);
@@ -2308,7 +2470,7 @@ impl ToLLVMConstValue for TruncOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for SubOp {
+impl OpToLLVMConstValue for SubOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2324,7 +2486,7 @@ impl ToLLVMConstValue for SubOp {
             &cctx.scratch_builder,
             lhs,
             rhs,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if !llvm_is_a::constant(sub_op) {
             return input_err!(op.loc(), ToLLVMErr::CannotEvaluateToConst);
@@ -2334,7 +2496,7 @@ impl ToLLVMConstValue for SubOp {
 }
 
 #[op_interface_impl]
-impl ToLLVMConstValue for PtrToIntOp {
+impl OpToLLVMConstValue for PtrToIntOp {
     fn convert(
         &self,
         ctx: &Context,
@@ -2350,7 +2512,7 @@ impl ToLLVMConstValue for PtrToIntOp {
             &cctx.scratch_builder,
             arg,
             ty,
-            &self.get_result(ctx).unique_name(ctx),
+            self.get_result(ctx).unique_name(ctx).as_ref(),
         );
         if !llvm_is_a::constant(ptoi_op) {
             return input_err!(op.loc(), ToLLVMErr::CannotEvaluateToConst);
@@ -2368,7 +2530,7 @@ fn convert_to_llvm_const(
     match value.defining_entity() {
         DefiningEntity::Op(op) => {
             let op = Operation::get_op_dyn(op, ctx);
-            if let Some(const_trans) = op_cast::<dyn ToLLVMConstValue>(op.as_ref()) {
+            if let Some(const_trans) = op_cast::<dyn OpToLLVMConstValue>(op.as_ref()) {
                 const_trans.convert(ctx, llvm_ctx, cctx)
             } else {
                 input_err!(value.loc(ctx), ToLLVMErr::CannotEvaluateToConst)
@@ -2386,8 +2548,14 @@ fn convert_global_initializer(
     cctx: &mut ConversionContext,
     global_op: GlobalOp,
 ) -> Result<Option<LLVMValue>> {
-    if let Some(_initializer) = global_op.get_initializer_value(ctx) {
-        todo!()
+    if let Some(initializer) = global_op.get_initializer_value(ctx) {
+        let Some(bytes) = attr_cast::<dyn AttrToLLVMConst>(initializer.as_ref()) else {
+            return input_err!(
+                global_op.loc(ctx),
+                ToLLVMErr::UnsupportedGlobalInitializerAttr(initializer.get_attr_id().to_string())
+            );
+        };
+        return Ok(Some(bytes.convert(ctx, llvm_ctx, cctx)?));
     }
 
     if let Some(init_block) = global_op.get_initializer_block(ctx) {
@@ -2419,7 +2587,7 @@ pub fn convert_module(
     module: ModuleOp,
 ) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
-    let llvm_module = LLVMModule::new(&mod_name, llvm_ctx);
+    let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
     let cctx = &mut ConversionContext::new(llvm_ctx, &llvm_module);
 
     // Setup the scratch builder for evaluating constants.

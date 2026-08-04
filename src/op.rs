@@ -73,9 +73,9 @@ use crate::{
     printable::{self, Printable},
     region::Region,
     result::{Error, Result},
-    std_deps::{hash::FxHashMap, sync::LazyLock},
+    std_deps::sync::LazyLock,
     r#type::{TypeSig, Typed},
-    utils::trait_cast::impls_trait_static,
+    utils::{table::HMap, trait_cast::impls_trait_static},
 };
 
 #[derive(Clone, Hash, PartialEq, Eq)]
@@ -89,10 +89,14 @@ impl OpName {
     }
 }
 
-impl Deref for OpName {
-    type Target = Identifier;
+impl AsRef<str> for OpName {
+    fn as_ref(&self) -> &str {
+        self.0.as_ref()
+    }
+}
 
-    fn deref(&self) -> &Self::Target {
+impl AsRef<Identifier> for OpName {
+    fn as_ref(&self) -> &Identifier {
         &self.0
     }
 }
@@ -402,9 +406,8 @@ pub mod statics {
 #[doc(hidden)]
 /// A map from every [Op] to its ordered (as per interface deps) list of interface verifiers.
 /// An interface's super-interfaces are to be verified before it itself is.
-pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<
-    FxHashMap<core::any::TypeId, Vec<OpInterfaceVerifier>>,
-> = LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
+pub static OP_INTERFACE_VERIFIERS_MAP: LazyLock<HMap<core::any::TypeId, Vec<OpInterfaceVerifier>>> =
+    LazyLock::new(|| collect_deduped_interface_verifiers(statics::get_op_interface_verifiers()));
 
 /// Printer for an [Op] in canonical syntax.
 /// `res_1, res_2, ... res_n =
@@ -421,7 +424,7 @@ pub fn canonical_syntax_print(
     let operands = iter_with_sep(op.operands(), sep);
     let successors = iter_with_sep(
         op.successors()
-            .map(|succ| "^".to_string() + &succ.unique_name(ctx)),
+            .map(|succ| "^".to_string() + succ.unique_name(ctx).as_ref()),
         sep,
     );
     let op_type = TypeSig {

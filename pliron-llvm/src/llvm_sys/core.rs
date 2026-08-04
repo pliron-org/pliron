@@ -32,19 +32,19 @@ use llvm_sys::{
         LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable,
         LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt, LLVMCanValueUseFastMathFlags,
         LLVMClearInsertionPosition, LLVMConstInt, LLVMConstIntGetZExtValue, LLVMConstNull,
-        LLVMConstReal, LLVMConstRealGetDouble, LLVMConstVector, LLVMContextCreate,
-        LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams,
-        LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
+        LLVMConstReal, LLVMConstRealGetDouble, LLVMConstStringInContext2, LLVMConstVector,
+        LLVMContextCreate, LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes,
+        LLVMCountParams, LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
         LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
         LLVMDeleteFunction, LLVMDeleteGlobal, LLVMDisposeMemoryBuffer, LLVMDisposeMessage,
         LLVMDisposeModule, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType, LLVMDumpValue,
         LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetAggregateElement, LLVMGetAlignment,
-        LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetBasicBlockName, LLVMGetBasicBlockParent,
-        LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction,
-        LLVMGetCalledFunctionType, LLVMGetCalledValue, LLVMGetConstOpcode, LLVMGetElementType,
-        LLVMGetFCmpPredicate, LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction,
-        LLVMGetFirstGlobal, LLVMGetFirstInstruction, LLVMGetFirstParam,
-        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
+        LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetAsString, LLVMGetBasicBlockName,
+        LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
+        LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType, LLVMGetCalledValue,
+        LLVMGetConstOpcode, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
+        LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
+        LLVMGetFirstParam, LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
         LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInsertBlock,
         LLVMGetInstructionOpcode, LLVMGetInstructionParent, LLVMGetIntTypeWidth,
         LLVMGetIntrinsicDeclaration, LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage,
@@ -59,14 +59,15 @@ use llvm_sys::{
         LLVMGetUndef, LLVMGetUndefMaskElem, LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize,
         LLVMGlobalGetValueType, LLVMHalfTypeInContext, LLVMInstructionEraseFromParent,
         LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst,
-        LLVMIsAUser, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct,
-        LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext,
-        LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore, LLVMPrintModuleToFile,
-        LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
-        LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetFastMathFlags,
-        LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
-        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
-        LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
+        LLVMIsAUser, LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg,
+        LLVMIsOpaqueStruct, LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext,
+        LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
+        LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
+        LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
+        LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg,
+        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
+        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType,
+        LLVMVoidTypeInContext,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
@@ -980,6 +981,10 @@ pub fn llvm_const_vector(elements: &[LLVMValue]) -> LLVMValue {
 /// LLVMConstIntGetZExtValue
 pub fn llvm_const_int_get_zext_value(val: LLVMValue) -> u64 {
     assert!(llvm_is_a::constant_int(val));
+    assert!(
+        llvm_get_int_type_width(llvm_type_of(val)) <= 64,
+        "llvm_const_int_get_zext_value is only valid for integer constants with width <= 64"
+    );
     unsafe { LLVMConstIntGetZExtValue(val.into()) }
 }
 
@@ -994,7 +999,8 @@ pub fn llvm_const_real_get_double(val: LLVMValue) -> (f64, bool) {
 /// LLVMConstReal
 pub fn llvm_const_real(ty: LLVMType, n: f64) -> LLVMValue {
     assert!(
-        llvm_get_type_kind(ty) == LLVMTypeKind::LLVMFloatTypeKind
+        llvm_get_type_kind(ty) == LLVMTypeKind::LLVMHalfTypeKind
+            || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMFloatTypeKind
             || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMDoubleTypeKind
     );
     unsafe { LLVMConstReal(ty.into(), n).into() }
@@ -1003,6 +1009,46 @@ pub fn llvm_const_real(ty: LLVMType, n: f64) -> LLVMValue {
 /// LLVMConstNull
 pub fn llvm_const_null(ty: LLVMType) -> LLVMValue {
     unsafe { LLVMConstNull(ty.into()).into() }
+}
+
+/// LLVMConstStringInContext2
+pub fn llvm_const_string_in_context(context: &LLVMContext, bytes: &[u8]) -> LLVMValue {
+    unsafe {
+        LLVMConstStringInContext2(
+            context.inner_ref(),
+            bytes.as_ptr() as *const core::ffi::c_char,
+            bytes.len(),
+            // Do not append a NULL: the caller's bytes are the whole constant.
+            true.into(),
+        )
+        .into()
+    }
+}
+
+/// LLVMIsConstantString
+pub fn llvm_is_constant_string(val: LLVMValue) -> bool {
+    // LLVMIsConstantString unconditionally casts to ConstantDataSequential
+    // internally and crashes on values of other kinds, so guard the kind here
+    // rather than relying on the C API to handle it safely.
+    matches!(
+        llvm_get_value_kind(val),
+        LLVMValueKind::LLVMConstantDataArrayValueKind
+            | LLVMValueKind::LLVMConstantDataVectorValueKind
+    ) && unsafe { LLVMIsConstantString(val.into()).to_bool() }
+}
+
+/// LLVMGetAsString.
+pub fn llvm_get_as_string(val: LLVMValue) -> Option<Vec<u8>> {
+    if !llvm_is_constant_string(val) {
+        return None;
+    }
+    let mut len = 0;
+    let ptr = unsafe { LLVMGetAsString(val.into(), &mut len) };
+    if ptr.is_null() {
+        return None;
+    }
+    // Safety: LLVM guarantees `len` bytes readable at `ptr`, owned by the constant.
+    Some(unsafe { core::slice::from_raw_parts(ptr as *const u8, len) }.to_vec())
 }
 
 /// LLVMGetAllocatedType

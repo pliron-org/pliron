@@ -1,0 +1,43 @@
+name: "CI: WASM"
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  wasm:
+    name: WASM Tests
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+      with:
+        targets: wasm32-unknown-unknown
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Install cargo-binstall
+      uses: taiki-e/install-action@v2
+      with:
+        tool: cargo-binstall
+
+    - name: Install wasm-bindgen-cli
+      run: |
+        cargo binstall -y wasm-bindgen-cli --version 0.2 --force
+        wasm-bindgen --version
+
+    - uses: actions/setup-node@v6
+      with:
+        node-version: 24
+
+    - name: WASM Tests (Debug)
+      run: RUSTFLAGS="-D warnings" cargo test --target wasm32-unknown-unknown
+
+    - name: WASM Tests (Release)
+      run: RUSTFLAGS="-D warnings" cargo test --release --target wasm32-unknown-unknown

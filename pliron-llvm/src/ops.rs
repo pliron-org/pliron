@@ -3,6 +3,13 @@
 
 //! [Op]s defined in the LLVM dialect
 
+use alloc::{
+    boxed::Box,
+    format,
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
 use core::num::NonZero;
 
 use pliron::{
@@ -2474,6 +2481,8 @@ impl ZeroOp {
 pub enum GlobalOpVerifyErr {
     #[error("GlobalOp must have a type")]
     MissingType,
+    #[error("GlobalOp cannot have both an initializer value and initializer region")]
+    InvalidInitializer,
 }
 
 /// Same as MLIR's LLVM dialect [GlobalOp](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal-llvmglobalop)
@@ -2554,6 +2563,10 @@ impl GlobalOp {
 
     /// Set a simple initializer value for this global variable.
     pub fn set_initializer_value(&self, ctx: &Context, value: AttrObj) {
+        assert!(
+            self.get_initializer_region(ctx).is_none(),
+            "Attempt to add an initializer value when there already is an initializer region"
+        );
         self.set_attr_global_initializer(ctx, value);
     }
 
@@ -2590,7 +2603,7 @@ impl Verify for GlobalOp {
 
         // Check that there is at most one initializer
         if self.get_initializer_value(ctx).is_some() && self.get_initializer_region(ctx).is_some() {
-            return verify_err!(loc, GlobalOpVerifyErr::MissingType);
+            return verify_err!(loc, GlobalOpVerifyErr::InvalidInitializer);
         }
 
         Ok(())
@@ -4026,12 +4039,12 @@ pub enum SelectOpVerifyErr {
 /// Operands:
 /// | operand | description |
 /// |-----|-------|
-/// | `arg` | float |
+/// | `arg` | float or vector of float |
 ///
 /// Result(s):
 /// | result | description |
 /// |-----|-------|
-/// | `res` | float |
+/// | `res` | float or vector of float |
 #[pliron_op(
     name = "llvm.fneg",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` : ` type($0)",
@@ -4052,7 +4065,12 @@ impl Verify for FNegOp {
 
         let loc = self.loc(ctx);
         let op = &*self.op.deref(ctx);
-        let arg_ty = op.get_operand(0).get_type(ctx);
+        let mut arg_ty = op.get_operand(0).get_type(ctx);
+
+        if let Some(vec_ty) = arg_ty.deref(ctx).downcast_ref::<VectorType>() {
+            arg_ty = vec_ty.elem_type();
+        }
+
         if !type_impls::<dyn FloatTypeInterface>(&*arg_ty.deref(ctx)) {
             return verify_err!(loc, FNegOpVerifyErr::ArgumentMustBeFloat);
         }
@@ -4084,7 +4102,7 @@ impl FNegOp {
 
 #[derive(Error, Debug)]
 pub enum FNegOpVerifyErr {
-    #[error("Argument must be a float")]
+    #[error("Argument must be (possibly vector of) float")]
     ArgumentMustBeFloat,
     #[error("Fast math flags must be set")]
     FastMathFlagsMustBeSet,
@@ -4156,14 +4174,14 @@ new_float_bin_op! {
 /// ### Operand(s):
 /// | operand | description |
 /// |-----|-------|
-/// | `lhs` | float |
-/// | `rhs` | float |
+/// | `lhs` | float or vector of float |
+/// | `rhs` | float or vector of float |
 ///
 /// ### Result(s):
 ///
 /// | result | description |
 /// |-----|-------|
-/// | `res` | 1-bit signless integer |
+/// | `res` | i1 or vector of i1 |
 #[pliron_op(
     name = "llvm.fcmp",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` <` attr($fcmp_predicate, $FCmpPredicateAttr) `> ` $1 ` : ` type($0)",
@@ -4180,11 +4198,17 @@ pub struct FCmpOp;
 impl FCmpOp {
     /// Create a new [FCmpOp]
     pub fn new(ctx: &mut Context, pred: FCmpPredicateAttr, lhs: Value, rhs: Value) -> Self {
-        let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
+        use pliron::r#type::Typed;
+        let mut result_ty: TypeHandle = IntegerType::get(ctx, 1, Signedness::Signless).into();
+        if let Some(vector) = lhs.get_type(ctx).deref(ctx).downcast_ref::<VectorType>() {
+            let num_elements = vector.num_elements();
+            let kind = vector.kind();
+            result_ty = VectorType::get(ctx, result_ty, num_elements, kind).into();
+        }
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
-            vec![bool_ty.into()],
+            vec![result_ty],
             vec![lhs, rhs],
             vec![],
             0,
@@ -4210,18 +4234,32 @@ impl Verify for FCmpOp {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
-        let res_ty: TypedHandle<IntegerType> = TypedHandle::from_handle(self.result_type(ctx), ctx)
-            .map_err(|mut err| {
-                err.set_loc(loc.clone());
-                err
-            })?;
-
-        if res_ty.deref(ctx).width() != 1 {
+        let mut res_ty = self.result_type(ctx);
+        let mut vec_num_elements = None;
+        if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
+            res_ty = vec_ty.elem_type();
+            vec_num_elements = Some(vec_ty.num_elements());
+        }
+        let res_ty = res_ty.deref(ctx);
+        let Some(res_ty) = res_ty.downcast_ref::<IntegerType>() else {
+            return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
+        };
+        if res_ty.width() != 1 {
             return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
         }
 
-        let opd_ty = self.operand_type_i(ctx, I::<0>.into()).deref(ctx);
-        if !(type_impls::<dyn FloatTypeInterface>(&*opd_ty)) {
+        let mut opd_ty = self.operand_type_i(ctx, I::<0>.into());
+        if let Some(vec_ty) = opd_ty.deref(ctx).downcast_ref::<VectorType>() {
+            opd_ty = vec_ty.elem_type();
+            // Ensure that the number of elements matches the result type's number of elements.
+            if vec_num_elements.is_none_or(|num_elements| vec_ty.num_elements() != num_elements) {
+                return verify_err!(loc, FCmpOpVerifyErr::MismatchedVectorNumElements);
+            }
+        } else if vec_num_elements.is_some() {
+            return verify_err!(loc, FCmpOpVerifyErr::MismatchedVectorNumElements);
+        }
+        let opd_ty = opd_ty.deref(ctx);
+        if !type_impls::<dyn FloatTypeInterface>(&*opd_ty) {
             return verify_err!(loc, FCmpOpVerifyErr::IncorrectOperandsType);
         }
 
@@ -4231,12 +4269,14 @@ impl Verify for FCmpOp {
 
 #[derive(Error, Debug)]
 pub enum FCmpOpVerifyErr {
-    #[error("Result must be 1-bit integer (bool)")]
+    #[error("Result must be (possibly vector of) 1-bit integer (bool)")]
     ResultNotBool,
-    #[error("Operand must be floating point type")]
+    #[error("Operand must be (possibly vector of) floating point types")]
     IncorrectOperandsType,
     #[error("Missing or incorrect predicate attribute")]
     PredAttrErr,
+    #[error("Vector operand and result types must have the same number of elements")]
+    MismatchedVectorNumElements,
 }
 
 /// All LLVM intrinsic calls are represented by this [Op].

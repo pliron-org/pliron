@@ -3,6 +3,8 @@
 
 //! Helper functions to call common simple C functions
 
+use alloc::{boxed::Box, vec, vec::Vec};
+
 use pliron::{
     arg_err,
     builtin::{

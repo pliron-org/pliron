@@ -1,0 +1,35 @@
+name: "CI: Workspace (macOS)"
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build and Test (macOS)
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+
+    - name: Setup LLVM
+      run: |
+        brew install llvm@22
+        llvm_prefix="$(brew --prefix llvm@22)"
+        echo "LLVM_SYS_221_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
+        echo "CLANG_BINARY_PATH=$llvm_prefix/bin/clang" >> "$GITHUB_ENV"
+        echo "LLI_BINARY_PATH=$llvm_prefix/bin/lli" >> "$GITHUB_ENV"
+
+    - name: Tests (Debug)
+      run: RUSTFLAGS="-D warnings" cargo test --workspace --verbose
+
+    - name: Tests (Release)
+      run: RUSTFLAGS="-D warnings" cargo test --release --workspace --verbose

@@ -13,7 +13,6 @@ use alloc::{collections::vec_deque::VecDeque, vec, vec::Vec};
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::IsTerminatorInterface,
     common_traits::Named,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
@@ -24,13 +23,12 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     irfmt::printers::list_with_sep,
-    op::op_impls,
     operation::{OpDbg, Operation},
     pass::{AnalysisManager, Pass, PassResult},
     printable::{ListSeparator, Printable},
     result::Result,
-    std_deps::hash::{FxHashMap, FxHashSet},
     r#type::{Type, TypeHandle, Typed},
+    utils::table::{HMap, HSet},
     value::{DefiningEntity, Value},
 };
 
@@ -158,7 +156,7 @@ pub trait DialectConversion {
 // ## Algorithm
 //
 // 1. Collect:
-//    - All initially convertible operations (and terminators)
+//    - All initially convertible operations
 //    - All basic blocks structurally nested under `op`
 // 2. Convert the arguments of every collected block.
 // 3. Repeatedly pop work items from the front. `Enter` items begin processing
@@ -200,8 +198,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
         rewriter: DialectConversionRewriter,
         worklist: VecDeque<WorkItem>,
         pending_block_arg_conversions: Vec<Ptr<BasicBlock>>,
-        op_states: FxHashMap<Ptr<Operation>, OpState>,
-        previous_types: FxHashMap<Value, Vec<TypeHandle>>,
+        op_states: HMap<Ptr<Operation>, OpState>,
+        previous_types: HMap<Value, Vec<TypeHandle>>,
     }
 
     impl<'a, C: DialectConversion> Driver<'a, C> {
@@ -213,8 +211,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 rewriter,
                 worklist: VecDeque::new(),
                 pending_block_arg_conversions: Vec::new(),
-                op_states: FxHashMap::default(),
-                previous_types: FxHashMap::default(),
+                op_states: HMap::default(),
+                previous_types: HMap::default(),
             }
         }
 
@@ -272,7 +270,6 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 return false;
             }
             self.conversion.can_convert_op(ctx, op)
-                || op_impls::<dyn IsTerminatorInterface>(&*Operation::get_op_dyn(op, ctx))
         }
 
         /// Collects the initial worklist of operations (into `self.worklist`)
@@ -372,7 +369,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 core::mem::take(&mut listener.events)
             };
 
-            let mut erased_blocks = FxHashSet::default();
+            let mut erased_blocks = HSet::default();
             for event in &events {
                 match event {
                     RecorderEvent::ErasedOperation(op) => self.mark_erased(*op),

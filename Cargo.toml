@@ -25,7 +25,7 @@ keywords = ["pliron", "llvm", "mlir", "compiler"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [features]
-std = []
+std = ["dep:utf8-chars"]
 default = ["std"]
 
 [dependencies]
@@ -34,6 +34,9 @@ pliron-derive = { path = "./pliron-derive", version = "0" }
 awint.workspace = true
 rustc_apfloat.workspace = true
 rustc-hash.workspace = true
+hashbrown.workspace = true
+indexmap.workspace = true
+smallvec.workspace = true
 thiserror.workspace = true
 combine.workspace = true
 log.workspace = true
@@ -43,9 +46,9 @@ once_vec.workspace = true
 downcast-rs.workspace = true
 regex.workspace = true
 dyn-clone.workspace = true
-utf8-chars.workspace = true
+utf8-chars = { workspace = true, optional = true }
 
-hashbrown = "0"
+# Only used in `no_std`, but can't express that.
 spin = "0"
 
 [target.'cfg(target_family = "wasm")'.dependencies]
@@ -75,6 +78,9 @@ proc-macro2 = "1"
 quote = "1"
 prettyplease = "0"
 rustc-hash = "2"
+hashbrown = "0"
+indexmap = { version = "2", default-features = false }
+smallvec = { version = "1", default-features = false }
 combine = "4"
 thiserror = "2"
 tempfile = "3"

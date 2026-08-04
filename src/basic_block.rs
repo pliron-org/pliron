@@ -182,7 +182,7 @@ impl BasicBlock {
     }
 
     /// Get an iterator over the arguments
-    pub fn arguments(&self) -> impl Iterator<Item = Value> + '_ {
+    pub fn arguments(&self) -> impl Iterator<Item = Value> + Clone + '_ {
         self.args.iter().map(|arg| arg.as_value(self.self_ptr))
     }
 
@@ -292,7 +292,7 @@ impl BasicBlock {
             !ptr.has_pred(ctx),
             "BasicBlock {} with predecessor {} being erased",
             ptr.deref(ctx).unique_name(ctx),
-            *ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
+            ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
         );
         if let Some(op) = ptr.deref(ctx).iter(ctx).find(|op| op.deref(ctx).has_use()) {
             panic!(

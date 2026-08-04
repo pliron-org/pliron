@@ -3,6 +3,7 @@
 
 //! DCE integration tests using textual LLVM dialect IR parsing.
 
+use expect_test::expect;
 use pliron::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
@@ -13,7 +14,6 @@ use pliron::{
     operation::{Operation, verify_operation},
     opts::dce::{BlockArgRemoval, dce},
     parsable::parse_from_str,
-    printable::Printable,
     result::{ExpectOk, Result},
 };
 
@@ -85,21 +85,19 @@ impl SideEffects for MultiUseSinkOp {
     }
 }
 
-fn run_dce_on_text(input: &str) -> Result<(IRStatus, String, String)> {
+fn run_dce_on_text(input: &str) -> Result<(IRStatus, String)> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
-    let before = op.disp(ctx).to_string();
-    log::trace!("Before DCE:\n{}", before);
     verify_operation(op, ctx)?;
 
     let status = dce(op, ctx)?;
 
-    let after = op.disp(ctx).to_string();
+    let after = Operation::get_op_dyn(op, ctx).disp(ctx).to_string();
     log::trace!("After DCE:\n{}", after);
     verify_operation(op, ctx)?;
-    Ok((status, before, after))
+    Ok((status, after))
 }
 
 #[test]
@@ -113,10 +111,17 @@ fn dce_removes_dead_llvm_constant() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("<0: si64>"));
-    assert!(after.contains("<7: si64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_v0 = builtin.constant <builtin.integer <7: si64>> : builtin.integer si64 !1;
+            llvm.return live_v0 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -130,9 +135,17 @@ fn dce_keeps_live_llvm_constant() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("<9: si64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_v0 = builtin.constant <builtin.integer <9: si64>> : builtin.integer si64 !1;
+            llvm.return live_v0 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -146,9 +159,17 @@ fn dce_does_not_remove_unused_entry_block_arg_in_llvm_func() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("(arg0"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64(builtin.integer si64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(arg0_v0: builtin.integer si64) !0:
+            c_v1 = builtin.constant <builtin.integer <5: si64>> : builtin.integer si64 !1;
+            llvm.return c_v1 !2
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -166,10 +187,20 @@ fn dce_removes_dead_non_entry_block_arg_and_br_operand() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    assert!(!after.contains("(arg0"));
-    assert!(!after.contains("<1: si64>"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            llvm.br ^bb1_block3v1() !1
+
+          ^bb1_block3v1() !2:
+            c_v2 = builtin.constant <builtin.integer <7: si64>> : builtin.integer si64 !3;
+            llvm.return c_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -186,9 +217,20 @@ fn dce_keeps_used_non_entry_block_arg() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
-    assert!(after.contains("(arg0"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            x_v0 = builtin.constant <builtin.integer <1: si64>> : builtin.integer si64 !1;
+            llvm.br ^bb1_block3v1(x_v0) !2
+
+          ^bb1_block3v1(arg0_v1: builtin.integer si64) !3:
+            llvm.return arg0_v1 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -208,14 +250,23 @@ fn dce_dead_arg_cascades_to_successor_operands() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     // Live constant should remain
-    assert!(after.contains("<42: si64>"));
     // Dead constant should be eliminated
-    assert!(!after.contains("<1: si64>"));
     // Dead block argument should be removed
-    assert!(!after.contains("dead_arg"));
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_val_v1 = builtin.constant <builtin.integer <42: si64>> : builtin.integer si64 !1;
+            llvm.br ^merge_block3v1(live_val_v1) !2
+
+          ^merge_block3v1(live_arg_v3: builtin.integer si64) !3:
+            llvm.return live_arg_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -244,18 +295,30 @@ fn dce_multiple_preds_mixed_dead_live_operands() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Live constant should remain
-    assert!(after.contains("<10: si64>"));
-    assert!(after.contains("<20: si64>"));
-    // Dead constants should be eliminated
-    assert!(!after.contains("<1: si64>"));
-    assert!(!after.contains("<2: si64>"));
-    // Dead block argument should be removed
-    assert!(!after.contains("in_dead"));
-    assert!(!after.contains("left_dead"));
-    assert!(!after.contains("right_dead"));
+    // Live constants should remain.
+    // Dead constants should be eliminated.
+    // Dead block arguments should be removed.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            cond_v0 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            live_left_v2 = builtin.constant <builtin.integer <10: si64>> : builtin.integer si64 !2;
+            live_right_v4 = builtin.constant <builtin.integer <20: si64>> : builtin.integer si64 !3;
+            llvm.cond_br if cond_v0 ^left_block4v1(live_left_v2) else ^right_block5v1(live_right_v4) !4
+
+          ^left_block4v1(left_live_v6: builtin.integer si64) !5:
+            llvm.br ^merge_block3v3(left_live_v6) !6
+
+          ^right_block5v1(right_live_v8: builtin.integer si64) !7:
+            llvm.br ^merge_block3v3(right_live_v8) !8
+
+          ^merge_block3v3(in_live_v10: builtin.integer si64) !9:
+            llvm.return in_live_v10 !10
+        }"#]].assert_eq(&after);
     Ok(())
 }
 
@@ -276,15 +339,23 @@ fn dce_all_successor_operands_dead() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Both dead constants should be eliminated
-    assert!(!after.contains("<7: si64>"));
-    assert!(!after.contains("<8: si64>"));
-    // Live constant should remain
-    assert!(after.contains("<99: si64>"));
-    // Exit block should have no arguments
-    assert!(after.contains("^exit():") || !after.contains("unused1"));
+    // Both dead constants should be eliminated.
+    // The live constant should remain.
+    // The exit block should have no arguments.
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_v2 = builtin.constant <builtin.integer <99: si64>> : builtin.integer si64 !1;
+            llvm.br ^exit_block3v1() !2
+
+          ^exit_block3v1() !3:
+            llvm.return live_v2 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -306,18 +377,23 @@ fn dce_chain_of_dead_computations() -> Result<()> {
     }
   "#;
 
-    let (status, _before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
-    // Live constant should remain
-    assert!(after.contains("<99: si64>"));
-    // All dead constants should be eliminated
-    assert!(!after.contains("<1: si64>"));
-    assert!(!after.contains("<2: si64>"));
-    assert!(!after.contains("<3: si64>"));
-    // Exit block should have no arguments (check that unused args were removed)
-    assert!(!after.contains("unused1"));
-    assert!(!after.contains("unused2"));
-    assert!(!after.contains("unused3"));
+    // The live constant should remain.
+    // All dead constants should be eliminated.
+    // The exit block should have no arguments (unused args should be removed).
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_v3 = builtin.constant <builtin.integer <99: si64>> : builtin.integer si64 !1;
+            llvm.br ^exit_block3v1() !2
+
+          ^exit_block3v1() !3:
+            llvm.return live_v3 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }
 
@@ -358,37 +434,28 @@ fn dce_region_containing_dead_op_safely_ignores_inner_dead_code() -> Result<()> 
     let func_op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).expect_ok(ctx);
 
     verify_operation(func_op, ctx)?;
-    let _before = func_op.disp(ctx).to_string();
 
-    // Run DCE - should:
-    // 1. Mark inner_dead1, inner_dead2 as dead
-    // 2. Mark region_dead1, region_dead2 as dead
-    // 3. Mark test.pure_region as dead (no uses, no side effects)
-    // 4. Eliminate all safely without panicking on inner dead ops
     let status = dce(func_op, ctx)?;
-    assert!(status == IRStatus::Changed);
+    assert_eq!(status, IRStatus::Changed);
+
+    //
+    // The main point of this test is that we get here without panicking, which means
+    // DCE safely handled the pure_region op elimination and its inner dead code.
 
     verify_operation(func_op, ctx)?;
-    let after = func_op.disp(ctx).to_string();
-
-    // The pure_region op should be eliminated
-    assert!(!after.contains("test.pure_region"));
-
-    // All dead constants should be eliminated (both outer and inner)
-    assert!(!after.contains("<10: i64>"));
-    assert!(!after.contains("<20: i64>"));
-    assert!(!after.contains("<100: i64>"));
-    assert!(!after.contains("<200: i64>"));
-    assert!(!after.contains("arg0"));
-
-    // Live constant should remain
-    assert!(after.contains("<99: i64>"));
-
-    // Function should still be valid
-    assert!(after.contains("@test"));
-
-    // The main point: we got here without panicking, which means
-    // DCE safely handled the pure_region op elimination and its inner dead code
+    let after = Operation::get_op_dyn(func_op, ctx).disp(ctx).to_string();
+    // The pure_region op should be eliminated.
+    // All dead constants should be eliminated (both outer and inner).
+    // The live constant should remain, and the function should still be valid.
+    expect![[r#"
+        llvm.func @test: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            live_v7 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !1;
+            llvm.return live_v7 !2
+        }"#]]
+    .assert_eq(&after);
 
     Ok(())
 }
@@ -408,17 +475,19 @@ fn dce_eliminates_multi_result_op_after_same_op_and_successor_uses_die() -> Resu
     }
   "#;
 
-    let (status, before, after) = run_dce_on_text(input)?;
+    let (status, after) = run_dce_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer si64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            llvm.br ^exit_block3v1() !1
 
-    assert!(before.contains("test.multi_result_def"));
-    assert!(before.contains("test.multi_use_sink"));
-
-    assert!(!after.contains("test.multi_result_def"));
-    assert!(!after.contains("test.multi_use_sink"));
-    assert!(!after.contains("(arg0"));
-    assert!(!after.contains("arg1"));
-    assert!(after.contains("<99: si64>"));
-
+          ^exit_block3v1() !2:
+            live_v4 = builtin.constant <builtin.integer <99: si64>> : builtin.integer si64 !3;
+            llvm.return live_v4 !4
+        }"#]]
+    .assert_eq(&after);
     Ok(())
 }

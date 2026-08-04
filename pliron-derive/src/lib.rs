@@ -15,6 +15,12 @@ use syn::parse_quote;
 
 use derive_format::DeriveIRObject;
 
+/// A hash map with a fast, non-cryptographic hasher and deterministic iteration order.
+type IMap<K, V> = indexmap::IndexMap<K, V, rustc_hash::FxBuildHasher>;
+
+/// A hash set with a fast, non-cryptographic hasher and deterministic iteration order.
+type ISet<T> = indexmap::IndexSet<T, rustc_hash::FxBuildHasher>;
+
 /// `#[def_attribute(...)]`: Annotate a Rust struct as a new IR attribute.
 ///
 /// *Note*: It is suggested to use the [pliron_attr] macro instead of using this macro directly.
