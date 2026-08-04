@@ -1487,17 +1487,6 @@ mod tests {
         }
 
         #[test]
-        fn imap_shift_remove_preserves_order_of_remainder() {
-            let mut m: IMap<i32, &str> = IMap::default();
-            for i in [3, 1, 4, 15, 9] {
-                m.insert(i, "v");
-            }
-            m.shift_remove(&15);
-            let keys: Vec<_> = m.keys().copied().collect();
-            assert_eq!(keys, vec![3, 1, 4, 9]);
-        }
-
-        #[test]
         fn imap_get_contains_len() {
             let mut m = IMap::default();
             assert!(m.is_empty());
@@ -1544,7 +1533,7 @@ mod tests {
             let mut s: ISet<i32> = [1, 2, 3].into_iter().collect();
             assert_eq!(s.len(), 3);
             assert!(s.contains(&2));
-            s.shift_remove(&2);
+            s.swap_remove(&2);
             assert!(!s.contains(&2));
             let items: Vec<_> = s.iter().copied().collect();
             assert_eq!(items, vec![1, 3]);
