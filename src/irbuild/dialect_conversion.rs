@@ -4,8 +4,7 @@
 //! Utilities for dialect conversion style rewrites.
 //! Similar in spirit to MLIR dialect conversion, but intentionally simpler:
 //! - no unrealized conversion casts,
-//! - definitions are converted before their uses, except for cycle backedges
-//!   in graph regions.
+//! - definitions are converted before their uses, except in graph regions.
 
 use core::cell::Ref;
 
@@ -129,8 +128,8 @@ pub trait DialectConversion {
     ///
     /// Insertion point is set to be before the operation being rewritten.
     /// Operand definitions are converted before this callback is invoked,
-    /// except for definitions on cycle backedges in graph regions.
-    /// Conversion order within such a cycle is unspecified.
+    /// except for definitions in graph regions. Conversion order within graph
+    /// regions is unspecified.
     /// `operands_info` provides the current operand values along with their
     /// historical types observed during conversion. The last type in the history
     /// is the most recent type before conversion.
@@ -147,7 +146,7 @@ pub trait DialectConversion {
 ///
 /// Conversion is trait-driven and ensures that any convertible
 /// operand definitions are rewritten before rewriting the current operation,
-/// except for cycle backedges in graph regions.
+/// except for definitions in graph regions.
 ///
 /// All block arguments reachable from `op` are converted up front.
 /// Block arguments of blocks inserted during conversion are
@@ -159,21 +158,19 @@ pub trait DialectConversion {
 //    - All initially convertible operations
 //    - All basic blocks structurally nested under `op`
 // 2. Convert the arguments of every collected block.
-// 3. Repeatedly pop work items from the front. `Enter` items begin processing
-//    an operation and `Resume` items continue it after its operand definitions.
-// 4. Mark each entered op as `Processing`. If it has pending operand
-//    definitions, schedule them before a `Resume` item for the op; otherwise,
-//    rewrite the op immediately.
-// 5. A definition already marked `Processing` is a cycle backedge. Do not wait
-//    on it; all other definitions are handled first.
-// 6. On `Resume`, re-read operands because earlier rewrites may have replaced
-//    their definitions, then call the conversion pattern's `rewrite` callback.
-// 7. Post rewrite, process recorder events:
+// 3. Repeatedly pop from the front; only entries still marked `Queued` are
+//    processed.
+// 4. For each op, check operand defining ops. If defs outside graph regions are
+//    still pending, re-enqueue this op and those defs to the front so defs are
+//    handled first. Definitions in graph regions retain worklist order.
+// 5. Actually call the conversion pattern's `rewrite` callback.
+// 6. Post rewrite, process recorder events:
 //    - mark erased (during this batch) ops and blocks,
 //    - update value type-history,
-//    - enqueue newly inserted convertible ops and basic blocks.
-// 8. Mark rewritten/non-convertible ops as `Processed`.
-// 9. Before processing the next work item, convert arguments of newly inserted blocks.
+//    - enqueue newly inserted convertible ops and basic blocks,
+// 7. Mark rewritten/non-convertible ops as `Processed`.
+// 8. Before processing the next op in the queue, convert arguments
+//    of newly inserted blocks.
 pub fn apply_dialect_conversion<C: DialectConversion>(
     ctx: &mut Context,
     conversion: &mut C,
@@ -182,21 +179,14 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
     #[derive(Clone, Copy, PartialEq, Eq)]
     enum OpState {
         Queued,
-        Processing,
         Processed,
         Erased,
-    }
-
-    #[derive(Clone, Copy)]
-    enum WorkItem {
-        Enter(Ptr<Operation>),
-        Resume(Ptr<Operation>),
     }
 
     struct Driver<'a, C: DialectConversion> {
         conversion: &'a mut C,
         rewriter: DialectConversionRewriter,
-        worklist: VecDeque<WorkItem>,
+        worklist: VecDeque<Ptr<Operation>>,
         pending_block_arg_conversions: Vec<Ptr<BasicBlock>>,
         op_states: HMap<Ptr<Operation>, OpState>,
         previous_types: HMap<Value, Vec<TypeHandle>>,
@@ -228,16 +218,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             matches!(self.op_states.get(&op), Some(OpState::Queued))
         }
 
-        fn is_processing(&self, op: Ptr<Operation>) -> bool {
-            matches!(self.op_states.get(&op), Some(OpState::Processing))
-        }
-
         fn mark_erased(&mut self, op: Ptr<Operation>) {
             self.op_states.insert(op, OpState::Erased);
-        }
-
-        fn mark_processing(&mut self, op: Ptr<Operation>) {
-            self.op_states.insert(op, OpState::Processing);
         }
 
         fn mark_processed(&mut self, op: Ptr<Operation>) {
@@ -248,21 +230,22 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             self.op_states.insert(op, OpState::Queued);
         }
 
-        fn schedule_enter_front(&mut self, op: Ptr<Operation>) {
+        fn enqueue_front(&mut self, op: Ptr<Operation>) {
             assert!(
-                self.is_queued(op),
-                "Only queued operations can be scheduled for processing"
+                !self.is_processed(op) && !self.is_erased(op),
+                "Attempted to enqueue an operation that is already terminal-state (processed/erased)"
             );
-            self.worklist.push_front(WorkItem::Enter(op));
+            self.mark_enqueued(op);
+            self.worklist.push_front(op);
         }
 
         fn enqueue_back(&mut self, op: Ptr<Operation>) {
             assert!(
-                !self.is_processing(op) && !self.is_processed(op) && !self.is_erased(op),
-                "Attempted to enqueue an operation that is already active or terminal-state"
+                !self.is_processed(op) && !self.is_erased(op),
+                "Attempted to enqueue an operation that is already terminal-state (processed/erased)"
             );
             self.mark_enqueued(op);
-            self.worklist.push_back(WorkItem::Enter(op));
+            self.worklist.push_back(op);
         }
 
         fn op_eligible_for_processing(&self, ctx: &Context, op: Ptr<Operation>) -> bool {
@@ -410,8 +393,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 match event {
                     RecorderEvent::InsertedOperation(new_op)
                         if self.op_eligible_for_processing(ctx, new_op)
-                            && !self.is_queued(new_op)
-                            && !self.is_processing(new_op) =>
+                            && !self.is_queued(new_op) =>
                     {
                         log::trace!(
                             "Inserted operation added to worklist: {}",
@@ -431,63 +413,51 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             Ok(())
         }
 
-        fn is_graph_region_backedge(
-            ctx: &Context,
-            op: Ptr<Operation>,
-            def_op: Ptr<Operation>,
-        ) -> bool {
-            // A legal operand-dependency cycle cannot cross region boundaries:
-            // values defined in a nested region cannot escape to an ancestor operation.
-            let Some(region) = op.deref(ctx).get_parent_region(ctx) else {
-                return false;
-            };
-            def_op.deref(ctx).get_parent_region(ctx) == Some(region)
-                && !region.deref(ctx).has_ssa_dominance(ctx)
-        }
+        fn process_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) -> Result<()> {
+            log::trace!("Beginning to process operation: {}", OpDbg { op, ctx });
 
-        fn collect_pending_defs(
-            &mut self,
-            ctx: &Context,
-            op: Ptr<Operation>,
-        ) -> Vec<Ptr<Operation>> {
+            if !self.conversion.can_convert_op(ctx, op) {
+                log::trace!(
+                    "Skipping operation as it is not convertible: {}",
+                    OpDbg { op, ctx }
+                );
+                self.mark_processed(op);
+                return Ok(());
+            }
+
             let operands: Vec<_> = op.deref(ctx).operands().collect();
             let mut pending_defs = Vec::new();
-            for operand in operands {
-                match operand.defining_entity() {
-                    DefiningEntity::Op(def_op) => match self.op_states.get(&def_op).copied() {
-                        Some(OpState::Processing) => {
-                            assert!(
-                                Self::is_graph_region_backedge(ctx, op, def_op),
-                                "Operation dependency cycles are only valid in graph regions"
-                            );
-                            log::trace!(
-                                "Not waiting on graph-region cycle backedge: {} -> {}",
-                                OpDbg { op, ctx },
-                                OpDbg { op: def_op, ctx }
-                            );
-                        }
-                        Some(OpState::Processed | OpState::Erased) => {}
-                        Some(OpState::Queued) => pending_defs.push(def_op),
-                        None if self.op_eligible_for_processing(ctx, def_op) => {
-                            self.mark_enqueued(def_op);
-                            pending_defs.push(def_op);
-                        }
-                        None => {}
-                    },
-                    DefiningEntity::Block(_) => {}
+            for operand in &operands {
+                // Block-argument operands should already be converted.
+                if let DefiningEntity::Op(def_op) = operand.defining_entity() {
+                    let def_is_in_graph_region = def_op
+                        .deref(ctx)
+                        .get_parent_region(ctx)
+                        .is_some_and(|region| !region.deref(ctx).has_ssa_dominance(ctx));
+                    assert!(
+                        def_op != op || def_is_in_graph_region,
+                        "Operation dependency cycles are only valid in graph regions"
+                    );
+                    if !def_is_in_graph_region && self.op_eligible_for_processing(ctx, def_op) {
+                        pending_defs.push(def_op);
+                    }
                 }
             }
-            pending_defs
-        }
 
-        fn schedule_pending_defs(&mut self, op: Ptr<Operation>, pending_defs: Vec<Ptr<Operation>>) {
-            self.worklist.push_front(WorkItem::Resume(op));
-            for def_op in pending_defs.into_iter().rev() {
-                self.schedule_enter_front(def_op);
+            if !pending_defs.is_empty() {
+                // We aren't going to process it now, so add it back to the queue
+                // to be processed after its operands' defs are processed.
+                self.enqueue_front(op);
+                for def_op in pending_defs.into_iter().rev() {
+                    self.enqueue_front(def_op);
+                }
+                log::trace!(
+                    "Operation re-enqueued, to be processed after its operands' defs: {}",
+                    OpDbg { op, ctx }
+                );
+                return Ok(());
             }
-        }
 
-        fn rewrite_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) -> Result<()> {
             let operands: Vec<_> = op.deref(ctx).operands().collect();
             let operands_info = OperandsInfo::new(
                 operands
@@ -516,57 +486,8 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 .rewrite(ctx, &mut self.rewriter, op, &operands_info)?;
             self.process_recorder_events(ctx)?;
 
-            if !self.is_erased(op) {
-                self.mark_processed(op);
-            }
+            self.mark_processed(op);
             Ok(())
-        }
-
-        fn enter_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) -> Result<()> {
-            log::trace!("Beginning to process operation: {}", OpDbg { op, ctx });
-            self.mark_processing(op);
-
-            if !self.conversion.can_convert_op(ctx, op) {
-                log::trace!(
-                    "Skipping operation as it is not convertible: {}",
-                    OpDbg { op, ctx }
-                );
-                self.mark_processed(op);
-                return Ok(());
-            }
-
-            let pending_defs = self.collect_pending_defs(ctx, op);
-            if pending_defs.is_empty() {
-                self.rewrite_operation(ctx, op)
-            } else {
-                self.schedule_pending_defs(op, pending_defs);
-                Ok(())
-            }
-        }
-
-        fn resume_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) -> Result<()> {
-            if !self.conversion.can_convert_op(ctx, op) {
-                log::trace!(
-                    "Skipping operation as it is no longer convertible: {}",
-                    OpDbg { op, ctx }
-                );
-                self.mark_processed(op);
-                return Ok(());
-            }
-
-            // Re-read operands after processing definitions. Rewrites may have
-            // replaced an operand with a newly inserted, still-pending definition.
-            let pending_defs = self.collect_pending_defs(ctx, op);
-            if !pending_defs.is_empty() {
-                self.schedule_pending_defs(op, pending_defs);
-                log::trace!(
-                    "Operation suspended again for newly pending operand definitions: {}",
-                    OpDbg { op, ctx }
-                );
-                return Ok(());
-            }
-
-            self.rewrite_operation(ctx, op)
         }
 
         fn run(&mut self, ctx: &mut Context, root: Ptr<Operation>) -> Result<()> {
@@ -577,18 +498,16 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                 self.convert_block_arguments(ctx, block)?;
             }
 
-            while let Some(item) = self.worklist.pop_front() {
-                match item {
-                    WorkItem::Enter(op) => {
-                        if self.is_queued(op) {
-                            self.enter_operation(ctx, op)?;
-                        }
+            while let Some(op) = self.worklist.pop_front() {
+                // Skip stale duplicate entries and ops that became terminal-state
+                // while queued. For the queued case, remove the queue-state first so
+                // this op can be re-enqueued if it must be deferred.
+                match self.op_states.get(&op).copied() {
+                    Some(OpState::Queued) => {
+                        self.op_states.remove(&op);
+                        self.process_operation(ctx, op)?;
                     }
-                    WorkItem::Resume(op) => {
-                        if self.is_processing(op) {
-                            self.resume_operation(ctx, op)?;
-                        }
-                    }
+                    Some(OpState::Processed | OpState::Erased) | None => continue,
                 }
 
                 // Convert block arguments for any new blocks added, before processing the next op.

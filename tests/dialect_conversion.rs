@@ -211,7 +211,15 @@ fn dialect_conversion_defs_before_uses() -> Result<()> {
         ctx,
         Identifier::try_from("dialect_conversion_test").unwrap(),
     );
-    let body = module.get_body(ctx, 0);
+    let func_type = FunctionType::get(ctx, vec![], vec![]);
+    let func = FuncOp::new(
+        ctx,
+        Identifier::try_from("defs_before_uses").unwrap(),
+        func_type,
+    );
+    func.get_operation()
+        .insert_at_back(module.get_body(ctx, 0), ctx);
+    let body = func.get_entry_block(ctx);
 
     let producer = ProducerOp::new(ctx, 64);
     producer.get_operation().insert_at_back(body, ctx);
@@ -307,7 +315,15 @@ fn dialect_conversion_value_replacement_preserves_type_history() -> Result<()> {
         ctx,
         Identifier::try_from("dialect_conversion_value_replacement_test").unwrap(),
     );
-    let body = module.get_body(ctx, 0);
+    let func_type = FunctionType::get(ctx, vec![], vec![]);
+    let func = FuncOp::new(
+        ctx,
+        Identifier::try_from("value_replacement").unwrap(),
+        func_type,
+    );
+    func.get_operation()
+        .insert_at_back(module.get_body(ctx, 0), ctx);
+    let body = func.get_entry_block(ctx);
 
     let producer = ProducerOp::new(ctx, 64);
     producer.get_operation().insert_at_back(body, ctx);
