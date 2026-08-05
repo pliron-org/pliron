@@ -36,12 +36,14 @@ entry:
   %fadd = fadd <2 x double> %fvec, <double 3.0, double 4.0> ; <4.0,6.0>
   %fneg1 = fneg <2 x double> %fadd; <-4.0,-6.0>
   %fneg2 = fneg <2 x double> %fneg1; <4.0,6.0>
-  %fe0 = extractelement <2 x double> %fneg2, i32 0
+  %ftrunc = fptrunc <2 x double> %fneg2 to <2 x float>; <4.0,6.0>
+  %fpext = fpext <2 x float> %ftrunc to <2 x double>; <4.0,6.0>
+  %fe0 = extractelement <2 x double> %fpext, i32 0
   %fe0_i = fptosi double %fe0 to i32                  ; 4
   %c2 = icmp eq i32 %fe0_i, 4
 
   ; float vector comparison
-  %fcmp = fcmp olt <2 x double> %fneg2, <double 5.0, double 5.0> ; <true,false>
+  %fcmp = fcmp olt <2 x double> %fpext, <double 5.0, double 5.0> ; <true,false>
   %fc0 = extractelement <2 x i1> %fcmp, i32 0           ; true
   %fc1 = extractelement <2 x i1> %fcmp, i32 1           ; false
   %fc1n = xor i1 %fc1, true

@@ -3161,11 +3161,18 @@ pub struct FPExtOp;
 impl Verify for FPExtOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         // Check operand type to be a float
-        let opd_ty = OneOpdInterface::operand_type(self, ctx).deref(ctx);
+        let mut opd_ty = self.operand_type(ctx).deref(ctx);
+        if let Some(vec_ty) = opd_ty.downcast_ref::<VectorType>() {
+            opd_ty = vec_ty.elem_type().deref(ctx);
+        }
         let Some(opd_float_ty) = type_cast::<dyn FloatTypeInterface>(&*opd_ty) else {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
         };
-        let res_ty = OneResultInterface::result_type(self, ctx).deref(ctx);
+
+        let mut res_ty = self.result_type(ctx).deref(ctx);
+        if let Some(vec_ty) = res_ty.downcast_ref::<VectorType>() {
+            res_ty = vec_ty.elem_type().deref(ctx);
+        }
         let Some(res_float_ty) = type_cast::<dyn FloatTypeInterface>(&*res_ty) else {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
         };
@@ -3226,11 +3233,11 @@ impl Verify for TruncOp {
 /// ### Operands
 /// | operand | description |
 /// |-----|-------|
-/// | `arg` | Floating-point number |
+/// | `arg` | float or vector of float |
 /// ### Result(s):
 /// | result | description |
 /// |-----|-------|
-/// | `res` | Floating-point number |
+/// | `res` | float or vector of float |
 #[pliron_op(
     name = "llvm.fptrunc",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` to ` type($0)",
@@ -3241,11 +3248,18 @@ pub struct FPTruncOp;
 impl Verify for FPTruncOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         // Check operand type to be a float
-        let opd_ty = OneOpdInterface::operand_type(self, ctx).deref(ctx);
+        let mut opd_ty = self.operand_type(ctx).deref(ctx);
+        if let Some(vec_ty) = opd_ty.downcast_ref::<VectorType>() {
+            opd_ty = vec_ty.elem_type().deref(ctx);
+        }
         let Some(opd_float_ty) = type_cast::<dyn FloatTypeInterface>(&*opd_ty) else {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
         };
-        let res_ty = OneResultInterface::result_type(self, ctx).deref(ctx);
+
+        let mut res_ty = self.result_type(ctx).deref(ctx);
+        if let Some(vec_ty) = res_ty.downcast_ref::<VectorType>() {
+            res_ty = vec_ty.elem_type().deref(ctx);
+        }
         let Some(res_float_ty) = type_cast::<dyn FloatTypeInterface>(&*res_ty) else {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
         };
