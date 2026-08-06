@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! IR equivalence, hashing etc
 //!
 //! Structural equivalence for [Operation]s, [Region]s and [BasicBlock]s.

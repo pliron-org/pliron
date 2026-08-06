@@ -27,8 +27,8 @@ use pliron::{
     irbuild::{
         cloning::{IrMapping, clone_blocks_into, clone_operation},
         equivalence::{
-            EqResult, IgnoreConfig, basic_block_eq, basic_block_hash, operation_eq,
-            operation_hash, region_eq, region_hash,
+            EqResult, IgnoreConfig, basic_block_eq, basic_block_hash, operation_eq, operation_hash,
+            region_eq, region_hash,
         },
         listener::{DummyListener, Recorder, RecorderEvent},
         rewriter::IRRewriter,
