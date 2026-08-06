@@ -1459,6 +1459,29 @@ pub mod smalltable {
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    // Tests that the equality of [IMap] and [ISet] is independent of the
+    // insertion order of the elements. We give similar guarantees for
+    // [SmallMap] and [SmallSet].
+    fn imap_iset_eq_order() {
+        use crate::utils::table::itable::{IMap, ISet};
+        let mut m1 = IMap::default();
+        m1.insert("a", 1);
+        m1.insert("b", 2);
+        let mut m2 = IMap::default();
+        m2.insert("b", 2);
+        m2.insert("a", 1);
+        assert_eq!(m1, m2);
+
+        let mut s1 = ISet::default();
+        s1.insert("a");
+        s1.insert("b");
+        let mut s2 = ISet::default();
+        s2.insert("b");
+        s2.insert("a");
+        assert_eq!(s1, s2);
+    }
     mod itable {
         use crate::utils::table::itable::{IMap, ISet};
         use alloc::{vec, vec::Vec};
@@ -2165,6 +2188,8 @@ mod tests {
             assert!(s1.iter().all(|v| s2.contains(v)));
         }
 
+        // Tests that the equality of [SmallSet] is independent of the
+        // insertion order of the elements.
         #[test]
         fn smallset_partial_eq_same_n() {
             let s1: SmallSet<i32, 4> = [1, 2, 3].into_iter().collect();
@@ -2177,6 +2202,8 @@ mod tests {
             assert_ne!(s1, s2);
         }
 
+        // Tests that the equality of [SmallMap] is independent of the
+        // insertion order of the elements.
         #[test]
         fn smallmap_partial_eq_same_n() {
             let m1: SmallMap<i32, i32, 4> = [(1, 1), (2, 2)].into_iter().collect();

@@ -10,7 +10,7 @@
 //! They are heavy (i.e., not just a pointer, handle or reference),
 //! making clones potentially expensive.
 //!
-//! The [def_attribute](pliron::derive::def_attribute) proc macro from the
+//! The [pliron_att](pliron::derive::pliron_attr) proc macro from the
 //! pliron-derive create can be used to implement [Attribute] for a rust type.
 //!
 //! Common semantics, API and behaviour of [Attribute]s are

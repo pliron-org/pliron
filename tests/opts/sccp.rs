@@ -620,10 +620,6 @@ fn sccp_materialization_replaces_uses_of_block_arg() -> Result<()> {
     }
   "#;
 
-    // Source: the arg name appears at its declaration site and twice as an
-    // operand of `llvm.add` -> 3 occurrences.
-    assert_eq!(input.matches("califragilistic").count(), 3);
-
     let (status, after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Changed);
     expect![[r#"

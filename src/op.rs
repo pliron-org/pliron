@@ -6,7 +6,7 @@
 //!
 //! See MLIR's [Op](https://mlir.llvm.org/docs/Tutorials/Toy/Ch-2/#op-vs-operation-using-mlir-operations).
 //!
-//! New [Op]s can be easily declared using the [def_op](pliron::derive::def_op)
+//! New [Op]s can be easily declared using the [pliron_op](pliron::derive::pliron_op)
 //! proc macro from the pliron-derive crate.
 //!
 //! Common semantics, API and behaviour of [Op]s are
