@@ -497,7 +497,7 @@ impl MaterializableAttr for FPDoubleAttr {
 /// An attribute that is a dictionary of other attributes.
 /// Similar to MLIR's [DictionaryAttr](https://mlir.llvm.org/docs/Dialects/Builtin/#dictionaryattr),
 #[pliron_attr(name = "builtin.dict", verifier = "succ")]
-#[derive(PartialEq, Clone, Eq, Debug)]
+#[derive(PartialEq, Clone, Eq, Debug, Hash)]
 pub struct DictAttr(pub AttributeDict);
 
 impl Printable for DictAttr {
@@ -559,7 +559,7 @@ impl DictAttr {
 
 /// A vector of other attributes.
 #[pliron_attr(name = "builtin.vec", format = "`[` vec($0, CharSpace(`,`)) `]`")]
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct VecAttr(pub Vec<AttrObj>);
 
 impl VecAttr {

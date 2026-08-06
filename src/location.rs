@@ -4,7 +4,10 @@
 //! Source location for different IR entities
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::fmt::Debug;
+use core::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+};
 
 use crate::{
     attribute::AttrObj,
@@ -118,6 +121,35 @@ pub enum Location {
     /// Location unknown.
     /// See [UnknownLoc](https://mlir.llvm.org/docs/Dialects/Builtin/#unknownloc).
     Unknown,
+}
+
+impl Hash for Location {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Location::SrcPos { src, pos } => {
+                src.hash(state);
+                pos.line.hash(state);
+                pos.column.hash(state);
+            }
+            Location::Fused {
+                metadata,
+                locations,
+            } => {
+                metadata.hash(state);
+                locations.hash(state);
+            }
+            Location::Named { name, child_loc } => {
+                name.hash(state);
+                child_loc.hash(state);
+            }
+            Location::CallSite { callee, caller } => {
+                callee.hash(state);
+                caller.hash(state);
+            }
+            Location::Unknown => {}
+        }
+    }
 }
 
 impl Location {

@@ -8,7 +8,6 @@ use crate::{
     context::{Context, Ptr},
     operation::Operation,
     result::Result,
-    storage_uniquer::TypeValueHash,
     r#type::TypeHandle,
     utils::apfloat::{Category, DynFloat, ExpInt, Round, Semantics, StatusAnd},
 };
@@ -48,13 +47,6 @@ pub trait OutlinedAttr {
 /// used for repeated printing. These must be outlined attributes.
 #[attr_interface]
 pub trait PrintOnceAttr: OutlinedAttr {
-    /// Compute and get the hash for this instance of Self.
-    /// Hash collisions can be a possibility.
-    ///
-    /// A typical implementation involves deriving `Hash` for `Self`
-    /// and calling `TypeValueHash::new(self)` inside this method.
-    fn hash_attr(&self) -> TypeValueHash;
-
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where
         Self: Sized,

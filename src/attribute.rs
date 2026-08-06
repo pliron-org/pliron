@@ -42,6 +42,7 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{Debug, Display},
+    hash::{Hash, Hasher},
     ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
@@ -64,6 +65,7 @@ use crate::{
     printable::{self, Printable},
     result::Result,
     std_deps::sync::LazyLock,
+    storage_uniquer::TypeValueHash,
     utils::{
         table::{HMap, SmallMap},
         trait_cast::impls_trait_static,
@@ -146,6 +148,15 @@ pub type AttributeDictContainer = SmallMap<Identifier, AttrObj, 1>;
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct AttributeDict(pub AttributeDictContainer);
 
+impl Hash for AttributeDict {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Sort by key so that the hash doesn't depend on insertion order.
+        let mut entries: Vec<_> = self.0.iter().collect();
+        entries.sort_by_key(|(k, _)| *k);
+        entries.hash(state);
+    }
+}
+
 impl AttributeDict {
     /// Get reference to attribute value that is mapped to key `k`.
     pub fn get<T: Attribute>(&self, k: &Identifier) -> Option<&T> {
@@ -193,6 +204,10 @@ impl From<AttributeDictContainer> for AttributeDict {
 ///
 /// See [module](crate::attribute) documentation for more information.
 pub trait Attribute: Printable + Verify + Downcast + Sync + Send + DynClone + Debug {
+    /// Compute and get the hash for this instance of Self.
+    /// Hash collisions can be a possibility.
+    fn hash_attr(&self) -> TypeValueHash;
+
     /// Is self equal to an other Attribute?
     fn eq_attr(&self, other: &dyn Attribute) -> bool;
 
@@ -244,6 +259,12 @@ impl<T: Attribute> From<T> for AttrObj {
 }
 
 impl Eq for AttrObj {}
+
+impl Hash for AttrObj {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash_attr().into());
+    }
+}
 
 impl Printable for AttrObj {
     fn fmt(
