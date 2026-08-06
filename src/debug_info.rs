@@ -13,6 +13,7 @@ use crate::{
     builtin::{ATTR_KEY_DEBUG_INFO, attr_interfaces::OutlinedAttr},
     combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
     context::{Context, Ptr},
+    graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
     identifier::Identifier,
     operation::Operation,
     parsable::{Parsable, ParseResult, StateStream},
@@ -267,6 +268,33 @@ pub fn get_block_arg_name(
 ) -> Option<Identifier> {
     let block = &*block.deref(ctx);
     get_name_from_attr_map(&block.attributes, arg_idx)
+}
+
+/// Recursively erase every [given_name](crate::common_traits::Named::given_name)
+/// nested within `op`: Op results, block arguments and block labels.
+pub fn erase_given_names(ctx: &mut Context, op: Ptr<Operation>) {
+    walkers::uninterruptible::mutable::walk_op(
+        ctx,
+        &mut (),
+        &WALKCONFIG_PREORDER_FORWARD,
+        op,
+        |ctx: &mut Context, _state: &mut (), node: IRNode| match node {
+            IRNode::Operation(op) => {
+                let num_results = op.deref(ctx).get_num_results();
+                for res_idx in 0..num_results {
+                    set_operation_result_name(ctx, op, res_idx, None);
+                }
+            }
+            IRNode::BasicBlock(block) => {
+                let num_args = block.deref(ctx).get_num_arguments();
+                for arg_idx in 0..num_args {
+                    set_block_arg_name(ctx, block, arg_idx, None);
+                }
+                block.deref_mut(ctx).set_label(None);
+            }
+            IRNode::Region(_) => {}
+        },
+    );
 }
 
 #[cfg(test)]
