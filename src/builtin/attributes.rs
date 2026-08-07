@@ -318,9 +318,17 @@ impl MaterializableAttr for IntegerAttr {
 }
 
 #[pliron_attr(name = "builtin.half", format = "$0", verifier = "succ")]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 /// An attribute that is a half-precision (16-bit) floating-point number.
 pub struct FPHalfAttr(pub apfloat::Half);
+
+// Bitwise equality (IEEE equality would consider +0.0 == -0.0 and NaN != NaN).
+impl PartialEq for FPHalfAttr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+impl Eq for FPHalfAttr {}
 
 impl Hash for FPHalfAttr {
     fn hash<H: Hasher>(&self, state: &mut H) {
@@ -361,9 +369,17 @@ impl FloatAttr for FPHalfAttr {
 }
 
 #[pliron_attr(name = "builtin.single", format = "$0", verifier = "succ")]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 /// An attribute that is a single-precision floating-point number.
 pub struct FPSingleAttr(pub apfloat::Single);
+
+// Bitwise equality (IEEE equality would consider +0.0 == -0.0 and NaN != NaN).
+impl PartialEq for FPSingleAttr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+impl Eq for FPSingleAttr {}
 
 impl From<f32> for FPSingleAttr {
     fn from(value: f32) -> Self {
@@ -416,9 +432,17 @@ impl FloatAttr for FPSingleAttr {
 }
 
 #[pliron_attr(name = "builtin.double", format = "$0", verifier = "succ")]
-#[derive(PartialEq, Clone, Debug)]
+#[derive(Clone, Debug)]
 /// An attribute that is a double-precision floating-point number.
 pub struct FPDoubleAttr(pub apfloat::Double);
+
+// Bitwise equality (IEEE equality would consider +0.0 == -0.0 and NaN != NaN).
+impl PartialEq for FPDoubleAttr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+impl Eq for FPDoubleAttr {}
 
 impl From<f64> for FPDoubleAttr {
     fn from(value: f64) -> Self {
