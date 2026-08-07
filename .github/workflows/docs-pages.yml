@@ -28,11 +28,24 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@v2
 
+      - name: Configure apt archive cache directory
+        run: |
+          mkdir -p ~/.cache/apt-archives
+          echo 'Dir::Cache::Archives "'"$HOME"'/.cache/apt-archives";' | sudo tee /etc/apt/apt.conf.d/99-archives-cache
+
+      # Shares the .deb cache with ci.yml's "Setup LLVM" step (same key)
+      - name: Cache LLVM apt packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/apt-archives
+          key: llvm-22-apt-archives-${{ runner.os }}
+
       - name: Setup LLVM
         run: |
           wget https://apt.llvm.org/llvm.sh
           chmod +x llvm.sh
           sudo ./llvm.sh 22 all
+          sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-archives
 
       - name: Install mdBook
         run: |
