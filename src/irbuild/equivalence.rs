@@ -34,6 +34,7 @@ use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
     context::{Context, Ptr},
+    debug_info::DebugInfoAttr,
     identifier::Identifier,
     irbuild::cloning::IrMapping,
     linked_list::ContainsLinkedList,
@@ -55,7 +56,14 @@ pub struct IgnoreConfig {
     pub ignore_attr: fn(ctx: &Context, attr: &dyn Attribute) -> bool,
 }
 
+/// Ignore location information and [DebugInfoAttr]s.
+pub const IGNORE_LOC_NAMES: IgnoreConfig = IgnoreConfig {
+    ignore_loc: true,
+    ignore_attr: |_ctx, attr| attr.is::<DebugInfoAttr>(),
+};
+
 /// The result of equivalence checking b/w two IR entities
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EqResult {
     /// The two IR entities are equivalent.
     Eq,

@@ -23,7 +23,7 @@ use crate::{
 
 #[pliron_attr(name = "builtin.debug_info", verifier = "succ")]
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-struct DebugInfoAttr {
+pub struct DebugInfoAttr {
     names: Vec<Option<Identifier>>,
 }
 
