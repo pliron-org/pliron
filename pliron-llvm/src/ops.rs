@@ -765,7 +765,7 @@ impl Printable for CondBrOp {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &pliron::printable::State,
+        state: &pliron::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         let op = self.get_operation().deref(ctx);
@@ -776,19 +776,19 @@ impl Printable for CondBrOp {
             f,
             "{} if {} ^{}({}) else ^{}({})",
             Self::get_opid_static(),
-            condition.disp(ctx),
+            condition.print(ctx, state),
             op.get_successor(0).deref(ctx).unique_name(ctx),
             iter_with_sep(
                 true_dest_opds.iter(),
                 pliron::printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx),
+            .print(ctx, state),
             op.get_successor(1).deref(ctx).unique_name(ctx),
             iter_with_sep(
                 false_dest_opds.iter(),
                 pliron::printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx),
+            .print(ctx, state),
         );
         res
     }
@@ -916,19 +916,19 @@ impl Printable for SwitchCase {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &pliron::printable::State,
+        state: &pliron::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
             f,
             "{{ {}: ^{}({}) }}",
-            self.value.disp(ctx),
+            self.value.print(ctx, state),
             self.dest.deref(ctx).unique_name(ctx),
             list_with_sep(
                 &self.dest_opds,
                 pliron::printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx)
+            .print(ctx, state)
         )
     }
 }
@@ -985,13 +985,13 @@ impl Printable for SwitchOp {
             f,
             "{} {}, ^{}({})",
             Self::get_opid_static(),
-            condition.disp(ctx),
-            default_successor.unique_name(ctx).disp(ctx),
+            condition.print(ctx, state),
+            default_successor.unique_name(ctx).print(ctx, state),
             iter_with_sep(
                 self.successor_operands(ctx, 0).iter(),
                 pliron::printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx),
+            .print(ctx, state),
         )?;
 
         if num_total_successors < 2 {
@@ -1223,7 +1223,7 @@ impl Printable for IndirectBrDest {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &pliron::printable::State,
+        state: &pliron::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
@@ -1234,7 +1234,7 @@ impl Printable for IndirectBrDest {
                 &self.dest_opds,
                 pliron::printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx)
+            .print(ctx, state)
         )
     }
 }
@@ -1288,7 +1288,12 @@ impl Printable for IndirectBrOp {
         let address = op.get_operand(0);
         let dests = self.destinations(ctx);
 
-        write!(f, "{} {} [", Self::get_opid_static(), address.disp(ctx))?;
+        write!(
+            f,
+            "{} {} [",
+            Self::get_opid_static(),
+            address.print(ctx, state)
+        )?;
         indented_block!(state, {
             write!(f, "{}", indented_nl(state))?;
             list_with_sep(&dests, pliron::printable::ListSeparator::CharNewline(','))
@@ -1440,12 +1445,12 @@ impl Printable for GepIndex {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &pliron::printable::State,
+        state: &pliron::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
             GepIndex::Constant(c) => write!(f, "{c}"),
-            GepIndex::Value(v) => write!(f, "{}", v.disp(ctx)),
+            GepIndex::Value(v) => write!(f, "{}", v.print(ctx, state)),
         }
     }
 }
@@ -2163,14 +2168,14 @@ impl Printable for CallOp {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &pliron::printable::State,
+        state: &pliron::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         let callee = self.callee(ctx);
         write!(
             f,
             "{} = {} ",
-            self.get_result(ctx).disp(ctx),
+            self.get_result(ctx).print(ctx, state),
             self.get_opid()
         )?;
         match callee {
@@ -2178,14 +2183,14 @@ impl Printable for CallOp {
                 write!(f, "@{callee_sym}")?;
             }
             CallOpCallable::Indirect(callee_val) => {
-                write!(f, "{}", callee_val.disp(ctx))?;
+                write!(f, "{}", callee_val.print(ctx, state))?;
             }
         }
 
         if let Some(fmf) = self.get_attr_llvm_call_fastmath_flags(ctx)
             && *fmf != FastmathFlagsAttr::default()
         {
-            write!(f, " {}", fmf.disp(ctx))?;
+            write!(f, " {}", fmf.print(ctx, state))?;
         }
 
         let args = self.args(ctx);
@@ -2193,8 +2198,9 @@ impl Printable for CallOp {
         write!(
             f,
             " ({}) : {}",
-            list_with_sep(&args, pliron::printable::ListSeparator::CharSpace(',')).disp(ctx),
-            ty.disp(ctx)
+            list_with_sep(&args, pliron::printable::ListSeparator::CharSpace(','))
+                .print(ctx, state),
+            ty.print(ctx, state)
         )?;
         Ok(())
     }
@@ -2622,7 +2628,7 @@ impl Printable for GlobalOp {
             "{} @{} : {}",
             self.get_opid(),
             self.get_symbol_name(ctx),
-            <Self as pliron::r#type::Typed>::get_type(self, ctx).disp(ctx)
+            <Self as pliron::r#type::Typed>::get_type(self, ctx).print(ctx, state)
         )?;
 
         // Print attributes except for type, initializer and symbol name.
@@ -2638,12 +2644,12 @@ impl Printable for GlobalOp {
                 f,
                 "{}{}",
                 indented_nl(state),
-                attributes_to_print_separately.disp(ctx)
+                attributes_to_print_separately.print(ctx, state)
             )?;
         });
 
         if let Some(init_value) = self.get_initializer_value(ctx) {
-            write!(f, " = {}", init_value.disp(ctx))?;
+            write!(f, " = {}", init_value.print(ctx, state))?;
         }
 
         if let Some(init_region) = self.get_initializer_region(ctx) {
@@ -4334,12 +4340,12 @@ impl Printable for CallIntrinsicOp {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         // [result = ] llvm.call_intrinsic @name <FastMathFlags> (operands) : type
         if let Some(res) = self.op.deref(ctx).results().next() {
-            write!(f, "{} = ", res.disp(ctx))?;
+            write!(f, "{} = ", res.print(ctx, state))?;
         }
 
         write!(
@@ -4348,13 +4354,13 @@ impl Printable for CallIntrinsicOp {
             Self::get_opid_static(),
             self.get_attr_llvm_intrinsic_name(ctx)
                 .expect("CallIntrinsicOp missing or incorrect intrinsic name attribute")
-                .disp(ctx),
+                .print(ctx, state),
         )?;
 
         if let Some(fmf) = self.get_attr_llvm_intrinsic_fastmath_flags(ctx)
             && *fmf != FastmathFlagsAttr::default()
         {
-            write!(f, " {} ", fmf.disp(ctx))?;
+            write!(f, " {} ", fmf.print(ctx, state))?;
         }
 
         write!(
@@ -4364,10 +4370,10 @@ impl Printable for CallIntrinsicOp {
                 self.op.deref(ctx).operands(),
                 printable::ListSeparator::CharSpace(',')
             )
-            .disp(ctx),
+            .print(ctx, state),
             self.get_attr_llvm_intrinsic_type(ctx)
                 .expect("CallIntrinsicOp missing or incorrect intrinsic type attribute")
-                .disp(ctx),
+                .print(ctx, state),
         )
     }
 }
@@ -4614,7 +4620,7 @@ impl Printable for FuncOp {
                 f,
                 "{}{}",
                 indented_nl(state),
-                attributes_to_print_separately.disp(ctx)
+                attributes_to_print_separately.print(ctx, state)
             )?;
         });
 

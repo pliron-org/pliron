@@ -83,10 +83,10 @@ impl<'a> Printable for AttributeDictKeyVal<'a> {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "{}: {}", self.key, self.val.disp(ctx))
+        write!(f, "{}: {}", self.key, self.val.print(ctx, state))
     }
 }
 
@@ -110,7 +110,7 @@ impl Printable for AttributeDict {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
@@ -122,7 +122,7 @@ impl Printable for AttributeDict {
                     .map(|(key, val)| AttributeDictKeyVal { key, val }),
                 printable::ListSeparator::CharSpace(','),
             )
-            .disp(ctx)
+            .print(ctx, state)
         )
     }
 }

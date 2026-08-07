@@ -162,7 +162,7 @@ impl Printable for Error {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &State,
+        state: &State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         if self.loc.is_unknown() {
@@ -171,15 +171,15 @@ impl Printable for Error {
             writeln!(
                 f,
                 "[{}] Compilation error: {}.",
-                self.loc.disp(ctx),
+                self.loc.print(ctx, state),
                 self.kind,
             )
         }?;
 
         if let Some(self_val) = self.err.downcast_ref::<Error>() {
-            write!(f, "{}", self_val.disp(ctx))?;
+            write!(f, "{}", self_val.print(ctx, state))?;
         } else if let Some(self_val) = any_to_trait::<dyn Printable>((*self.err).as_any()) {
-            write!(f, "{}", self_val.disp(ctx))?;
+            write!(f, "{}", self_val.print(ctx, state))?;
         } else {
             write!(f, "{}", self.err)?;
             if self.backtrace.status() == BacktraceStatus::Captured {

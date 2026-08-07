@@ -215,7 +215,7 @@ impl Printable for IntegerAttr {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         let ty = &*self.ty.deref(ctx);
@@ -224,7 +224,7 @@ impl Printable for IntegerAttr {
             "<{}: {}>",
             self.val
                 .to_string_decimal(ty.signedness() == Signedness::Signed),
-            ty.disp(ctx)
+            ty.print(ctx, state)
         )
     }
 }
@@ -528,10 +528,10 @@ impl Printable for DictAttr {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "{}", self.0.disp(ctx))
+        write!(f, "{}", self.0.print(ctx, state))
     }
 }
 

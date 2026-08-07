@@ -47,7 +47,7 @@ impl Printable for OperandsInfo {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &crate::printable::State,
+        state: &crate::printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(f, "[")?;
@@ -55,9 +55,9 @@ impl Printable for OperandsInfo {
             write!(
                 f,
                 "{{Operand: {}, current type: {}, previous types: [{}]}}",
-                opd.disp(ctx),
-                opd.get_type(ctx).disp(ctx),
-                list_with_sep(previous_types, ListSeparator::CharSpace(',')).disp(ctx),
+                opd.print(ctx, state),
+                opd.get_type(ctx).print(ctx, state),
+                list_with_sep(previous_types, ListSeparator::CharSpace(',')).print(ctx, state),
             )?;
             if opd_idx != self.0.len() - 1 {
                 write!(f, ", ")?;

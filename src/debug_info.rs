@@ -56,7 +56,7 @@ impl Printable for DebugInfoAttr {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
@@ -65,7 +65,7 @@ impl Printable for DebugInfoAttr {
             self.names
                 .iter()
                 .map(|name| match name {
-                    Some(name) => name.disp(ctx).to_string(),
+                    Some(name) => name.print(ctx, state).to_string(),
                     None => "?".to_string(),
                 })
                 .collect::<Vec<_>>()

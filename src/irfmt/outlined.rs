@@ -127,27 +127,28 @@ pub(crate) fn preprint_outline_block(
 /// This is called after all operations have been printed.
 pub(crate) fn print_outlines(
     ctx: &Context,
-    print_state: printable::State,
+    state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
-    let Some(print_state) = print_state.aux_data_mut().remove(&*OUTLINED_STATE) else {
+    let Some(outline_state) = state.aux_data_mut().remove(&*OUTLINED_STATE) else {
         return Ok(());
     };
 
-    let mut print_state = *print_state
+    let mut outline_state = *outline_state
         .downcast::<OutlinePrintState>()
         .expect("failed to downcast outline print state");
 
-    if print_state.outlined_items.is_empty() {
+    if outline_state.outlined_items.is_empty() {
         return Ok(());
     }
 
     writeln!(f, "\n\noutlined_attributes:")?;
-    let mut print_once_attr_indices = print_state.outlined_items.len();
+    let mut print_once_attr_indices = outline_state.outlined_items.len();
 
     // A helper function so we don't duplicate the per-attribute printing logic.
     fn print_outlined_attrs_for(
         ctx: &Context,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
         print_once_attrs: &mut IMap<AttrObj, usize>,
         print_once_attr_indices: &mut usize,
@@ -155,7 +156,7 @@ pub(crate) fn print_outlines(
         loc: Location,
     ) -> core::fmt::Result {
         if !loc.is_unknown() {
-            write!(f, "@[{}], ", loc.disp(ctx))?;
+            write!(f, "@[{}], ", loc.print(ctx, state))?;
         }
         write!(f, "[")?;
         let mut first = true;
@@ -176,22 +177,23 @@ pub(crate) fn print_outlines(
                         *print_once_attr_indices += 1;
                     }
                 } else {
-                    write!(f, "{} = {}", attr_name, attr.disp(ctx))?;
+                    write!(f, "{} = {}", attr_name, attr.print(ctx, state))?;
                 }
             }
         }
         Ok(())
     }
 
-    for (outidx, item) in print_state.outlined_items.iter().enumerate() {
+    for (outidx, item) in outline_state.outlined_items.iter().enumerate() {
         write!(f, "!{outidx} = ")?;
         match item {
             OutlinedItem::Op(op) => {
                 let opr = op.deref(ctx);
                 print_outlined_attrs_for(
                     ctx,
+                    &state,
                     f,
-                    &mut print_state.print_once_attrs,
+                    &mut outline_state.print_once_attrs,
                     &mut print_once_attr_indices,
                     &opr.attributes,
                     opr.loc(),
@@ -201,8 +203,9 @@ pub(crate) fn print_outlines(
                 let bl = block.deref(ctx);
                 print_outlined_attrs_for(
                     ctx,
+                    &state,
                     f,
-                    &mut print_state.print_once_attrs,
+                    &mut outline_state.print_once_attrs,
                     &mut print_once_attr_indices,
                     &bl.attributes,
                     bl.loc(),
@@ -213,9 +216,9 @@ pub(crate) fn print_outlines(
     }
 
     // Now print the PrintOnceAttrs, if any.
-    if !print_state.print_once_attrs.is_empty() {
-        for (attr, outindex) in print_state.print_once_attrs {
-            writeln!(f, "!{} = {}", outindex, attr.disp(ctx))?;
+    if !outline_state.print_once_attrs.is_empty() {
+        for (attr, outindex) in outline_state.print_once_attrs {
+            writeln!(f, "!{} = {}", outindex, attr.print(ctx, &state))?;
         }
     }
 

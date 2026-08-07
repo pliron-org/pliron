@@ -346,14 +346,14 @@ impl Printable for ForwardRefOp {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
             f,
             "{} = {}",
             self.get_result(ctx).unique_name(ctx),
-            self.get_opid().disp(ctx),
+            self.get_opid().print(ctx, state),
         )
     }
 }

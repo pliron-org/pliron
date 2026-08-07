@@ -435,17 +435,17 @@ pub fn canonical_syntax_print(
 
     if op.get_num_results() != 0 {
         let results = iter_with_sep(op.results(), sep);
-        write!(f, "{} = ", results.disp(ctx))?;
+        write!(f, "{} = ", results.print(ctx, state))?;
     }
 
     write!(
         f,
         "{} ({}) [{}] {}: <{}>",
-        opid.disp(ctx),
-        operands.disp(ctx),
-        successors.disp(ctx),
-        op.attributes.clone_skip_outlined().disp(ctx),
-        op_type.disp(ctx),
+        opid.print(ctx, state),
+        operands.print(ctx, state),
+        successors.print(ctx, state),
+        op.attributes.clone_skip_outlined().print(ctx, state),
+        op_type.print(ctx, state),
     )?;
 
     if op.num_regions() > 0 {
