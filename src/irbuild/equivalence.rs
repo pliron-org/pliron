@@ -17,12 +17,17 @@
 //! and the same [IgnoreConfig]), the corresponding hash function returns the same
 //! hash for `lhs` and `rhs`. The converse isn't guaranteed: collisions are possible.
 //!
-//! **Note**: The hash functions are not guaranteed to be stable across builds, so they
-//! cannot be used as a key for caching IR.
+//! If the IR being hashed is self contained (i.e., no free values or blocks),
+//! the hash is stable across builds and common platforms, making it suitable for use
+//! as a key for caching the IR. Hashes may vary across versions of pliron or rustc.
 
 use core::hash::{Hash, Hasher};
 
-use alloc::vec::Vec;
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::{
     attribute::{AttrObj, Attribute, AttributeDict},
@@ -429,7 +434,14 @@ fn attributes_hash(
         .collect();
     // Sort by key so that the hash doesn't depend on insertion order.
     relevant.sort_by_key(|(k, _)| *k);
-    relevant.hash(state);
+
+    // Because attributes can contain Types, which are interned and cannot be hashed
+    // based on just their handle, we print the attributes and hash that instead.
+    let mut attr_string = String::new();
+    for (k, attr) in relevant {
+        attr_string.push_str(&format!("{}={},", k, attr.disp(ctx)));
+    }
+    attr_string.hash(state);
 }
 
 /// Hash components of an op that do not use or contain other IR entities,
@@ -441,21 +453,24 @@ fn hash_op_shell(
     ignore_config: &IgnoreConfig,
     state: &mut FxHasher,
 ) {
+    Operation::get_opid(op, ctx).to_string().hash(state);
     {
         let op_ref = op.deref(ctx);
 
-        op_ref.concrete_op_info().1.hash(state);
         // Although we hash each region, they may be empty, so this is necessary.
         op_ref.num_regions().hash(state);
 
         if !ignore_config.ignore_loc {
-            op_ref.loc().hash(state);
+            // Can't hash locations based on just their handle (interned file paths).
+            op_ref.loc().disp(ctx).to_string().hash(state);
         }
 
         attributes_hash(ctx, ignore_config, &op_ref.attributes, state);
 
         for res in op_ref.results() {
-            res.get_type(ctx).hash(state);
+            // Types are interned and cannot be hashed based on just their handle,
+            // so we print the type and hash that instead.
+            res.get_type(ctx).disp(ctx).to_string().hash(state);
         }
     }
 
@@ -510,13 +525,16 @@ fn hash_block_shell(
         let block_ref = block.deref(ctx);
 
         if !ignore_config.ignore_loc {
-            block_ref.loc().hash(state);
+            // Can't hash locations based on just their handle (interned file paths).
+            block_ref.loc().disp(ctx).to_string().hash(state);
         }
 
         attributes_hash(ctx, ignore_config, &block_ref.attributes, state);
 
         for arg in block_ref.arguments() {
-            arg.get_type(ctx).hash(state);
+            // Types are interned and cannot be hashed based on just their handle,
+            // so we print the type and hash that instead.
+            arg.get_type(ctx).disp(ctx).to_string().hash(state);
         }
     }
 
