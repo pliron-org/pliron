@@ -38,7 +38,6 @@
 //! (which need not be marked `unsafe`) that is unsafe: an illusion of safety.
 
 pub mod core;
-pub mod execution_engine;
 pub mod lljit;
 pub mod target;
 
