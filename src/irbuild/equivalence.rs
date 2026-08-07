@@ -16,6 +16,9 @@
 //! returns [EqResult::Eq] for `lhs` and `rhs` (compared with an empty [IrMapping]
 //! and the same [IgnoreConfig]), the corresponding hash function returns the same
 //! hash for `lhs` and `rhs`. The converse isn't guaranteed: collisions are possible.
+//!
+//! **Note**: The hash functions are not guaranteed to be stable across builds, so they
+//! cannot be used as a key for caching IR.
 
 use core::hash::{Hash, Hasher};
 
