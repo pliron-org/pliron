@@ -33,6 +33,7 @@ jobs:
           mkdir -p ~/.cache/apt-archives
           echo 'Dir::Cache::Archives "'"$HOME"'/.cache/apt-archives";' | sudo tee /etc/apt/apt.conf.d/99-archives-cache
 
+      # Shares the .deb cache with ci.yml's "Setup LLVM" step (same key)
       - name: Cache LLVM apt packages
         uses: actions/cache@v4
         with:
