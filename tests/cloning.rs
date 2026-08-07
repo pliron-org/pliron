@@ -1018,3 +1018,121 @@ fn ignore_config_affects_hash() -> Result<()> {
 
     Ok(())
 }
+
+/// Check preference for an existing mapping over literal identity.
+/// We build, and compare lhs against rhs:
+///
+/// ```text
+///   lhs             rhs
+///   X = const 1     Y = const 1
+///   P = return X    Q = return X
+/// ```
+///
+/// Assert that `operation_eq(P, Q)` is `false`.
+/// When P, Q are checked, the mapper already has X -> Y,
+/// and that mapping must be respected, even though P and Q
+/// both refer to the same literal X.
+#[test]
+fn eq_mapped_prefers_existing_mapping_operand() -> Result<()> {
+    let ctx = &mut Context::new();
+
+    let x = ConstantOp::new(ctx, 1);
+    let y = ConstantOp::new(ctx, 1);
+    let p = ReturnOp::new(ctx, x.get_result(ctx));
+    let q = ReturnOp::new(ctx, x.get_result(ctx));
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+
+    assert_equivalent(
+        ctx,
+        operation_eq(
+            ctx,
+            &mut mapper,
+            x.get_operation(),
+            y.get_operation(),
+            &ignore,
+        ),
+    );
+    assert_eq!(
+        mapper.lookup_value(x.get_result(ctx)),
+        Some(y.get_result(ctx))
+    );
+
+    assert_not_equivalent(operation_eq(
+        ctx,
+        &mut mapper,
+        p.get_operation(),
+        q.get_operation(),
+        &ignore,
+    ));
+
+    Ok(())
+}
+
+/// Check for preference for an existing mapping over literal identity.
+/// We build, and compare lhs against rhs:
+///
+/// ```text
+///   lhs           rhs
+///   X: br -> X    Y: br -> Y
+///   P: br -> X    Q: br -> X
+/// ```
+///
+/// Assert that `basic_block_eq(P, Q)` is `false`.
+/// When P, Q are checked, the mapper already has X -> Y,
+/// and that mapping must be respected, even though P and Q
+/// both refer to the same literal X.
+#[test]
+fn eq_mapped_prefers_existing_mapping_successor() -> Result<()> {
+    let ctx = &mut Context::new();
+    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let func_ty = FunctionType::get(ctx, vec![], vec![]);
+    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    module.append_operation(ctx, func.get_operation(), 0);
+    let region = func.get_region(ctx);
+
+    let branch_to = |ctx: &mut Context, from: Ptr<BasicBlock>, to: Ptr<BasicBlock>| {
+        Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![to],
+            0,
+        )
+        .insert_at_back(from, ctx);
+    };
+
+    let block_x = func.get_entry_block(ctx);
+    let block_y = BasicBlock::new(ctx, None, vec![]);
+    block_y.insert_at_back(region, ctx);
+    branch_to(ctx, block_x, block_x);
+    branch_to(ctx, block_y, block_y);
+
+    let block_p = BasicBlock::new(ctx, None, vec![]);
+    block_p.insert_at_back(region, ctx);
+    let block_q = BasicBlock::new(ctx, None, vec![]);
+    block_q.insert_at_back(region, ctx);
+    branch_to(ctx, block_p, block_x);
+    branch_to(ctx, block_q, block_x);
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+
+    assert_equivalent(
+        ctx,
+        basic_block_eq(ctx, &mut mapper, block_x, block_y, &ignore),
+    );
+    assert_eq!(mapper.lookup_block(block_x), Some(block_y));
+
+    assert_not_equivalent(basic_block_eq(ctx, &mut mapper, block_p, block_q, &ignore));
+
+    Ok(())
+}

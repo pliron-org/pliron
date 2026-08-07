@@ -204,24 +204,20 @@ fn op_eq_mapped(
         let lhs_ref = lhs.deref(ctx);
         let rhs_ref = rhs.deref(ctx);
 
-        // Operands must either be identical, or already mapped to one another.
+        // If an operand is mapped, its image must match. Otherwise, it must
+        // be identical (e.g. a free/external value shared by both sides).
         for (l_opd, r_opd) in lhs_ref.operands().zip(rhs_ref.operands()) {
-            if l_opd == r_opd {
-                continue;
-            }
-            if l_opd.get_type(ctx) != r_opd.get_type(ctx)
-                || mapper.lookup_value(l_opd) != Some(r_opd)
+            if mapper.lookup_value_or_default(l_opd) != r_opd
+                || l_opd.get_type(ctx) != r_opd.get_type(ctx)
             {
                 return EqResult::FirstNEQOps((lhs, rhs));
             }
         }
 
-        // Successors must either be identical, or already mapped to one another.
+        // If a successor is mapped, its image must match. Otherwise, it must
+        // be identical (e.g. a free/external block shared by both sides).
         for (l_succ, r_succ) in lhs_ref.successors().zip(rhs_ref.successors()) {
-            if l_succ == r_succ {
-                continue;
-            }
-            if mapper.lookup_block(l_succ) != Some(r_succ) {
+            if mapper.lookup_block_or_default(l_succ) != r_succ {
                 return EqResult::FirstNEQOps((lhs, rhs));
             }
         }
