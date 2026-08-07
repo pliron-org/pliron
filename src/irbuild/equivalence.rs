@@ -453,7 +453,7 @@ fn hash_op_shell(
     ignore_config: &IgnoreConfig,
     state: &mut FxHasher,
 ) {
-    Operation::get_opid(op, ctx).to_string().hash(state);
+    Operation::get_opid(op, ctx).hash(state);
     {
         let op_ref = op.deref(ctx);
 
