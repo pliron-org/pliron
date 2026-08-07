@@ -783,6 +783,153 @@ fn self_contained_blocks_hash_equal() -> Result<()> {
     Ok(())
 }
 
+/// The hashing algorithm doesn't explicitly count the number of blocks
+/// in a region or operands / results in an operation etc.
+/// This test is to validate that the hash is still sensitive to these differences.
+#[test]
+fn hash_distinguishes_trivial_extra_items() -> Result<()> {
+    let ctx = &mut Context::new();
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+
+    for ignore_loc in [false, true] {
+        let ignore = IgnoreConfig {
+            ignore_loc,
+            ignore_attr: never_ignore,
+        };
+
+        // An op with no regions vs. one region that has no blocks.
+        let no_region = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let empty_region = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_region, &ignore),
+            operation_hash(ctx, empty_region, &ignore),
+            "ignore_loc={ignore_loc}: 0 regions vs. 1 empty region"
+        );
+
+        // A region with no blocks vs. one with a single, entirely trivial block.
+        let one_block_op = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        let one_block_region = one_block_op.deref(ctx).get_region(0);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(one_block_region, ctx);
+        assert_ne!(
+            operation_hash(ctx, empty_region, &ignore),
+            operation_hash(ctx, one_block_op, &ignore),
+            "ignore_loc={ignore_loc}: empty region vs. region with one empty block"
+        );
+
+        // One trivial block vs. two, both entirely trivial.
+        let two_block_op = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        let two_block_region = two_block_op.deref(ctx).get_region(0);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(two_block_region, ctx);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(two_block_region, ctx);
+        assert_ne!(
+            operation_hash(ctx, one_block_op, &ignore),
+            operation_hash(ctx, two_block_op, &ignore),
+            "ignore_loc={ignore_loc}: one empty block vs. two empty blocks"
+        );
+
+        // No operands vs. one (an external value).
+        let val = ConstantOp::new(ctx, 7).get_result(ctx);
+        let no_operand = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_operand = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![val],
+            vec![],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_operand, &ignore),
+            operation_hash(ctx, one_operand, &ignore),
+            "ignore_loc={ignore_loc}: 0 operands vs. 1 operand"
+        );
+
+        // No successors vs. one.
+        let target = BasicBlock::new(ctx, None, vec![]);
+        let no_succ = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_succ = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![target],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_succ, &ignore),
+            operation_hash(ctx, one_succ, &ignore),
+            "ignore_loc={ignore_loc}: 0 successors vs. 1 successor"
+        );
+
+        // No results vs. one.
+        let no_result = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_result = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![i64_ty.into()],
+            vec![],
+            vec![],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_result, &ignore),
+            operation_hash(ctx, one_result, &ignore),
+            "ignore_loc={ignore_loc}: 0 results vs. 1 result"
+        );
+    }
+
+    Ok(())
+}
+
 /// Test [IgnoreConfig] behaviour.
 #[test]
 fn ignore_config_skips_location_and_chosen_attributes() -> Result<()> {
