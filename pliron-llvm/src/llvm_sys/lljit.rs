@@ -123,6 +123,9 @@ impl From<JITSymbolGenericFlags> for u8 {
     }
 }
 
+/// Wrapper around LLVM's LLJIT.
+///
+/// For simple uses, considering using [SimpleJIT].
 pub struct LLVMLLJIT(lljit::LLVMOrcLLJITRef);
 
 impl LLVMLLJIT {
