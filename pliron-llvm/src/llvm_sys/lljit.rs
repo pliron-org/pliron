@@ -139,7 +139,10 @@ impl LLVMLLJIT {
     /// Add an [LLVMModule] (contained in [LLVMContext]) to the JIT's main JITDylib
     pub fn add_module(&self, context: LLVMContext, module: LLVMModule) -> Result<(), String> {
         unsafe {
-            assert_eq!(context.inner_ref(), LLVMGetModuleContext(module.inner_ref()));
+            assert_eq!(
+                context.inner_ref(),
+                LLVMGetModuleContext(module.inner_ref())
+            );
             let tsctx = LLVMOrcCreateNewThreadSafeContextFromLLVMContext(context.inner_ref());
             // Ownership of the context has been transferred to the thread-safe context
             mem::forget(context);

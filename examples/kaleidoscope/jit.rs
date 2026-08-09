@@ -77,7 +77,7 @@ pub fn exec_fn(src: &str, name: &str, arg: i64) -> Result<i64> {
         .map_err(|e| input_error_noloc!("Failed to create JIT execution engine: {}", e))?;
     let main_fn = lljit
         .lookup_symbol(name)
-        .map_err(|e| input_error_noloc!("Failed to add module to JIT: {}", e))?;
+        .map_err(|e| input_error_noloc!("Failed to lookup symbol {} in JIT: {}", name, e))?;
     let main_fn: extern "C" fn(i64) -> i64 = unsafe { std::mem::transmute(main_fn.addr) };
     Ok(main_fn(arg))
 }
