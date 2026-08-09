@@ -274,13 +274,13 @@ impl<'jit, F: Copy> Deref for JitSymbol<'jit, F> {
 }
 
 impl SimpleJIT {
-    /// Create a JIT from `llmod` and the `context` that contains it.
+    /// Create a JIT from `module` and the `context` that contains it.
     ///
     /// See type documentation for examples.
-    pub fn new(context: LLVMContext, llmod: LLVMModule) -> Result<Self, String> {
+    pub fn new(context: LLVMContext, module: LLVMModule) -> Result<Self, String> {
         initialize_native()?;
         let jit = LLVMLLJIT::new_with_default_builder()?;
-        jit.add_module(context, llmod)?;
+        jit.add_module(context, module)?;
         Ok(SimpleJIT { jit })
     }
 
