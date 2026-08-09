@@ -54,8 +54,10 @@ use llvm_sys::orc2::{
 };
 
 use crate::llvm_sys::{
-    core::{LLVMModule, handle_err},
-    cstr_to_string, to_c_str,
+    core::{LLVMContext, LLVMModule, handle_err},
+    cstr_to_string,
+    target::initialize_native,
+    to_c_str,
 };
 
 bitflags! {
@@ -207,5 +209,63 @@ impl Drop for LLVMLLJIT {
                 panic!("Error disposing LLJIT: {}", err);
             }
         }
+    }
+}
+
+/// A convenience wrapper around [LLVMLLJIT].
+///
+/// It takes ownership of the [LLVMModule] to be compiled and its owning [LLVMContext].
+///
+/// ### Example
+/// ```
+/// use pliron_llvm::llvm_sys::core::{LLVMContext, LLVMMemoryBuffer, LLVMModule};
+/// use pliron_llvm::llvm_sys::lljit::SimpleJIT;
+///
+/// let context = LLVMContext::default();
+///
+/// let ir = r#"
+///   define i32 @add(i32 %a, i32 %b) {
+///       %sum = add i32 %a, %b
+///       ret i32 %sum
+///   }"#;
+///
+/// let module = LLVMModule::from_ir(&context, ir).unwrap();
+///
+/// let jit = SimpleJIT::new_from_module(context, module);
+/// let symbol = jit.lookup_symbol("add");
+///
+/// let adder = unsafe { std::mem::transmute::<u64, fn(i32, i32) -> i32>(symbol.addr) };
+/// assert_eq!(adder(2, 3), 5);
+/// ```
+pub struct SimpleJIT {
+    jit: LLVMLLJIT,
+    // Held only to keep the context alive as long as `jit` is.
+    #[allow(dead_code)]
+    context: LLVMContext,
+}
+
+/// A symbol address looked up in [SimpleJIT].
+pub struct JitSymbol<'jit> {
+    pub addr: u64,
+    _jit: &'jit SimpleJIT,
+}
+
+impl SimpleJIT {
+    /// Create a JIT from `llmod` and the `context` that contains it.
+    pub fn new_from_module(context: LLVMContext, llmod: LLVMModule) -> Self {
+        initialize_native().expect("Failed to initialize native target for LLVM execution");
+        let jit = LLVMLLJIT::new_with_default_builder().expect("Failed to create LLJIT");
+        jit.add_module(llmod).expect("Failed to add module to JIT");
+        SimpleJIT { jit, context }
+    }
+
+    /// Lookup a symbol in the JIT.
+    pub fn lookup_symbol<'jit>(&'jit self, symbol_name: &str) -> JitSymbol<'jit> {
+        let addr = self
+            .jit
+            .lookup_symbol(symbol_name)
+            .expect("Failed to lookup symbol");
+        assert!(addr != 0);
+        JitSymbol { addr, _jit: self }
     }
 }
