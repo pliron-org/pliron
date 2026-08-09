@@ -154,7 +154,7 @@ mod llvm_context {
     }
 
     impl LLVMContext {
-        pub(super) fn inner_ref(&self) -> LLVMContextRef {
+        pub(in crate::llvm_sys) fn inner_ref(&self) -> LLVMContextRef {
             self.0
         }
     }

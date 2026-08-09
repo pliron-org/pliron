@@ -26,7 +26,7 @@
 //!    let module = LLVMModule::from_ir_in_memory_buffer(&context, ir_mb)?;
 //!
 //!    let jit = LLVMLLJIT::new_with_default_builder()?;
-//!    jit.add_module(module)?;
+//!    jit.add_module(context, module)?;
 //!    // Add the Rust function as a symbol mapping
 //!    let rust_adder_addr = my_rust_adder as *const () as u64;
 //!    jit.add_symbol_mapping
@@ -45,12 +45,12 @@
 //! ```
 
 use bitflags::bitflags;
-use std::{mem::MaybeUninit, ptr};
+use core::{mem, ptr};
 
 use llvm_sys::orc2::{
     LLVMJITEvaluatedSymbol, LLVMJITSymbolFlags, LLVMJITSymbolGenericFlags, LLVMOrcAbsoluteSymbols,
-    LLVMOrcCSymbolMapPair, LLVMOrcCreateNewThreadSafeContext, LLVMOrcCreateNewThreadSafeModule,
-    LLVMOrcDisposeThreadSafeContext, LLVMOrcDisposeThreadSafeModule, lljit,
+    LLVMOrcCSymbolMapPair, LLVMOrcCreateNewThreadSafeContextFromLLVMContext,
+    LLVMOrcCreateNewThreadSafeModule, LLVMOrcDisposeThreadSafeContext, lljit,
 };
 
 use crate::llvm_sys::{
@@ -125,36 +125,33 @@ impl LLVMLLJIT {
     /// Create a new LLJIT instance with default settings.
     pub fn new_with_default_builder() -> Result<Self, String> {
         unsafe {
-            let mut jit = MaybeUninit::uninit();
+            let mut jit = mem::MaybeUninit::uninit();
             let err = lljit::LLVMOrcCreateLLJIT(jit.as_mut_ptr(), ptr::null_mut());
             handle_err(err)?;
             Ok(LLVMLLJIT(jit.assume_init()))
         }
     }
 
-    /// Add an [LLVMModule] to the JIT's main JITDylib, in its own thread-safe context.
-    pub fn add_module(&self, module: LLVMModule) -> Result<(), String> {
+    /// Add an [LLVMModule] (contained in [LLVMContext]) to the JIT's main JITDylib
+    pub fn add_module(&self, context: LLVMContext, module: LLVMModule) -> Result<(), String> {
         unsafe {
-            let tsctx = LLVMOrcCreateNewThreadSafeContext();
+            let tsctx = LLVMOrcCreateNewThreadSafeContextFromLLVMContext(context.inner_ref());
+            // Ownership of the context has been transferred to the thread-safe context
+            mem::forget(context);
             let tsm = LLVMOrcCreateNewThreadSafeModule(module.inner_ref(), tsctx);
             let main_jd = lljit::LLVMOrcLLJITGetMainJITDylib(self.0);
             let err = lljit::LLVMOrcLLJITAddLLVMIRModule(self.0, main_jd, tsm);
-            // The underlying LLVMContext will be kept alive by our ThreadSafeModule
-            // (See OrcV2CBindingsBasicUsage.c)
             LLVMOrcDisposeThreadSafeContext(tsctx);
             // Ownership of the module has been transferred to the JIT
-            std::mem::forget(module);
-            handle_err(err).inspect_err(|_| {
-                // Dispose of the ThreadSafeModule on error
-                LLVMOrcDisposeThreadSafeModule(tsm);
-            })
+            mem::forget(module);
+            handle_err(err)
         }
     }
 
     /// Lookup a symbol in the JIT.
     pub fn lookup_symbol(&self, name: &str) -> Result<u64, String> {
         unsafe {
-            let mut addr = MaybeUninit::uninit();
+            let mut addr = mem::MaybeUninit::uninit();
             let err = lljit::LLVMOrcLLJITLookup(self.0, addr.as_mut_ptr(), to_c_str(name).as_ptr());
             handle_err(err)?;
             Ok(addr.assume_init())
@@ -231,17 +228,14 @@ impl Drop for LLVMLLJIT {
 ///
 /// let module = LLVMModule::from_ir_in_str(&context, ir, None).unwrap();
 ///
-/// let jit = SimpleJIT::new_from_module(context, module);
-/// let symbol = jit.lookup_symbol("add");
+/// let jit = SimpleJIT::new(context, module).unwrap();
+/// let symbol = jit.lookup_symbol("add").unwrap();
 ///
 /// let adder = unsafe { std::mem::transmute::<u64, fn(i32, i32) -> i32>(symbol.addr) };
 /// assert_eq!(adder(2, 3), 5);
 /// ```
 pub struct SimpleJIT {
     jit: LLVMLLJIT,
-    // Held only to keep the context alive as long as `jit` is.
-    #[allow(dead_code)]
-    context: LLVMContext,
 }
 
 /// A symbol address looked up in [SimpleJIT].
@@ -252,20 +246,17 @@ pub struct JitSymbol<'jit> {
 
 impl SimpleJIT {
     /// Create a JIT from `llmod` and the `context` that contains it.
-    pub fn new_from_module(context: LLVMContext, llmod: LLVMModule) -> Self {
-        initialize_native().expect("Failed to initialize native target for LLVM execution");
-        let jit = LLVMLLJIT::new_with_default_builder().expect("Failed to create LLJIT");
-        jit.add_module(llmod).expect("Failed to add module to JIT");
-        SimpleJIT { jit, context }
+    pub fn new(context: LLVMContext, llmod: LLVMModule) -> Result<Self, String> {
+        initialize_native()?;
+        let jit = LLVMLLJIT::new_with_default_builder()?;
+        jit.add_module(context, llmod)?;
+        Ok(SimpleJIT { jit })
     }
 
     /// Lookup a symbol in the JIT.
-    pub fn lookup_symbol<'jit>(&'jit self, symbol_name: &str) -> JitSymbol<'jit> {
-        let addr = self
-            .jit
-            .lookup_symbol(symbol_name)
-            .expect("Failed to lookup symbol");
+    pub fn lookup_symbol<'jit>(&'jit self, symbol_name: &str) -> Result<JitSymbol<'jit>, String> {
+        let addr = self.jit.lookup_symbol(symbol_name)?;
         assert!(addr != 0);
-        JitSymbol { addr, _jit: self }
+        Ok(JitSymbol { addr, _jit: self })
     }
 }
