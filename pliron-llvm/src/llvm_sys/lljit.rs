@@ -45,7 +45,7 @@
 //! ```
 
 use bitflags::bitflags;
-use core::{mem, ptr};
+use core::{marker::PhantomData, mem, ops::Deref, ptr};
 
 use llvm_sys::{
     core::LLVMGetModuleContext,
@@ -229,31 +229,51 @@ impl Drop for LLVMLLJIT {
 /// let context = LLVMContext::default();
 ///
 /// let ir = r#"
+///   @sum_global = global i32 0
+///
 ///   define i32 @add(i32 %a, i32 %b) {
 ///       %sum = add i32 %a, %b
+///       store i32 %sum, ptr @sum_global
 ///       ret i32 %sum
 ///   }"#;
 ///
 /// let module = LLVMModule::from_ir_in_str(&context, ir, None).unwrap();
 ///
 /// let jit = SimpleJIT::new(context, module).unwrap();
-/// let symbol = jit.lookup_symbol("add").unwrap();
-///
-/// let adder = unsafe { std::mem::transmute::<u64, fn(i32, i32) -> i32>(symbol.addr) };
+/// let adder = unsafe { jit.lookup_symbol::<fn(i32, i32) -> i32>("add").unwrap() };
 /// assert_eq!(adder(2, 3), 5);
+///
+/// // The global is updated as a side effect of calling `add`, and can be
+/// // looked up (as a pointer to its storage).
+/// let sum_global = unsafe { jit.lookup_symbol::<*const i32>("sum_global").unwrap() };
+/// assert_eq!(unsafe { **sum_global }, 5);
 /// ```
 pub struct SimpleJIT {
     jit: LLVMLLJIT,
 }
 
-/// A symbol address looked up in [SimpleJIT].
-pub struct JitSymbol<'jit> {
-    pub addr: u64,
-    _jit: &'jit SimpleJIT,
+/// A symbol looked up in [SimpleJIT], typed as the function pointer `F`.
+///
+/// Borrows the [SimpleJIT] it was looked up from, so it can't outlive the JIT
+/// (and therefore can't outlive the compiled code it points into). Dereferences
+/// to `F`, so it can be called directly.
+pub struct JitSymbol<'jit, F: Copy> {
+    f: F,
+    _jit: PhantomData<&'jit SimpleJIT>,
+}
+
+impl<'jit, F: Copy> Deref for JitSymbol<'jit, F> {
+    type Target = F;
+
+    fn deref(&self) -> &F {
+        &self.f
+    }
 }
 
 impl SimpleJIT {
     /// Create a JIT from `llmod` and the `context` that contains it.
+    ///
+    /// See type documentation for examples.
     pub fn new(context: LLVMContext, llmod: LLVMModule) -> Result<Self, String> {
         initialize_native()?;
         let jit = LLVMLLJIT::new_with_default_builder()?;
@@ -261,10 +281,23 @@ impl SimpleJIT {
         Ok(SimpleJIT { jit })
     }
 
-    /// Lookup a symbol in the JIT.
-    pub fn lookup_symbol<'jit>(&'jit self, symbol_name: &str) -> Result<JitSymbol<'jit>, String> {
+    /// Lookup a symbol in the JIT and interpret it to be of type `F`.
+    ///
+    /// See type documentation for examples.
+    ///
+    /// # Safety
+    /// The type of the symbol must be correct.
+    pub unsafe fn lookup_symbol<'jit, T: Copy>(
+        &'jit self,
+        symbol_name: &str,
+    ) -> Result<JitSymbol<'jit, T>, String> {
+        const { assert!(mem::size_of::<T>() == mem::size_of::<u64>()) };
         let addr = self.jit.lookup_symbol(symbol_name)?;
         assert!(addr != 0);
-        Ok(JitSymbol { addr, _jit: self })
+        let f = unsafe { mem::transmute_copy::<u64, T>(&addr) };
+        Ok(JitSymbol {
+            f,
+            _jit: PhantomData,
+        })
     }
 }

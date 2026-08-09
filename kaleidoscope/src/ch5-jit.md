@@ -47,11 +47,12 @@ The public API for execution is `exec_fn`:
 Key parts of `exec_fn`:
 
 - `llvm_get_named_function` checks that the requested symbol exists in the generated module.
-- `llvm_get_param_types` and `llvm_get_return_type` are used to validate the function ABI as exactly one `i64` argument and an `i64` return value.
+- `llvm_get_param_types` and `llvm_get_return_type` are used to validate the function ABI as
+exactly one `i64` argument and an `i64` return value.
 - `SimpleJIT::new(llvm_ctx, llvm_module)` creates a simple JIT instance,
 wrapping over LLVM's LLJIT.
-- `lookup_symbol(name)` resolves the function entry address, returning a `JitSymbol` whose `addr` field holds the raw address.
-- `std::mem::transmute` casts `main_fn.addr` to `extern "C" fn(i64) -> i64`, then calls it.
+- `lookup_symbol(name)` resolves the function entry address, returning a `JitSymbol`.
+- Execute the JIT compiled function from its `JitSymbol`.
 
 If the function is missing, or has a different signature, `exec_fn` returns a
 structured `pliron::result::Error` instead of panicking.

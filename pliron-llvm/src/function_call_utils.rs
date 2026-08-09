@@ -262,8 +262,10 @@ mod tests {
 
         // Execute the LLVM IR using the JIT and check it runs without errors
         let jit = SimpleJIT::new(llvm_ctx, llvm_ir).expect("SimpleJIT creation failed");
-        let main_fn = jit.lookup_symbol("main").expect("main not found in JIT");
-        let main_fn = unsafe { core::mem::transmute::<u64, fn() -> u64>(main_fn.addr) };
+        let main_fn = unsafe {
+            jit.lookup_symbol::<fn() -> u64>("main")
+                .expect("main not found in JIT")
+        };
         let fp_ty_size = main_fn();
         assert_eq!(
             fp_ty_size, 8,

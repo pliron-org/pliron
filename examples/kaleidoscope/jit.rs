@@ -17,7 +17,7 @@ use pliron_llvm::{
             LLVMContext, LLVMModule, llvm_get_named_function, llvm_get_param_types,
             llvm_get_return_type, llvm_global_get_value_type, llvm_int_type_in_context,
         },
-        lljit::SimpleJIT,
+        lljit::{JitSymbol, SimpleJIT},
     },
     to_llvm_ir,
 };
@@ -75,10 +75,8 @@ pub fn exec_fn(src: &str, name: &str, arg: i64) -> Result<i64> {
     // JIT compile and execute the main function
     let lljit = SimpleJIT::new(llvm_ctx, llvm_module)
         .map_err(|e| input_error_noloc!("Failed to create JIT execution engine: {}", e))?;
-    let main_fn = lljit
-        .lookup_symbol(name)
+    let main_fn: JitSymbol<fn(i64) -> i64> = unsafe { lljit.lookup_symbol(name) }
         .map_err(|e| input_error_noloc!("Failed to find main function in JIT: {}", e))?;
-    let main_fn: extern "C" fn(i64) -> i64 = unsafe { std::mem::transmute(main_fn.addr) };
     Ok(main_fn(arg))
 }
 // ANCHOR_END: exec_fn
