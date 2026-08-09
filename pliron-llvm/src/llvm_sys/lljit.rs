@@ -229,7 +229,7 @@ impl Drop for LLVMLLJIT {
 ///       ret i32 %sum
 ///   }"#;
 ///
-/// let module = LLVMModule::from_str(&context, ir).unwrap();
+/// let module = LLVMModule::from_ir_in_str(&context, ir, None).unwrap();
 ///
 /// let jit = SimpleJIT::new_from_module(context, module);
 /// let symbol = jit.lookup_symbol("add");

@@ -2713,8 +2713,12 @@ mod llvm_module {
         }
 
         /// Parse IR from [str] into [LLVMModule]
-        pub fn from_str(context: &LLVMContext, ir: &str) -> Result<LLVMModule, String> {
-            let memory_buffer = LLVMMemoryBuffer::from_str(ir, "llmod");
+        pub fn from_ir_in_str(
+            context: &LLVMContext,
+            ir: &str,
+            module_name: Option<&str>,
+        ) -> Result<LLVMModule, String> {
+            let memory_buffer = LLVMMemoryBuffer::from_str(ir, module_name.unwrap_or("llmod"));
             Self::from_ir_in_memory_buffer(context, memory_buffer)
         }
 
