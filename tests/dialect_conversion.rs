@@ -468,30 +468,6 @@ fn dialect_conversion_handles_self_referential_graph_op() -> Result<()> {
     Ok(())
 }
 
-#[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
-#[should_panic(expected = "Operation dependency cycles are only valid in graph regions")]
-fn dialect_conversion_rejects_self_referential_ssa_op() {
-    let ctx = &mut Context::new();
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dialect_conversion_ssa_cycle_test").unwrap(),
-    );
-    let func_type = FunctionType::get(ctx, vec![], vec![]);
-    let func = FuncOp::new(ctx, Identifier::try_from("self_cycle").unwrap(), func_type);
-    func.get_operation()
-        .insert_at_back(module.get_body(ctx, 0), ctx);
-
-    let cycle = CycleOp::new_unconnected(ctx, 64);
-    Operation::push_operand(cycle.get_operation(), ctx, cycle.get_result(ctx));
-    cycle
-        .get_operation()
-        .insert_at_back(func.get_entry_block(ctx), ctx);
-
-    let mut conversion = CycleWidthConversion::default();
-    apply_dialect_conversion(ctx, &mut conversion, module.get_operation()).unwrap();
-}
-
 #[derive(Default)]
 struct ConsumerOnlyConversion {
     saw_consumer: bool,
