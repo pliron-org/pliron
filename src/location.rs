@@ -4,7 +4,10 @@
 //! Source location for different IR entities
 
 use alloc::{boxed::Box, string::String, vec::Vec};
-use core::fmt::Debug;
+use core::{
+    fmt::Debug,
+    hash::{Hash, Hasher},
+};
 
 use crate::{
     attribute::AttrObj,
@@ -120,6 +123,35 @@ pub enum Location {
     Unknown,
 }
 
+impl Hash for Location {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        core::mem::discriminant(self).hash(state);
+        match self {
+            Location::SrcPos { src, pos } => {
+                src.hash(state);
+                pos.line.hash(state);
+                pos.column.hash(state);
+            }
+            Location::Fused {
+                metadata,
+                locations,
+            } => {
+                metadata.hash(state);
+                locations.hash(state);
+            }
+            Location::Named { name, child_loc } => {
+                name.hash(state);
+                child_loc.hash(state);
+            }
+            Location::CallSite { callee, caller } => {
+                callee.hash(state);
+                caller.hash(state);
+            }
+            Location::Unknown => {}
+        }
+    }
+}
+
 impl Location {
     /// If the location is from exactly one source, get that source.
     pub fn source(&self) -> Option<Source> {
@@ -171,12 +203,12 @@ impl Printable for Location {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
             Self::SrcPos { src, pos } => {
-                write!(f, "{}: {}", src.disp(ctx), pos)
+                write!(f, "{}: {}", src.print(ctx, state), pos)
             }
             Self::Fused {
                 metadata,
@@ -184,19 +216,30 @@ impl Printable for Location {
             } => {
                 write!(f, "fused")?;
                 if let Some(metadata) = metadata {
-                    write!(f, "<{}>", metadata.disp(ctx))?;
+                    write!(f, "<{}>", metadata.print(ctx, state))?;
                 }
                 write!(
                     f,
                     "[{}]",
-                    list_with_sep(locations, printable::ListSeparator::CharSpace(',')).disp(ctx),
+                    list_with_sep(locations, printable::ListSeparator::CharSpace(','))
+                        .print(ctx, state),
                 )
             }
             Self::Named { name, child_loc } => {
-                write!(f, "name: \"{}\", loc: ({})", name, child_loc.disp(ctx))
+                write!(
+                    f,
+                    "name: \"{}\", loc: ({})",
+                    name,
+                    child_loc.print(ctx, state)
+                )
             }
             Self::CallSite { callee, caller } => {
-                write!(f, "callsite({} at {})", callee.disp(ctx), caller.disp(ctx))
+                write!(
+                    f,
+                    "callsite({} at {})",
+                    callee.print(ctx, state),
+                    caller.print(ctx, state)
+                )
             }
             Self::Unknown => write!(f, "?"),
         }

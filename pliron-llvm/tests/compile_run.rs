@@ -16,6 +16,11 @@ use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
     init_env_logger_for_tests,
+    irbuild::{
+        IRStatus,
+        cloning::IrMapping,
+        equivalence::{EqResult, IGNORE_LOC_NAMES, operation_eq, operation_hash},
+    },
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
     parsable::parse_from_file,
@@ -136,7 +141,6 @@ fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, P
     // Write the plir to a file.
     let tmp_dir = tempdir().unwrap();
     let plir_path = tmp_dir.path().join("output.plir");
-    // Write the plir to a file.
     std::fs::write(
         plir_path.clone(),
         pliron_module.get_operation().disp(ctx).to_string(),
@@ -159,9 +163,46 @@ fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, P
         }
     }
 
-    if let Err(err) = opts.run(parsed_res, ctx, &mut AnalysisManager::default()) {
-        eprintln!("Error during optimization: {}", err.disp(ctx));
-        panic!("Error during optimization");
+    assert_eq!(
+        operation_eq(
+            ctx,
+            &mut IrMapping::default(),
+            pliron_module.get_operation(),
+            parsed_res,
+            &IGNORE_LOC_NAMES,
+        ),
+        EqResult::Eq
+    );
+
+    let first_hash = operation_hash(ctx, pliron_module.get_operation(), &IGNORE_LOC_NAMES);
+    assert_eq! {
+        first_hash,
+        operation_hash(ctx, parsed_res, &IGNORE_LOC_NAMES)
+    }
+
+    match opts.run(parsed_res, ctx, &mut AnalysisManager::default()) {
+        Ok(pass_res) => {
+            assert_eq!(
+                pass_res.ir_changed == IRStatus::Unchanged,
+                operation_eq(
+                    ctx,
+                    &mut IrMapping::default(),
+                    pliron_module.get_operation(),
+                    parsed_res,
+                    &IGNORE_LOC_NAMES,
+                ) == EqResult::Eq,
+                "Pass reported IR unchanged but operations are not equal, or vice versa"
+            );
+            assert_eq!(
+                pass_res.ir_changed == IRStatus::Unchanged,
+                operation_hash(ctx, parsed_res, &IGNORE_LOC_NAMES) == first_hash,
+                "Pass reported IR unchanged but hash changed, or vice versa"
+            );
+        }
+        Err(err) => {
+            eprintln!("Error during optimization: {}", err.disp(ctx));
+            panic!("Error during optimization");
+        }
     }
 
     let parsed_module_op = Operation::get_op::<ModuleOp>(parsed_res, ctx)

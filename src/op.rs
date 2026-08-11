@@ -6,7 +6,7 @@
 //!
 //! See MLIR's [Op](https://mlir.llvm.org/docs/Tutorials/Toy/Ch-2/#op-vs-operation-using-mlir-operations).
 //!
-//! New [Op]s can be easily declared using the [def_op](pliron::derive::def_op)
+//! New [Op]s can be easily declared using the [pliron_op](pliron::derive::pliron_op)
 //! proc macro from the pliron-derive crate.
 //!
 //! Common semantics, API and behaviour of [Op]s are
@@ -435,17 +435,17 @@ pub fn canonical_syntax_print(
 
     if op.get_num_results() != 0 {
         let results = iter_with_sep(op.results(), sep);
-        write!(f, "{} = ", results.disp(ctx))?;
+        write!(f, "{} = ", results.print(ctx, state))?;
     }
 
     write!(
         f,
         "{} ({}) [{}] {}: <{}>",
-        opid.disp(ctx),
-        operands.disp(ctx),
-        successors.disp(ctx),
-        op.attributes.clone_skip_outlined().disp(ctx),
-        op_type.disp(ctx),
+        opid.print(ctx, state),
+        operands.print(ctx, state),
+        successors.print(ctx, state),
+        op.attributes.clone_skip_outlined().print(ctx, state),
+        op_type.print(ctx, state),
     )?;
 
     if op.num_regions() > 0 {

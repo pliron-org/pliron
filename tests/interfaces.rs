@@ -30,7 +30,6 @@ use pliron::{
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
     std_deps::sync::{LazyLock, Mutex},
-    storage_uniquer::TypeValueHash,
     r#type::{Type, TypeHandle, type_cast, verify_type},
     utils::trait_cast::any_to_trait,
     verify_err,
@@ -933,11 +932,7 @@ pub struct OulinePrintOnceTestAttr {
 #[attr_interface_impl]
 impl OutlinedAttr for OulinePrintOnceTestAttr {}
 #[attr_interface_impl]
-impl PrintOnceAttr for OulinePrintOnceTestAttr {
-    fn hash_attr(&self) -> TypeValueHash {
-        TypeValueHash::new(self)
-    }
-}
+impl PrintOnceAttr for OulinePrintOnceTestAttr {}
 
 #[test]
 #[cfg_attr(target_family = "wasm", wasm_bindgen_test)]

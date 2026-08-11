@@ -92,15 +92,15 @@ impl Printable for ConstantOp {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
             f,
             "{} = {} {}",
-            self.get_result(ctx).disp(ctx),
-            self.get_opid().disp(ctx),
-            self.get_value(ctx).disp(ctx)
+            self.get_result(ctx).print(ctx, state),
+            self.get_opid().print(ctx, state),
+            self.get_value(ctx).print(ctx, state)
         )
     }
 }

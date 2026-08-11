@@ -1,15 +1,40 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright (c) The pliron contributors
+
 //! IR equivalence, hashing etc
 //!
-//! The algorithm is two-pass, conceptually.
+//! Structural equivalence for [Operation]s, [Region]s and [BasicBlock]s.
+//!
+//! The equivalence algorithm is two-pass, conceptually.
 //! 1. Map all definitions (op results, block args and blocks).
 //! 2. Compare everything. Uses (operands / successors) are compared
 //!    through their mappings if not directly equal.
+//!
+//! Structural hashing for [Operation]s, [Region]s and [BasicBlock]s.
+//!
+//! Hash computation is coherent with equivalence. i.e., whenever equivalence
+//! returns [EqResult::Eq] for `lhs` and `rhs` (compared with an empty [IrMapping]
+//! and the same [IgnoreConfig]), the corresponding hash function returns the same
+//! hash for `lhs` and `rhs`. The converse isn't guaranteed: collisions are possible.
+//!
+//! If the IR being hashed is self contained (i.e., no free values or blocks),
+//! the hash is stable across builds and common platforms, making it suitable for use
+//! as a key for caching the IR. Hashes may vary across versions of pliron or rustc.
+
+use core::hash::{Hash, Hasher};
+
+use alloc::{
+    format,
+    string::{String, ToString},
+    vec::Vec,
+};
 
 use crate::{
     attribute::{AttrObj, Attribute, AttributeDict},
     basic_block::BasicBlock,
     common_traits::Named,
     context::{Context, Ptr},
+    debug_info::DebugInfoAttr,
     identifier::Identifier,
     irbuild::cloning::IrMapping,
     linked_list::ContainsLinkedList,
@@ -18,7 +43,8 @@ use crate::{
     printable::{Printable, State},
     region::Region,
     r#type::Typed,
-    utils::table::IMap,
+    utils::table::{FxHasher, HMap, IMap},
+    value::Value,
 };
 
 /// Configuration to decide what parts of the IR must be ignored.
@@ -30,7 +56,14 @@ pub struct IgnoreConfig {
     pub ignore_attr: fn(ctx: &Context, attr: &dyn Attribute) -> bool,
 }
 
+/// Ignore location information and [DebugInfoAttr]s.
+pub const IGNORE_LOC_NAMES: IgnoreConfig = IgnoreConfig {
+    ignore_loc: true,
+    ignore_attr: |_ctx, attr| attr.is::<DebugInfoAttr>(),
+};
+
 /// The result of equivalence checking b/w two IR entities
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EqResult {
     /// The two IR entities are equivalent.
     Eq,
@@ -187,24 +220,20 @@ fn op_eq_mapped(
         let lhs_ref = lhs.deref(ctx);
         let rhs_ref = rhs.deref(ctx);
 
-        // Operands must either be identical, or already mapped to one another.
+        // If an operand is mapped, its image must match. Otherwise, it must
+        // be identical (e.g. a free/external value shared by both sides).
         for (l_opd, r_opd) in lhs_ref.operands().zip(rhs_ref.operands()) {
-            if l_opd == r_opd {
-                continue;
-            }
-            if l_opd.get_type(ctx) != r_opd.get_type(ctx)
-                || mapper.lookup_value(l_opd) != Some(r_opd)
+            if mapper.lookup_value_or_default(l_opd) != r_opd
+                || l_opd.get_type(ctx) != r_opd.get_type(ctx)
             {
                 return EqResult::FirstNEQOps((lhs, rhs));
             }
         }
 
-        // Successors must either be identical, or already mapped to one another.
+        // If a successor is mapped, its image must match. Otherwise, it must
+        // be identical (e.g. a free/external block shared by both sides).
         for (l_succ, r_succ) in lhs_ref.successors().zip(rhs_ref.successors()) {
-            if l_succ == r_succ {
-                continue;
-            }
-            if mapper.lookup_block(l_succ) != Some(r_succ) {
+            if mapper.lookup_block_or_default(l_succ) != r_succ {
                 return EqResult::FirstNEQOps((lhs, rhs));
             }
         }
@@ -351,4 +380,249 @@ fn block_eq_map(
     }
 
     EqResult::Eq
+}
+
+struct HashNumbering {
+    values: HMap<Value, usize>,
+    blocks: HMap<Ptr<BasicBlock>, usize>,
+}
+
+impl HashNumbering {
+    fn new() -> Self {
+        HashNumbering {
+            values: HMap::default(),
+            blocks: HMap::default(),
+        }
+    }
+
+    /// Record that `v` is defined within the entity being hashed.
+    fn define_value(&mut self, v: Value) {
+        let id = self.values.len();
+        self.values.insert(v, id);
+    }
+
+    /// Record that `b` is defined within the entity being hashed.
+    fn define_block(&mut self, b: Ptr<BasicBlock>) {
+        let id = self.blocks.len();
+        self.blocks.insert(b, id);
+    }
+
+    /// Hash a use of `v`: its position if defined within the entity being
+    /// hashed, or its absolute identity otherwise.
+    fn hash_value(&self, v: Value, state: &mut FxHasher) {
+        match self.values.get(&v) {
+            Some(id) => (0u8, id).hash(state),
+            None => (1u8, v).hash(state),
+        }
+    }
+
+    /// Hash a use of `b` as a successor: its position if defined within the
+    /// entity being hashed, or its absolute identity otherwise.
+    fn hash_block(&self, b: Ptr<BasicBlock>, state: &mut FxHasher) {
+        match self.blocks.get(&b) {
+            Some(id) => (0u8, id).hash(state),
+            None => (1u8, b).hash(state),
+        }
+    }
+}
+
+/// Hash an [AttributeDict], ignoring those specified by `ignore_config`.
+fn attributes_hash(
+    ctx: &Context,
+    ignore_config: &IgnoreConfig,
+    attributes: &AttributeDict,
+    state: &mut FxHasher,
+) {
+    let is_relevant = |attr: &AttrObj| !(ignore_config.ignore_attr)(ctx, attr.as_ref());
+
+    let mut relevant: Vec<_> = attributes
+        .0
+        .iter()
+        .filter(|(_, attr)| is_relevant(attr))
+        .collect();
+    // Sort by key so that the hash doesn't depend on insertion order.
+    relevant.sort_by_key(|(k, _)| *k);
+
+    // Because attributes can contain Types, which are interned and cannot be hashed
+    // based on just their handle, we print the attributes and hash that instead.
+    let mut attr_string = String::new();
+    for (k, attr) in relevant {
+        attr_string.push_str(&format!("{}={},", k, attr.disp(ctx)));
+    }
+    attr_string.hash(state);
+}
+
+/// Hash components of an op that do not use or contain other IR entities,
+/// and define `op`'s results in `numbering`.
+fn hash_op_shell(
+    ctx: &Context,
+    numbering: &mut HashNumbering,
+    op: Ptr<Operation>,
+    ignore_config: &IgnoreConfig,
+    state: &mut FxHasher,
+) {
+    Operation::get_opid(op, ctx).hash(state);
+    {
+        let op_ref = op.deref(ctx);
+
+        // Although we hash each region, they may be empty, so this is necessary.
+        op_ref.num_regions().hash(state);
+
+        if !ignore_config.ignore_loc {
+            // Can't hash locations based on just their handle (interned file paths).
+            op_ref.loc().disp(ctx).to_string().hash(state);
+        }
+
+        attributes_hash(ctx, ignore_config, &op_ref.attributes, state);
+
+        for res in op_ref.results() {
+            // Types are interned and cannot be hashed based on just their handle,
+            // so we print the type and hash that instead.
+            res.get_type(ctx).disp(ctx).to_string().hash(state);
+        }
+    }
+
+    for res in op.deref(ctx).results() {
+        numbering.define_value(res);
+    }
+}
+
+/// Complete the hash of an op by hashing its operands, successors and nested regions.
+/// Does not hash components already hashed by [hash_op_shell].
+fn hash_op_full(
+    ctx: &Context,
+    numbering: &mut HashNumbering,
+    op: Ptr<Operation>,
+    ignore_config: &IgnoreConfig,
+    state: &mut FxHasher,
+) {
+    let num_regions = {
+        let op_ref = op.deref(ctx);
+
+        for opd in op_ref.operands() {
+            numbering.hash_value(opd, state);
+        }
+        for succ in op_ref.successors() {
+            numbering.hash_block(succ, state);
+        }
+        op_ref.num_regions()
+    };
+
+    for region_idx in 0..num_regions {
+        let region = op.deref(ctx).get_region(region_idx);
+        hash_blocks_full(
+            ctx,
+            numbering,
+            region.deref(ctx).iter(ctx),
+            ignore_config,
+            state,
+        );
+    }
+}
+
+/// Hash components of a block that do not use or contain other IR entities,
+/// and define `block` and its arguments in `numbering`.
+fn hash_block_shell(
+    ctx: &Context,
+    numbering: &mut HashNumbering,
+    block: Ptr<BasicBlock>,
+    ignore_config: &IgnoreConfig,
+    state: &mut FxHasher,
+) {
+    {
+        let block_ref = block.deref(ctx);
+
+        if !ignore_config.ignore_loc {
+            // Can't hash locations based on just their handle (interned file paths).
+            block_ref.loc().disp(ctx).to_string().hash(state);
+        }
+
+        attributes_hash(ctx, ignore_config, &block_ref.attributes, state);
+
+        for arg in block_ref.arguments() {
+            // Types are interned and cannot be hashed based on just their handle,
+            // so we print the type and hash that instead.
+            arg.get_type(ctx).disp(ctx).to_string().hash(state);
+        }
+    }
+
+    numbering.define_block(block);
+    for arg in block.deref(ctx).arguments() {
+        numbering.define_value(arg);
+    }
+}
+
+/// Hash a list of blocks, hashing the following components in order:
+/// 1. Every block's shell (attributes and arguments).
+/// 2. Components of every op (attributes, results etc) that don't depend on other IR entities.
+/// 3. Every op's operands, successors and nested regions.
+///
+/// The multi-pass structure ensures that any reference to a block or value
+/// defined anywhere in `blocks` (including forward references, since regions
+/// aren't required to have SSA dominance) is already numbered by the time
+/// it's hashed.
+fn hash_blocks_full(
+    ctx: &Context,
+    numbering: &mut HashNumbering,
+    blocks: impl Iterator<Item = Ptr<BasicBlock>> + Clone,
+    ignore_config: &IgnoreConfig,
+    state: &mut FxHasher,
+) {
+    for block in blocks.clone() {
+        hash_block_shell(ctx, numbering, block, ignore_config, state);
+    }
+
+    for block in blocks.clone() {
+        let ops: Vec<_> = block.deref(ctx).iter(ctx).collect();
+        for op in &ops {
+            hash_op_shell(ctx, numbering, *op, ignore_config, state);
+        }
+    }
+
+    for block in blocks {
+        for op in block.deref(ctx).iter(ctx) {
+            hash_op_full(ctx, numbering, op, ignore_config, state);
+        }
+    }
+}
+
+/// Compute a structural hash for `op`.
+pub fn operation_hash(ctx: &Context, op: Ptr<Operation>, ignore_config: &IgnoreConfig) -> u64 {
+    let mut numbering = HashNumbering::new();
+    let mut state = FxHasher::default();
+    hash_op_shell(ctx, &mut numbering, op, ignore_config, &mut state);
+    hash_op_full(ctx, &mut numbering, op, ignore_config, &mut state);
+    state.finish()
+}
+
+/// Compute a structural hash for `region`.
+pub fn region_hash(ctx: &Context, region: Ptr<Region>, ignore_config: &IgnoreConfig) -> u64 {
+    let mut numbering = HashNumbering::new();
+    let mut state = FxHasher::default();
+    hash_blocks_full(
+        ctx,
+        &mut numbering,
+        region.deref(ctx).iter(ctx),
+        ignore_config,
+        &mut state,
+    );
+    state.finish()
+}
+
+/// Compute a structural hash for `block`.
+pub fn basic_block_hash(
+    ctx: &Context,
+    block: Ptr<BasicBlock>,
+    ignore_config: &IgnoreConfig,
+) -> u64 {
+    let mut numbering = HashNumbering::new();
+    let mut state = FxHasher::default();
+    hash_blocks_full(
+        ctx,
+        &mut numbering,
+        core::iter::once(block),
+        ignore_config,
+        &mut state,
+    );
+    state.finish()
 }

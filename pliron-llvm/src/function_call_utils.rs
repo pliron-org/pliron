@@ -162,7 +162,7 @@ mod tests {
             compute_type_size_in_bytes, get_size_type, lookup_or_create_free_fn,
             lookup_or_create_malloc_fn,
         },
-        llvm_sys::{core::LLVMContext, lljit::LLVMLLJIT, target},
+        llvm_sys::{core::LLVMContext, lljit::SimpleJIT},
         ops::{CallOp, FuncOp, ReturnOp},
         to_llvm_ir::convert_module,
         types::FuncType,
@@ -261,14 +261,11 @@ mod tests {
         llvm_ir.verify().expect("Generated LLVM IR is invalid");
 
         // Execute the LLVM IR using the JIT and check it runs without errors
-        target::initialize_native().expect("Failed to initialize native target for JIT");
-        let jit = LLVMLLJIT::new_with_default_builder().expect("Failed to create LLJIT instance");
-        jit.add_module(llvm_ir)
-            .expect("Failed to add module to JIT");
-        let main_addr = jit
-            .lookup_symbol("main")
-            .expect("Failed to lookup 'main' symbol");
-        let main_fn = unsafe { core::mem::transmute::<u64, fn() -> u64>(main_addr) };
+        let jit = SimpleJIT::new(llvm_ctx, llvm_ir).expect("SimpleJIT creation failed");
+        let main_fn = unsafe {
+            jit.lookup_symbol::<fn() -> u64>("main")
+                .expect("main not found in JIT")
+        };
         let fp_ty_size = main_fn();
         assert_eq!(
             fp_ty_size, 8,

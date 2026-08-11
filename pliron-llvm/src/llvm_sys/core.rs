@@ -154,7 +154,7 @@ mod llvm_context {
     }
 
     impl LLVMContext {
-        pub(super) fn inner_ref(&self) -> LLVMContextRef {
+        pub(in crate::llvm_sys) fn inner_ref(&self) -> LLVMContextRef {
             self.0
         }
     }
@@ -2710,6 +2710,16 @@ mod llvm_module {
             Self(unsafe {
                 LLVMModuleCreateWithNameInContext(to_c_str(module_id).as_ptr(), context.inner_ref())
             })
+        }
+
+        /// Parse IR from [str] into [LLVMModule]
+        pub fn from_ir_in_str(
+            context: &LLVMContext,
+            ir: &str,
+            module_name: Option<&str>,
+        ) -> Result<LLVMModule, String> {
+            let memory_buffer = LLVMMemoryBuffer::from_str(ir, module_name.unwrap_or("llmod"));
+            Self::from_ir_in_memory_buffer(context, memory_buffer)
         }
 
         /// Parse IR in memory buffer to [LLVMModule]

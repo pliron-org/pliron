@@ -17,7 +17,7 @@ use pliron_llvm::{
             LLVMContext, LLVMModule, llvm_get_named_function, llvm_get_param_types,
             llvm_get_return_type, llvm_global_get_value_type, llvm_int_type_in_context,
         },
-        target::initialize_native,
+        lljit::{JitSymbol, SimpleJIT},
     },
     to_llvm_ir,
 };
@@ -50,8 +50,6 @@ fn lower_to_llvm_ir(src: &str, llvm_ctx: &LLVMContext) -> Result<LLVMModule> {
 /// The function must have the signature `fn(i64) -> i64`
 // ANCHOR: exec_fn
 pub fn exec_fn(src: &str, name: &str, arg: i64) -> Result<i64> {
-    initialize_native()
-        .map_err(|e| input_error_noloc!("Failed to initialize native target: {}", e))?;
     let llvm_ctx = LLVMContext::default();
     let llvm_module = lower_to_llvm_ir(src, &llvm_ctx)?;
 
@@ -75,16 +73,10 @@ pub fn exec_fn(src: &str, name: &str, arg: i64) -> Result<i64> {
     // println!("Generated LLVM IR:\n{}", llvm_module.to_string());
 
     // JIT compile and execute the main function
-    let lljit = pliron_llvm::llvm_sys::lljit::LLVMLLJIT::new_with_default_builder()
+    let lljit = SimpleJIT::new(llvm_ctx, llvm_module)
         .map_err(|e| input_error_noloc!("Failed to create JIT execution engine: {}", e))?;
-    lljit
-        .add_module(llvm_module)
-        .map_err(|e| input_error_noloc!("Failed to add module to JIT: {}", e))?;
-    let main_fn = lljit
-        .lookup_symbol(name)
+    let main_fn: JitSymbol<fn(i64) -> i64> = unsafe { lljit.lookup_symbol(name) }
         .map_err(|e| input_error_noloc!("Failed to find main function in JIT: {}", e))?;
-
-    let main_fn: extern "C" fn(i64) -> i64 = unsafe { std::mem::transmute(main_fn) };
     Ok(main_fn(arg))
 }
 // ANCHOR_END: exec_fn

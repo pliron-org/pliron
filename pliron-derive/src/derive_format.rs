@@ -674,7 +674,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 if op.get_num_results() > 0 {
                     let sep = ::pliron::printable::ListSeparator::CharSpace(',');
                     let results = iter_with_sep(op.results(), sep);
-                    write!(fmt, "{} = ", results.disp(ctx))?;
+                    write!(fmt, "{} = ", results.print(ctx, state))?;
                 }
                 write!(fmt, "{} ", self.get_opid())?;
             });

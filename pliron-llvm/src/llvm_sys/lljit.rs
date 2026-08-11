@@ -26,7 +26,7 @@
 //!    let module = LLVMModule::from_ir_in_memory_buffer(&context, ir_mb)?;
 //!
 //!    let jit = LLVMLLJIT::new_with_default_builder()?;
-//!    jit.add_module(module)?;
+//!    jit.add_module(context, module)?;
 //!    // Add the Rust function as a symbol mapping
 //!    let rust_adder_addr = my_rust_adder as *const () as u64;
 //!    jit.add_symbol_mapping
@@ -45,17 +45,23 @@
 //! ```
 
 use bitflags::bitflags;
-use std::{mem::MaybeUninit, ptr};
+use core::{marker::PhantomData, mem, ops::Deref, ptr};
 
-use llvm_sys::orc2::{
-    LLVMJITEvaluatedSymbol, LLVMJITSymbolFlags, LLVMJITSymbolGenericFlags, LLVMOrcAbsoluteSymbols,
-    LLVMOrcCSymbolMapPair, LLVMOrcCreateNewThreadSafeContext, LLVMOrcCreateNewThreadSafeModule,
-    LLVMOrcDisposeThreadSafeContext, LLVMOrcDisposeThreadSafeModule, lljit,
+use llvm_sys::{
+    core::LLVMGetModuleContext,
+    orc2::{
+        LLVMJITEvaluatedSymbol, LLVMJITSymbolFlags, LLVMJITSymbolGenericFlags,
+        LLVMOrcAbsoluteSymbols, LLVMOrcCSymbolMapPair,
+        LLVMOrcCreateNewThreadSafeContextFromLLVMContext, LLVMOrcCreateNewThreadSafeModule,
+        LLVMOrcDisposeThreadSafeContext, lljit,
+    },
 };
 
 use crate::llvm_sys::{
-    core::{LLVMModule, handle_err},
-    cstr_to_string, to_c_str,
+    core::{LLVMContext, LLVMModule, handle_err},
+    cstr_to_string,
+    target::initialize_native,
+    to_c_str,
 };
 
 bitflags! {
@@ -117,42 +123,46 @@ impl From<JITSymbolGenericFlags> for u8 {
     }
 }
 
+/// Wrapper around LLVM's LLJIT.
+///
+/// For simple uses, considering using [SimpleJIT].
 pub struct LLVMLLJIT(lljit::LLVMOrcLLJITRef);
 
 impl LLVMLLJIT {
     /// Create a new LLJIT instance with default settings.
     pub fn new_with_default_builder() -> Result<Self, String> {
         unsafe {
-            let mut jit = MaybeUninit::uninit();
+            let mut jit = mem::MaybeUninit::uninit();
             let err = lljit::LLVMOrcCreateLLJIT(jit.as_mut_ptr(), ptr::null_mut());
             handle_err(err)?;
             Ok(LLVMLLJIT(jit.assume_init()))
         }
     }
 
-    /// Add an [LLVMModule] to the JIT's main JITDylib, in its own thread-safe context.
-    pub fn add_module(&self, module: LLVMModule) -> Result<(), String> {
+    /// Add an [LLVMModule] (contained in [LLVMContext]) to the JIT's main JITDylib
+    pub fn add_module(&self, context: LLVMContext, module: LLVMModule) -> Result<(), String> {
         unsafe {
-            let tsctx = LLVMOrcCreateNewThreadSafeContext();
+            assert_eq!(
+                context.inner_ref(),
+                LLVMGetModuleContext(module.inner_ref())
+            );
+            let tsctx = LLVMOrcCreateNewThreadSafeContextFromLLVMContext(context.inner_ref());
+            // Ownership of the context has been transferred to the thread-safe context
+            mem::forget(context);
             let tsm = LLVMOrcCreateNewThreadSafeModule(module.inner_ref(), tsctx);
             let main_jd = lljit::LLVMOrcLLJITGetMainJITDylib(self.0);
             let err = lljit::LLVMOrcLLJITAddLLVMIRModule(self.0, main_jd, tsm);
-            // The underlying LLVMContext will be kept alive by our ThreadSafeModule
-            // (See OrcV2CBindingsBasicUsage.c)
             LLVMOrcDisposeThreadSafeContext(tsctx);
             // Ownership of the module has been transferred to the JIT
-            std::mem::forget(module);
-            handle_err(err).inspect_err(|_| {
-                // Dispose of the ThreadSafeModule on error
-                LLVMOrcDisposeThreadSafeModule(tsm);
-            })
+            mem::forget(module);
+            handle_err(err)
         }
     }
 
     /// Lookup a symbol in the JIT.
     pub fn lookup_symbol(&self, name: &str) -> Result<u64, String> {
         unsafe {
-            let mut addr = MaybeUninit::uninit();
+            let mut addr = mem::MaybeUninit::uninit();
             let err = lljit::LLVMOrcLLJITLookup(self.0, addr.as_mut_ptr(), to_c_str(name).as_ptr());
             handle_err(err)?;
             Ok(addr.assume_init())
@@ -207,5 +217,90 @@ impl Drop for LLVMLLJIT {
                 panic!("Error disposing LLJIT: {}", err);
             }
         }
+    }
+}
+
+/// A convenience wrapper around [LLVMLLJIT].
+///
+/// It takes ownership of the [LLVMModule] to be compiled and its owning [LLVMContext].
+///
+/// ### Example
+/// ```
+/// use pliron_llvm::llvm_sys::core::{LLVMContext, LLVMMemoryBuffer, LLVMModule};
+/// use pliron_llvm::llvm_sys::lljit::SimpleJIT;
+///
+/// let context = LLVMContext::default();
+///
+/// let ir = r#"
+///   @sum_global = global i32 0
+///
+///   define i32 @add(i32 %a, i32 %b) {
+///       %sum = add i32 %a, %b
+///       store i32 %sum, ptr @sum_global
+///       ret i32 %sum
+///   }"#;
+///
+/// let module = LLVMModule::from_ir_in_str(&context, ir, None).unwrap();
+///
+/// let jit = SimpleJIT::new(context, module).unwrap();
+/// let adder = unsafe { jit.lookup_symbol::<fn(i32, i32) -> i32>("add").unwrap() };
+/// assert_eq!(adder(2, 3), 5);
+///
+/// // The global is updated as a side effect of calling `add`, and can be
+/// // looked up (as a pointer to its storage).
+/// let sum_global = unsafe { jit.lookup_symbol::<*const i32>("sum_global").unwrap() };
+/// assert_eq!(unsafe { **sum_global }, 5);
+/// ```
+pub struct SimpleJIT {
+    jit: LLVMLLJIT,
+}
+
+/// A symbol looked up in [SimpleJIT], typed as the function pointer `F`.
+///
+/// Borrows the [SimpleJIT] it was looked up from, so it can't outlive the JIT
+/// (and therefore can't outlive the compiled code it points into). Dereferences
+/// to `F`, so it can be called directly.
+pub struct JitSymbol<'jit, F: Copy> {
+    f: F,
+    _jit: PhantomData<&'jit SimpleJIT>,
+}
+
+impl<'jit, F: Copy> Deref for JitSymbol<'jit, F> {
+    type Target = F;
+
+    fn deref(&self) -> &F {
+        &self.f
+    }
+}
+
+impl SimpleJIT {
+    /// Create a JIT from `module` and the `context` that contains it.
+    ///
+    /// See type documentation for examples.
+    pub fn new(context: LLVMContext, module: LLVMModule) -> Result<Self, String> {
+        initialize_native()?;
+        let jit = LLVMLLJIT::new_with_default_builder()?;
+        jit.add_module(context, module)?;
+        Ok(SimpleJIT { jit })
+    }
+
+    /// Lookup a symbol in the JIT and interpret it to be of type `F`.
+    ///
+    /// See type documentation for examples.
+    ///
+    /// # Safety
+    /// The type of the symbol must be correct.
+    pub unsafe fn lookup_symbol<'jit, T: Copy>(
+        &'jit self,
+        symbol_name: &str,
+    ) -> Result<JitSymbol<'jit, T>, String> {
+        const { assert!(mem::size_of::<T>() == mem::size_of::<u64>()) };
+        let addr = self.jit.lookup_symbol(symbol_name)?;
+        assert!(addr != 0);
+        let f = unsafe { mem::transmute_copy::<u64, T>(&addr) };
+        Ok(JitSymbol {
+            f,
+            _jit: PhantomData,
+        })
     }
 }

@@ -1,9 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Tests for IR cloning ([pliron::irbuild::cloning]) and equivalence
-//! ([pliron::irbuild::equivalence]). The two are exercised together where it
-//! makes sense: a clone must always be equivalent to its original.
+//! Tests for IR cloning ([pliron::irbuild::cloning]) and equivalence/hashing
+//! ([pliron::irbuild::equivalence]). These are exercised together where it
+//! makes sense: a clone must always be equivalent (and hash equal) to its
+//! original, and a hash must agree with equivalence wherever the two are
+//! checked side by side.
 
 use common::{ConstantOp, ReturnOp, const_ret_in_mod};
 use pliron::{
@@ -24,7 +26,10 @@ use pliron::{
     identifier::Identifier,
     irbuild::{
         cloning::{IrMapping, clone_blocks_into, clone_operation},
-        equivalence::{EqResult, IgnoreConfig, basic_block_eq, operation_eq, region_eq},
+        equivalence::{
+            EqResult, IgnoreConfig, basic_block_eq, basic_block_hash, operation_eq, operation_hash,
+            region_eq, region_hash,
+        },
         listener::{DummyListener, Recorder, RecorderEvent},
         rewriter::IRRewriter,
     },
@@ -468,6 +473,12 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
         basic_block_eq(ctx, &mut IrMapping::new(), block_b, b2, &ignore),
     );
 
+    // B and its clone must hash the same too
+    assert_eq!(
+        basic_block_hash(ctx, block_b, &ignore),
+        basic_block_hash(ctx, b2, &ignore),
+    );
+
     Ok(())
 }
 
@@ -545,6 +556,31 @@ fn clone_is_equivalent_to_original() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn clone_hashes_equal_to_original() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
+
+    let mut rewriter = IRRewriter::<DummyListener>::default();
+    let cloned_func = clone_operation(
+        func.get_operation(),
+        ctx,
+        &mut rewriter,
+        &mut IrMapping::new(),
+    );
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_eq!(
+        operation_hash(ctx, func.get_operation(), &ignore),
+        operation_hash(ctx, cloned_func, &ignore),
+    );
+
+    Ok(())
+}
+
 /// Two structurally identical functions, built independently, must be are equivalent.
 #[test]
 fn equivalent_functions_with_a_forward_branch_are_equal() -> Result<()> {
@@ -587,6 +623,29 @@ fn equivalent_functions_with_a_forward_branch_are_equal() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn equivalent_functions_hash_equal() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, _) = branch_and_return_fn(ctx, "m2", 7)?;
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+
+    assert_eq!(
+        operation_hash(ctx, func1.get_operation(), &ignore),
+        operation_hash(ctx, func2.get_operation(), &ignore),
+    );
+    assert_eq!(
+        region_hash(ctx, func1.get_region(ctx), &ignore),
+        region_hash(ctx, func2.get_region(ctx), &ignore),
+    );
+
+    Ok(())
+}
+
 /// Check that an attribute difference deep down is flagged.
 #[test]
 fn differing_constant_value_is_not_equivalent() -> Result<()> {
@@ -606,6 +665,24 @@ fn differing_constant_value_is_not_equivalent() -> Result<()> {
         func2.get_operation(),
         &ignore,
     ));
+
+    Ok(())
+}
+
+#[test]
+fn differing_constant_value_changes_hash() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, _) = branch_and_return_fn(ctx, "m2", 9)?;
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_ne!(
+        operation_hash(ctx, func1.get_operation(), &ignore),
+        operation_hash(ctx, func2.get_operation(), &ignore),
+    );
 
     Ok(())
 }
@@ -644,6 +721,211 @@ fn region_and_block_mismatches_report_their_own_variant() -> Result<()> {
         matches!(result, EqResult::FirstNEQBlocks(_)),
         "an argument-count mismatch should be reported at the block level"
     );
+
+    Ok(())
+}
+
+#[test]
+fn structural_mismatches_change_hash() -> Result<()> {
+    let ctx = &mut Context::new();
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+
+    // Differing number of blocks in the region.
+    let single_block_func = const_ret_in_mod(ctx).map(|(_, f, _, _)| f)?;
+    let (branching_func, _) = branch_and_return_fn(ctx, "m1", 7)?;
+    assert_ne!(
+        region_hash(ctx, single_block_func.get_region(ctx), &ignore),
+        region_hash(ctx, branching_func.get_region(ctx), &ignore),
+    );
+
+    // Differing number of block arguments.
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+    let with_arg = BasicBlock::new(ctx, None, vec![i64_ty.into()]);
+    let without_arg = BasicBlock::new(ctx, None, vec![]);
+    assert_ne!(
+        basic_block_hash(ctx, with_arg, &ignore),
+        basic_block_hash(ctx, without_arg, &ignore),
+    );
+
+    Ok(())
+}
+
+/// A block that only refers to itself (its own argument, no successors) hashes
+/// equal across independently-built instances.
+#[test]
+fn self_contained_blocks_hash_equal() -> Result<()> {
+    let ctx = &mut Context::new();
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+
+    let make_block = |ctx: &mut Context| -> Ptr<BasicBlock> {
+        let block = BasicBlock::new(ctx, None, vec![i64_ty.into()]);
+        let arg = block.deref(ctx).get_argument(0);
+        ReturnOp::new(ctx, arg)
+            .get_operation()
+            .insert_at_back(block, ctx);
+        block
+    };
+    let block1 = make_block(ctx);
+    let block2 = make_block(ctx);
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_eq!(
+        basic_block_hash(ctx, block1, &ignore),
+        basic_block_hash(ctx, block2, &ignore),
+    );
+
+    Ok(())
+}
+
+/// The hashing algorithm doesn't explicitly count the number of blocks
+/// in a region or operands / results in an operation etc.
+/// This test is to validate that the hash is still sensitive to these differences.
+#[test]
+fn hash_distinguishes_trivial_extra_items() -> Result<()> {
+    let ctx = &mut Context::new();
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+
+    for ignore_loc in [false, true] {
+        let ignore = IgnoreConfig {
+            ignore_loc,
+            ignore_attr: never_ignore,
+        };
+
+        // An op with no regions vs. one region that has no blocks.
+        let no_region = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let empty_region = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_region, &ignore),
+            operation_hash(ctx, empty_region, &ignore),
+            "ignore_loc={ignore_loc}: 0 regions vs. 1 empty region"
+        );
+
+        // A region with no blocks vs. one with a single, entirely trivial block.
+        let one_block_op = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        let one_block_region = one_block_op.deref(ctx).get_region(0);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(one_block_region, ctx);
+        assert_ne!(
+            operation_hash(ctx, empty_region, &ignore),
+            operation_hash(ctx, one_block_op, &ignore),
+            "ignore_loc={ignore_loc}: empty region vs. region with one empty block"
+        );
+
+        // One trivial block vs. two, both entirely trivial.
+        let two_block_op = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            1,
+        );
+        let two_block_region = two_block_op.deref(ctx).get_region(0);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(two_block_region, ctx);
+        BasicBlock::new(ctx, None, vec![]).insert_at_back(two_block_region, ctx);
+        assert_ne!(
+            operation_hash(ctx, one_block_op, &ignore),
+            operation_hash(ctx, two_block_op, &ignore),
+            "ignore_loc={ignore_loc}: one empty block vs. two empty blocks"
+        );
+
+        // No operands vs. one (an external value).
+        let val = ConstantOp::new(ctx, 7).get_result(ctx);
+        let no_operand = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_operand = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![val],
+            vec![],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_operand, &ignore),
+            operation_hash(ctx, one_operand, &ignore),
+            "ignore_loc={ignore_loc}: 0 operands vs. 1 operand"
+        );
+
+        // No successors vs. one.
+        let target = BasicBlock::new(ctx, None, vec![]);
+        let no_succ = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_succ = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![target],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_succ, &ignore),
+            operation_hash(ctx, one_succ, &ignore),
+            "ignore_loc={ignore_loc}: 0 successors vs. 1 successor"
+        );
+
+        // No results vs. one.
+        let no_result = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![],
+            0,
+        );
+        let one_result = Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![i64_ty.into()],
+            vec![],
+            vec![],
+            0,
+        );
+        assert_ne!(
+            operation_hash(ctx, no_result, &ignore),
+            operation_hash(ctx, one_result, &ignore),
+            "ignore_loc={ignore_loc}: 0 results vs. 1 result"
+        );
+    }
 
     Ok(())
 }
@@ -694,6 +976,163 @@ fn ignore_config_skips_location_and_chosen_attributes() -> Result<()> {
         func2.get_operation(),
         &ignore_neither,
     ));
+
+    Ok(())
+}
+
+/// Test [IgnoreConfig] hashing behaviour.
+#[test]
+fn ignore_config_affects_hash() -> Result<()> {
+    let ctx = &mut Context::new();
+    let (func1, const1) = branch_and_return_fn(ctx, "m1", 7)?;
+    let (func2, const2) = branch_and_return_fn(ctx, "m2", 9)?;
+
+    const1.deref_mut(ctx).set_loc(Location::Named {
+        name: "one".into(),
+        child_loc: Box::new(Location::Unknown),
+    });
+    const2.deref_mut(ctx).set_loc(Location::Named {
+        name: "two".into(),
+        child_loc: Box::new(Location::Unknown),
+    });
+
+    // Ignoring both the location and the (only) attribute in play: equal hash.
+    let ignore_both = IgnoreConfig {
+        ignore_loc: true,
+        ignore_attr: ignore_integer_attrs,
+    };
+    assert_eq!(
+        operation_hash(ctx, func1.get_operation(), &ignore_both),
+        operation_hash(ctx, func2.get_operation(), &ignore_both),
+    );
+
+    // Ignoring neither: the location (and attribute) differences surface.
+    let ignore_neither = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    assert_ne!(
+        operation_hash(ctx, func1.get_operation(), &ignore_neither),
+        operation_hash(ctx, func2.get_operation(), &ignore_neither),
+    );
+
+    Ok(())
+}
+
+/// Check preference for an existing mapping over literal identity.
+/// We build, and compare lhs against rhs:
+///
+/// ```text
+///   lhs             rhs
+///   X = const 1     Y = const 1
+///   P = return X    Q = return X
+/// ```
+///
+/// Assert that `operation_eq(P, Q)` is `false`.
+/// When P, Q are checked, the mapper already has X -> Y,
+/// and that mapping must be respected, even though P and Q
+/// both refer to the same literal X.
+#[test]
+fn eq_mapped_prefers_existing_mapping_operand() -> Result<()> {
+    let ctx = &mut Context::new();
+
+    let x = ConstantOp::new(ctx, 1);
+    let y = ConstantOp::new(ctx, 1);
+    let p = ReturnOp::new(ctx, x.get_result(ctx));
+    let q = ReturnOp::new(ctx, x.get_result(ctx));
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+
+    assert_equivalent(
+        ctx,
+        operation_eq(
+            ctx,
+            &mut mapper,
+            x.get_operation(),
+            y.get_operation(),
+            &ignore,
+        ),
+    );
+    assert_eq!(
+        mapper.lookup_value(x.get_result(ctx)),
+        Some(y.get_result(ctx))
+    );
+
+    assert_not_equivalent(operation_eq(
+        ctx,
+        &mut mapper,
+        p.get_operation(),
+        q.get_operation(),
+        &ignore,
+    ));
+
+    Ok(())
+}
+
+/// Check for preference for an existing mapping over literal identity.
+/// We build, and compare lhs against rhs:
+///
+/// ```text
+///   lhs           rhs
+///   X: br -> X    Y: br -> Y
+///   P: br -> X    Q: br -> X
+/// ```
+///
+/// Assert that `basic_block_eq(P, Q)` is `false`.
+/// When P, Q are checked, the mapper already has X -> Y,
+/// and that mapping must be respected, even though P and Q
+/// both refer to the same literal X.
+#[test]
+fn eq_mapped_prefers_existing_mapping_successor() -> Result<()> {
+    let ctx = &mut Context::new();
+    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let func_ty = FunctionType::get(ctx, vec![], vec![]);
+    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    module.append_operation(ctx, func.get_operation(), 0);
+    let region = func.get_region(ctx);
+
+    let branch_to = |ctx: &mut Context, from: Ptr<BasicBlock>, to: Ptr<BasicBlock>| {
+        Operation::new(
+            ctx,
+            BranchOp::get_concrete_op_info(),
+            vec![],
+            vec![],
+            vec![to],
+            0,
+        )
+        .insert_at_back(from, ctx);
+    };
+
+    let block_x = func.get_entry_block(ctx);
+    let block_y = BasicBlock::new(ctx, None, vec![]);
+    block_y.insert_at_back(region, ctx);
+    branch_to(ctx, block_x, block_x);
+    branch_to(ctx, block_y, block_y);
+
+    let block_p = BasicBlock::new(ctx, None, vec![]);
+    block_p.insert_at_back(region, ctx);
+    let block_q = BasicBlock::new(ctx, None, vec![]);
+    block_q.insert_at_back(region, ctx);
+    branch_to(ctx, block_p, block_x);
+    branch_to(ctx, block_q, block_x);
+
+    let ignore = IgnoreConfig {
+        ignore_loc: false,
+        ignore_attr: never_ignore,
+    };
+    let mut mapper = IrMapping::new();
+
+    assert_equivalent(
+        ctx,
+        basic_block_eq(ctx, &mut mapper, block_x, block_y, &ignore),
+    );
+    assert_eq!(mapper.lookup_block(block_x), Some(block_y));
+
+    assert_not_equivalent(basic_block_eq(ctx, &mut mapper, block_p, block_q, &ignore));
 
     Ok(())
 }

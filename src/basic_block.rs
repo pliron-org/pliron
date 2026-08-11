@@ -452,8 +452,8 @@ impl Printable for BasicBlock {
                 self.args.iter().map(|arg| {
                     format!(
                         "{}: {}",
-                        arg.as_value(self.self_ptr).disp(ctx),
-                        arg.get_type().disp(ctx)
+                        arg.as_value(self.self_ptr).print(ctx, state),
+                        arg.get_type().print(ctx, state)
                     )
                 }),
                 ListSeparator::CharSpace(',')

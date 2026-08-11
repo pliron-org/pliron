@@ -26,7 +26,7 @@ impl Printable for OpInsertionPoint {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
@@ -45,10 +45,10 @@ impl Printable for OpInsertionPoint {
                 )
             }
             OpInsertionPoint::AfterOperation(op) => {
-                write!(f, "After Operation {}", op.disp(ctx))
+                write!(f, "After Operation {}", op.print(ctx, state))
             }
             OpInsertionPoint::BeforeOperation(op) => {
-                write!(f, "Before Operation {}", op.disp(ctx))
+                write!(f, "Before Operation {}", op.print(ctx, state))
             }
         }
     }

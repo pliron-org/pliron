@@ -102,10 +102,10 @@ impl Printable for Dialect {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "{}", self.name.disp(ctx))
+        write!(f, "{}", self.name.print(ctx, state))
     }
 }
 

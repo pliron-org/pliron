@@ -10,7 +10,7 @@
 //! They are heavy (i.e., not just a pointer, handle or reference),
 //! making clones potentially expensive.
 //!
-//! The [def_attribute](pliron::derive::def_attribute) proc macro from the
+//! The [pliron_attr](pliron::derive::pliron_attr) proc macro from the
 //! pliron-derive create can be used to implement [Attribute] for a rust type.
 //!
 //! Common semantics, API and behaviour of [Attribute]s are
@@ -42,6 +42,7 @@
 use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{Debug, Display},
+    hash::{Hash, Hasher},
     ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
@@ -64,6 +65,7 @@ use crate::{
     printable::{self, Printable},
     result::Result,
     std_deps::sync::LazyLock,
+    storage_uniquer::TypeValueHash,
     utils::{
         table::{HMap, SmallMap},
         trait_cast::impls_trait_static,
@@ -81,10 +83,10 @@ impl<'a> Printable for AttributeDictKeyVal<'a> {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "{}: {}", self.key, self.val.disp(ctx))
+        write!(f, "{}: {}", self.key, self.val.print(ctx, state))
     }
 }
 
@@ -108,7 +110,7 @@ impl Printable for AttributeDict {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         write!(
@@ -120,7 +122,7 @@ impl Printable for AttributeDict {
                     .map(|(key, val)| AttributeDictKeyVal { key, val }),
                 printable::ListSeparator::CharSpace(','),
             )
-            .disp(ctx)
+            .print(ctx, state)
         )
     }
 }
@@ -145,6 +147,15 @@ pub type AttributeDictContainer = SmallMap<Identifier, AttrObj, 1>;
 /// A dictionary of attributes, mapping keys to attribute objects.
 #[derive(Default, Debug, Clone, PartialEq, Eq)]
 pub struct AttributeDict(pub AttributeDictContainer);
+
+impl Hash for AttributeDict {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        // Sort by key so that the hash doesn't depend on insertion order.
+        let mut entries: Vec<_> = self.0.iter().collect();
+        entries.sort_by_key(|(k, _)| *k);
+        entries.hash(state);
+    }
+}
 
 impl AttributeDict {
     /// Get reference to attribute value that is mapped to key `k`.
@@ -193,6 +204,10 @@ impl From<AttributeDictContainer> for AttributeDict {
 ///
 /// See [module](crate::attribute) documentation for more information.
 pub trait Attribute: Printable + Verify + Downcast + Sync + Send + DynClone + Debug {
+    /// Compute and get the hash for this instance of Self.
+    /// Hash collisions can be a possibility.
+    fn hash_attr(&self) -> TypeValueHash;
+
     /// Is self equal to an other Attribute?
     fn eq_attr(&self, other: &dyn Attribute) -> bool;
 
@@ -244,6 +259,12 @@ impl<T: Attribute> From<T> for AttrObj {
 }
 
 impl Eq for AttrObj {}
+
+impl Hash for AttrObj {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u64(self.hash_attr().into());
+    }
+}
 
 impl Printable for AttrObj {
     fn fmt(

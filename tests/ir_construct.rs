@@ -14,7 +14,7 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    debug_info::{get_block_arg_name, get_operation_result_name},
+    debug_info::{erase_given_names, get_block_arg_name, get_operation_result_name},
     derive::pliron_op,
     dict_key,
     graph::walkers::{
@@ -1683,6 +1683,41 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         !5 = @[<in-memory>: line: 2, column: 9], []
     "#]]
     .assert_eq(&print3);
+
+    Ok(())
+}
+
+/// Multiple prints of the same IR with given names erased should produce the same output.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn erase_given_names_roundtrip() -> Result<()> {
+    let input = r#"
+        builtin.module @bar {
+        ^block_0_0():
+            builtin.func @foo: builtin.function <(builtin.integer si64) -> (builtin.integer si64)> {
+            ^entry_block_1_0(x_1_0: builtin.integer si64):
+                c0_op_2_0_res0 = test.constant builtin.integer <0: si64>;
+                test.return x_1_0
+            }
+        }"#;
+
+    let ctx = &mut Context::new();
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
+    verify_operation(op, ctx)?;
+
+    // Print after erasing names
+    erase_given_names(ctx, op);
+    let printed1 = format!("{}", op.disp(ctx));
+
+    // Parse what was just printed
+    let ctx2 = &mut Context::new();
+    let parsed2 = parse_from_str(spaced(Operation::top_level_parser()), ctx2, &printed1).unwrap();
+    verify_operation(parsed2, ctx2)?;
+
+    // Print again after erasing names
+    erase_given_names(ctx2, parsed2);
+    let printed2 = format!("{}", parsed2.disp(ctx2));
+    assert_eq!(printed1, printed2);
 
     Ok(())
 }
