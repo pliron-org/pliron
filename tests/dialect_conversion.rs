@@ -28,7 +28,7 @@ use pliron::{
     operation::Operation,
     result::Result,
     r#type::{TypeHandle, Typed},
-    value::DefiningEntity,
+    value::{DefiningEntity, Value},
 };
 
 use pliron::derive::pliron_op;
