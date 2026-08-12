@@ -434,7 +434,6 @@ fn dialect_conversion_handles_mutually_referential_graph_ops() -> Result<()> {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_handles_self_referential_graph_op() -> Result<()> {
     let ctx = &mut Context::new();
     let module = ModuleOp::new(
