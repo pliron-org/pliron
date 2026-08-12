@@ -162,8 +162,8 @@ pub enum ToLLVMErr {
     UndefinedBlock(String),
     #[error("Number of block args in the source dialect equal the number of PHIs in target IR")]
     NumBlockArgsNumPhisMismatch,
-    #[error("ConstantOp must have integer or float value")]
-    ConstOpNotIntOrFloat,
+    #[error("ConstantOp value must implement AttrToLLVMConst")]
+    ConstOpNotConstVal,
     #[error(
         "Insert/Extract value instructions must specify exactly one index, an LLVM-C API limitation"
     )]
@@ -2274,19 +2274,11 @@ impl OpToLLVMConstValue for ConstantOp {
     ) -> Result<LLVMValue> {
         let op = self.get_operation().deref(ctx);
         let value = self.get_value(ctx);
-        if let Some(int_val) = value.downcast_ref::<IntegerAttr>() {
-            let int_ty = int_val.get_type();
-            let int_ty_llvm = convert_type(ctx, llvm_ctx, cctx, int_ty.into())?;
-            let ap_int_val: APInt = int_val.clone().into();
-            let const_val = llvm_const_int(int_ty_llvm, ap_int_val.to_u64(), false);
-            Ok(const_val)
-        } else if let Some(float_val) = attr_cast::<dyn FloatAttrToFP64>(&*value) {
-            let float_ty = float_val.get_type(ctx);
-            let float_ty_llvm = convert_type(ctx, llvm_ctx, cctx, float_ty)?;
-            let const_val = llvm_const_real(float_ty_llvm, float_val.to_fp64());
+        if let Some(const_val) = attr_cast::<dyn AttrToLLVMConst>(&*value) {
+            let const_val = const_val.convert(ctx, llvm_ctx, cctx)?;
             Ok(const_val)
         } else {
-            input_err!(op.loc(), ToLLVMErr::ConstOpNotIntOrFloat)
+            input_err!(op.loc(), ToLLVMErr::ConstOpNotConstVal)
         }
     }
 }

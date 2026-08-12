@@ -62,7 +62,7 @@ use crate::{
     attributes::{
         AddressSpaceAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr, CaseValuesAttr,
         FCmpPredicateAttr, FastmathFlagsAttr, InsertExtractValueIndicesAttr, LinkageAttr,
-        ShuffleVectorMaskAttr,
+        PoisonAttr, ShuffleVectorMaskAttr, UndefAttr, ZeroAttr,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
@@ -2349,7 +2349,12 @@ impl Verify for ConstantOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         let value = self.get_value(ctx);
-        if !(value.is::<IntegerAttr>() || attr_impls::<dyn FloatAttr>(&*value)) {
+        if !(value.is::<IntegerAttr>()
+            || attr_impls::<dyn FloatAttr>(&*value)
+            || value.is::<ZeroAttr>()
+            || value.is::<PoisonAttr>()
+            || value.is::<UndefAttr>())
+        {
             verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
         }
         Ok(())

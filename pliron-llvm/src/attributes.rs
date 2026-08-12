@@ -15,7 +15,7 @@ use pliron::{
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
     context::Context,
-    derive::{format, pliron_attr},
+    derive::{attr_interface_impl, format, pliron_attr},
     impl_printable_for_display, input_error,
     location::Located,
     parsable::{IntoParseResult, Parsable},
@@ -250,6 +250,7 @@ pub struct AddressSpaceAttr(pub u32);
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct ZeroAttr(pub TypeHandle);
 
+#[attr_interface_impl]
 impl TypedAttrInterface for ZeroAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
@@ -261,6 +262,7 @@ impl TypedAttrInterface for ZeroAttr {
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct UndefAttr(pub TypeHandle);
 
+#[attr_interface_impl]
 impl TypedAttrInterface for UndefAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
@@ -272,6 +274,7 @@ impl TypedAttrInterface for UndefAttr {
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct PoisonAttr(pub TypeHandle);
 
+#[attr_interface_impl]
 impl TypedAttrInterface for PoisonAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
