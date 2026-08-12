@@ -393,7 +393,6 @@ fn value_width(ctx: &Context, value: Value) -> u32 {
 }
 
 #[test]
-#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn dialect_conversion_handles_mutually_referential_graph_ops() -> Result<()> {
     let ctx = &mut Context::new();
     let module = ModuleOp::new(
