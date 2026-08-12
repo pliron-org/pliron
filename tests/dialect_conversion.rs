@@ -383,7 +383,7 @@ impl DialectConversion for CycleWidthConversion {
     }
 }
 
-fn value_width(ctx: &Context, value: pliron::value::Value) -> u32 {
+fn value_width(ctx: &Context, value: Value) -> u32 {
     value
         .get_type(ctx)
         .deref(ctx)
