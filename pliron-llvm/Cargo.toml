@@ -18,7 +18,7 @@ llvm-sys = ["dep:llvm-sys", "std"]
 std = ["pliron/std", "bitflags/std"]
 
 [dependencies]
-pliron = { path = "../", version = "0", default-features = false }
+pliron = { path = "../", version = "=0.17.0", default-features = false }
 
 thiserror.workspace = true
 log.workspace = true

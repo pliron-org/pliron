@@ -63,8 +63,9 @@ We also plan to start work on supporting a cranelift dialect/backend soon.
 
 ### Projects using `pliron`
 * [cuda-oxide](https://github.com/NVlabs/cuda-oxide): NVIDIA's Rust CUDA compiler.
-* [Commonly used Pliron Dialects](https://github.com/pliron-org/pliron-common-dialects)
-* [Pliron Dialect for Tensors](https://github.com/pliron-org/pliron-tensor)
+* [cubecl](https://github.com/tracel-ai/cubecl): A multi-platform high-performance compute language extension for Rust.
+
+Additional dialects and projects built on top of `pliron` are hosted under the [pliron-org](https://github.com/pliron-org/) GitHub organization.
 
 ### Discussions
 - [Discord channel](https://discord.com/channels/1481908978978918523/) ([Invitation link](https://discord.gg/5M3K4Ujv7v))

@@ -29,7 +29,7 @@ std = ["dep:utf8-chars"]
 default = ["std"]
 
 [dependencies]
-pliron-derive = { path = "./pliron-derive", version = "0" }
+pliron-derive = { path = "./pliron-derive", version = "=0.17.0" }
 
 awint.workspace = true
 rustc_apfloat.workspace = true

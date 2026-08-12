@@ -13,8 +13,8 @@ license.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-pliron = { path = "../../", version = "0" }
-pliron-llvm = { path = "../", version = "0" }
+pliron = { path = "../../", version = "=0.17.0" }
+pliron-llvm = { path = "../", version = "=0.17.0" }
 
 clap.workspace = true
 log.workspace = true
