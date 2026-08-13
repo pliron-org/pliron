@@ -1,2 +1,11 @@
 /target
 Cargo.lock
+
+# OS files
+.DS_Store
+
+# IDEs and editors
+.idea/
+*.iml
+.vscode/
+.cursor/
