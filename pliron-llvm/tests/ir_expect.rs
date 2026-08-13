@@ -158,3 +158,49 @@ fn llvm_ir_select_without_fastmath_flags_omits_attr() -> Result<()> {
 
     Ok(())
 }
+
+/// Packed named and literal structs imported from LLVM IR must preserve their
+/// layout through pliron and back to LLVM IR.
+#[test]
+fn llvm_ir_packed_struct_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        %Packet = type <{ i8, i32 }>
+
+        @named_packet = global %Packet zeroinitializer
+        @literal_packet = global <{ i16, i8 }> zeroinitializer
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "packed_structs")?;
+
+    let pliron_text = module_op.disp(ctx).to_string();
+    assert!(
+        pliron_text
+            .contains("llvm.struct Packed <Packet { builtin.integer i8, builtin.integer i32 }>"),
+        "named packed struct was not preserved in pliron IR:\n{pliron_text}"
+    );
+    assert!(
+        pliron_text.contains("llvm.struct Packed <{ builtin.integer i16, builtin.integer i8 }>"),
+        "literal packed struct was not preserved in pliron IR:\n{pliron_text}"
+    );
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out = out_mod.to_string();
+    assert!(
+        out.contains("%Packet = type <{ i8, i32 }>"),
+        "named packed struct was not preserved in LLVM IR:\n{out}"
+    );
+    assert!(
+        out.contains("@named_packet = global %Packet zeroinitializer"),
+        "named packed global was not preserved in LLVM IR:\n{out}"
+    );
+    assert!(
+        out.contains("@literal_packet = global <{ i16, i8 }> zeroinitializer"),
+        "literal packed global was not preserved in LLVM IR:\n{out}"
+    );
+
+    Ok(())
+}

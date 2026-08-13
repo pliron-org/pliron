@@ -27,6 +27,31 @@ use pliron::{
 };
 use thiserror::Error;
 
+/// Layout of an LLVM struct type.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[format]
+pub enum StructLayout {
+    #[default]
+    Unpacked,
+    Packed,
+}
+
+impl From<bool> for StructLayout {
+    fn from(is_packed: bool) -> Self {
+        if is_packed {
+            Self::Packed
+        } else {
+            Self::Unpacked
+        }
+    }
+}
+
+impl From<StructLayout> for bool {
+    fn from(layout: StructLayout) -> Self {
+        layout == StructLayout::Packed
+    }
+}
+
 /// Represents a c-like struct type.
 /// Limitations and warnings on its usage are similar to that in MLIR.
 /// `<https://mlir.llvm.org/docs/Dialects/LLVM/#structure-types>`
@@ -42,58 +67,61 @@ use thiserror::Error;
 pub struct StructType {
     name: Option<Identifier>,
     fields: Option<Vec<TypeHandle>>,
+    layout: StructLayout,
 }
 
 impl StructType {
-    /// Get or create a named StructType.
+    /// Get or create a named StructType with the provided layout.
     /// If `fields` is `None`, it indicates an opaque struct.
     /// A body can be added to opaque structs by calling this again later.
-    /// Returns an error if all of the below conditions are true:
-    ///   a. The name is already registered
-    ///   b. The body is already set (i.e, the struct is not oqaue)
-    ///   c. The fields provided here don't match with the existing body.
-    /// Since named structs only rely on the name for uniqueness,
-    /// It is not an error to provide `fields` as `None` even when
-    /// the named struct already exists and has its body set.
     pub fn get_named(
         ctx: &Context,
         name: Identifier,
         fields: Option<Vec<TypeHandle>>,
+        layout: StructLayout,
     ) -> Result<TypedHandle<Self>> {
         let self_handle = Type::instantiate(
             StructType {
                 name: Some(name.clone()),
-                // Uniquing happens only on the name, so this doesn't matter.
+                // Named structs are uniqued only by name. Layout is a body property,
+                // so opaque structs use the default until their body is defined.
                 fields: None,
+                layout: StructLayout::default(),
             },
             ctx,
         );
+
         // Verify that we created a new or equivalent existing type.
         let mut self_ref = self_handle.to_handle().deref_mut(ctx);
         let self_ref = self_ref.downcast_mut::<StructType>().unwrap();
         assert!(self_ref.name.as_ref().unwrap() == &name);
         if let Some(fields) = fields {
-            // We've been provided fields to be set.
             if let Some(existing_fields) = &self_ref.fields {
-                // Fields were already set before, ensure they're same as the given ones.
-                if existing_fields != &fields {
+                // The body was already set. Both its fields and layout must match.
+                if existing_fields != &fields || self_ref.layout != layout {
                     input_err_noloc!(StructErr::ExistingMismatch(name.into()))?
                 }
             } else {
-                // Set the fields now.
+                // Set the body now, including its layout.
                 self_ref.fields = Some(fields);
+                self_ref.layout = layout;
             }
         }
         Ok(self_handle)
     }
 
     /// Get or create a new unnamed (anonymous) struct.
-    /// These are finalized upon creation, and uniqued based on the fields.
-    pub fn get_unnamed(ctx: &Context, fields: Vec<TypeHandle>) -> TypedHandle<Self> {
+    /// These are finalized upon creation and uniqued based on fields and layout.
+    pub fn get_unnamed(
+        ctx: &Context,
+        fields: Vec<TypeHandle>,
+        layout: StructLayout,
+    ) -> TypedHandle<Self> {
         Type::instantiate(
             StructType {
                 name: None,
                 fields: Some(fields),
+                layout,
             },
             ctx,
         )
@@ -102,6 +130,11 @@ impl StructType {
     /// Does this struct not have its body set?
     pub fn is_opaque(&self) -> bool {
         self.fields.is_none()
+    }
+
+    /// Get this struct's layout.
+    pub fn layout(&self) -> StructLayout {
+        self.layout
     }
 
     /// Is this a named struct?
@@ -196,7 +229,8 @@ impl Printable for StructType {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "<")?;
+        self.layout.fmt(ctx, state, f)?;
+        write!(f, " <")?;
 
         if let Some(name) = &self.name {
             if struct_type_start_printing(state, name) {
@@ -230,14 +264,13 @@ impl Hash for StructType {
     fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
         match &self.name {
             Some(name) => name.hash(state),
-            None => self
-                .fields
-                .as_ref()
-                .expect("Anonymous struct must have its fields set")
-                .iter()
-                .for_each(|field_type| {
-                    field_type.hash(state);
-                }),
+            None => {
+                self.fields
+                    .as_ref()
+                    .expect("Anonymous struct must have its fields set")
+                    .hash(state);
+                self.layout.hash(state);
+            }
         }
     }
 }
@@ -246,7 +279,7 @@ impl PartialEq for StructType {
     fn eq(&self, other: &Self) -> bool {
         match (&self.name, &other.name) {
             (Some(name), Some(other_name)) => name == other_name,
-            (None, None) => self.fields == other.fields,
+            (None, None) => self.fields == other.fields && self.layout == other.layout,
             _ => false,
         }
     }
@@ -274,13 +307,18 @@ impl Parsable for StructType {
         let anonymous = spaced((location(), body_parser()))
             .map(|(loc, body)| (loc, None::<Identifier>, Some(body)));
 
-        // A struct type is named or anonymous.
-        let mut struct_parser = between(token('<'), token('>'), named.or(anonymous));
+        // A struct type always starts with an explicit layout.
+        let mut struct_parser = spaced(StructLayout::parser(())).and(between(
+            token('<'),
+            token('>'),
+            named.or(anonymous),
+        ));
 
-        let (loc, name_opt, body_opt) = struct_parser.parse_stream(state_stream).into_result()?.0;
+        let (layout, (loc, name_opt, body_opt)) =
+            struct_parser.parse_stream(state_stream).into_result()?.0;
         let ctx = &mut state_stream.state.ctx;
         if let Some(name) = name_opt {
-            StructType::get_named(ctx, name, body_opt)
+            StructType::get_named(ctx, name, body_opt, layout)
                 .map_err(|mut err| {
                     err.set_loc(loc);
                     err
@@ -290,6 +328,7 @@ impl Parsable for StructType {
             Ok(StructType::get_unnamed(
                 ctx,
                 body_opt.expect("Without a name, a struct type must have a body."),
+                layout,
             ))
             .into_parse_result()
         }
@@ -438,7 +477,7 @@ mod tests {
 
     use alloc::{format, string::ToString, vec};
 
-    use crate::types::{FuncType, PointerType, StructType, VoidType};
+    use crate::types::{FuncType, PointerType, StructLayout, StructType, VoidType};
     use expect_test::expect;
     use pliron::{
         builtin::types::{IntegerType, Signedness},
@@ -461,7 +500,8 @@ mod tests {
 
         // Create an opaque struct since we want a recursive type.
         let list_struct: TypeHandle =
-            StructType::get_named(&ctx, linked_list_id.clone(), None)?.into();
+            StructType::get_named(&ctx, linked_list_id.clone(), None, StructLayout::Unpacked)?
+                .into();
         assert!(
             list_struct
                 .deref(&ctx)
@@ -472,7 +512,12 @@ mod tests {
         let list_struct_ptr = TypedPointerType::get(&ctx, list_struct).into();
         let fields = vec![int64, list_struct_ptr];
         // Set the struct body now.
-        StructType::get_named(&ctx, linked_list_id.clone(), Some(fields))?;
+        StructType::get_named(
+            &ctx,
+            linked_list_id.clone(),
+            Some(fields),
+            StructLayout::Unpacked,
+        )?;
         assert!(
             !list_struct
                 .deref(&ctx)
@@ -481,20 +526,78 @@ mod tests {
                 .is_opaque()
         );
 
-        let list_struct_2 = StructType::get_named(&ctx, linked_list_id, None)
-            .unwrap()
-            .into();
+        let list_struct_2 =
+            StructType::get_named(&ctx, linked_list_id, None, StructLayout::Unpacked)?.into();
         assert!(list_struct == list_struct_2);
 
         assert_eq!(
             list_struct.disp(&ctx).to_string(),
-            "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>"
+            "llvm.struct Unpacked <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct Unpacked <LinkedList>> }>"
         );
 
         let head_fields = vec![int64, list_struct_ptr];
-        let head_struct = StructType::get_unnamed(&ctx, head_fields.clone());
-        let head_struct2 = StructType::get_unnamed(&ctx, head_fields);
+        let head_struct =
+            StructType::get_unnamed(&ctx, head_fields.clone(), StructLayout::Unpacked);
+        let head_struct2 = StructType::get_unnamed(&ctx, head_fields, StructLayout::Unpacked);
         assert!(head_struct == head_struct2);
+
+        Ok(())
+    }
+
+    #[test]
+    fn test_struct_packedness() -> Result<()> {
+        let ctx = Context::new();
+        let int8: TypeHandle = IntegerType::get(&ctx, 8, Signedness::Signless).into();
+        let int32: TypeHandle = IntegerType::get(&ctx, 32, Signedness::Signless).into();
+        let fields = vec![int8, int32];
+
+        assert_eq!(StructLayout::default(), StructLayout::Unpacked);
+        assert_eq!(StructLayout::from(false), StructLayout::Unpacked);
+        assert_eq!(StructLayout::from(true), StructLayout::Packed);
+        assert!(!bool::from(StructLayout::Unpacked));
+        assert!(bool::from(StructLayout::Packed));
+
+        let unpacked = StructType::get_unnamed(&ctx, fields.clone(), StructLayout::Unpacked);
+        let packed = StructType::get_unnamed(&ctx, fields.clone(), StructLayout::Packed);
+        let packed_again = StructType::get_unnamed(&ctx, fields.clone(), StructLayout::Packed);
+        assert!(unpacked != packed);
+        assert!(packed == packed_again);
+        assert_eq!(
+            packed
+                .to_handle()
+                .deref(&ctx)
+                .downcast_ref::<StructType>()
+                .unwrap()
+                .layout(),
+            StructLayout::Packed
+        );
+
+        // Named structs remain uniqued by name. Layout is part of body
+        // consistency and may be established after creating an opaque struct.
+        let name: Identifier = "PackedNamed".try_into().unwrap();
+        let named = StructType::get_named(&ctx, name.clone(), None, StructLayout::Unpacked)?;
+        StructType::get_named(
+            &ctx,
+            name.clone(),
+            Some(fields.clone()),
+            StructLayout::Packed,
+        )?;
+        assert_eq!(
+            named
+                .to_handle()
+                .deref(&ctx)
+                .downcast_ref::<StructType>()
+                .unwrap()
+                .layout(),
+            StructLayout::Packed
+        );
+        StructType::get_named(
+            &ctx,
+            name.clone(),
+            Some(fields.clone()),
+            StructLayout::Packed,
+        )?;
+        assert!(StructType::get_named(&ctx, name, Some(fields), StructLayout::Unpacked).is_err());
 
         Ok(())
     }
@@ -635,32 +738,56 @@ mod tests {
         let res = parse_from_str(
             type_parser(),
             &mut ctx,
-            "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>",
+            "llvm.struct Unpacked <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct Unpacked <LinkedList>> }>",
         )
         .expect_ok(&ctx);
         assert_eq!(
             &res.disp(&ctx).to_string(),
-            "llvm.struct <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct <LinkedList>> }>"
+            "llvm.struct Unpacked <LinkedList { builtin.integer i64, llvm.typed_ptr <llvm.struct Unpacked <LinkedList>> }>"
         );
 
         // Test parsing an opaque struct.
-        let test_string = "llvm.struct <ExternStruct>";
+        let test_string = "llvm.struct Unpacked <ExternStruct>";
         let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
         assert_eq!(&res.disp(&ctx).to_string(), test_string);
         {
             let res = res.deref(&ctx);
             let res = res.downcast_ref::<StructType>().unwrap();
             assert!(res.is_opaque() && res.is_named());
+            assert_eq!(res.layout(), StructLayout::Unpacked);
         }
 
-        // Test parsing an unnamed struct.
-        let test_string = "llvm.struct <{ builtin.integer i8 }>";
+        // Test parsing an unpacked unnamed struct.
+        let test_string = "llvm.struct Unpacked <{ builtin.integer i8 }>";
         let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
         assert_eq!(&res.disp(&ctx).to_string(), test_string);
         {
             let res = res.deref(&ctx);
             let res = res.downcast_ref::<StructType>().unwrap();
             assert!(!res.is_opaque() && !res.is_named());
+            assert_eq!(res.layout(), StructLayout::Unpacked);
+        }
+
+        // Test parsing a packed unnamed struct.
+        let test_string = "llvm.struct Packed <{ builtin.integer i8 }>";
+        let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
+        assert_eq!(&res.disp(&ctx).to_string(), test_string);
+        {
+            let res = res.deref(&ctx);
+            let res = res.downcast_ref::<StructType>().unwrap();
+            assert!(!res.is_opaque() && !res.is_named());
+            assert_eq!(res.layout(), StructLayout::Packed);
+        }
+
+        // Test parsing a packed named struct.
+        let test_string = "llvm.struct Packed <Packed { builtin.integer i8 }>";
+        let res = parse_from_str(type_parser(), &mut ctx, test_string).expect_ok(&ctx);
+        assert_eq!(&res.disp(&ctx).to_string(), test_string);
+        {
+            let res = res.deref(&ctx);
+            let res = res.downcast_ref::<StructType>().unwrap();
+            assert!(!res.is_opaque() && res.is_named());
+            assert_eq!(res.layout(), StructLayout::Packed);
         }
     }
 
@@ -671,7 +798,7 @@ mod tests {
         let _ = parse_from_str(
             type_parser(),
             &mut ctx,
-            "llvm.struct < My1 { builtin.integer i8 } >",
+            "llvm.struct Unpacked < My1 { builtin.integer i8 } >",
         )
         .expect_ok(&ctx);
 
@@ -680,14 +807,14 @@ mod tests {
             parse_from_str(
                 type_parser(),
                 &mut ctx,
-                "llvm.struct < My1 { builtin.integer i16 } >",
+                "llvm.struct Unpacked < My1 { builtin.integer i16 } >",
             )
             .unwrap_err()
         );
 
         let expected_err_msg = expect![[r#"
             Compilation error: invalid input program.
-            Parse error at line: 1, column: 15
+            Parse error at line: 1, column: 24
             struct My1 already exists and is different
         "#]];
         expected_err_msg.assert_eq(&err_msg);
