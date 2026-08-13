@@ -37,12 +37,12 @@ use crate::{
     attributes::{FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr},
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
-        AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ExtractElementOp,
-        ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp, FPToSIOp, FPToUIOp,
-        FPTruncOp, FRemOp, FSubOp, FreezeOp, FuncOp, GetElementPtrOp, ICmpOp, InsertElementOp,
-        InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp, PtrToIntOp, SDivOp,
-        SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp, SubOp, SwitchOp,
-        TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
+        AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ConstantOp,
+        ExtractElementOp, ExtractValueOp, FAddOp, FCmpOp, FDivOp, FMulOp, FNegOp, FPExtOp,
+        FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FreezeOp, FuncOp, GetElementPtrOp, ICmpOp,
+        InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp,
+        PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp,
+        SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
     },
 };
 
@@ -181,6 +181,7 @@ impl_side_effects_false!(
     BitcastOp,
     IntToPtrOp,
     PtrToIntOp,
+    ConstantOp,
     UndefOp,
     PoisonOp,
     FreezeOp,
@@ -337,6 +338,26 @@ fn check_fold_float_bin_op(
     }
     let res = pliron::dyn_clone::clone_box(&*res as &dyn Attribute);
     vec![Some(res)]
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ConstantOp {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        _operand_attrs: &[Option<AttrObj>],
+    ) -> Vec<Option<AttrObj>> {
+        vec![Some(self.get_value(ctx))]
+    }
+
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _operand_attrs: &[Option<AttrObj>],
+        _rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
+    }
 }
 
 #[op_interface_impl]

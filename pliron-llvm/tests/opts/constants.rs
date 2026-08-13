@@ -126,7 +126,7 @@ fn add_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        a = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8;
         b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
         sum = llvm.add a, b <{nsw=false,nuw=true}> : builtin.integer i8;
         llvm.return sum
@@ -563,7 +563,7 @@ fn shl_nuw_does_not_fold_on_unsigned_overflow() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        a = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8;
         b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
         shifted = llvm.shl a, b <{nsw=false,nuw=true}> : builtin.integer i8;
         llvm.return shifted
@@ -586,7 +586,7 @@ fn shl_nsw_does_not_fold_on_signed_overflow() -> Result<()> {
       llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
         ^entry():
         a = builtin.constant <builtin.integer <64: i8>> : builtin.integer i8;
-        b = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        b = llvm.constant <builtin.integer <1: i8>> : builtin.integer i8;
         shifted = llvm.shl a, b <{nsw=true,nuw=false}> : builtin.integer i8;
         llvm.return shifted
       }
@@ -605,8 +605,8 @@ fn shl_nsw_nuw_still_folds_without_overflow() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8;
-        b = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8;
+        a = llvm.constant <builtin.integer <1: i8>> : builtin.integer i8;
+        b = llvm.constant <builtin.integer <3: i8>> : builtin.integer i8;
         shifted = llvm.shl a, b <{nsw=true,nuw=true}> : builtin.integer i8;
         llvm.return shifted
       }
@@ -619,8 +619,8 @@ fn shl_nsw_nuw_still_folds_without_overflow() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !1;
-            b_v1 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !2;
+            a_v0 = llvm.constant <builtin.integer <1: i8>> : builtin.integer i8 !1;
+            b_v1 = llvm.constant <builtin.integer <3: i8>> : builtin.integer i8 !2;
             shifted_v3 = builtin.constant <builtin.integer <8: i8>> : builtin.integer i8 !3;
             shifted_v2 = llvm.shl a_v0, b_v1 <{nsw=true,nuw=true}>: builtin.integer i8 !4;
             llvm.return shifted_v3 !5
@@ -1283,7 +1283,7 @@ fn icmp_unsigned_predicate_treats_high_bit_as_large() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        a = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8;
         b = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8;
         c = llvm.icmp a <ULT> b : builtin.integer i1;
         llvm.return c
@@ -1296,7 +1296,7 @@ fn icmp_unsigned_predicate_treats_high_bit_as_large() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            a_v0 = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !2;
             c_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !3;
             c_v2 = llvm.icmp a_v0 <ULT> b_v1 : builtin.integer i1 !4;
@@ -1358,7 +1358,7 @@ fn sext_folds_negative_constant() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        a = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8;
         c = llvm.sext a to builtin.integer i16;
         llvm.return c
       }
@@ -1370,7 +1370,7 @@ fn sext_folds_negative_constant() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            a_v0 = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
             c_v2 = builtin.constant <builtin.integer <65535: i16>> : builtin.integer i16 !2;
             c_v1 = llvm.sext a_v0 to builtin.integer i16 !3;
             llvm.return c_v2 !4
@@ -1916,7 +1916,7 @@ fn fsub_folds_two_constants() -> Result<()> {
       llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
         ^entry():
         a = builtin.constant <builtin.single 10.0> : builtin.fp32;
-        b = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = llvm.constant <builtin.single 2.5> : builtin.fp32;
         c = llvm.fsub <> a, b : builtin.fp32;
         llvm.return c
       }
@@ -1929,7 +1929,7 @@ fn fsub_folds_two_constants() -> Result<()> {
         {
           ^entry_block1v1() !0:
             a_v0 = builtin.constant <builtin.single 10> : builtin.fp32  !1;
-            b_v1 = builtin.constant <builtin.single 2.5> : builtin.fp32  !2;
+            b_v1 = llvm.constant <builtin.single 2.5> : builtin.fp32  !2;
             c_v3 = builtin.constant <builtin.single 7.5> : builtin.fp32  !3;
             c_v2 = llvm.fsub <> a_v0, b_v1 : builtin.fp32  !4;
             llvm.return c_v3 !5
@@ -2233,8 +2233,8 @@ fn fmul_nnan_does_not_fold_nan_result() -> Result<()> {
     let input = r#"
       llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
         ^entry():
-        a = builtin.constant <builtin.single 0.0> : builtin.fp32;
-        b = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        a = llvm.constant <builtin.single 0.0> : builtin.fp32;
+        b = llvm.constant <builtin.single +Inf> : builtin.fp32;
         c = llvm.fmul <NNAN> a, b : builtin.fp32;
         llvm.return c
       }
