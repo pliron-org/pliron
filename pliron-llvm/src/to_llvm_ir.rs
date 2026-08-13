@@ -2275,8 +2275,7 @@ impl OpToLLVMConstValue for ConstantOp {
         let op = self.get_operation().deref(ctx);
         let value = self.get_value(ctx);
         if let Some(const_val) = attr_cast::<dyn AttrToLLVMConst>(&*value) {
-            let const_val = const_val.convert(ctx, llvm_ctx, cctx)?;
-            Ok(const_val)
+            const_val.convert(ctx, llvm_ctx, cctx)
         } else {
             input_err!(op.loc(), ToLLVMErr::ConstOpNotConstVal)
         }
