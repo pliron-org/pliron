@@ -1813,7 +1813,7 @@ impl AtomicCmpxchgOp {
         let val_ty = cmp.get_type(ctx);
         let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
         let res_ty =
-            StructType::get_unnamed(ctx, (vec![val_ty, bool_ty.into()], StructLayout::default()))
+            StructType::get_unnamed(ctx, (vec![val_ty, bool_ty.into()], StructLayout::Unpacked))
                 .into();
         let op = Operation::new(
             ctx,
