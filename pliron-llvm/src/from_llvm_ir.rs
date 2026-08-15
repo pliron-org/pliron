@@ -266,12 +266,11 @@ fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Re
             let name_opt: Option<Identifier> =
                 llvm_get_struct_name(ty).map(|str| cctx.id_legaliser.legalise(&str));
             if llvm_is_opaque_struct(ty) {
-                // Opaque structs must be named. Layout is a body property,
-                // so use the default until the body is defined.
+                // Opaque structs must be named.
                 let Some(name) = name_opt else {
                     return input_err_noloc!(StructErr::OpaqueAndAnonymousErr);
                 };
-                Ok(StructType::get_named(ctx, name, None, StructLayout::default())?.into())
+                Ok(StructType::get_named(ctx, name, None)?.into())
             } else {
                 let layout: StructLayout = llvm_is_packed_struct(ty).into();
                 let field_types = llvm_get_struct_element_types(ty)
@@ -279,9 +278,9 @@ fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Re
                     .map(|ty| convert_type(ctx, cctx, ty))
                     .collect::<Result<_>>()?;
                 if let Some(name) = name_opt {
-                    Ok(StructType::get_named(ctx, name, Some(field_types), layout)?.into())
+                    Ok(StructType::get_named(ctx, name, Some((field_types, layout)))?.into())
                 } else {
-                    Ok(StructType::get_unnamed(ctx, field_types, layout).into())
+                    Ok(StructType::get_unnamed(ctx, (field_types, layout)).into())
                 }
             }
         }

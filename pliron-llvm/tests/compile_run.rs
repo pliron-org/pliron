@@ -328,7 +328,7 @@ fn test_insert_extract_value() {
             .to_str()
             .unwrap(),
         create_opt_pass_manager(),
-        103,
+        130,
     );
 }
 
