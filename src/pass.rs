@@ -507,10 +507,11 @@ pub trait PassManager {
                 );
             })?;
         }
-        let timer = Timer::start();
+
         // Run the pass and get the result.
-        let result = pass.run(op, ctx, analyses);
-        if should_time {
+        let result = if should_time {
+            let timer = Timer::start();
+            let result = pass.run(op, ctx, analyses);
             let elapsed = timer.elapsed();
             log::info!(
                 "Pass {} on {} completed in {:?}",
@@ -518,7 +519,11 @@ pub trait PassManager {
                 OpDbg { op, ctx },
                 elapsed
             );
-        }
+            result
+        } else {
+            pass.run(op, ctx, analyses)
+        };
+
         if post_print_pass {
             log::info!("IR after pass {}:\n{}", pass.name(), op.disp(ctx));
             if let Some(dir) = &ir_printing_dir {
