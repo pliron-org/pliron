@@ -158,3 +158,88 @@ fn llvm_ir_select_without_fastmath_flags_omits_attr() -> Result<()> {
 
     Ok(())
 }
+
+/// Combinations of `struct` types
+#[test]
+fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        %Packed = type <{ i8, i32 }>
+        %Unpacked = type { i8, i32 }
+        %Nested = type { %Packed, %Unpacked, i16 }
+        %List = type { i32, %List* }
+        %Opaque = type opaque
+
+        define void @use_structs(%Opaque* %op) {
+        entry:
+          %packed = alloca %Packed
+          %p0 = insertvalue %Packed undef, i8 1, 0
+          %p1 = insertvalue %Packed %p0, i32 2, 1
+          store %Packed %p1, %Packed* %packed
+
+          %unpacked = alloca %Unpacked
+          %u0 = insertvalue %Unpacked undef, i8 3, 0
+          %u1 = insertvalue %Unpacked %u0, i32 4, 1
+          store %Unpacked %u1, %Unpacked* %unpacked
+
+          %anonu = alloca { i8, i32 }
+          %au0 = insertvalue { i8, i32 } undef, i8 5, 0
+          %au1 = insertvalue { i8, i32 } %au0, i32 6, 1
+          store { i8, i32 } %au1, { i8, i32 }* %anonu
+
+          %anonp = alloca <{ i8, i32 }>
+          %ap0 = insertvalue <{ i8, i32 }> undef, i8 7, 0
+          %ap1 = insertvalue <{ i8, i32 }> %ap0, i32 8, 1
+          store <{ i8, i32 }> %ap1, <{ i8, i32 }>* %anonp
+
+          %nested = alloca %Nested
+          %n0 = insertvalue %Nested undef, %Packed %p1, 0
+          %n1 = insertvalue %Nested %n0, %Unpacked %u1, 1
+          %n2 = insertvalue %Nested %n1, i16 9, 2
+          store %Nested %n2, %Nested* %nested
+
+          %list = alloca %List
+          %l0 = insertvalue %List undef, i32 10, 0
+          %l1 = insertvalue %List %l0, %List* null, 1
+          store %List %l1, %List* %list
+
+          ret void
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "struct_combos")?;
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out = out_mod.to_string();
+    expect![[r#"
+        ; ModuleID = 'struct_combos'
+        source_filename = "struct_combos"
+
+        %Packed = type <{ i8, i32 }>
+        %Unpacked = type { i8, i32 }
+        %Nested = type { %Packed, %Unpacked, i16 }
+        %List = type { i32, ptr }
+
+        define void @use_structs(ptr %0) {
+        entry_block2v1:
+          %packed_v2 = alloca %Packed, align 8
+          store %Packed <{ i8 1, i32 2 }>, ptr %packed_v2, align 1
+          %unpacked_v8 = alloca %Unpacked, align 8
+          store %Unpacked { i8 3, i32 4 }, ptr %unpacked_v8, align 4
+          %anonu_v14 = alloca { i8, i32 }, align 8
+          store { i8, i32 } { i8 5, i32 6 }, ptr %anonu_v14, align 4
+          %anonp_v20 = alloca <{ i8, i32 }>, align 8
+          store <{ i8, i32 }> <{ i8 7, i32 8 }>, ptr %anonp_v20, align 1
+          %nested_v26 = alloca %Nested, align 8
+          store %Nested { %Packed <{ i8 1, i32 2 }>, %Unpacked { i8 3, i32 4 }, i16 9 }, ptr %nested_v26, align 4
+          %list_v32 = alloca %List, align 8
+          store %List { i32 10, ptr null }, ptr %list_v32, align 8
+          ret void
+        }
+    "#]]
+    .assert_eq(&out);
+    Ok(())
+}

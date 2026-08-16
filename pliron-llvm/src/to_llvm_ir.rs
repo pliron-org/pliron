@@ -394,18 +394,23 @@ impl ToLLVMType for StructType {
                 .fields()
                 .map(|fty| convert_type(ctx, llvm_ctx, cctx, fty))
                 .collect::<Result<Vec<_>>>()?;
+            let is_packed: bool = self.layout().into();
             if let Some(name) = self.name() {
                 match cctx.structs_map.entry(name) {
                     htable::Entry::Occupied(entry) => Ok(*entry.get()),
                     htable::Entry::Vacant(entry) => {
                         let str_ty = llvm_struct_create_named(llvm_ctx, entry.key().as_ref());
-                        llvm_struct_set_body(str_ty, &field_types, false);
+                        llvm_struct_set_body(str_ty, &field_types, is_packed);
                         entry.insert(str_ty);
                         Ok(str_ty)
                     }
                 }
             } else {
-                Ok(llvm_struct_type_in_context(llvm_ctx, &field_types, false))
+                Ok(llvm_struct_type_in_context(
+                    llvm_ctx,
+                    &field_types,
+                    is_packed,
+                ))
             }
         }
     }

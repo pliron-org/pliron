@@ -70,7 +70,7 @@ use crate::{
         llvm_get_struct_name, llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind,
         llvm_get_value_name, llvm_get_vector_size, llvm_global_get_value_type, llvm_is_a,
         llvm_is_declaration, llvm_is_function_type_var_arg, llvm_is_opaque_struct,
-        llvm_lookup_intrinsic_id, llvm_print_value_to_string, llvm_type_of,
+        llvm_is_packed_struct, llvm_lookup_intrinsic_id, llvm_print_value_to_string, llvm_type_of,
         llvm_value_as_basic_block, llvm_value_is_basic_block, param_iter,
     },
     op_interfaces::{
@@ -89,8 +89,8 @@ use crate::{
         UndefOp, UnreachableOp, VAArgOp, XorOp, ZExtOp, ZeroOp,
     },
     types::{
-        ArrayType, FuncType, PointerType, StructErr, StructType, VectorType, VectorTypeKind,
-        VoidType,
+        ArrayType, FuncType, PointerType, StructErr, StructLayout, StructType, VectorType,
+        VectorTypeKind, VoidType,
     },
 };
 
@@ -272,14 +272,15 @@ fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Re
                 };
                 Ok(StructType::get_named(ctx, name, None)?.into())
             } else {
+                let layout: StructLayout = llvm_is_packed_struct(ty).into();
                 let field_types = llvm_get_struct_element_types(ty)
                     .into_iter()
                     .map(|ty| convert_type(ctx, cctx, ty))
                     .collect::<Result<_>>()?;
                 if let Some(name) = name_opt {
-                    Ok(StructType::get_named(ctx, name, Some(field_types))?.into())
+                    Ok(StructType::get_named(ctx, name, Some((field_types, layout)))?.into())
                 } else {
-                    Ok(StructType::get_unnamed(ctx, field_types).into())
+                    Ok(StructType::get_unnamed(ctx, (field_types, layout)).into())
                 }
             }
         }

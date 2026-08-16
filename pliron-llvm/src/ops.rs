@@ -73,7 +73,7 @@ use crate::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
         global_op_attr_names::{ATTR_KEY_GLOBAL_INITIALIZER, ATTR_KEY_LLVM_GLOBAL_TYPE},
     },
-    types::{ArrayType, FuncType, StructType, VectorType},
+    types::{ArrayType, FuncType, StructLayout, StructType, VectorType},
 };
 
 #[cfg(feature = "llvm-sys")]
@@ -1812,7 +1812,9 @@ impl AtomicCmpxchgOp {
         use pliron::r#type::Typed;
         let val_ty = cmp.get_type(ctx);
         let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
-        let res_ty = StructType::get_unnamed(ctx, vec![val_ty, bool_ty.into()]).into();
+        let res_ty =
+            StructType::get_unnamed(ctx, (vec![val_ty, bool_ty.into()], StructLayout::Unpacked))
+                .into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),

@@ -60,14 +60,14 @@ use llvm_sys::{
         LLVMGlobalGetValueType, LLVMHalfTypeInContext, LLVMInstructionEraseFromParent,
         LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst,
         LLVMIsAUser, LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg,
-        LLVMIsOpaqueStruct, LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext,
-        LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
-        LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
-        LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
-        LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage, LLVMSetNNeg,
-        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
-        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType,
-        LLVMVoidTypeInContext,
+        LLVMIsOpaqueStruct, LLVMIsPackedStruct, LLVMLookupIntrinsicID,
+        LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd,
+        LLVMPositionBuilderBefore, LLVMPrintModuleToFile, LLVMPrintModuleToString,
+        LLVMPrintTypeToString, LLVMPrintValueToString, LLVMReplaceAllUsesWith,
+        LLVMScalableVectorType, LLVMSetAlignment, LLVMSetFastMathFlags, LLVMSetInitializer,
+        LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
+        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
+        LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
@@ -689,6 +689,12 @@ pub fn llvm_get_pointer_address_space(ty: LLVMType) -> u32 {
 pub fn llvm_is_opaque_struct(ty: LLVMType) -> bool {
     assert!(llvm_get_type_kind(ty) == LLVMTypeKind::LLVMStructTypeKind);
     unsafe { LLVMIsOpaqueStruct(ty.into()) }.to_bool()
+}
+
+/// LLVMIsPackedStruct
+pub fn llvm_is_packed_struct(ty: LLVMType) -> bool {
+    assert!(llvm_get_type_kind(ty) == LLVMTypeKind::LLVMStructTypeKind);
+    unsafe { LLVMIsPackedStruct(ty.into()) }.to_bool()
 }
 
 /// LLVMCountStructElementTypes
