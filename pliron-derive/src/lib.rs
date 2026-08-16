@@ -1137,6 +1137,18 @@ pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
 ///     val: u64,
 /// }
 /// ```
+///
+/// This fails to compile because `NotHashable` doesn't implement `StableHash`:
+/// ```compile_fail
+/// use pliron::derive::StableHash;
+///
+/// struct NotHashable;
+///
+/// #[derive(StableHash)]
+/// struct MyAttr {
+///     val: NotHashable,
+/// }
+/// ```
 #[proc_macro_derive(StableHash)]
 pub fn stable_hash(input: TokenStream) -> TokenStream {
     to_token_stream(derive_decontext::derive_stable_hash(input.into()))
@@ -1158,6 +1170,18 @@ pub fn stable_hash(input: TokenStream) -> TokenStream {
 /// struct MyAttr {
 ///     ty: TypeHandle,
 ///     val: u64,
+/// }
+/// ```
+///
+/// This fails to compile because `NotCloneable` doesn't implement `CloneIntoContext`:
+/// ```compile_fail
+/// use pliron::derive::CloneIntoContext;
+///
+/// struct NotCloneable;
+///
+/// #[derive(CloneIntoContext)]
+/// struct MyAttr {
+///     val: NotCloneable,
 /// }
 /// ```
 #[proc_macro_derive(CloneIntoContext)]

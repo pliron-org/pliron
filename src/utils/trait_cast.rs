@@ -66,9 +66,8 @@ pub enum TraitCastOutput<'a, T: ?Sized> {
 pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
     TRAIT_CASTERS_MAP
         .get(&(r.type_id(), TypeId::of::<T>()))
-        .map(|info| {
-            let caster = info
-                .caster
+        .map(|caster| {
+            let caster = caster
                 // The caster function is set by `type_to_trait!`, and can only be of this type.
                 .downcast_ref::<for<'a> fn(AnyCastInput<'a>) -> TraitCastOutput<'a, T>>()
                 .unwrap();
@@ -112,9 +111,8 @@ pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
 /// ```
 pub fn any_to_trait_box<T: ?Sized + 'static>(r: Box<dyn Any>) -> Option<Box<T>> {
     let key = ((*r).type_id(), TypeId::of::<T>());
-    TRAIT_CASTERS_MAP.get(&key).map(|info| {
-        let caster = info
-            .caster
+    TRAIT_CASTERS_MAP.get(&key).map(|caster| {
+        let caster = caster
             // The caster function is set by `type_to_trait!`, and can only be of this type.
             .downcast_ref::<for<'a> fn(AnyCastInput<'a>) -> TraitCastOutput<'a, T>>()
             .unwrap();
@@ -185,10 +183,10 @@ pub use statics::*;
 /// A map of all the trait casters, indexed by the type_id of the object
 /// and the type_id of the trait to cast to. The map's values hold the
 /// cast function pointers.
-static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static TraitCasterInfo>> =
+static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
     LazyLock::new(|| {
         get_trait_casters()
-            .map(|info| ((info.from, info.to), info))
+            .map(|info| ((info.from, info.to), info.caster))
             .collect()
     });
 
@@ -246,7 +244,7 @@ macro_rules! type_to_trait {
             {
                 // The downcasts below are only reached when the type contained in `r`
                 // is `$ty_name`, so they must succeed. A failure indicates an internal
-                // bug in this `trait_cast`, not in how its used.
+                // bug in `trait_cast`, not in how it's used.
                 match r {
                     $crate::utils::trait_cast::AnyCastInput::Ref(r) => {
                         $crate::utils::trait_cast::TraitCastOutput::Ref(
