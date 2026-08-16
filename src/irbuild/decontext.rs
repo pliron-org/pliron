@@ -10,7 +10,7 @@
 //!    index. Such a hash is meaningful only within the [Context]. It cannot be used as
 //!    a key for disk caching, for example.
 //! 2. If we want to clone IR entities into another [Context] (say, for parallel processing),
-//!    we cannot have the cloned IR contain references [TypeHandle]s of the source [Context].
+//!    we cannot have the cloned IR contain [TypeHandle]s that reference the source [Context].
 //! 3. The above examples extend to [Attribute]s too, for the simple reason that they
 //!    may contain [TypeHandle]s.
 //! 4. Similarly, [Source] internalizes `PathBuf`s in a [Context],
