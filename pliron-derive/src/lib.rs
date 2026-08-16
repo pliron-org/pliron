@@ -2,6 +2,7 @@
 // Copyright (c) The pliron contributors
 
 mod derive_attr;
+mod derive_decontext;
 mod derive_entity;
 mod derive_format;
 mod derive_op;
@@ -1116,4 +1117,52 @@ pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
         interface_verifiers_slice,
         all_verifiers_fn_type,
     ))
+}
+
+/// `#[derive(StableHash)]`: Implement
+/// [StableHash](../pliron/irbuild/decontext/trait.StableHash.html) for a struct or enum,
+/// assuming every field's type already implements it. For an enum, the matched variant's
+/// discriminant is also mixed into the hash.
+///
+/// This also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
+///
+/// Usage:
+///
+/// ```
+/// use pliron::derive::StableHash;
+/// # use pliron::r#type::TypeHandle;
+///
+/// #[derive(StableHash)]
+/// struct MyAttr {
+///     ty: TypeHandle,
+///     val: u64,
+/// }
+/// ```
+#[proc_macro_derive(StableHash)]
+pub fn stable_hash(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_stable_hash(input.into()))
+}
+
+/// `#[derive(CloneIntoContext)]`: Implement
+/// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) for a struct
+/// or enum, assuming every field's type already implements it. For an enum, the matched
+/// variant is reconstructed with its (cloned) fields.
+///
+/// This Also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
+///
+/// Usage:
+///
+/// ```
+/// use pliron::derive::CloneIntoContext;
+/// # use pliron::r#type::TypeHandle;
+///
+/// #[derive(CloneIntoContext)]
+/// struct MyAttr {
+///     ty: TypeHandle,
+///     val: u64,
+/// }
+/// ```
+#[proc_macro_derive(CloneIntoContext)]
+pub fn clone_into_context(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_clone_into_context(input.into()))
 }

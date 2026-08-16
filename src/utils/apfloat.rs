@@ -50,14 +50,16 @@ use crate::{
     result::Result,
 };
 
-impl_printable_for_display!(BFloat);
-impl_printable_for_display!(Double);
-impl_printable_for_display!(Float8E4M3FN);
-impl_printable_for_display!(Float8E5M2);
-impl_printable_for_display!(Half);
-impl_printable_for_display!(Quad);
-impl_printable_for_display!(Single);
-impl_printable_for_display!(X87DoubleExtended);
+impl_printable_for_display!(
+    BFloat,
+    Double,
+    Float8E4M3FN,
+    Float8E5M2,
+    Half,
+    Quad,
+    Single,
+    X87DoubleExtended
+);
 
 /// Convert from [rustc_apfloat]'s [Single] to Rust [f32].
 pub fn single_to_f32(value: Single) -> f32 {

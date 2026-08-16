@@ -16,7 +16,11 @@
 //! 4. Similarly, [Source] internalizes `PathBuf`s in a [Context],
 //!    Thus requiring special handling for stable hashing, cloning into a different [Context].
 
-use alloc::{boxed::Box, string::ToString};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{
     any::Any,
     hash::{Hash, Hasher},
@@ -37,6 +41,11 @@ use crate::{
 /// making it suitable for use as a cache key.
 ///
 /// `impl`s must be marked with [type_to_trait](crate::type_to_trait).
+///
+/// Use `#[derive(StableHash)]` when every field already implements [StableHash].
+///
+/// [impl_stable_hash_for_hash](crate::impl_stable_hash_for_hash) can be used to
+/// delegate to [Hash], when the type is not [Context] dependent.
 pub trait StableHash {
     /// Compute a stable hash for [self].
     fn stable_hash(&self, ctx: &Context, state: &mut dyn Hasher);
@@ -45,6 +54,11 @@ pub trait StableHash {
 /// Clone a value that lives in one [Context] into another.
 ///
 /// `impl`s must be marked with [type_to_trait](crate::type_to_trait).
+///
+/// Use `#[derive(CloneIntoContext)]` when every field already implements [CloneIntoContext].
+///
+/// [impl_clone_into_context_for_clone](crate::impl_clone_into_context_for_clone) can be used
+/// to delegate to [Clone], when the type is not [Context] dependent.
 pub trait CloneIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
     /// The type of the value inside the returned [Box] must be `Self`.
@@ -173,7 +187,10 @@ impl StableHash for Location {
 }
 
 /// Clone `v` into `dst_ctx` and downcast the result back to `T`.
-fn clone_into_typed<T: CloneIntoContext + 'static>(
+///
+/// A convenience wrapper around [CloneIntoContext::clone_into_context]
+/// for callers that already know the concrete type they're cloning.
+pub fn clone_into_typed<T: CloneIntoContext + 'static>(
     v: &T,
     src_ctx: &Context,
     dst_ctx: &mut Context,
@@ -216,9 +233,140 @@ impl CloneIntoContext for Location {
     }
 }
 
+/// Implement [StableHash] for `$ty` by delegating to its own [Hash] impl.
+///
+/// The user guarantees that nothing in `$ty` depends on a [Context].
+///
+/// [type_to_trait](crate::type_to_trait) registration is not performed.
+///
+/// Example:
+/// ```
+/// use pliron::{
+///     context::Context, impl_stable_hash_for_hash, irbuild::decontext::StableHash,
+///     utils::table::FxHasher,
+/// };
+///
+/// #[derive(Hash)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+/// impl_stable_hash_for_hash!(Point);
+///
+/// let ctx = Context::new();
+/// let mut state = FxHasher::default();
+/// // No `Context`-bound state in `Point`, so this just forwards to `Hash::hash`.
+/// Point { x: 1, y: 2 }.stable_hash(&ctx, &mut state);
+/// ```
+#[macro_export]
+macro_rules! impl_stable_hash_for_hash {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl $crate::irbuild::decontext::StableHash for $ty {
+                fn stable_hash(
+                    &self,
+                    _ctx: &$crate::context::Context,
+                    mut state: &mut dyn ::core::hash::Hasher,
+                ) {
+                    ::core::hash::Hash::hash(self, &mut state);
+                }
+            }
+        )*
+    };
+}
+
+/// Implement [CloneIntoContext] for `$ty` by delegating to its own [Clone] impl.
+///
+/// The user guarantees that nothing in `$ty` depends on a [Context].
+///
+/// [type_to_trait](crate::type_to_trait) registration is not performed.
+///
+/// Example:
+/// ```
+/// use pliron::{
+///     context::Context, impl_clone_into_context_for_clone,
+///     irbuild::decontext::CloneIntoContext,
+/// };
+///
+/// #[derive(Clone, Debug, PartialEq)]
+/// struct Point {
+///     x: i32,
+///     y: i32,
+/// }
+/// impl_clone_into_context_for_clone!(Point);
+///
+/// let src_ctx = Context::new();
+/// let mut dst_ctx = Context::new();
+/// let p = Point { x: 1, y: 2 };
+/// // No `Context`-bound state in `Point`, so this just forwards to `Clone::clone`.
+/// let cloned = p.clone_into_context(&src_ctx, &mut dst_ctx);
+/// assert_eq!(*cloned.downcast::<Point>().unwrap(), p);
+/// ```
+#[macro_export]
+macro_rules! impl_clone_into_context_for_clone {
+    ($($ty:ty),* $(,)?) => {
+        $(
+            impl $crate::irbuild::decontext::CloneIntoContext for $ty {
+                fn clone_into_context(
+                    &self,
+                    _src_ctx: &$crate::context::Context,
+                    _dst_ctx: &mut $crate::context::Context,
+                ) -> $crate::alloc::boxed::Box<dyn ::core::any::Any> {
+                    $crate::alloc::boxed::Box::new(::core::clone::Clone::clone(self))
+                }
+            }
+        )*
+    };
+}
+
+impl_stable_hash_for_hash!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String
+);
+impl_clone_into_context_for_clone!(
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String
+);
+
+impl<T: StableHash> StableHash for Option<T> {
+    fn stable_hash(&self, ctx: &Context, mut state: &mut dyn Hasher) {
+        match self {
+            Some(v) => {
+                1u8.hash(&mut state);
+                v.stable_hash(ctx, state);
+            }
+            None => 0u8.hash(&mut state),
+        }
+    }
+}
+
+impl<T: CloneIntoContext + 'static> CloneIntoContext for Option<T> {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Box<dyn Any> {
+        let cloned: Option<T> = self.as_ref().map(|v| clone_into_typed(v, src_ctx, dst_ctx));
+        Box::new(cloned)
+    }
+}
+
+impl<T: StableHash> StableHash for Vec<T> {
+    fn stable_hash(&self, ctx: &Context, mut state: &mut dyn Hasher) {
+        self.len().hash(&mut state);
+        for v in self {
+            v.stable_hash(ctx, state);
+        }
+    }
+}
+
+impl<T: CloneIntoContext + 'static> CloneIntoContext for Vec<T> {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Box<dyn Any> {
+        let cloned: Vec<T> = self
+            .iter()
+            .map(|v| clone_into_typed(v, src_ctx, dst_ctx))
+            .collect();
+        Box::new(cloned)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use pliron::derive::{pliron_attr, pliron_type};
+    use pliron::derive::{CloneIntoContext, StableHash, pliron_attr, pliron_type};
 
     use super::*;
     use crate::{
@@ -254,6 +402,34 @@ mod tests {
         }
     }
     type_to_trait!(TestAttr, StableHash);
+
+    /// Same as [TestAttr], but with derived impls,
+    /// to validate the derive macros end-to-end.
+    #[pliron_attr(
+        name = "test.decontext_derived_attr",
+        format = "`<` $val `>`",
+        verifier = "succ"
+    )]
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext)]
+    struct TestDerivedAttr {
+        val: u64,
+    }
+
+    #[test]
+    fn attr_derived_impls() {
+        let ctx = Context::new();
+        let mut dst_ctx = Context::new();
+
+        let a1: AttrObj = Box::new(TestDerivedAttr { val: 10 });
+        let a2: AttrObj = Box::new(TestDerivedAttr { val: 10 });
+        let a3: AttrObj = Box::new(TestDerivedAttr { val: 11 });
+        assert_eq!(stable_hash_of(&ctx, &a1), stable_hash_of(&ctx, &a2));
+        assert_ne!(stable_hash_of(&ctx, &a1), stable_hash_of(&ctx, &a3));
+
+        let cloned = a1.clone_into_context(&ctx, &mut dst_ctx);
+        let a1_2 = *cloned.downcast::<AttrObj>().unwrap();
+        assert_eq!(a1.disp(&ctx).to_string(), a1_2.disp(&dst_ctx).to_string());
+    }
 
     /// An attribute that doesn't impl `CloneIntoContext`.
     #[pliron_attr(name = "test.decontext_attr_unregistered", format, verifier = "succ")]
@@ -316,6 +492,35 @@ mod tests {
         }
     }
     type_to_trait!(TestType, StableHash);
+
+    /// Same as [TestType], but with derived impls,
+    /// to validate the derive macros end-to-end.
+    #[pliron_type(
+        name = "test.decontext_derived_type",
+        format = "`<` $val `>`",
+        generate_get = true,
+        verifier = "succ"
+    )]
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext)]
+    struct TestDerivedType {
+        val: u32,
+    }
+
+    #[test]
+    fn type_derived_impls() {
+        let ctx = Context::new();
+        let mut dst_ctx = Context::new();
+
+        let t1 = TestDerivedType::get(&ctx, 32).to_handle();
+        let t2 = TestDerivedType::get(&ctx, 32).to_handle();
+        let t3 = TestDerivedType::get(&ctx, 33).to_handle();
+        assert_eq!(stable_hash_of(&ctx, &t1), stable_hash_of(&ctx, &t2));
+        assert_ne!(stable_hash_of(&ctx, &t1), stable_hash_of(&ctx, &t3));
+
+        let cloned = t1.clone_into_context(&ctx, &mut dst_ctx);
+        let t1_2 = *cloned.downcast::<TypeHandle>().unwrap();
+        assert_eq!(t1.disp(&ctx).to_string(), t1_2.disp(&dst_ctx).to_string());
+    }
 
     /// A type that doesn't impl `CloneIntoContext`.
     #[pliron_type(
