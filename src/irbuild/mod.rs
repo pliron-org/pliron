@@ -4,6 +4,7 @@
 //! Utilities for building and modifying IR.
 
 pub mod cloning;
+pub mod decontext;
 pub mod dialect_conversion;
 pub mod equivalence;
 pub mod inserter;

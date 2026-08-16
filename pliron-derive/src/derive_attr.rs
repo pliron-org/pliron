@@ -92,6 +92,7 @@ impl ToTokens for ImplAttribute {
         let attr_name = &self.attr_name;
         let dialect = &self.dialect_name;
         tokens.extend(quote! {
+            ::pliron::type_to_trait!(#name, ::pliron::attribute::Attribute);
             impl ::pliron::attribute::Attribute for #name {
                 fn hash_attr(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)
@@ -150,6 +151,7 @@ mod tests {
         expect![[r##"
             #[derive(PartialEq, Eq, Debug, Clone)]
             pub struct UnitAttr;
+            ::pliron::type_to_trait!(UnitAttr, ::pliron::attribute::Attribute);
             impl ::pliron::attribute::Attribute for UnitAttr {
                 fn hash_attr(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)

@@ -85,6 +85,7 @@ impl ToTokens for ImplType {
         };
 
         tokens.extend(quote! {
+            ::pliron::type_to_trait!(#name, ::pliron::r#type::Type);
             impl ::pliron::r#type::Type for #name {
                 fn hash_type(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)
@@ -288,6 +289,7 @@ mod tests {
         expect![[r##"
             #[derive(Hash, PartialEq, Eq, Debug)]
             pub struct SimpleType;
+            ::pliron::type_to_trait!(SimpleType, ::pliron::r#type::Type);
             impl ::pliron::r#type::Type for SimpleType {
                 fn hash_type(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)
@@ -345,6 +347,7 @@ mod tests {
                 x1: u32,
                 x2: String,
             }
+            ::pliron::type_to_trait!(CompoundType, ::pliron::r#type::Type);
             impl ::pliron::r#type::Type for CompoundType {
                 fn hash_type(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)
@@ -401,6 +404,7 @@ mod tests {
                 None,
                 One(u32),
             }
+            ::pliron::type_to_trait!(EnumType, ::pliron::r#type::Type);
             impl ::pliron::r#type::Type for EnumType {
                 fn hash_type(&self) -> ::pliron::storage_uniquer::TypeValueHash {
                     ::pliron::storage_uniquer::TypeValueHash::new(self)

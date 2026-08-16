@@ -170,7 +170,7 @@ impl FloatTypeInterface for FP16Type {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, vec};
+    use alloc::{boxed::Box, format, vec};
     use expect_test::expect;
 
     use super::*;
@@ -181,7 +181,7 @@ mod tests {
         context::Context,
         parsable::parse_from_str,
         result::ExpectOk,
-        r#type::Type,
+        r#type::{Type, instantiate_boxed_type},
     };
 
     #[test]
@@ -207,6 +207,16 @@ mod tests {
         assert!(uint32_ptr.deref(&ctx).get_self_handle(&ctx) == uint32_ptr.into());
         assert!(uint32_ptr.deref(&ctx).get_self_handle(&ctx) != int32_1_ptr.into());
         assert!(uint32_ptr.deref(&ctx).get_self_handle(&ctx) != int64_ptr.into());
+
+        let int32_boxed = instantiate_boxed_type(
+            Box::new(IntegerType {
+                width: 32,
+                signedness: Signedness::Signed,
+            }),
+            &ctx,
+        );
+        assert!(int32_boxed == int32_1_ptr.into());
+        assert!(int32_boxed != int64_ptr.into());
     }
 
     #[test]
@@ -215,12 +225,21 @@ mod tests {
         let int32_1_ptr = IntegerType::get(&ctx, 32, Signedness::Signed);
         let int64_ptr = IntegerType::get(&ctx, 64, Signedness::Signed);
 
-        let ft_ref =
-            FunctionType::get(&ctx, vec![int32_1_ptr.into()], vec![int64_ptr.into()]).deref(&ctx);
+        let ft_ptr = FunctionType::get(&ctx, vec![int32_1_ptr.into()], vec![int64_ptr.into()]);
+        let ft_ref = ft_ptr.deref(&ctx);
         assert!(
             ft_ref.arg_types()[0] == int32_1_ptr.into()
                 && ft_ref.res_types()[0] == int64_ptr.into()
         );
+
+        let ft_boxed = instantiate_boxed_type(
+            Box::new(FunctionType(TypeSig {
+                arguments: vec![int32_1_ptr.into()],
+                results: vec![int64_ptr.into()],
+            })),
+            &ctx,
+        );
+        assert!(ft_boxed == ft_ptr.into());
     }
 
     #[test]
