@@ -1129,8 +1129,7 @@ pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
 /// Usage:
 ///
 /// ```
-/// use pliron::derive::StableHash;
-/// # use pliron::r#type::TypeHandle;
+/// use pliron::{derive::StableHash, r#type::TypeHandle};
 ///
 /// #[derive(StableHash)]
 /// struct MyAttr {
@@ -1148,13 +1147,12 @@ pub fn stable_hash(input: TokenStream) -> TokenStream {
 /// or enum, assuming every field's type already implements it. For an enum, the matched
 /// variant is reconstructed with its (cloned) fields.
 ///
-/// This Also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
+/// This also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
 ///
 /// Usage:
 ///
 /// ```
-/// use pliron::derive::CloneIntoContext;
-/// # use pliron::r#type::TypeHandle;
+/// use pliron::{derive::CloneIntoContext, r#type::TypeHandle};
 ///
 /// #[derive(CloneIntoContext)]
 /// struct MyAttr {

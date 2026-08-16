@@ -145,8 +145,8 @@ pub mod statics {
 
     ::pliron::inventory::collect!(&'static TraitCasterInfo);
 
-    pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfo> {
-        ::pliron::inventory::iter::<&'static TraitCasterInfo>()
+    pub fn get_trait_casters() -> impl Iterator<Item = &'static TraitCasterInfo> {
+        ::pliron::inventory::iter::<&'static TraitCasterInfo>().copied()
     }
 }
 

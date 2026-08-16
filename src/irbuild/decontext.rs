@@ -14,7 +14,7 @@
 //! 3. The above examples extend to [Attribute]s too, for the simple reason that they
 //!    may contain [TypeHandle]s.
 //! 4. Similarly, [Source] internalizes `PathBuf`s in a [Context],
-//!    Thus requiring special handling for stable hashing, cloning into a different [Context].
+//!    thus requiring special handling for stable hashing, cloning into a different [Context].
 
 use alloc::{
     boxed::Box,
@@ -221,11 +221,11 @@ impl CloneIntoContext for Location {
             },
             Location::Named { name, child_loc } => Location::Named {
                 name: name.clone(),
-                child_loc: Box::new(clone_into_typed(child_loc.as_ref(), src_ctx, dst_ctx)),
+                child_loc: clone_into_typed(child_loc, src_ctx, dst_ctx),
             },
             Location::CallSite { callee, caller } => Location::CallSite {
-                callee: Box::new(clone_into_typed(callee.as_ref(), src_ctx, dst_ctx)),
-                caller: Box::new(clone_into_typed(caller.as_ref(), src_ctx, dst_ctx)),
+                callee: clone_into_typed(callee, src_ctx, dst_ctx),
+                caller: clone_into_typed(caller, src_ctx, dst_ctx),
             },
             Location::Unknown => Location::Unknown,
         };
@@ -360,6 +360,19 @@ impl<T: CloneIntoContext + 'static> CloneIntoContext for Vec<T> {
             .iter()
             .map(|v| clone_into_typed(v, src_ctx, dst_ctx))
             .collect();
+        Box::new(cloned)
+    }
+}
+
+impl<T: StableHash> StableHash for Box<T> {
+    fn stable_hash(&self, ctx: &Context, state: &mut dyn Hasher) {
+        (**self).stable_hash(ctx, state);
+    }
+}
+
+impl<T: CloneIntoContext + 'static> CloneIntoContext for Box<T> {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Box<dyn Any> {
+        let cloned: Box<T> = Box::new(clone_into_typed(self.as_ref(), src_ctx, dst_ctx));
         Box::new(cloned)
     }
 }
