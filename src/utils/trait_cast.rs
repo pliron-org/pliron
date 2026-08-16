@@ -14,22 +14,6 @@ use alloc::boxed::Box;
 
 use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 
-#[doc(hidden)]
-/// Input to a per-type trait-caster function.
-/// Also see [TraitCastOutput].
-pub enum AnyCastInput<'a> {
-    Ref(&'a dyn Any),
-    Owned(Box<dyn Any>),
-}
-
-#[doc(hidden)]
-/// Output of a per-type trait-caster function.
-/// Also see [AnyCastInput].
-pub enum TraitCastOutput<'a, T: ?Sized> {
-    Ref(&'a T),
-    Owned(Box<T>),
-}
-
 /// Cast a [dyn Any](Any) object to a `dyn Trait` object for any
 /// trait that the contained (in [Any]) type implements, and for which
 /// [type_to_trait](crate::type_to_trait) has been specified.
@@ -66,16 +50,12 @@ pub enum TraitCastOutput<'a, T: ?Sized> {
 pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
     TRAIT_CASTERS_MAP
         .get(&(r.type_id(), TypeId::of::<T>()))
-        .map(|caster| {
-            let caster = caster
+        .map(|info| {
+            (*info
+                .caster
                 // The caster function is set by `type_to_trait!`, and can only be of this type.
-                .downcast_ref::<for<'a> fn(AnyCastInput<'a>) -> TraitCastOutput<'a, T>>()
-                .unwrap();
-            match caster(AnyCastInput::Ref(r)) {
-                TraitCastOutput::Ref(r) => r,
-                // A `Ref` input to `cast_to_trait` always yields a `Ref` output.
-                TraitCastOutput::Owned(_) => unreachable!(),
-            }
+                .downcast_ref::<for<'a> fn(&'a (dyn Any + 'static)) -> &'a T>()
+                .unwrap())(r)
         })
 }
 
@@ -111,16 +91,12 @@ pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
 /// ```
 pub fn any_to_trait_box<T: ?Sized + 'static>(r: Box<dyn Any>) -> Option<Box<T>> {
     let key = ((*r).type_id(), TypeId::of::<T>());
-    TRAIT_CASTERS_MAP.get(&key).map(|caster| {
-        let caster = caster
+    TRAIT_CASTERS_MAP.get(&key).map(|info| {
+        (*info
+            .box_caster
             // The caster function is set by `type_to_trait!`, and can only be of this type.
-            .downcast_ref::<for<'a> fn(AnyCastInput<'a>) -> TraitCastOutput<'a, T>>()
-            .unwrap();
-        match caster(AnyCastInput::Owned(r)) {
-            TraitCastOutput::Owned(b) => b,
-            // An `Owned` input to `cast_to_trait` always yields an `Owned` output.
-            TraitCastOutput::Ref(_) => unreachable!(),
-        }
+            .downcast_ref::<fn(Box<dyn Any>) -> Box<T>>()
+            .unwrap())(r)
     })
 }
 
@@ -150,8 +126,10 @@ pub struct TraitCasterInfo {
     pub from: TypeId,
     /// The trait to which we cast.
     pub to: TypeId,
-    /// The cast function pointer.
+    /// The cast function pointer, for casting a `&dyn Any` to a `&dyn Trait`.
     pub caster: &'static (dyn Any + Sync + Send),
+    /// The cast function pointer, for casting a `Box<dyn Any>` to a `Box<dyn Trait>`.
+    pub box_caster: &'static (dyn Any + Sync + Send),
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -183,10 +161,10 @@ pub use statics::*;
 /// A map of all the trait casters, indexed by the type_id of the object
 /// and the type_id of the trait to cast to. The map's values hold the
 /// cast function pointers.
-static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
+static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static TraitCasterInfo>> =
     LazyLock::new(|| {
         get_trait_casters()
-            .map(|info| ((info.from, info.to), info.caster))
+            .map(|info| ((info.from, info.to), info))
             .collect()
     });
 
@@ -226,11 +204,15 @@ macro_rules! type_to_trait {
                     to: core::any::TypeId::of::<dyn $to_trait_name>(),
                     caster: &(cast_to_trait
                         as for<'a> fn(
-                            $crate::utils::trait_cast::AnyCastInput<'a>,
-                        ) -> $crate::utils::trait_cast::TraitCastOutput<
-                            'a,
-                            dyn $to_trait_name + 'static,
-                        >) as &'static (dyn core::any::Any + Sync + Send),
+                            &'a (dyn core::any::Any + 'static),
+                        ) -> &'a (dyn $to_trait_name + 'static))
+                        as &'static (dyn core::any::Any + Sync + Send),
+                    box_caster: &(cast_to_trait_box
+                        as fn(
+                            $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
+                        )
+                            -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static>)
+                        as &'static (dyn core::any::Any + Sync + Send),
                 };
 
             #[cfg(target_family = "wasm")]
@@ -239,25 +221,21 @@ macro_rules! type_to_trait {
             }
 
             fn cast_to_trait<'a>(
-                r: $crate::utils::trait_cast::AnyCastInput<'a>,
-            ) -> $crate::utils::trait_cast::TraitCastOutput<'a, dyn $to_trait_name + 'static>
-            {
-                // The downcasts below are only reached when the type contained in `r`
-                // is `$ty_name`, so they must succeed. A failure indicates an internal
-                // bug in `trait_cast`, not in how it's used.
-                match r {
-                    $crate::utils::trait_cast::AnyCastInput::Ref(r) => {
-                        $crate::utils::trait_cast::TraitCastOutput::Ref(
-                            r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name,
-                        )
-                    }
-                    $crate::utils::trait_cast::AnyCastInput::Owned(r) => {
-                        $crate::utils::trait_cast::TraitCastOutput::Owned(r
-                            .downcast::<$ty_name>()
-                            .unwrap()
-                            as $crate::alloc::boxed::Box<dyn $to_trait_name>)
-                    }
-                }
+                r: &'a (dyn core::any::Any + 'static),
+            ) -> &'a (dyn $to_trait_name + 'static) {
+                // This function is only called when the type of `r` is `$ty_name`,
+                // so the downcast must succeed. A failure indicates an internal bug
+                // in `type_to_trait!` or `any_to_trait`, not their usage.
+                r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
+            }
+
+            fn cast_to_trait_box(
+                r: $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
+            ) -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static> {
+                // This function is only called when the type of `r` is `$ty_name`,
+                // so the downcast must succeed. A failure indicates an internal bug
+                // in `type_to_trait!` or `any_to_trait_box`, not their usage.
+                r.downcast::<$ty_name>().unwrap() as $crate::alloc::boxed::Box<dyn $to_trait_name>
             }
         };
     };
