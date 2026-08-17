@@ -65,9 +65,9 @@ pub trait CloneIntoContext {
 
 /// The [Attribute] interface version of [CloneIntoContext].
 ///
-/// Typically usage would involve using [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext)
+/// Typical usage would involve using [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext)
 /// or [`impl_clone_into_context_for_clone!`](pliron::impl_clone_into_context_for_clone) and then
-/// [`impl_clone_attribute_for_clone_into_context!`](pliron::impl_clone_attribute_for_clone_into_context).
+/// [`#[derive(CloneAttributeIntoContext)]`](pliron::derive::CloneAttributeIntoContext).
 #[attr_interface]
 pub trait CloneAttributeIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
@@ -83,9 +83,9 @@ pub trait CloneAttributeIntoContext {
 
 /// The [Type] interface version of [CloneIntoContext].
 ///
-/// Typically usage would involve using [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext)
+/// Typical usage would involve using [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext)
 /// or [`impl_clone_into_context_for_clone!`](pliron::impl_clone_into_context_for_clone) and then
-/// [`impl_clone_type_for_clone_into_context!`](pliron::impl_clone_type_for_clone_into_context).
+/// [`#[derive(CloneTypeIntoContext)]`](pliron::derive::CloneTypeIntoContext).
 #[type_interface]
 pub trait CloneTypeIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
@@ -324,110 +324,6 @@ macro_rules! impl_clone_into_context_for_clone {
     };
 }
 
-/// Implement [CloneAttributeIntoContext] for `$ty` by delegating to `$ty`'s own
-/// [CloneIntoContext] impl and boxing the result.
-///
-/// `$ty` must already implement [CloneIntoContext] (e.g. via
-/// [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext),
-/// or [`impl_clone_into_context_for_clone!`](crate::impl_clone_into_context_for_clone)).
-///
-/// Example:
-/// ```
-/// use pliron::{
-///     attribute::AttrObj, context::Context, derive::{CloneIntoContext, pliron_attr},
-///     impl_clone_attribute_for_clone_into_context,
-///     irbuild::decontext::CloneIntoContext as _, printable::Printable,
-/// };
-///
-/// #[pliron_attr(name = "test.point_attr", format = "`<` $x `>`", verifier = "succ")]
-/// #[derive(Debug, Clone, PartialEq, Eq, Hash, CloneIntoContext)]
-/// struct PointAttr {
-///     x: i32,
-/// }
-/// impl_clone_attribute_for_clone_into_context!(PointAttr);
-///
-/// let src_ctx = Context::new();
-/// let mut dst_ctx = Context::new();
-/// let a: AttrObj = Box::new(PointAttr { x: 1 });
-/// let a2 = a.clone_into_context(&src_ctx, &mut dst_ctx);
-/// assert_eq!(a.disp(&src_ctx).to_string(), a2.disp(&dst_ctx).to_string());
-/// ```
-#[macro_export]
-macro_rules! impl_clone_attribute_for_clone_into_context {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            #[$crate::derive::attr_interface_impl]
-            impl $crate::irbuild::decontext::CloneAttributeIntoContext for $ty {
-                fn clone_into_context(
-                    &self,
-                    src_ctx: &$crate::context::Context,
-                    dst_ctx: &mut $crate::context::Context,
-                ) -> $crate::attribute::AttrObj {
-                    $crate::alloc::boxed::Box::new(
-                        $crate::irbuild::decontext::CloneIntoContext::clone_into_context(
-                            self, src_ctx, dst_ctx,
-                        ),
-                    )
-                }
-            }
-        )*
-    };
-}
-
-/// Implement [CloneTypeIntoContext] for `$ty` by delegating to `$ty`'s own [CloneIntoContext]
-/// impl, then re-interning the clone into `dst_ctx`.
-///
-/// `$ty` must already implement [CloneIntoContext] (e.g. via
-/// [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext),
-/// or [`impl_clone_into_context_for_clone!`](crate::impl_clone_into_context_for_clone)).
-///
-/// Example:
-/// ```
-/// use pliron::{
-///     context::Context, derive::{CloneIntoContext, pliron_type},
-///     impl_clone_type_for_clone_into_context,
-///     irbuild::decontext::CloneIntoContext as _, printable::Printable,
-/// };
-///
-/// #[pliron_type(
-///     name = "test.point_type",
-///     format = "`<` $x `>`",
-///     generate_get = true,
-///     verifier = "succ"
-/// )]
-/// #[derive(Debug, Clone, PartialEq, Eq, Hash, CloneIntoContext)]
-/// struct PointType {
-///     x: i32,
-/// }
-/// impl_clone_type_for_clone_into_context!(PointType);
-///
-/// let src_ctx = Context::new();
-/// let mut dst_ctx = Context::new();
-/// let p = PointType::get(&src_ctx, 1).to_handle();
-/// let p2 = p.clone_into_context(&src_ctx, &mut dst_ctx);
-/// assert_eq!(p.disp(&src_ctx).to_string(), p2.disp(&dst_ctx).to_string());
-/// ```
-#[macro_export]
-macro_rules! impl_clone_type_for_clone_into_context {
-    ($($ty:ty),* $(,)?) => {
-        $(
-            #[$crate::derive::type_interface_impl]
-            impl $crate::irbuild::decontext::CloneTypeIntoContext for $ty {
-                fn clone_into_context(
-                    &self,
-                    src_ctx: &$crate::context::Context,
-                    dst_ctx: &mut $crate::context::Context,
-                ) -> $crate::r#type::TypeHandle {
-                    let cloned = $crate::irbuild::decontext::CloneIntoContext::clone_into_context(
-                        self, src_ctx, dst_ctx,
-                    );
-                    <$ty as $crate::r#type::Type>::instantiate(cloned, dst_ctx).into()
-                }
-            }
-        )*
-    };
-}
-
 impl_stable_hash_for_hash!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String
 );
@@ -485,7 +381,10 @@ impl<T: CloneIntoContext> CloneIntoContext for Box<T> {
 
 #[cfg(test)]
 mod tests {
-    use pliron::derive::{CloneIntoContext, StableHash, pliron_attr, pliron_type};
+    use pliron::derive::{
+        CloneAttributeIntoContext, CloneIntoContext, CloneTypeIntoContext, StableHash, pliron_attr,
+        pliron_type,
+    };
 
     use super::*;
     use crate::{
@@ -510,12 +409,11 @@ mod tests {
         format = "`<` $val `>`",
         verifier = "succ"
     )]
-    #[derive(PartialEq, Eq, Clone, Debug, Hash)]
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, CloneAttributeIntoContext)]
     struct TestAttr {
         val: u64,
     }
     impl_clone_into_context_for_clone!(TestAttr);
-    impl_clone_attribute_for_clone_into_context!(TestAttr);
     impl StableHash for TestAttr {
         fn stable_hash(&self, _ctx: &Context, mut state: &mut dyn Hasher) {
             self.val.hash(&mut state);
@@ -526,11 +424,12 @@ mod tests {
     /// Same as [TestAttr], but with derived impls,
     /// to validate the derive macros end-to-end.
     #[pliron_attr(name = "test.decontext_derived_attr", verifier = "succ")]
-    #[derive(PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext)]
+    #[derive(
+        PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext, CloneAttributeIntoContext,
+    )]
     struct TestDerivedAttr {
         val: u64,
     }
-    impl_clone_attribute_for_clone_into_context!(TestDerivedAttr);
 
     impl Printable for TestDerivedAttr {
         fn fmt(
@@ -616,12 +515,11 @@ mod tests {
         generate_get = true,
         verifier = "succ"
     )]
-    #[derive(PartialEq, Eq, Clone, Debug, Hash)]
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, CloneTypeIntoContext)]
     struct TestType {
         val: u32,
     }
     impl_clone_into_context_for_clone!(TestType);
-    impl_clone_type_for_clone_into_context!(TestType);
     impl StableHash for TestType {
         fn stable_hash(&self, _ctx: &Context, mut state: &mut dyn Hasher) {
             self.val.hash(&mut state);
@@ -636,11 +534,12 @@ mod tests {
         generate_get = true,
         verifier = "succ"
     )]
-    #[derive(PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext)]
+    #[derive(
+        PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext, CloneTypeIntoContext,
+    )]
     struct TestDerivedType {
         val: u32,
     }
-    impl_clone_type_for_clone_into_context!(TestDerivedType);
 
     impl Printable for TestDerivedType {
         fn fmt(

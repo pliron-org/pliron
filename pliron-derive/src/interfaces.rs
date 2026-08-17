@@ -91,11 +91,11 @@ pub(crate) fn interface_define(
 /// 1. Mark that the rust type be castable to the interface via type_to_trait.
 /// 2. Register the trait verifier in the rust type's list of interface verifiers.
 pub(crate) fn interface_impl(
-    input: proc_macro::TokenStream,
+    input: proc_macro2::TokenStream,
     interface_verifiers_slice: Path,
     all_verifiers_fn_type: Path,
 ) -> Result<proc_macro2::TokenStream> {
-    let r#impl = syn::parse2::<ItemImpl>(input.into())?;
+    let r#impl = syn::parse2::<ItemImpl>(input)?;
 
     let Some((intr_name, _)) = r#impl.trait_.clone() else {
         return Err(syn::Error::new_spanned(

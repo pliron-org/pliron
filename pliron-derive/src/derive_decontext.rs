@@ -1,21 +1,29 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Derive macros for `StableHash` and `CloneIntoContext`.
+//! Derive macros for for "decontextualization" traits.
 //!
-//! Both assume every field's type already implements the corresponding trait,
-//! and just delegate to it, field by field. For an enum, the variant itself is
-//! also accounted for: its discriminant is mixed into the hash for
-//! `StableHash`, and is naturally preserved by reconstructing the same variant
-//! for `CloneIntoContext`.
+//! `StableHash` and `CloneIntoContext` derives assume that every field's type
+//! already implements the corresponding trait, and just delegate to it, field by field.
+//! For an enum, the variant's discriminant is mixed into the hash for `StableHash`,
+//! and is naturally preserved by reconstructing the same variant for `CloneIntoContext`.
 //!
-//! `StableHash` registers the impl with `type_to_trait!`,
-//! so it cannot be derived for a generic struct/enum.
-//! `CloneIntoContext` can be derived for generic structs/enums.
+//! `CloneAttributeIntoContext` and `CloneTypeIntoContext` are the [Attribute]/[Type] interface
+//! versions of `CloneIntoContext`, implemented by delegating to an existing `CloneIntoContext`
+//! impl on the same type.
+//!
+//! `StableHash`, `CloneAttributeIntoContext` and `CloneTypeIntoContext` register their impls
+//!  with `type_to_trait!` (the latter two via interface registrations). So they cannot be
+//! derived for generic types. `CloneIntoContext` can be derived for generic types.
+//!
+//! [Attribute]: ../pliron/attribute/trait.Attribute.html
+//! [Type]: ../pliron/type/trait.Type.html
 
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
-use syn::{Data, DeriveInput, Fields, Ident};
+use quote::{ToTokens, format_ident, quote};
+use syn::{Data, DeriveInput, Fields, Ident, parse_quote};
+
+use crate::interfaces;
 
 /// A single field, as seen by the generated code.
 ///
@@ -219,12 +227,80 @@ pub(crate) fn derive_clone_into_context(input: TokenStream) -> syn::Result<Token
     })
 }
 
+/// Implement `CloneAttributeIntoContext` for `$ident` by delegating to its own
+/// `CloneIntoContext` impl and boxing the result.
+pub(crate) fn derive_clone_attribute_into_context(input: TokenStream) -> syn::Result<TokenStream> {
+    let input = syn::parse2::<DeriveInput>(input)?;
+    check_no_union(&input)?;
+    check_no_generics(&input)?;
+    let ident = &input.ident;
+
+    let item_impl: syn::ItemImpl = parse_quote! {
+        impl ::pliron::irbuild::decontext::CloneAttributeIntoContext for #ident {
+            fn clone_into_context(
+                &self,
+                src_ctx: &::pliron::context::Context,
+                dst_ctx: &mut ::pliron::context::Context,
+            ) -> ::pliron::attribute::AttrObj {
+                ::pliron::alloc::boxed::Box::new(
+                    ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                        self, src_ctx, dst_ctx,
+                    ),
+                )
+            }
+        }
+    };
+
+    let interface_verifiers_slice = parse_quote! { ::pliron::attribute::ATTR_INTERFACE_VERIFIERS };
+    let all_verifiers_fn_type = parse_quote! { ::pliron::attribute::AttrInterfaceAllVerifiers };
+    interfaces::interface_impl(
+        item_impl.into_token_stream(),
+        interface_verifiers_slice,
+        all_verifiers_fn_type,
+    )
+}
+
+/// Implement `CloneTypeIntoContext` for `$ident` by delegating to its own `CloneIntoContext`
+/// impl, then re-interning the clone into the destination `Context`.
+pub(crate) fn derive_clone_type_into_context(input: TokenStream) -> syn::Result<TokenStream> {
+    let input = syn::parse2::<DeriveInput>(input)?;
+    check_no_union(&input)?;
+    check_no_generics(&input)?;
+    let ident = &input.ident;
+
+    let item_impl: syn::ItemImpl = parse_quote! {
+        impl ::pliron::irbuild::decontext::CloneTypeIntoContext for #ident {
+            fn clone_into_context(
+                &self,
+                src_ctx: &::pliron::context::Context,
+                dst_ctx: &mut ::pliron::context::Context,
+            ) -> ::pliron::r#type::TypeHandle {
+                let cloned = ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                    self, src_ctx, dst_ctx,
+                );
+                <#ident as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into()
+            }
+        }
+    };
+
+    let interface_verifiers_slice = parse_quote! { ::pliron::r#type::TYPE_INTERFACE_VERIFIERS };
+    let all_verifiers_fn_type = parse_quote! { ::pliron::r#type::TypeInterfaceAllVerifiers };
+    interfaces::interface_impl(
+        item_impl.into_token_stream(),
+        interface_verifiers_slice,
+        all_verifiers_fn_type,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use expect_test::expect;
     use quote::quote;
 
-    use super::{derive_clone_into_context, derive_stable_hash};
+    use super::{
+        derive_clone_attribute_into_context, derive_clone_into_context,
+        derive_clone_type_into_context, derive_stable_hash,
+    };
 
     fn pretty(result: syn::Result<proc_macro2::TokenStream>) -> String {
         let tokens = result.unwrap();
@@ -532,5 +608,124 @@ mod tests {
             }
         "#]]
         .assert_eq(&got);
+    }
+
+    #[test]
+    fn clone_attribute_into_context_struct() {
+        let input = quote! {
+            struct Foo {
+                a: u64,
+            }
+        };
+        let got = pretty(derive_clone_attribute_into_context(input));
+        expect![[r#"
+            impl ::pliron::irbuild::decontext::CloneAttributeIntoContext for Foo {
+                fn clone_into_context(
+                    &self,
+                    src_ctx: &::pliron::context::Context,
+                    dst_ctx: &mut ::pliron::context::Context,
+                ) -> ::pliron::attribute::AttrObj {
+                    ::pliron::alloc::boxed::Box::new(
+                        ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                            self,
+                            src_ctx,
+                            dst_ctx,
+                        ),
+                    )
+                }
+            }
+            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext);
+            const _: () = {
+                #[cfg_attr(
+                    not(target_family = "wasm"),
+                    ::pliron::linkme::distributed_slice(
+                        ::pliron::attribute::ATTR_INTERFACE_VERIFIERS
+                    ),
+                    linkme(crate = ::pliron::linkme)
+                )]
+                static INTERFACE_VERIFIER: (
+                    ::core::any::TypeId,
+                    (::pliron::attribute::AttrInterfaceAllVerifiers),
+                ) = (
+                    ::core::any::TypeId::of::<Foo>(),
+                    <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
+                );
+                #[cfg(target_family = "wasm")]
+                ::pliron::inventory::submit! {
+                    ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)
+                }
+            };
+        "#]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn clone_attribute_into_context_rejects_generics() {
+        let input = quote! {
+            struct Foo<T> { a: T }
+        };
+        let err = derive_clone_attribute_into_context(input).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot be derived for generic structs or enums")
+        );
+    }
+
+    #[test]
+    fn clone_type_into_context_struct() {
+        let input = quote! {
+            struct Foo {
+                a: u64,
+            }
+        };
+        let got = pretty(derive_clone_type_into_context(input));
+        expect![[r#"
+            impl ::pliron::irbuild::decontext::CloneTypeIntoContext for Foo {
+                fn clone_into_context(
+                    &self,
+                    src_ctx: &::pliron::context::Context,
+                    dst_ctx: &mut ::pliron::context::Context,
+                ) -> ::pliron::r#type::TypeHandle {
+                    let cloned = ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                        self,
+                        src_ctx,
+                        dst_ctx,
+                    );
+                    <Foo as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into()
+                }
+            }
+            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneTypeIntoContext);
+            const _: () = {
+                #[cfg_attr(
+                    not(target_family = "wasm"),
+                    ::pliron::linkme::distributed_slice(::pliron::r#type::TYPE_INTERFACE_VERIFIERS),
+                    linkme(crate = ::pliron::linkme)
+                )]
+                static INTERFACE_VERIFIER: (
+                    ::core::any::TypeId,
+                    (::pliron::r#type::TypeInterfaceAllVerifiers),
+                ) = (
+                    ::core::any::TypeId::of::<Foo>(),
+                    <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
+                );
+                #[cfg(target_family = "wasm")]
+                ::pliron::inventory::submit! {
+                    ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)
+                }
+            };
+        "#]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn clone_type_into_context_rejects_generics() {
+        let input = quote! {
+            struct Foo<T> { a: T }
+        };
+        let err = derive_clone_type_into_context(input).unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("cannot be derived for generic structs or enums")
+        );
     }
 }
