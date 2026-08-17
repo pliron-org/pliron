@@ -123,10 +123,13 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
     where
         Self: Sized,
     {
-        TypedHandle(
-            instantiate_boxed_type(Box::new(t), ctx),
-            PhantomData::<Self>,
-        )
+        let hash = t.hash_type();
+        let idx = ctx.type_store.get_or_create_unique(
+            TypeObj(RefCell::new(Box::new(t))),
+            hash,
+            &TypeObj::eq,
+        );
+        TypedHandle(TypeHandle(idx), PhantomData::<Self>)
     }
 
     /// Get a Type's static name. This is *not* per instantiation of the type.
@@ -157,15 +160,6 @@ pub trait Type: Printable + Verify + Downcast + Sync + Send + Debug {
     }
 }
 impl_downcast!(Type);
-
-/// Instantiate `Box<dyn Type>` in the provided [Context], returning a [TypeHandle] to self.
-pub fn instantiate_boxed_type(t: Box<dyn Type>, ctx: &Context) -> TypeHandle {
-    let hash = t.hash_type();
-    let idx = ctx
-        .type_store
-        .get_or_create_unique(TypeObj(RefCell::new(t)), hash, &TypeObj::eq);
-    TypeHandle(idx)
-}
 
 /// A storable function pointer to parse a specific [Type].
 /// The [Type]'s [Dialect] maps a [TypeId] to such a parser.

@@ -1159,8 +1159,6 @@ pub fn stable_hash(input: TokenStream) -> TokenStream {
 /// or enum, assuming every field's type already implements it. For an enum, the matched
 /// variant is reconstructed with its (cloned) fields.
 ///
-/// This also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
-///
 /// Usage:
 ///
 /// ```
@@ -1171,6 +1169,24 @@ pub fn stable_hash(input: TokenStream) -> TokenStream {
 ///     ty: TypeHandle,
 ///     val: u64,
 /// }
+/// ```
+///
+/// A generic struct, with the field's bound written explicitly:
+/// ```
+/// use pliron::{
+///     context::Context, derive::CloneIntoContext,
+///     irbuild::decontext::CloneIntoContext as CloneIntoContextTrait,
+/// };
+///
+/// #[derive(CloneIntoContext)]
+/// struct Wrapper<T: CloneIntoContextTrait> {
+///     inner: T,
+/// }
+///
+/// let src_ctx = Context::new();
+/// let mut dst_ctx = Context::new();
+/// let cloned = Wrapper { inner: 42u64 }.clone_into_context(&src_ctx, &mut dst_ctx);
+/// assert_eq!(cloned.inner, 42);
 /// ```
 ///
 /// This fails to compile because `NotCloneable` doesn't implement `CloneIntoContext`:

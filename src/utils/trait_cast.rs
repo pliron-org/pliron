@@ -10,8 +10,6 @@
 
 use core::any::{Any, TypeId};
 
-use alloc::boxed::Box;
-
 use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 
 /// Cast a [dyn Any](Any) object to a `dyn Trait` object for any
@@ -21,7 +19,6 @@ use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 /// To cast from `dyn Trait1` to `dyn Trait2` (when the underlying type implements both),
 /// the user may use [downcast_rs] to easily upcast from `dyn Trait1` to [Any],
 /// and then use [any_to_trait] to cast to `dyn Trait2`.
-///
 /// Example:
 /// ```
 /// # use pliron::{type_to_trait, utils::trait_cast::any_to_trait};
@@ -50,54 +47,12 @@ use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
     TRAIT_CASTERS_MAP
         .get(&(r.type_id(), TypeId::of::<T>()))
-        .map(|info| {
-            (*info
-                .caster
+        .map(|caster| {
+            ((**caster)
                 // The caster function is set by `type_to_trait!`, and can only be of this type.
                 .downcast_ref::<for<'a> fn(&'a (dyn Any + 'static)) -> &'a T>()
                 .unwrap())(r)
         })
-}
-
-/// Cast a `Box<dyn Any>` object to a `Box<dyn Trait>` for any
-/// trait that the contained (in [Any]) type implements, and for which
-/// [type_to_trait](crate::type_to_trait) has been specified.
-///
-/// To cast from `Box<dyn Trait1>` to `Box<dyn Trait2>` (when the underlying type implements
-/// both), the user may use [downcast_rs] to easily upcast from `Box<dyn Trait1>` to
-/// `Box<dyn Any>`, and then use [any_to_trait_box] to cast to `Box<dyn Trait2>`.
-///
-/// Example:
-/// ```
-/// # use pliron::{type_to_trait, utils::trait_cast::any_to_trait_box};
-/// # use pliron::alloc::boxed::Box;
-/// # use core::any::Any;
-///
-/// trait Trait1 {}
-/// trait Trait2 {}
-///
-/// struct S;
-/// impl Trait1 for S {}
-/// impl Trait2 for S {}
-///
-/// type_to_trait!(S, Trait2);
-///
-/// let s1: Box<dyn Any> = Box::new(S);
-/// any_to_trait_box::<dyn Trait2>(s1).expect("Expected S to implement Trait2");
-///
-/// struct S2;
-/// let s2: Box<dyn Any> = Box::new(S2);
-/// assert!(any_to_trait_box::<dyn Trait2>(s2).is_none(), "S2 does not implement Trait2");
-/// ```
-pub fn any_to_trait_box<T: ?Sized + 'static>(r: Box<dyn Any>) -> Option<Box<T>> {
-    let key = ((*r).type_id(), TypeId::of::<T>());
-    TRAIT_CASTERS_MAP.get(&key).map(|info| {
-        (*info
-            .box_caster
-            // The caster function is set by `type_to_trait!`, and can only be of this type.
-            .downcast_ref::<fn(Box<dyn Any>) -> Box<T>>()
-            .unwrap())(r)
-    })
 }
 
 /// Check if type `T` was registered to be casted to trait `I`
@@ -126,10 +81,8 @@ pub struct TraitCasterInfo {
     pub from: TypeId,
     /// The trait to which we cast.
     pub to: TypeId,
-    /// The cast function pointer, for casting a `&dyn Any` to a `&dyn Trait`.
+    /// The cast function pointer.
     pub caster: &'static (dyn Any + Sync + Send),
-    /// The cast function pointer, for casting a `Box<dyn Any>` to a `Box<dyn Trait>`.
-    pub box_caster: &'static (dyn Any + Sync + Send),
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -150,8 +103,8 @@ pub mod statics {
 
     ::pliron::inventory::collect!(&'static TraitCasterInfo);
 
-    pub fn get_trait_casters() -> impl Iterator<Item = &'static TraitCasterInfo> {
-        ::pliron::inventory::iter::<&'static TraitCasterInfo>().copied()
+    pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfo> {
+        ::pliron::inventory::iter::<&'static TraitCasterInfo>()
     }
 }
 
@@ -159,12 +112,13 @@ pub use statics::*;
 
 #[doc(hidden)]
 /// A map of all the trait casters, indexed by the type_id of the object
-/// and the type_id of the trait to cast to. The map's values hold the
-/// cast function pointers.
-static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static TraitCasterInfo>> =
+/// and the type_id of the trait to cast to. The map's values are
+/// the cast function pointers. This is used to avoid having to search
+/// through the distributed slice every time we want to cast an object.
+static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
     LazyLock::new(|| {
         get_trait_casters()
-            .map(|info| ((info.from, info.to), info))
+            .map(|lazy| ((lazy.from, lazy.to), lazy.caster))
             .collect()
     });
 
@@ -207,12 +161,6 @@ macro_rules! type_to_trait {
                             &'a (dyn core::any::Any + 'static),
                         ) -> &'a (dyn $to_trait_name + 'static))
                         as &'static (dyn core::any::Any + Sync + Send),
-                    box_caster: &(cast_to_trait_box
-                        as fn(
-                            $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
-                        )
-                            -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static>)
-                        as &'static (dyn core::any::Any + Sync + Send),
                 };
 
             #[cfg(target_family = "wasm")]
@@ -227,15 +175,6 @@ macro_rules! type_to_trait {
                 // so the downcast must succeed. A failure indicates an internal bug
                 // in `type_to_trait!` or `any_to_trait`, not their usage.
                 r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
-            }
-
-            fn cast_to_trait_box(
-                r: $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
-            ) -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static> {
-                // This function is only called when the type of `r` is `$ty_name`,
-                // so the downcast must succeed. A failure indicates an internal bug
-                // in `type_to_trait!` or `any_to_trait_box`, not their usage.
-                r.downcast::<$ty_name>().unwrap() as $crate::alloc::boxed::Box<dyn $to_trait_name>
             }
         };
     };

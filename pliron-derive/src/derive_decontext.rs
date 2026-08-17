@@ -9,8 +9,9 @@
 //! `StableHash`, and is naturally preserved by reconstructing the same variant
 //! for `CloneIntoContext`.
 //!
-//! Neither macro can be derived for a generic struct/enum since the registration
-//! with `type_to_trait!` needs a single, concrete, `'static` type.
+//! `StableHash` registers the impl with `type_to_trait!`,
+//! so it cannot be derived for a generic struct/enum.
+//! `CloneIntoContext` can be derived for generic structs/enums.
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -83,14 +84,8 @@ fn construct_expr(
     }
 }
 
-/// Reject structs/enums that `StableHash`/`CloneIntoContext` can't be derived for.
-fn check_derivable(input: &DeriveInput) -> syn::Result<()> {
-    if !input.generics.params.is_empty() {
-        return Err(syn::Error::new_spanned(
-            &input.generics,
-            "cannot be derived for generic structs or enums",
-        ));
-    }
+/// Reject unions.
+fn check_no_union(input: &DeriveInput) -> syn::Result<()> {
     match &input.data {
         Data::Struct(_) | Data::Enum(_) => Ok(()),
         Data::Union(_) => Err(syn::Error::new_spanned(
@@ -100,9 +95,21 @@ fn check_derivable(input: &DeriveInput) -> syn::Result<()> {
     }
 }
 
+/// Reject generic structs/enums.
+fn check_no_generics(input: &DeriveInput) -> syn::Result<()> {
+    if !input.generics.params.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &input.generics,
+            "cannot be derived for generic structs or enums",
+        ));
+    }
+    Ok(())
+}
+
 pub(crate) fn derive_stable_hash(input: TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse2::<DeriveInput>(input)?;
-    check_derivable(&input)?;
+    check_no_union(&input)?;
+    check_no_generics(&input)?;
     let ident = &input.ident;
 
     let hash_stmt = |info: &FieldInfo| {
@@ -136,7 +143,7 @@ pub(crate) fn derive_stable_hash(input: TokenStream) -> syn::Result<TokenStream>
                 }
             }
         }
-        Data::Union(_) => unreachable!("checked by check_derivable"),
+        Data::Union(_) => unreachable!("checked by check_no_union"),
     };
 
     Ok(quote! {
@@ -155,12 +162,17 @@ pub(crate) fn derive_stable_hash(input: TokenStream) -> syn::Result<TokenStream>
 
 pub(crate) fn derive_clone_into_context(input: TokenStream) -> syn::Result<TokenStream> {
     let input = syn::parse2::<DeriveInput>(input)?;
-    check_derivable(&input)?;
+    check_no_union(&input)?;
     let ident = &input.ident;
+    let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let value_for = |info: &FieldInfo| {
         let name = &info.binding;
-        quote! { ::pliron::irbuild::decontext::clone_into_typed(#name, _src_ctx, _dst_ctx) }
+        quote! {
+            ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                #name, _src_ctx, _dst_ctx,
+            )
+        }
     };
 
     let cloned = match &input.data {
@@ -189,20 +201,21 @@ pub(crate) fn derive_clone_into_context(input: TokenStream) -> syn::Result<Token
                 }
             }
         }
-        Data::Union(_) => unreachable!("checked by check_derivable"),
+        Data::Union(_) => unreachable!("checked by check_no_union"),
     };
 
     Ok(quote! {
-        impl ::pliron::irbuild::decontext::CloneIntoContext for #ident {
+        impl #impl_generics ::pliron::irbuild::decontext::CloneIntoContext
+            for #ident #ty_generics #where_clause
+        {
             fn clone_into_context(
                 &self,
                 _src_ctx: &::pliron::context::Context,
                 _dst_ctx: &mut ::pliron::context::Context,
-            ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                ::pliron::alloc::boxed::Box::new(#cloned)
+            ) -> #ident #ty_generics {
+                #cloned
             }
         }
-        ::pliron::type_to_trait!(#ident, ::pliron::irbuild::decontext::CloneIntoContext);
     })
 }
 
@@ -365,17 +378,24 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                    ::pliron::alloc::boxed::Box::new({
+                ) -> Foo {
+                    {
                         let Foo { a, b } = self;
                         Foo {
-                            a: ::pliron::irbuild::decontext::clone_into_typed(a, _src_ctx, _dst_ctx),
-                            b: ::pliron::irbuild::decontext::clone_into_typed(b, _src_ctx, _dst_ctx),
+                            a: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                a,
+                                _src_ctx,
+                                _dst_ctx,
+                            ),
+                            b: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                b,
+                                _src_ctx,
+                                _dst_ctx,
+                            ),
                         }
-                    })
+                    }
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneIntoContext);
         "#]]
         .assert_eq(&got);
     }
@@ -392,14 +412,13 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                    ::pliron::alloc::boxed::Box::new({
+                ) -> Foo {
+                    {
                         let Foo = self;
                         Foo
-                    })
+                    }
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneIntoContext);
         "#]]
         .assert_eq(&got);
     }
@@ -416,14 +435,13 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                    ::pliron::alloc::boxed::Box::new({
+                ) -> Foo {
+                    {
                         let Foo {} = self;
                         Foo {}
-                    })
+                    }
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneIntoContext);
         "#]]
         .assert_eq(&got);
     }
@@ -440,14 +458,13 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                    ::pliron::alloc::boxed::Box::new({
+                ) -> Foo {
+                    {
                         let Foo() = self;
                         Foo()
-                    })
+                    }
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneIntoContext);
         "#]]
         .assert_eq(&got);
     }
@@ -467,24 +484,52 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::alloc::boxed::Box<dyn ::core::any::Any> {
-                    ::pliron::alloc::boxed::Box::new(
-                        match self {
-                            Foo::A => Foo::A,
-                            Foo::B(field_0) => {
-                                Foo::B(
-                                    ::pliron::irbuild::decontext::clone_into_typed(
-                                        field_0,
-                                        _src_ctx,
-                                        _dst_ctx,
-                                    ),
-                                )
-                            }
-                        },
-                    )
+                ) -> Foo {
+                    match self {
+                        Foo::A => Foo::A,
+                        Foo::B(field_0) => {
+                            Foo::B(
+                                ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                    field_0,
+                                    _src_ctx,
+                                    _dst_ctx,
+                                ),
+                            )
+                        }
+                    }
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneIntoContext);
+        "#]]
+        .assert_eq(&got);
+    }
+
+    #[test]
+    fn clone_into_context_generic_struct() {
+        let input = quote! {
+            struct Foo<T: CloneIntoContext> {
+                a: T,
+            }
+        };
+        let got = pretty(derive_clone_into_context(input));
+        expect![[r#"
+            impl<T: CloneIntoContext> ::pliron::irbuild::decontext::CloneIntoContext for Foo<T> {
+                fn clone_into_context(
+                    &self,
+                    _src_ctx: &::pliron::context::Context,
+                    _dst_ctx: &mut ::pliron::context::Context,
+                ) -> Foo<T> {
+                    {
+                        let Foo { a } = self;
+                        Foo {
+                            a: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                a,
+                                _src_ctx,
+                                _dst_ctx,
+                            ),
+                        }
+                    }
+                }
+            }
         "#]]
         .assert_eq(&got);
     }
