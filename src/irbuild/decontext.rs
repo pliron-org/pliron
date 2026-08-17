@@ -183,6 +183,12 @@ macro_rules! impl_stable_hash_for_hash {
                     _ctx: &$crate::context::Context,
                     mut state: &mut dyn ::core::hash::Hasher,
                 ) {
+                    // Hash the type's name first, so that two distinct types
+                    // delegating to an identically-shaped `Hash` impl don't collide.
+                    ::core::hash::Hash::hash(
+                        ::core::concat!(::core::module_path!(), "::", ::core::stringify!($ty)),
+                        &mut state,
+                    );
                     ::core::hash::Hash::hash(self, &mut state);
                 }
             }
