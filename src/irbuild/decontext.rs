@@ -327,7 +327,7 @@ macro_rules! impl_clone_into_context_for_clone {
 /// Implement [CloneAttributeIntoContext] for `$ty` by delegating to `$ty`'s own
 /// [CloneIntoContext] impl and boxing the result.
 ///
-/// `$ty` must already implement [CloneIntoContext] (e.g. via 
+/// `$ty` must already implement [CloneIntoContext] (e.g. via
 /// [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext),
 /// or [`impl_clone_into_context_for_clone!`](crate::impl_clone_into_context_for_clone)).
 ///
@@ -377,7 +377,7 @@ macro_rules! impl_clone_attribute_for_clone_into_context {
 /// Implement [CloneTypeIntoContext] for `$ty` by delegating to `$ty`'s own [CloneIntoContext]
 /// impl, then re-interning the clone into `dst_ctx`.
 ///
-/// `$ty` must already implement [CloneIntoContext] (e.g. via 
+/// `$ty` must already implement [CloneIntoContext] (e.g. via
 /// [`#[derive(CloneIntoContext)]`](pliron::derive::CloneIntoContext),
 /// or [`impl_clone_into_context_for_clone!`](crate::impl_clone_into_context_for_clone)).
 ///
