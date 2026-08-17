@@ -13,7 +13,7 @@
 //!    we cannot have the cloned IR contain [TypeHandle]s that reference the source [Context].
 //! 3. The above examples extend to [Attribute]s too, for the simple reason that they
 //!    may contain [TypeHandle]s.
-//! 4. Similarly, [Source] internalizes `PathBuf`s in a [Context],
+//! 4. Similarly, [Source](crate::location::Source) internalizes `PathBuf`s in a [Context],
 //!    thus requiring special handling for stable hashing, cloning into a different [Context].
 
 use alloc::{
@@ -27,12 +27,10 @@ use pliron_derive::{attr_interface, type_interface};
 use crate::{
     attribute::{AttrObj, Attribute, attr_cast},
     context::Context,
-    location::{Location, Source},
     parsable::{Parsable, parse_from_str},
     printable::Printable,
     result::Result,
     r#type::{Type, TypeHandle, type_cast},
-    uniqued_any,
     utils::trait_cast::any_to_trait,
 };
 
@@ -146,96 +144,6 @@ impl CloneIntoContext for TypeHandle {
             // parsing back in `dst_ctx`.
             let printed = self.disp(src_ctx).to_string();
             parse_from_str(TypeHandle::parser(()), dst_ctx, &printed).expect("Type failed to parse")
-        }
-    }
-}
-
-impl StableHash for Source {
-    fn stable_hash(&self, ctx: &Context, mut state: &mut dyn Hasher) {
-        core::mem::discriminant(self).hash(&mut state);
-        if let Source::File(key) = self {
-            // The key itself is just an index into `ctx`'s store; hash the
-            // path it refers to instead.
-            uniqued_any::get(ctx, *key).hash(&mut state);
-        }
-    }
-}
-
-impl CloneIntoContext for Source {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Source {
-        match self {
-            Source::File(key) => {
-                let path = uniqued_any::get(src_ctx, *key).clone();
-                Source::File(uniqued_any::save(dst_ctx, path))
-            }
-            Source::InMemory => Source::InMemory,
-        }
-    }
-}
-
-impl StableHash for Location {
-    fn stable_hash(&self, ctx: &Context, mut state: &mut dyn Hasher) {
-        core::mem::discriminant(self).hash(&mut state);
-        match self {
-            Location::SrcPos { src, pos } => {
-                src.stable_hash(ctx, state);
-                pos.line.hash(&mut state);
-                pos.column.hash(&mut state);
-            }
-            Location::Fused {
-                metadata,
-                locations,
-            } => {
-                match metadata {
-                    Some(metadata) => metadata.stable_hash(ctx, state),
-                    None => 0u8.hash(&mut state),
-                }
-                locations.len().hash(&mut state);
-                for loc in locations {
-                    loc.stable_hash(ctx, state);
-                }
-            }
-            Location::Named { name, child_loc } => {
-                name.hash(&mut state);
-                child_loc.stable_hash(ctx, state);
-            }
-            Location::CallSite { callee, caller } => {
-                callee.stable_hash(ctx, state);
-                caller.stable_hash(ctx, state);
-            }
-            Location::Unknown => {}
-        }
-    }
-}
-
-impl CloneIntoContext for Location {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Location {
-        match self {
-            Location::SrcPos { src, pos } => Location::SrcPos {
-                src: src.clone_into_context(src_ctx, dst_ctx),
-                pos: *pos,
-            },
-            Location::Fused {
-                metadata,
-                locations,
-            } => Location::Fused {
-                metadata: metadata
-                    .as_ref()
-                    .map(|metadata| metadata.clone_into_context(src_ctx, dst_ctx)),
-                locations: locations
-                    .iter()
-                    .map(|loc| loc.clone_into_context(src_ctx, dst_ctx))
-                    .collect(),
-            },
-            Location::Named { name, child_loc } => Location::Named {
-                name: name.clone(),
-                child_loc: child_loc.clone_into_context(src_ctx, dst_ctx),
-            },
-            Location::CallSite { callee, caller } => Location::CallSite {
-                callee: callee.clone_into_context(src_ctx, dst_ctx),
-                caller: caller.clone_into_context(src_ctx, dst_ctx),
-            },
-            Location::Unknown => Location::Unknown,
         }
     }
 }
@@ -390,6 +298,7 @@ mod tests {
     use crate::{
         combine::stream::position::SourcePosition,
         context::Context,
+        location::{Location, Source},
         parsable::{ParseResult, StateStream},
         printable,
         r#type::TypedHandle,

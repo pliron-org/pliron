@@ -125,12 +125,23 @@ pub(crate) fn derive_stable_hash(input: TokenStream) -> syn::Result<TokenStream>
         quote! { ::pliron::irbuild::decontext::StableHash::stable_hash(#name, _ctx, _state); }
     };
 
+    // Hash the type's fully-qualified name first, so that two distinct types
+    // with the same field/variant shape don't hash identically.
+    let type_tag_stmt = quote! {
+        let mut _state = _state;
+        ::core::hash::Hash::hash(
+            ::core::concat!(::core::module_path!(), "::", ::core::stringify!(#ident)),
+            &mut _state,
+        );
+    };
+
     let body = match &input.data {
         Data::Struct(data) => {
             let infos = field_infos(&data.fields);
             let hash_stmts = infos.iter().map(hash_stmt);
             let pattern = destructure_pattern(&data.fields, &infos);
             quote! {
+                #type_tag_stmt
                 let #ident #pattern = self;
                 #(#hash_stmts)*
             }
@@ -144,7 +155,7 @@ pub(crate) fn derive_stable_hash(input: TokenStream) -> syn::Result<TokenStream>
                 quote! { #ident::#variant_ident #pattern => { #(#hash_stmts)* } }
             });
             quote! {
-                let mut _state = _state;
+                #type_tag_stmt
                 ::core::hash::Hash::hash(&::core::mem::discriminant(self), &mut _state);
                 match self {
                     #(#arms)*
@@ -324,6 +335,11 @@ mod tests {
                     _ctx: &::pliron::context::Context,
                     _state: &mut dyn ::core::hash::Hasher,
                 ) {
+                    let mut _state = _state;
+                    ::core::hash::Hash::hash(
+                        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(Foo)),
+                        &mut _state,
+                    );
                     let Foo { a, b } = self;
                     ::pliron::irbuild::decontext::StableHash::stable_hash(a, _ctx, _state);
                     ::pliron::irbuild::decontext::StableHash::stable_hash(b, _ctx, _state);
@@ -347,6 +363,11 @@ mod tests {
                     _ctx: &::pliron::context::Context,
                     _state: &mut dyn ::core::hash::Hasher,
                 ) {
+                    let mut _state = _state;
+                    ::core::hash::Hash::hash(
+                        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(Foo)),
+                        &mut _state,
+                    );
                     let Foo(field_0, field_1) = self;
                     ::pliron::irbuild::decontext::StableHash::stable_hash(field_0, _ctx, _state);
                     ::pliron::irbuild::decontext::StableHash::stable_hash(field_1, _ctx, _state);
@@ -370,6 +391,11 @@ mod tests {
                     _ctx: &::pliron::context::Context,
                     _state: &mut dyn ::core::hash::Hasher,
                 ) {
+                    let mut _state = _state;
+                    ::core::hash::Hash::hash(
+                        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(Foo)),
+                        &mut _state,
+                    );
                     let Foo = self;
                 }
             }
@@ -396,6 +422,10 @@ mod tests {
                     _state: &mut dyn ::core::hash::Hasher,
                 ) {
                     let mut _state = _state;
+                    ::core::hash::Hash::hash(
+                        ::core::concat!(::core::module_path!(), "::", ::core::stringify!(Foo)),
+                        &mut _state,
+                    );
                     ::core::hash::Hash::hash(&::core::mem::discriminant(self), &mut _state);
                     match self {
                         Foo::A => {}
