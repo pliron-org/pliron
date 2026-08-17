@@ -1212,8 +1212,6 @@ pub fn clone_into_context(input: TokenStream) -> TokenStream {
 /// [`#[derive(CloneIntoContext)]`](derive@CloneIntoContext),
 /// or [`impl_clone_into_context_for_clone!`](../pliron/macro.impl_clone_into_context_for_clone.html)).
 ///
-/// Cannot be derived for a generic struct/enum.
-///
 /// Usage:
 ///
 /// ```
@@ -1251,8 +1249,6 @@ pub fn clone_attribute_into_context(input: TokenStream) -> TokenStream {
 /// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) (e.g. via
 /// [`#[derive(CloneIntoContext)]`](derive@CloneIntoContext),
 /// or [`impl_clone_into_context_for_clone!`](../pliron/macro.impl_clone_into_context_for_clone.html)).
-///
-/// Cannot be derived for a generic struct/enum.
 ///
 /// Usage:
 ///
