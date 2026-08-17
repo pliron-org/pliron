@@ -161,6 +161,7 @@ pub enum Location {
     Unknown,
 }
 
+/// [SourcePosition] doesn't implement [Hash], so this manual impl.
 impl Hash for Location {
     fn hash<H: Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
