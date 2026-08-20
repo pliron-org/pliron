@@ -45,14 +45,14 @@ use pliron::{
     },
     linked_list::ContainsLinkedList,
     location::{Located, Location},
-    op::{Op, OpObj},
+    op::{Op, OpObj, op_cast},
     operation::Operation,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable, indented_nl},
     region::Region,
     result::{Error, ErrorKind, Result},
     symbol_table::SymbolTableCollection,
-    r#type::{TypeHandle, TypedHandle, type_cast, type_impls},
+    r#type::{TypeHandle, TypedHandle, type_cast},
     utils::{apint::APInt, const_bound_n::I, vec_exns::VecExtns},
     value::Value,
     verify_err, verify_error,
@@ -68,6 +68,7 @@ use crate::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
         IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag, PointerTypeResult,
+        ScalarOrVectorOpd, ScalarOrVectorOpdImpls, ScalarOrVectorRes, ScalarOrVectorResImpls,
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
@@ -205,7 +206,8 @@ macro_rules! new_int_bin_op_with_format {
             format = $format,
             interfaces = [
                 OneResultInterface, SameOperandsType, SameResultsType,
-                SameOperandsAndResultType, BinArithOp, IntBinArithOp, NOpdsInterface<2>
+                SameOperandsAndResultType, BinArithOp, IntBinArithOp,
+                ScalarOrVectorOpd<IntegerType, 0>, NOpdsInterface<2>
             ],
             verifier = "succ"
         )]
@@ -351,7 +353,12 @@ pub enum ICmpOpVerifyErr {
 #[pliron_op(
     name = "llvm.icmp",
     format = "$0 ` <` attr($icmp_predicate, $ICmpPredicateAttr) `> ` $1 ` : ` type($0)",
-    interfaces = [SameOperandsType, OneResultInterface, NOpdsInterface<2>],
+    interfaces = [
+        SameOperandsType,
+        OneResultInterface,
+        NOpdsInterface<2>,
+        ScalarOrVectorRes<IntegerType, 0>,
+    ],
     attributes = (icmp_predicate: ICmpPredicateAttr)
 )]
 pub struct ICmpOp;
@@ -403,28 +410,20 @@ impl Verify for ICmpOp {
             verify_err!(loc.clone(), ICmpOpVerifyErr::PredAttrErr)?
         }
 
-        let mut res_ty = self.result_type(ctx);
-        let mut vec_num_elements = None;
-        if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
-            res_ty = vec_ty.elem_type();
-            vec_num_elements = Some(vec_ty.num_elements());
-        }
-        let res_ty = res_ty.deref(ctx);
-        let Some(res_ty) = res_ty.downcast_ref::<IntegerType>() else {
-            return verify_err!(loc, ICmpOpVerifyErr::ResultNotBool);
-        };
-        if res_ty.width() != 1 {
+        let res_ty = self.scalar_or_vector_elem_ty(ctx);
+        if res_ty.deref(ctx).width() != 1 {
             return verify_err!(loc, ICmpOpVerifyErr::ResultNotBool);
         }
+        let res_shape = self.vector_shape(ctx);
 
         let mut opd_ty = self.operand_type_i(ctx, I::<0>.into());
-        if let Some(vec_ty) = opd_ty.deref(ctx).downcast_ref::<VectorType>() {
-            opd_ty = vec_ty.elem_type();
-            // Ensure that the number of elements matches the result type's number of elements.
-            if vec_num_elements.is_none_or(|num_elements| vec_ty.num_elements() != num_elements) {
-                return verify_err!(loc, ICmpOpVerifyErr::MismatchedVectorNumElements);
-            }
-        } else if vec_num_elements.is_some() {
+        let opd_shape = opd_ty
+            .deref(ctx)
+            .downcast_ref::<VectorType>()
+            .inspect(|vec_ty| opd_ty = vec_ty.elem_type())
+            .map(|vec_ty| (vec_ty.num_elements(), vec_ty.kind()));
+
+        if opd_shape != res_shape {
             return verify_err!(loc, ICmpOpVerifyErr::MismatchedVectorNumElements);
         }
         let opd_ty = opd_ty.deref(ctx);
@@ -3025,66 +3024,60 @@ impl SymbolUserOpInterface for BlockAddressOp {
 
 #[derive(Error, Debug)]
 enum IntCastVerifyErr {
-    #[error("Result must be an integer")]
-    ResultTypeErr,
-    #[error("Operand must be an integer")]
-    OperandTypeErr,
     #[error("Result type must be larger than operand type")]
-    ResultTypeSmallerThanOperand,
+    SmallerThanOperand,
     #[error("Result type must be smaller than operand type")]
-    ResultTypeLargerThanOperand,
+    LargerThanOperand,
     #[error("Result type must be equal to operand type")]
-    ResultTypeEqualToOperand,
+    NotEqualToOperand,
+    #[error("Operand and result must both be scalars or vectors with matching shape")]
+    MismatchedVectorShape,
 }
 
 /// Ensure that the integer cast operation is valid.
 /// This checks that the result type is an integer and that the operand type is also an integer.
 /// It also checks that the result type is larger or smaller than the operand type (`cmp` operand).
-fn integer_cast_verify(op: &Operation, ctx: &Context, cmp: ICmpPredicateAttr) -> Result<()> {
-    use pliron::r#type::Typed;
+fn integer_cast_verify(op: &dyn Op, ctx: &Context, cmp: ICmpPredicateAttr) -> Result<()> {
+    let loc = op.loc(ctx);
 
-    let loc = op.loc();
-    let mut res_ty = op.get_type(0).deref(ctx);
-    let mut opd_ty = op.get_operand(0).get_type(ctx).deref(ctx);
+    let opd_iface = op_cast::<dyn ScalarOrVectorOpd<IntegerType, 0>>(op)
+        .expect("Op must impl ScalarOrVectorOpd<IntegerType, 0>");
+    let res_iface = op_cast::<dyn ScalarOrVectorRes<IntegerType, 0>>(op)
+        .expect("Op must impl ScalarOrVectorRes<IntegerType, 0>");
 
-    if let Some(vec_res_ty) = res_ty.downcast_ref::<VectorType>() {
-        res_ty = vec_res_ty.elem_type().deref(ctx);
-    }
-    if let Some(vec_opd_ty) = opd_ty.downcast_ref::<VectorType>() {
-        opd_ty = vec_opd_ty.elem_type().deref(ctx);
+    if opd_iface.vector_shape(ctx) != res_iface.vector_shape(ctx) {
+        return verify_err!(loc, IntCastVerifyErr::MismatchedVectorShape);
     }
 
-    let Some(res_ty) = res_ty.downcast_ref::<IntegerType>() else {
-        return verify_err!(loc, IntCastVerifyErr::ResultTypeErr);
-    };
-    let Some(opd_ty) = opd_ty.downcast_ref::<IntegerType>() else {
-        return verify_err!(loc, IntCastVerifyErr::OperandTypeErr);
-    };
+    let opd_ty = opd_iface.scalar_or_vector_elem_ty(ctx);
+    let opd_ty = opd_ty.deref(ctx);
+    let res_ty = res_iface.scalar_or_vector_elem_ty(ctx);
+    let res_ty = res_ty.deref(ctx);
 
     match cmp {
         ICmpPredicateAttr::SLT | ICmpPredicateAttr::ULT => {
             if res_ty.width() >= opd_ty.width() {
-                return verify_err!(loc, IntCastVerifyErr::ResultTypeLargerThanOperand);
+                return verify_err!(loc, IntCastVerifyErr::LargerThanOperand);
             }
         }
         ICmpPredicateAttr::SGT | ICmpPredicateAttr::UGT => {
             if res_ty.width() <= opd_ty.width() {
-                return verify_err!(loc, IntCastVerifyErr::ResultTypeSmallerThanOperand);
+                return verify_err!(loc, IntCastVerifyErr::SmallerThanOperand);
             }
         }
         ICmpPredicateAttr::SLE | ICmpPredicateAttr::ULE => {
             if res_ty.width() > opd_ty.width() {
-                return verify_err!(loc, IntCastVerifyErr::ResultTypeLargerThanOperand);
+                return verify_err!(loc, IntCastVerifyErr::LargerThanOperand);
             }
         }
         ICmpPredicateAttr::SGE | ICmpPredicateAttr::UGE => {
             if res_ty.width() < opd_ty.width() {
-                return verify_err!(loc, IntCastVerifyErr::ResultTypeSmallerThanOperand);
+                return verify_err!(loc, IntCastVerifyErr::SmallerThanOperand);
             }
         }
         ICmpPredicateAttr::EQ | ICmpPredicateAttr::NE => {
             if res_ty.width() != opd_ty.width() {
-                return verify_err!(loc, IntCastVerifyErr::ResultTypeEqualToOperand);
+                return verify_err!(loc, IntCastVerifyErr::NotEqualToOperand);
             }
         }
     }
@@ -3103,16 +3096,18 @@ fn integer_cast_verify(op: &Operation, ctx: &Context, cmp: ICmpPredicateAttr) ->
 #[pliron_op(
     name = "llvm.sext",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        ScalarOrVectorOpd<IntegerType, 0>,
+        ScalarOrVectorRes<IntegerType, 0>,
+    ]
 )]
 pub struct SExtOp;
 impl Verify for SExtOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        integer_cast_verify(
-            &self.get_operation().deref(ctx),
-            ctx,
-            ICmpPredicateAttr::SGT,
-        )
+        integer_cast_verify(self, ctx, ICmpPredicateAttr::SGT)
     }
 }
 
@@ -3134,17 +3129,15 @@ impl Verify for SExtOp {
         OneOpdInterface,
         NNegFlag,
         CastOpWithNNegInterface,
+        ScalarOrVectorOpd<IntegerType, 0>,
+        ScalarOrVectorRes<IntegerType, 0>,
     ]
 )]
 pub struct ZExtOp;
 
 impl Verify for ZExtOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        integer_cast_verify(
-            &self.get_operation().deref(ctx),
-            ctx,
-            ICmpPredicateAttr::UGT,
-        )
+        integer_cast_verify(self, ctx, ICmpPredicateAttr::UGT)
     }
 }
 
@@ -3162,28 +3155,40 @@ impl Verify for ZExtOp {
 #[pliron_op(
     name = "llvm.fpext",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        FastMathFlags,
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
+        ScalarOrVectorResImpls<dyn FloatTypeInterface, 0>,
+    ]
 )]
 pub struct FPExtOp;
 
 impl Verify for FPExtOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check operand type to be a float
-        let mut opd_ty = self.operand_type(ctx).deref(ctx);
-        if let Some(vec_ty) = opd_ty.downcast_ref::<VectorType>() {
-            opd_ty = vec_ty.elem_type().deref(ctx);
-        }
-        let Some(opd_float_ty) = type_cast::<dyn FloatTypeInterface>(&*opd_ty) else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
+        let opd_ty = ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
+            self, ctx,
+        );
+        let opd_ty = opd_ty.deref(ctx);
+        let opd_float_ty = type_cast::<dyn FloatTypeInterface>(&*opd_ty)
+            .expect("ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0> guarantees this");
 
-        let mut res_ty = self.result_type(ctx).deref(ctx);
-        if let Some(vec_ty) = res_ty.downcast_ref::<VectorType>() {
-            res_ty = vec_ty.elem_type().deref(ctx);
+        let res_ty = ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
+            self, ctx,
+        );
+        let res_ty = res_ty.deref(ctx);
+        let res_float_ty = type_cast::<dyn FloatTypeInterface>(&*res_ty)
+            .expect("ScalarOrVectorResImpls<dyn FloatTypeInterface, 0> guarantees this");
+
+        let opd_shape =
+            ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        let res_shape =
+            ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
-        let Some(res_float_ty) = type_cast::<dyn FloatTypeInterface>(&*res_ty) else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
-        };
 
         let opd_size = opd_float_ty.get_semantics().bits;
         let res_size = res_float_ty.get_semantics().bits;
@@ -3223,17 +3228,19 @@ pub enum FloatCastVerifyErr {
 #[pliron_op(
     name = "llvm.trunc",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        ScalarOrVectorOpd<IntegerType, 0>,
+        ScalarOrVectorRes<IntegerType, 0>,
+    ]
 )]
 pub struct TruncOp;
 
 impl Verify for TruncOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        integer_cast_verify(
-            &self.get_operation().deref(ctx),
-            ctx,
-            ICmpPredicateAttr::ULT,
-        )
+        integer_cast_verify(self, ctx, ICmpPredicateAttr::ULT)
     }
 }
 
@@ -3249,28 +3256,40 @@ impl Verify for TruncOp {
 #[pliron_op(
     name = "llvm.fptrunc",
     format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface, FastMathFlags]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        FastMathFlags,
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
+        ScalarOrVectorResImpls<dyn FloatTypeInterface, 0>,
+    ]
 )]
 pub struct FPTruncOp;
 
 impl Verify for FPTruncOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check operand type to be a float
-        let mut opd_ty = self.operand_type(ctx).deref(ctx);
-        if let Some(vec_ty) = opd_ty.downcast_ref::<VectorType>() {
-            opd_ty = vec_ty.elem_type().deref(ctx);
-        }
-        let Some(opd_float_ty) = type_cast::<dyn FloatTypeInterface>(&*opd_ty) else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
+        let opd_ty = ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
+            self, ctx,
+        );
+        let opd_ty = opd_ty.deref(ctx);
+        let opd_float_ty = type_cast::<dyn FloatTypeInterface>(&*opd_ty)
+            .expect("ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0> guarantees this");
 
-        let mut res_ty = self.result_type(ctx).deref(ctx);
-        if let Some(vec_ty) = res_ty.downcast_ref::<VectorType>() {
-            res_ty = vec_ty.elem_type().deref(ctx);
+        let res_ty = ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
+            self, ctx,
+        );
+        let res_ty = res_ty.deref(ctx);
+        let res_float_ty = type_cast::<dyn FloatTypeInterface>(&*res_ty)
+            .expect("ScalarOrVectorResImpls<dyn FloatTypeInterface, 0> guarantees this");
+
+        let opd_shape =
+            ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        let res_shape =
+            ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
-        let Some(res_float_ty) = type_cast::<dyn FloatTypeInterface>(&*res_ty) else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
-        };
 
         let opd_size = opd_float_ty.get_semantics().bits;
         let res_size = res_float_ty.get_semantics().bits;
@@ -3282,33 +3301,6 @@ impl Verify for FPTruncOp {
         }
         Ok(())
     }
-}
-
-fn cast_element_types(
-    opd_ty: TypeHandle,
-    res_ty: TypeHandle,
-    ctx: &Context,
-    loc: Location,
-) -> Result<(TypeHandle, TypeHandle)> {
-    let mut opd_elem_ty = opd_ty;
-    let mut res_elem_ty = res_ty;
-    let mut opd_vec_shape = None;
-    let mut res_vec_shape = None;
-
-    if let Some(vec_ty) = opd_ty.deref(ctx).downcast_ref::<VectorType>() {
-        opd_elem_ty = vec_ty.elem_type();
-        opd_vec_shape = Some((vec_ty.num_elements(), vec_ty.kind()));
-    }
-    if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
-        res_elem_ty = vec_ty.elem_type();
-        res_vec_shape = Some((vec_ty.num_elements(), vec_ty.kind()));
-    }
-
-    if opd_vec_shape != res_vec_shape {
-        return verify_err!(loc, FloatCastVerifyErr::MismatchedVectorShape);
-    }
-
-    Ok((opd_elem_ty, res_elem_ty))
 }
 
 /// Equivalent to LLVM's FPToSI opcode.
@@ -3325,29 +3317,27 @@ fn cast_element_types(
 #[pliron_op(
     name = "llvm.fptosi",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
+        ScalarOrVectorRes<IntegerType, 0>,
+    ]
 )]
 pub struct FPToSIOp;
 
 impl Verify for FPToSIOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check that the operand is a float and the result is an integer
-        let (opd_ty, res_ty) = cast_element_types(
-            OneOpdInterface::operand_type(self, ctx),
-            OneResultInterface::result_type(self, ctx),
-            ctx,
-            self.loc(ctx),
-        )?;
-        let opd_ty = opd_ty.deref(ctx);
-        if !type_impls::<dyn FloatTypeInterface>(&*opd_ty) {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
-        let res_ty = res_ty.deref(ctx);
-        let Some(res_int_ty) = res_ty.downcast_ref::<IntegerType>() else {
+        let res_int_ty = ScalarOrVectorRes::<IntegerType, 0>::scalar_or_vector_elem_ty(self, ctx);
+        if !res_int_ty.deref(ctx).is_signless() {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
-        };
-        if !res_int_ty.is_signless() {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
+        }
+        let opd_shape =
+            ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        let res_shape = ScalarOrVectorRes::<IntegerType, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
         Ok(())
     }
@@ -3367,29 +3357,27 @@ impl Verify for FPToSIOp {
 #[pliron_op(
     name = "llvm.fptoui",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
+        ScalarOrVectorRes<IntegerType, 0>,
+    ]
 )]
 pub struct FPToUIOp;
 
 impl Verify for FPToUIOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check that the operand is a float and the result is an integer
-        let (opd_ty, res_ty) = cast_element_types(
-            OneOpdInterface::operand_type(self, ctx),
-            OneResultInterface::result_type(self, ctx),
-            ctx,
-            self.loc(ctx),
-        )?;
-        let opd_ty = opd_ty.deref(ctx);
-        if !type_impls::<dyn FloatTypeInterface>(&*opd_ty) {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
-        let res_ty = res_ty.deref(ctx);
-        let Some(res_int_ty) = res_ty.downcast_ref::<IntegerType>() else {
+        let res_int_ty = ScalarOrVectorRes::<IntegerType, 0>::scalar_or_vector_elem_ty(self, ctx);
+        if !res_int_ty.deref(ctx).is_signless() {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
-        };
-        if !res_int_ty.is_signless() {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
+        }
+        let opd_shape =
+            ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        let res_shape = ScalarOrVectorRes::<IntegerType, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
         Ok(())
     }
@@ -3409,29 +3397,27 @@ impl Verify for FPToUIOp {
 #[pliron_op(
     name = "llvm.sitofp",
     format = "$0 ` to ` type($0)",
-    interfaces = [CastOpInterface, OneResultInterface, OneOpdInterface]
+    interfaces = [
+        CastOpInterface,
+        OneResultInterface,
+        OneOpdInterface,
+        ScalarOrVectorOpd<IntegerType, 0>,
+        ScalarOrVectorResImpls<dyn FloatTypeInterface, 0>,
+    ]
 )]
 pub struct SIToFPOp;
 
 impl Verify for SIToFPOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check that the operand is an integer and the result is a float
-        let (opd_ty, res_ty) = cast_element_types(
-            OneOpdInterface::operand_type(self, ctx),
-            OneResultInterface::result_type(self, ctx),
-            ctx,
-            self.loc(ctx),
-        )?;
-        let opd_ty = opd_ty.deref(ctx);
-        let Some(opd_ty_int) = opd_ty.downcast_ref::<IntegerType>() else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
-        if !opd_ty_int.is_signless() {
+        let opd_int_ty = ScalarOrVectorOpd::<IntegerType, 0>::scalar_or_vector_elem_ty(self, ctx);
+        if !opd_int_ty.deref(ctx).is_signless() {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
         }
-        let res_ty = res_ty.deref(ctx);
-        if !type_impls::<dyn FloatTypeInterface>(&*res_ty) {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
+        let opd_shape = ScalarOrVectorOpd::<IntegerType, 0>::vector_shape(self, ctx);
+        let res_shape =
+            ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
         Ok(())
     }
@@ -3457,29 +3443,23 @@ impl Verify for SIToFPOp {
         OneOpdInterface,
         CastOpWithNNegInterface,
         NNegFlag,
+        ScalarOrVectorOpd<IntegerType, 0>,
+        ScalarOrVectorResImpls<dyn FloatTypeInterface, 0>,
     ]
 )]
 pub struct UIToFPOp;
 
 impl Verify for UIToFPOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        // Check that the operand is an integer and the result is a float
-        let (opd_ty, res_ty) = cast_element_types(
-            OneOpdInterface::operand_type(self, ctx),
-            OneResultInterface::result_type(self, ctx),
-            ctx,
-            self.loc(ctx),
-        )?;
-        let opd_ty = opd_ty.deref(ctx);
-        let Some(opd_ty_int) = opd_ty.downcast_ref::<IntegerType>() else {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
-        };
-        if !opd_ty_int.is_signless() {
+        let opd_int_ty = ScalarOrVectorOpd::<IntegerType, 0>::scalar_or_vector_elem_ty(self, ctx);
+        if !opd_int_ty.deref(ctx).is_signless() {
             return verify_err!(self.loc(ctx), FloatCastVerifyErr::OperandTypeErr);
         }
-        let res_ty = res_ty.deref(ctx);
-        if !type_impls::<dyn FloatTypeInterface>(&*res_ty) {
-            return verify_err!(self.loc(ctx), FloatCastVerifyErr::ResultTypeErr);
+        let opd_shape = ScalarOrVectorOpd::<IntegerType, 0>::vector_shape(self, ctx);
+        let res_shape =
+            ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        if opd_shape != res_shape {
+            return verify_err!(self.loc(ctx), FloatCastVerifyErr::MismatchedVectorShape);
         }
         Ok(())
     }
@@ -4077,28 +4057,11 @@ pub enum SelectOpVerifyErr {
         SameOperandsType,
         SameOperandsAndResultType,
         FastMathFlags,
-    ]
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
+    ],
+    verifier = "succ"
 )]
 pub struct FNegOp;
-
-impl Verify for FNegOp {
-    fn verify(&self, ctx: &Context) -> Result<()> {
-        use pliron::r#type::Typed;
-
-        let loc = self.loc(ctx);
-        let op = &*self.op.deref(ctx);
-        let mut arg_ty = op.get_operand(0).get_type(ctx);
-
-        if let Some(vec_ty) = arg_ty.deref(ctx).downcast_ref::<VectorType>() {
-            arg_ty = vec_ty.elem_type();
-        }
-
-        if !type_impls::<dyn FloatTypeInterface>(&*arg_ty.deref(ctx)) {
-            return verify_err!(loc, FNegOpVerifyErr::ArgumentMustBeFloat);
-        }
-        Ok(())
-    }
-}
 
 impl FNegOp {
     /// Create a new [FNegOp].
@@ -4120,14 +4083,6 @@ impl FNegOp {
         op.set_fast_math_flags(ctx, fast_math_flags);
         op
     }
-}
-
-#[derive(Error, Debug)]
-pub enum FNegOpVerifyErr {
-    #[error("Argument must be (possibly vector of) float")]
-    ArgumentMustBeFloat,
-    #[error("Fast math flags must be set")]
-    FastMathFlagsMustBeSet,
 }
 
 macro_rules! new_float_bin_op {
@@ -4153,6 +4108,7 @@ macro_rules! new_float_bin_op {
             interfaces = [
                 OneResultInterface, SameOperandsType, SameResultsType,
                 SameOperandsAndResultType, BinArithOp, FloatBinArithOp,
+                ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
                 FloatBinArithOpWithFastMathFlags, FastMathFlags, NOpdsInterface<2>
             ],
             verifier = "succ"
@@ -4211,7 +4167,9 @@ new_float_bin_op! {
         OneResultInterface,
         SameOperandsType,
         FastMathFlags,
-        NOpdsInterface<2>
+        NOpdsInterface<2>,
+        ScalarOrVectorRes<IntegerType, 0>,
+        ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
     ],
     attributes = (fcmp_predicate: FCmpPredicateAttr)
 )]
@@ -4256,33 +4214,16 @@ impl Verify for FCmpOp {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
-        let mut res_ty = self.result_type(ctx);
-        let mut vec_num_elements = None;
-        if let Some(vec_ty) = res_ty.deref(ctx).downcast_ref::<VectorType>() {
-            res_ty = vec_ty.elem_type();
-            vec_num_elements = Some(vec_ty.num_elements());
-        }
-        let res_ty = res_ty.deref(ctx);
-        let Some(res_ty) = res_ty.downcast_ref::<IntegerType>() else {
-            return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
-        };
-        if res_ty.width() != 1 {
+        let res_ty = ScalarOrVectorRes::<IntegerType, 0>::scalar_or_vector_elem_ty(self, ctx);
+        if res_ty.deref(ctx).width() != 1 {
             return verify_err!(loc, FCmpOpVerifyErr::ResultNotBool);
         }
 
-        let mut opd_ty = self.operand_type_i(ctx, I::<0>.into());
-        if let Some(vec_ty) = opd_ty.deref(ctx).downcast_ref::<VectorType>() {
-            opd_ty = vec_ty.elem_type();
-            // Ensure that the number of elements matches the result type's number of elements.
-            if vec_num_elements.is_none_or(|num_elements| vec_ty.num_elements() != num_elements) {
-                return verify_err!(loc, FCmpOpVerifyErr::MismatchedVectorNumElements);
-            }
-        } else if vec_num_elements.is_some() {
+        let res_shape = ScalarOrVectorRes::<IntegerType, 0>::vector_shape(self, ctx);
+        let opd_shape =
+            ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
+        if res_shape != opd_shape {
             return verify_err!(loc, FCmpOpVerifyErr::MismatchedVectorNumElements);
-        }
-        let opd_ty = opd_ty.deref(ctx);
-        if !type_impls::<dyn FloatTypeInterface>(&*opd_ty) {
-            return verify_err!(loc, FCmpOpVerifyErr::IncorrectOperandsType);
         }
 
         Ok(())
@@ -4293,8 +4234,6 @@ impl Verify for FCmpOp {
 pub enum FCmpOpVerifyErr {
     #[error("Result must be (possibly vector of) 1-bit integer (bool)")]
     ResultNotBool,
-    #[error("Operand must be (possibly vector of) floating point types")]
-    IncorrectOperandsType,
     #[error("Missing or incorrect predicate attribute")]
     PredAttrErr,
     #[error("Vector operand and result types must have the same number of elements")]

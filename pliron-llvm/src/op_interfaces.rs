@@ -3,17 +3,24 @@
 
 //! [Op] Interfaces defined in the LLVM dialect.
 
-use alloc::{string::String, vec};
+use alloc::{
+    string::{String, ToString},
+    vec,
+};
 
 use pliron::{
     builtin::{
         attributes::BoolAttr,
-        op_interfaces::{NOpdsInterface, OneOpdInterface, ResultNOfType, SymbolOpInterface},
+        op_interfaces::{
+            NOpdsInterface, OneOpdInterface, ResultNOfType, SymbolOpInterface,
+            verify_get_operand_n, verify_get_result_n,
+        },
         type_interfaces::FloatTypeInterface,
     },
     derive::op_interface,
     dict_key,
-    r#type::type_cast,
+    printable::Printable,
+    r#type::{Type, TypeInterfaceMarker, TypedHandle, type_impls},
     utils::const_bound_n::I,
 };
 use thiserror::Error;
@@ -24,7 +31,7 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::Context,
-    location::Located,
+    location::{Located, Location},
     op::{Op, op_cast},
     operation::Operation,
     result::Result,
@@ -35,7 +42,7 @@ use pliron::{
 
 use crate::{
     attributes::{AlignmentAttr, FastmathFlagsAttr},
-    types::VectorType,
+    types::{VectorType, VectorTypeKind},
 };
 
 use super::{attributes::IntegerOverflowFlagsAttr, types::PointerType};
@@ -89,24 +96,15 @@ pub struct IntBinArithOpErr;
 
 /// Integer binary arithmetic [Op]
 #[op_interface]
-pub trait IntBinArithOp: BinArithOp {
+pub trait IntBinArithOp: BinArithOp + ScalarOrVectorOpd<IntegerType, 0> {
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn BinArithOp>(op)
-            .expect("Op must impl BinArithOp")
-            .operand_type_i(ctx, I::<0>.into());
-
-        if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
-            ty = vec_ty.elem_type();
-        }
-
-        let ty = ty.deref(ctx);
-        let Some(int_ty) = ty.downcast_ref::<IntegerType>() else {
-            return verify_err!(op.loc(ctx), IntBinArithOpErr);
-        };
-
+        let int_ty = op_cast::<dyn ScalarOrVectorOpd<IntegerType, 0>>(op)
+            .expect("Op must impl ScalarOrVectorOpd<IntegerType, 0>")
+            .scalar_or_vector_elem_ty(ctx);
+        let int_ty = int_ty.deref(ctx);
         if int_ty.signedness() != Signedness::Signless {
             return verify_err!(op.loc(ctx), IntBinArithOpErr);
         }
@@ -184,29 +182,13 @@ pub trait IntBinArithOpWithOverflowFlag: IntBinArithOp {
     }
 }
 
-#[derive(Error, Debug)]
-#[error("Floating point arithmetic Op can only have signless floating point result/operand type")]
-pub struct FloatBinArithOpErr;
-
 /// Floating point binary arithmetic [Op]
 #[op_interface]
-pub trait FloatBinArithOp: BinArithOp {
-    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+pub trait FloatBinArithOp: BinArithOp + ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0> {
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
-        let mut ty = op_cast::<dyn BinArithOp>(op)
-            .expect("Op must impl BinArithOp")
-            .operand_type_i(ctx, I::<0>.into());
-
-        if let Some(vec_ty) = ty.deref(ctx).downcast_ref::<VectorType>() {
-            ty = vec_ty.elem_type();
-        }
-
-        let ty = ty.deref(ctx);
-        if type_cast::<dyn FloatTypeInterface>(&*ty).is_none() {
-            return verify_err!(op.loc(ctx), FloatBinArithOpErr);
-        }
         Ok(())
     }
 }
@@ -500,5 +482,204 @@ pub trait AlignableOpInterface {
         Self: Sized,
     {
         Ok(())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ScalarOrVectorErr {
+    #[error("{0} is not {1} or a vector of it")]
+    NotTOrVectorOfT(String, String),
+    #[error("{0} or its vector element type does not implement interface")]
+    TyOrElemNotImplsI(String),
+}
+
+/// Get the vector shape of `ty`, or `None` if it is not a [VectorType].
+fn vector_shape_of(ty: TypeHandle, ctx: &Context) -> Option<(u32, VectorTypeKind)> {
+    ty.deref(ctx)
+        .downcast_ref::<VectorType>()
+        .map(|vec_ty| (vec_ty.num_elements(), vec_ty.kind()))
+}
+
+/// Get `ty`, or its element type if it is a [VectorType], typed as `T`.
+///
+/// Only valid to call once `verify_t_or_vec_of_t::<T>` has passed for `ty`.
+fn elem_ty_of<T: Type>(ty: TypeHandle, ctx: &Context) -> TypedHandle<T> {
+    if let Ok(typed_handle) = TypedHandle::from_handle(ty, ctx) {
+        return typed_handle;
+    }
+    let ty_ref = &*ty.deref(ctx);
+    let elem_ty = ty_ref
+        .downcast_ref::<VectorType>()
+        .expect("verify() guarantees type is T or a vector of T")
+        .elem_type();
+    TypedHandle::from_handle(elem_ty, ctx).expect("verify() guarantees element type is T")
+}
+
+/// Verify that `ty` is `T`, or a [VectorType] of `T`.
+fn verify_t_or_vec_of_t<T: Type>(loc: Location, ty: &dyn Type, ctx: &Context) -> Result<()> {
+    if ty.is::<T>() {
+        // ty is equal to `T`, we're good.
+        return Ok(());
+    }
+    // See if `ty` is a vector of `T`.
+    let Some(vec_ty) = ty.downcast_ref::<VectorType>() else {
+        return verify_err!(
+            loc,
+            ScalarOrVectorErr::NotTOrVectorOfT(
+                ty.get_type_id().disp(ctx).to_string(),
+                T::get_type_id_static().disp(ctx).to_string()
+            )
+        );
+    };
+    let elem_ty = &*vec_ty.elem_type().deref(ctx);
+    if !elem_ty.is::<T>() {
+        return verify_err!(
+            loc,
+            ScalarOrVectorErr::NotTOrVectorOfT(
+                ty.get_type_id().disp(ctx).to_string(),
+                T::get_type_id_static().disp(ctx).to_string()
+            )
+        );
+    }
+    Ok(())
+}
+
+/// Get `ty`, or its element type if it is a [VectorType], whichever implements `I`.
+///
+/// Only valid to call once `verify_impls_i_or_vec_of_impls_i::<I>` has passed for `ty`.
+fn elem_ty_of_impls<I: ?Sized + TypeInterfaceMarker + 'static>(
+    ty: TypeHandle,
+    ctx: &Context,
+) -> TypeHandle {
+    let ty_ref = &*ty.deref(ctx);
+    if type_impls::<I>(ty_ref) {
+        return ty;
+    }
+    ty_ref
+        .downcast_ref::<VectorType>()
+        .expect("verify() guarantees type impls I or is a vector whose elem impls I")
+        .elem_type()
+}
+
+/// Verify that `ty` implements `I`, or is a [VectorType] whose element type implements `I`.
+fn verify_impls_i_or_vec_of_impls_i<I: ?Sized + TypeInterfaceMarker + 'static>(
+    loc: Location,
+    ty: &dyn Type,
+    ctx: &Context,
+) -> Result<()> {
+    if type_impls::<I>(ty) {
+        // ty implements `I`, we're good.
+        return Ok(());
+    }
+    // See if `ty` is a vector whose element type implements `I`.
+    let Some(vec_ty) = ty.downcast_ref::<VectorType>() else {
+        return verify_err!(
+            loc,
+            ScalarOrVectorErr::TyOrElemNotImplsI(ty.get_type_id().disp(ctx).to_string())
+        );
+    };
+    let elem_ty = &*vec_ty.elem_type().deref(ctx);
+    if !type_impls::<I>(elem_ty) {
+        return verify_err!(
+            loc,
+            ScalarOrVectorErr::TyOrElemNotImplsI(ty.get_type_id().disp(ctx).to_string())
+        );
+    }
+    Ok(())
+}
+
+/// An operand whose type is either `T or [`VectorType<T>`](VectorType).
+#[op_interface]
+pub trait ScalarOrVectorOpd<T: Type, const N: usize> {
+    /// Get the type of operand N, or its element type if its [VectorType].
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypedHandle<T> {
+        let op = &*self.get_operation().deref(ctx);
+        elem_ty_of(op.get_operand(N).get_type(ctx), ctx)
+    }
+
+    /// Get the vector shape of operand N, or `None` if it is not a [VectorType].
+    fn vector_shape(&self, ctx: &Context) -> Option<(u32, VectorTypeKind)> {
+        let op = &*self.get_operation().deref(ctx);
+        vector_shape_of(op.get_operand(N).get_type(ctx), ctx)
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let opd = verify_get_operand_n::<N>(op.get_operation(), ctx)?;
+        verify_t_or_vec_of_t::<T>(op.loc(ctx), &*opd.get_type(ctx).deref(ctx), ctx)
+    }
+}
+
+/// An operand whose type either impls `I` or is [`VectorType<T: I>`](VectorType).
+#[op_interface]
+pub trait ScalarOrVectorOpdImpls<I: ?Sized + TypeInterfaceMarker + 'static, const N: usize> {
+    /// Get the type of operand N, or its element type if its [VectorType].
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeHandle {
+        let op = &*self.get_operation().deref(ctx);
+        elem_ty_of_impls::<I>(op.get_operand(N).get_type(ctx), ctx)
+    }
+
+    /// Get the vector shape of operand N, or `None` if it is not a [VectorType].
+    fn vector_shape(&self, ctx: &Context) -> Option<(u32, VectorTypeKind)> {
+        let op = &*self.get_operation().deref(ctx);
+        vector_shape_of(op.get_operand(N).get_type(ctx), ctx)
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let opd = verify_get_operand_n::<N>(op.get_operation(), ctx)?;
+        verify_impls_i_or_vec_of_impls_i::<I>(op.loc(ctx), &*opd.get_type(ctx).deref(ctx), ctx)
+    }
+}
+
+/// A result whose type is either `T` or [`VectorType<T>`](VectorType).
+#[op_interface]
+pub trait ScalarOrVectorRes<T: Type, const N: usize> {
+    /// Get the type of result N, or its element type if its [VectorType].
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypedHandle<T> {
+        let op = &*self.get_operation().deref(ctx);
+        elem_ty_of(op.get_result(N).get_type(ctx), ctx)
+    }
+
+    /// Get the vector shape of result N, or `None` if it is not a [VectorType].
+    fn vector_shape(&self, ctx: &Context) -> Option<(u32, VectorTypeKind)> {
+        let op = &*self.get_operation().deref(ctx);
+        vector_shape_of(op.get_result(N).get_type(ctx), ctx)
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let res = verify_get_result_n::<N>(op.get_operation(), ctx)?;
+        verify_t_or_vec_of_t::<T>(op.loc(ctx), &*res.get_type(ctx).deref(ctx), ctx)
+    }
+}
+
+/// A result whose type either impls `I` or is [`VectorType<T: I>`](VectorType).
+#[op_interface]
+pub trait ScalarOrVectorResImpls<I: ?Sized + TypeInterfaceMarker + 'static, const N: usize> {
+    /// Get the type of result N, or its element type if its [VectorType].
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeHandle {
+        let op = &*self.get_operation().deref(ctx);
+        elem_ty_of_impls::<I>(op.get_result(N).get_type(ctx), ctx)
+    }
+
+    /// Get the vector shape of result N, or `None` if it is not a [VectorType].
+    fn vector_shape(&self, ctx: &Context) -> Option<(u32, VectorTypeKind)> {
+        let op = &*self.get_operation().deref(ctx);
+        vector_shape_of(op.get_result(N).get_type(ctx), ctx)
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let res = verify_get_result_n::<N>(op.get_operation(), ctx)?;
+        verify_impls_i_or_vec_of_impls_i::<I>(op.loc(ctx), &*res.get_type(ctx).deref(ctx), ctx)
     }
 }

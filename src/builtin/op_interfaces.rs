@@ -997,9 +997,20 @@ pub trait AllOperandsOfType<T: Type> {
 }
 
 #[derive(Error, Debug)]
+#[error("Op has only {0} operands, but expected at least {1}")]
+pub struct NotEnoughOperandsErr(pub usize, pub usize);
+
+/// Verify that `op` has an operand at index `N` (0-indexed).
+pub fn verify_get_operand_n<const N: usize>(op: Ptr<Operation>, ctx: &Context) -> Result<Value> {
+    let opr = op.deref(ctx);
+    if opr.get_num_operands() <= N {
+        return verify_err!(opr.loc(), NotEnoughOperandsErr(opr.get_num_operands(), N));
+    }
+    Ok(opr.get_operand(N))
+}
+
+#[derive(Error, Debug)]
 pub enum OperandNOfTypeError {
-    #[error("Op has only {} operands, but expected at least {}", .0, .1)]
-    NotEnoughOperands(usize, usize),
     #[error("Expected operand type {0}, but found {1}")]
     AllOperandsOfTypeVerifyErr(String, String),
 }
@@ -1011,18 +1022,11 @@ pub trait OperandNOfType<const N: usize, T: Type> {
     where
         Self: Sized,
     {
-        let op = op.get_operation().deref(ctx);
-        if op.get_num_operands() <= N {
-            return verify_err!(
-                op.loc(),
-                OperandNOfTypeError::NotEnoughOperands(op.get_num_operands(), N)
-            );
-        }
-        let opd_n = op.get_operand(N);
+        let opd_n = verify_get_operand_n::<N>(op.get_operation(), ctx)?;
         let opd_n_ty = &*opd_n.get_type(ctx).deref(ctx);
         if !opd_n_ty.as_any().is::<T>() {
             return verify_err!(
-                op.loc(),
+                op.loc(ctx),
                 OperandNOfTypeError::AllOperandsOfTypeVerifyErr(
                     T::get_type_id_static().disp(ctx).to_string(),
                     opd_n_ty.get_type_id().disp(ctx).to_string()
@@ -1095,9 +1099,20 @@ pub trait AllResultsOfType<T: Type> {
 }
 
 #[derive(Error, Debug)]
+#[error("Op has only {0} results, but expected at least {1}")]
+pub struct NotEnoughResultsErr(pub usize, pub usize);
+
+/// Verify that `op` has a result at index `N` (0-indexed).
+pub fn verify_get_result_n<const N: usize>(op: Ptr<Operation>, ctx: &Context) -> Result<Value> {
+    let opr = op.deref(ctx);
+    if opr.get_num_results() <= N {
+        return verify_err!(opr.loc(), NotEnoughResultsErr(opr.get_num_results(), N));
+    }
+    Ok(opr.get_result(N))
+}
+
+#[derive(Error, Debug)]
 pub enum ResultNOfTypeError {
-    #[error("Op has only {} results, but expected at least {}", .0, .1)]
-    NotEnoughResults(usize, usize),
     #[error("Expected result type {0}, but found {1}")]
     AllResultsOfTypeVerifyErr(String, String),
 }
@@ -1109,18 +1124,11 @@ pub trait ResultNOfType<const N: usize, T: Type> {
     where
         Self: Sized,
     {
-        let op = op.get_operation().deref(ctx);
-        if op.get_num_results() <= N {
-            return verify_err!(
-                op.loc(),
-                ResultNOfTypeError::NotEnoughResults(op.get_num_results(), N)
-            );
-        }
-        let res_n = op.get_result(N);
+        let res_n = verify_get_result_n::<N>(op.get_operation(), ctx)?;
         let res_n_ty = &*res_n.get_type(ctx).deref(ctx);
         if !res_n_ty.as_any().is::<T>() {
             return verify_err!(
-                op.loc(),
+                op.loc(ctx),
                 ResultNOfTypeError::AllResultsOfTypeVerifyErr(
                     T::get_type_id_static().disp(ctx).to_string(),
                     res_n_ty.get_type_id().disp(ctx).to_string()
