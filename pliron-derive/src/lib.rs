@@ -2,6 +2,7 @@
 // Copyright (c) The pliron contributors
 
 mod derive_attr;
+mod derive_decontext;
 mod derive_entity;
 mod derive_format;
 mod derive_op;
@@ -668,7 +669,7 @@ pub fn op_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let interface_verifiers_slice = parse_quote! { ::pliron::op::OP_INTERFACE_VERIFIERS };
     let all_verifiers_fn_type = parse_quote! { ::pliron::op::OpInterfaceAllVerifiers };
     to_token_stream(interfaces::interface_impl(
-        item,
+        item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
     ))
@@ -1007,7 +1008,7 @@ pub fn attr_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
     let interface_verifiers_slice = parse_quote! { ::pliron::attribute::ATTR_INTERFACE_VERIFIERS };
     let all_verifiers_fn_type = parse_quote! { ::pliron::attribute::AttrInterfaceAllVerifiers };
     to_token_stream(interfaces::interface_impl(
-        item,
+        item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
     ))
@@ -1112,8 +1113,172 @@ pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
     let interface_verifiers_slice = parse_quote! { ::pliron::r#type::TYPE_INTERFACE_VERIFIERS };
     let all_verifiers_fn_type = parse_quote! { ::pliron::r#type::TypeInterfaceAllVerifiers };
     to_token_stream(interfaces::interface_impl(
-        item,
+        item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+    ))
+}
+
+/// Implement [StableHash](../pliron/irbuild/decontext/trait.StableHash.html)
+/// for a struct or enum, assuming every field's type already implements it.
+/// For an enum, the matched variant's discriminant is also mixed into the hash.
+///
+/// This also registers the impl with [type_to_trait!](../pliron/macro.type_to_trait.html).
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{derive::StableHash, r#type::TypeHandle};
+///
+/// #[derive(StableHash)]
+/// struct MyAttr {
+///     ty: TypeHandle,
+///     val: u64,
+/// }
+/// ```
+///
+/// This fails to compile because `NotHashable` doesn't implement `StableHash`:
+/// ```compile_fail
+/// use pliron::derive::StableHash;
+///
+/// struct NotHashable;
+///
+/// #[derive(StableHash)]
+/// struct MyAttr {
+///     val: NotHashable,
+/// }
+/// ```
+#[proc_macro_derive(StableHash)]
+pub fn stable_hash(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_stable_hash(input.into()))
+}
+
+/// Implement [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html)
+/// for a struct or enum, assuming every field's type already implements it. For an enum,
+/// the matched variant is reconstructed with its (cloned) fields.
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{derive::CloneIntoContext, r#type::TypeHandle};
+///
+/// #[derive(CloneIntoContext)]
+/// struct MyAttr {
+///     ty: TypeHandle,
+///     val: u64,
+/// }
+/// ```
+///
+/// A generic struct, with the field's bound written explicitly:
+/// ```
+/// use pliron::{
+///     context::Context, derive::CloneIntoContext,
+///     irbuild::decontext::CloneIntoContext as CloneIntoContextTrait,
+/// };
+///
+/// #[derive(CloneIntoContext)]
+/// struct Wrapper<T: CloneIntoContextTrait> {
+///     inner: T,
+/// }
+///
+/// let src_ctx = Context::new();
+/// let mut dst_ctx = Context::new();
+/// let cloned = Wrapper { inner: 42u64 }.clone_into_context(&src_ctx, &mut dst_ctx);
+/// assert_eq!(cloned.inner, 42);
+/// ```
+///
+/// This fails to compile because `NotCloneable` doesn't implement `CloneIntoContext`:
+/// ```compile_fail
+/// use pliron::derive::CloneIntoContext;
+///
+/// struct NotCloneable;
+///
+/// #[derive(CloneIntoContext)]
+/// struct MyAttr {
+///     val: NotCloneable,
+/// }
+/// ```
+#[proc_macro_derive(CloneIntoContext)]
+pub fn clone_into_context(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_clone_into_context(input.into()))
+}
+
+/// Implement [CloneAttributeIntoContext](../pliron/irbuild/decontext/trait.CloneAttributeIntoContext.html)
+/// for an [Attribute](../pliron/attribute/trait.Attribute.html) by delegating to its own
+/// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) impl and boxing the result.
+///
+/// The type must already implement
+/// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) (e.g. via
+/// [`#[derive(CloneIntoContext)]`](derive@CloneIntoContext),
+/// or [`impl_clone_into_context_for_clone!`](../pliron/macro.impl_clone_into_context_for_clone.html)).
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{
+///     attribute::AttrObj, context::Context,
+///     derive::{CloneAttributeIntoContext, CloneIntoContext, pliron_attr},
+///     irbuild::decontext::CloneIntoContext as _, printable::Printable,
+/// };
+///
+/// #[pliron_attr(name = "test.point_attr", format = "`<` $x `>`", verifier = "succ")]
+/// #[derive(Debug, Clone, PartialEq, Eq, Hash, CloneIntoContext, CloneAttributeIntoContext)]
+/// struct PointAttr {
+///     x: i32,
+/// }
+///
+/// let src_ctx = Context::new();
+/// let mut dst_ctx = Context::new();
+/// let a: AttrObj = Box::new(PointAttr { x: 1 });
+/// let a2 = a.clone_into_context(&src_ctx, &mut dst_ctx);
+/// assert_eq!(a.disp(&src_ctx).to_string(), a2.disp(&dst_ctx).to_string());
+/// ```
+#[proc_macro_derive(CloneAttributeIntoContext)]
+pub fn clone_attribute_into_context(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_clone_attribute_into_context(
+        input.into(),
+    ))
+}
+
+/// Implement [CloneTypeIntoContext](../pliron/irbuild/decontext/trait.CloneTypeIntoContext.html)
+/// for a [Type](../pliron/type/trait.Type.html) by delegating to its own
+/// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) impl,
+/// then re-interning the clone into `dst_ctx`.
+///
+/// The type must already implement
+/// [CloneIntoContext](../pliron/irbuild/decontext/trait.CloneIntoContext.html) (e.g. via
+/// [`#[derive(CloneIntoContext)]`](derive@CloneIntoContext),
+/// or [`impl_clone_into_context_for_clone!`](../pliron/macro.impl_clone_into_context_for_clone.html)).
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{
+///     context::Context,
+///     derive::{CloneIntoContext, CloneTypeIntoContext, pliron_type},
+///     irbuild::decontext::CloneIntoContext as _, printable::Printable,
+/// };
+///
+/// #[pliron_type(
+///     name = "test.point_type",
+///     format = "`<` $x `>`",
+///     generate_get = true,
+///     verifier = "succ"
+/// )]
+/// #[derive(Debug, Clone, PartialEq, Eq, Hash, CloneIntoContext, CloneTypeIntoContext)]
+/// struct PointType {
+///     x: i32,
+/// }
+///
+/// let src_ctx = Context::new();
+/// let mut dst_ctx = Context::new();
+/// let p = PointType::get(&src_ctx, 1).to_handle();
+/// let p2 = p.clone_into_context(&src_ctx, &mut dst_ctx);
+/// assert_eq!(p.disp(&src_ctx).to_string(), p2.disp(&dst_ctx).to_string());
+/// ```
+#[proc_macro_derive(CloneTypeIntoContext)]
+pub fn clone_type_into_context(input: TokenStream) -> TokenStream {
+    to_token_stream(derive_decontext::derive_clone_type_into_context(
+        input.into(),
     ))
 }

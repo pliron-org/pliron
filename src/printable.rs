@@ -174,33 +174,25 @@ pub trait Printable {
 /// ```
 #[macro_export]
 macro_rules! impl_printable_for_display {
-    ($ty_name:ty) => {
-        impl $crate::printable::Printable for $ty_name {
-            fn fmt(
-                &self,
-                _ctx: &pliron::context::Context,
-                _state: &pliron::printable::State,
-                f: &mut core::fmt::Formatter<'_>,
-            ) -> core::fmt::Result {
-                write!(f, "{}", self)
+    ($($ty_name:ty),* $(,)?) => {
+        $(
+            impl $crate::printable::Printable for $ty_name {
+                fn fmt(
+                    &self,
+                    _ctx: &pliron::context::Context,
+                    _state: &pliron::printable::State,
+                    f: &mut core::fmt::Formatter<'_>,
+                ) -> core::fmt::Result {
+                    write!(f, "{}", self)
+                }
             }
-        }
+        )*
     };
 }
 
-impl_printable_for_display!(&str);
-impl_printable_for_display!(String);
-impl_printable_for_display!(usize);
-impl_printable_for_display!(u64);
-impl_printable_for_display!(u32);
-impl_printable_for_display!(u16);
-impl_printable_for_display!(u8);
-impl_printable_for_display!(i64);
-impl_printable_for_display!(i32);
-impl_printable_for_display!(i16);
-impl_printable_for_display!(i8);
-impl_printable_for_display!(bool);
-impl_printable_for_display!(char);
+impl_printable_for_display!(
+    &str, String, usize, u64, u32, u16, u8, i64, i32, i16, i8, bool, char
+);
 
 /// Implement [Printable] for a type that already implements [Debug].
 /// Example:
@@ -211,22 +203,23 @@ impl_printable_for_display!(char);
 /// ```
 #[macro_export]
 macro_rules! impl_printable_for_debug {
-    ($ty_name:ty) => {
-        impl $crate::printable::Printable for $ty_name {
-            fn fmt(
-                &self,
-                _ctx: &pliron::context::Context,
-                _state: &pliron::printable::State,
-                f: &mut core::fmt::Formatter<'_>,
-            ) -> core::fmt::Result {
-                write!(f, "{:?}", self)
+    ($($ty_name:ty),* $(,)?) => {
+        $(
+            impl $crate::printable::Printable for $ty_name {
+                fn fmt(
+                    &self,
+                    _ctx: &pliron::context::Context,
+                    _state: &pliron::printable::State,
+                    f: &mut core::fmt::Formatter<'_>,
+                ) -> core::fmt::Result {
+                    write!(f, "{:?}", self)
+                }
             }
-        }
+        )*
     };
 }
 
-impl_printable_for_debug!(*const ());
-impl_printable_for_debug!(*mut ());
+impl_printable_for_debug!(*const (), *mut ());
 
 impl<T: Printable + ?Sized> Printable for &T {
     fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::Result {

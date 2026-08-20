@@ -8,6 +8,7 @@ use core::{
     fmt::Debug,
     hash::{Hash, Hasher},
 };
+use pliron_derive::{CloneIntoContext, StableHash};
 
 use crate::{
     attribute::AttrObj,
@@ -18,7 +19,10 @@ use crate::{
         token,
     },
     context::Context,
-    impl_printable_for_display,
+    impl_clone_into_context_for_clone, impl_printable_for_display,
+    irbuild::decontext::{
+        CloneIntoContext as CloneIntoContextTrait, StableHash as StableHashTrait,
+    },
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
         printers::list_with_sep,
@@ -91,11 +95,45 @@ impl Parsable for Source {
     }
 }
 
+impl StableHashTrait for Source {
+    fn stable_hash(&self, ctx: &Context, mut state: &mut dyn Hasher) {
+        core::mem::discriminant(self).hash(&mut state);
+        match self {
+            Source::File(key) => {
+                // The key itself is just an index into `ctx`'s store; hash the
+                // path it refers to instead.
+                uniqued_any::get(ctx, *key).hash(&mut state);
+            }
+            Source::InMemory => (),
+        }
+    }
+}
+
+impl CloneIntoContextTrait for Source {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Source {
+        match self {
+            Source::File(key) => {
+                let path = uniqued_any::get(src_ctx, *key).clone();
+                Source::File(uniqued_any::save(dst_ctx, path))
+            }
+            Source::InMemory => Source::InMemory,
+        }
+    }
+}
+
+impl_clone_into_context_for_clone!(SourcePosition);
+impl StableHashTrait for SourcePosition {
+    fn stable_hash(&self, _ctx: &Context, mut state: &mut dyn Hasher) {
+        self.line.hash(&mut state);
+        self.column.hash(&mut state);
+    }
+}
+
 /// Represents a (combination of) program source locations.
 /// This captures more or less the functionality of MLIR's
 /// [BuiltinLocationAttributes](https://mlir.llvm.org/docs/Dialects/Builtin/#location-attributes).
 /// For simplicity, unlike in MLIR, [Location] is not extensible.
-#[derive(PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug, StableHash, CloneIntoContext)]
 pub enum Location {
     /// A [Source] along with a [position](SourcePosition) within it.
     /// This is same as MLIR's [FileLineColLoc](https://mlir.llvm.org/docs/Dialects/Builtin/#filelinecolloc).
@@ -123,6 +161,7 @@ pub enum Location {
     Unknown,
 }
 
+/// [SourcePosition] doesn't implement [Hash], so this manual impl.
 impl Hash for Location {
     fn hash<H: Hasher>(&self, state: &mut H) {
         core::mem::discriminant(self).hash(state);
