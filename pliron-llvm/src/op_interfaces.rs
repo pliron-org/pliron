@@ -588,7 +588,7 @@ fn verify_impls_i_or_vec_of_impls_i<I: ?Sized + TypeInterfaceMarker + 'static>(
     Ok(())
 }
 
-/// An operand whose type is either `T or [`VectorType<T>`](VectorType).
+/// An operand whose type is either `T` or [`VectorType<T>`](VectorType).
 #[op_interface]
 pub trait ScalarOrVectorOpd<T: Type, const N: usize> {
     /// Get the type of operand N, or its element type if its [VectorType].
