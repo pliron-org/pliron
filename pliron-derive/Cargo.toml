@@ -1,6 +1,6 @@
 [package]
 name = "pliron-derive"
-description = "LLVM Dialect for pliron"
+description = "Derive macros for pliron"
 version.workspace = true
 edition.workspace = true
 repository.workspace = true
