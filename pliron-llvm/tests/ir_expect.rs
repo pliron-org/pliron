@@ -6,8 +6,13 @@
 #![cfg(feature = "llvm-sys")]
 
 use expect_test::expect;
-use pliron::{context::Context, init_env_logger_for_tests, printable::Printable, result::Result};
-use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron::{
+    builtin::ops::ModuleOp, context::Context, init_env_logger_for_tests, printable::Printable,
+    result::Result,
+};
+use pliron_llvm::{
+    llvm_sys::core::LLVMContext, op_interfaces::NonTemporalOpInterface, ops::StoreOp, to_llvm_ir,
+};
 
 mod common;
 
@@ -241,5 +246,60 @@ fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
         }
     "#]]
     .assert_eq(&out);
+    Ok(())
+}
+
+/// A store marked non-temporal must carry LLVM's `!nontemporal` metadata, and the
+/// mark must survive a print/parse round trip of the pliron IR.
+#[test]
+fn non_temporal_store_emits_metadata() -> Result<()> {
+    init_env_logger_for_tests!();
+
+    let input = r#"
+        define void @stream(ptr %out, <8 x float> %val) {
+        entry:
+          store <8 x float> %val, ptr %out, align 4
+          ret void
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "stream")?;
+
+    let store = common::find_op::<StoreOp>(ctx, module_op).expect("module has a store");
+    assert!(!store.is_non_temporal(ctx));
+    store.set_non_temporal(ctx);
+    assert!(store.is_non_temporal(ctx));
+
+    // The mark is part of the printed form, so it round trips through the text format.
+    let printed = module_op.disp(ctx).to_string();
+    assert!(
+        printed.contains("nontemporal"),
+        "non-temporal mark missing from printed IR:\n{printed}"
+    );
+    let reparsed_ctx = &mut Context::new();
+    let reparsed: ModuleOp = common::parse_op_verify(reparsed_ctx, &printed)?;
+    let reparsed_store =
+        common::find_op::<StoreOp>(reparsed_ctx, reparsed).expect("module has a store");
+    assert!(reparsed_store.is_non_temporal(reparsed_ctx));
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out = out_mod.to_string();
+    expect![[r#"
+        ; ModuleID = 'stream'
+        source_filename = "stream"
+
+        define void @stream(ptr %0, <8 x float> %1) {
+        entry_block2v1:
+          store <8 x float> %1, ptr %0, align 4, !nontemporal !0
+          ret void
+        }
+
+        !0 = !{i32 1}
+    "#]]
+    .assert_eq(&out);
+
     Ok(())
 }

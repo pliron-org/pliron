@@ -10,7 +10,7 @@ use alloc::{
 
 use pliron::{
     builtin::{
-        attributes::BoolAttr,
+        attributes::{BoolAttr, UnitAttr},
         op_interfaces::{
             NOpdsInterface, OneOpdInterface, ResultNOfType, SymbolOpInterface,
             verify_get_operand_n, verify_get_result_n,
@@ -475,6 +475,49 @@ pub trait AlignableOpInterface {
             .deref_mut(ctx)
             .attributes
             .set(ATTR_KEY_LLVM_ALIGNMENT.clone(), AlignmentAttr(alignment));
+    }
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+dict_key!(
+    /// Attribute key for the non-temporal hint.
+    ATTR_KEY_LLVM_NON_TEMPORAL,
+    "llvm_non_temporal"
+);
+
+/// Ops that can be marked non-temporal, i.e. LLVM's `!nontemporal` metadata.
+///
+/// The hint tells the backend that the accessed data is unlikely to be reused soon, so it may
+/// bypass the cache. It is only a hint: backends that cannot honor it emit an ordinary access.
+#[op_interface]
+pub trait NonTemporalOpInterface {
+    /// Whether this [Op] is marked non-temporal.
+    fn is_non_temporal(&self, ctx: &Context) -> bool
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref(ctx)
+            .attributes
+            .get::<UnitAttr>(&ATTR_KEY_LLVM_NON_TEMPORAL)
+            .is_some()
+    }
+
+    /// Mark this [Op] as non-temporal.
+    fn set_non_temporal(&self, ctx: &Context)
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref_mut(ctx)
+            .attributes
+            .set(ATTR_KEY_LLVM_NON_TEMPORAL.clone(), UnitAttr::new());
     }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>

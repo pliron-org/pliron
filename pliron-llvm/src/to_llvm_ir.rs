@@ -78,12 +78,12 @@ use crate::{
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
         llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
-        llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
+        llvm_set_non_temporal, llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
         llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
-        PointerTypeResult,
+        NonTemporalOpInterface, PointerTypeResult,
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
@@ -819,7 +819,7 @@ impl ToLLVMValue for StoreOp {
     fn convert(
         &self,
         ctx: &Context,
-        _llvm_ctx: &LLVMContext,
+        llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
         let value = convert_value_operand(cctx, ctx, &self.get_operand_value(ctx))?;
@@ -827,6 +827,9 @@ impl ToLLVMValue for StoreOp {
         let store_op = llvm_build_store(&cctx.builder, value, ptr);
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(store_op, alignment);
+        }
+        if self.is_non_temporal(ctx) {
+            llvm_set_non_temporal(llvm_ctx, store_op);
         }
         Ok(store_op)
     }

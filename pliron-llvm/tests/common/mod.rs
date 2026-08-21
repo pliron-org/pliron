@@ -3,6 +3,7 @@
 use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
+    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     irfmt::parsers::spaced,
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
@@ -44,6 +45,26 @@ pub fn run_o1_passes_verify(ctx: &mut Context, module_op: ModuleOp) -> Result<()
     );
     verify_op(&module_op, ctx)?;
     Ok(())
+}
+
+/// Returns the first [Op] of type `O` found under `root`, if any.
+#[allow(dead_code)]
+pub fn find_op<O: Op>(ctx: &Context, root: impl Op) -> Option<O> {
+    let mut found: Option<O> = None;
+    walk_op(
+        ctx,
+        &mut found,
+        &WALKCONFIG_PREORDER_FORWARD,
+        root.get_operation(),
+        |ctx, found: &mut Option<O>, node| {
+            if found.is_none()
+                && let IRNode::Operation(op) = node
+            {
+                *found = Operation::get_op::<O>(op, ctx);
+            }
+        },
+    );
+    found
 }
 
 /// Parses `input` as LLVM IR text, converts it into a pliron [ModuleOp], and verifies it.
