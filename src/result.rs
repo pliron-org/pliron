@@ -103,7 +103,7 @@ use crate::{
     verify_error_noloc,
 };
 
-use alloc::{boxed::Box, string::String};
+use alloc::{boxed::Box, fmt, string::String};
 use downcast_rs::{Downcast, impl_downcast};
 use thiserror::Error;
 
@@ -188,6 +188,12 @@ impl Printable for Error {
         }
 
         Ok(())
+    }
+}
+
+impl From<fmt::Error> for Error {
+    fn from(value: fmt::Error) -> Self {
+        pliron::arg_error_noloc!(value)
     }
 }
 
