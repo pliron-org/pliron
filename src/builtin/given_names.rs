@@ -1,160 +1,87 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Utilities for attaching / retrieving debug info to / from the IR.
-
-use alloc::{string::ToString, vec::Vec};
-
-use pliron::derive::{attr_interface_impl, pliron_attr};
+//! Utilities for attaching / retrieving given names
+//! for [Operation] results and [BasicBlock] arguments.
+//!
+//! The names themselves are stored as [GivenNamesAttr] on the attribute
+//! dict of an [Operation]/[BasicBlock] with key [ATTR_KEY_GIVEN_NAMES].
 
 use crate::{
     attribute::AttributeDict,
     basic_block::BasicBlock,
-    builtin::{ATTR_KEY_DEBUG_INFO, attr_interfaces::OutlinedAttr},
-    combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
+    builtin::attributes::{ATTR_KEY_GIVEN_NAMES, GivenNamesAttr},
     context::{Context, Ptr},
-    graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
+    graph::{
+        walkers,
+        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD},
+    },
     identifier::Identifier,
     operation::Operation,
-    parsable::{Parsable, ParseResult, StateStream},
-    printable::{self, Printable},
-    utils::{table::smalltable::Entry, vec_exns::VecExtns},
+    utils::table::smalltable,
 };
 
-#[pliron_attr(name = "builtin.debug_info", verifier = "succ")]
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct DebugInfoAttr {
-    names: Vec<Option<Identifier>>,
-}
-
-impl DebugInfoAttr {
-    fn get_name(&self, idx: usize) -> Option<Identifier> {
-        self.names.get(idx).cloned().flatten()
-    }
-
-    fn set_name(&mut self, idx: usize, name: Option<Identifier>) {
-        self.names.grow_to(idx + 1, |_| None);
-        *self.names.get_mut(idx).unwrap() = name;
-    }
-
-    fn insert_name(&mut self, idx: usize, name: Option<Identifier>) {
-        self.names.grow_to(idx, |_| None);
-        self.names.insert(idx, name);
-    }
-
-    fn remove_name(&mut self, idx: usize) {
-        if idx < self.names.len() {
-            self.names.remove(idx);
-        }
-    }
-}
-
-#[attr_interface_impl]
-impl OutlinedAttr for DebugInfoAttr {}
-
-impl Printable for DebugInfoAttr {
-    fn fmt(
-        &self,
-        ctx: &Context,
-        state: &printable::State,
-        f: &mut core::fmt::Formatter<'_>,
-    ) -> core::fmt::Result {
-        write!(
-            f,
-            "[{}]",
-            self.names
-                .iter()
-                .map(|name| match name {
-                    Some(name) => name.print(ctx, state).to_string(),
-                    None => "?".to_string(),
-                })
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
-}
-
-impl Parsable for DebugInfoAttr {
-    type Arg = ();
-    type Parsed = Self;
-
-    fn parse<'a>(
-        state_stream: &mut StateStream<'a>,
-        _arg: Self::Arg,
-    ) -> ParseResult<'a, Self::Parsed> {
-        between(
-            token('[').skip(spaces()),
-            spaces().with(token(']')),
-            sep_by(
-                attempt(token('?').map(|_| None)).or(Identifier::parser(()).map(Some)),
-                token(',').skip(spaces()),
-            ),
-        )
-        .map(|names| DebugInfoAttr { names })
-        .parse_stream(state_stream)
-        .into()
-    }
-}
-
 fn set_name_in_attr_map(attributes: &mut AttributeDict, idx: usize, name: Option<Identifier>) {
-    match attributes.0.entry(ATTR_KEY_DEBUG_INFO.clone()) {
-        Entry::Occupied(mut occupied) => {
-            let debug_info = occupied
+    match attributes.0.entry(ATTR_KEY_GIVEN_NAMES.clone()) {
+        smalltable::Entry::Occupied(mut occupied) => {
+            let given_names = occupied
                 .get_mut()
-                .downcast_mut::<DebugInfoAttr>()
-                .expect("Existing attribute entry for debug info incorrect");
+                .downcast_mut::<GivenNamesAttr>()
+                .expect("Existing attribute entry for given names incorrect");
             let name_is_none = name.is_none();
-            debug_info.set_name(idx, name);
-            // If the debug info attribute has all None entries, remove it from the map.
-            if name_is_none && debug_info.names.iter().all(|name| name.is_none()) {
+            given_names.set_name(idx, name);
+            // If the given names attribute has all None entries, remove it from the map.
+            if name_is_none && given_names.are_all_names_unset() {
                 occupied.remove();
             }
         }
-        Entry::Vacant(vacant) => {
-            // Only insert a new debug info attribute if there's actually a name to set.
+        smalltable::Entry::Vacant(vacant) => {
+            // Only insert a new given names attribute if there's actually a name to set.
             if name.is_some() {
-                let mut debug_info = DebugInfoAttr::default();
-                debug_info.set_name(idx, name);
-                vacant.insert(debug_info.into());
+                let mut given_names = GivenNamesAttr::default();
+                given_names.set_name(idx, name);
+                vacant.insert(given_names.into());
             }
         }
     }
 }
 
 fn insert_name_in_attr_map(attributes: &mut AttributeDict, idx: usize, name: Option<Identifier>) {
-    match attributes.0.entry(ATTR_KEY_DEBUG_INFO.clone()) {
-        Entry::Occupied(mut occupied) => {
-            let debug_info = occupied
+    match attributes.0.entry(ATTR_KEY_GIVEN_NAMES.clone()) {
+        smalltable::Entry::Occupied(mut occupied) => {
+            let given_names = occupied
                 .get_mut()
-                .downcast_mut::<DebugInfoAttr>()
-                .expect("Existing attribute entry for debug info incorrect");
+                .downcast_mut::<GivenNamesAttr>()
+                .expect("Existing attribute entry for given names incorrect");
             let name_is_none = name.is_none();
-            debug_info.insert_name(idx, name);
-            // If the debug info attribute has all None entries, remove it from the map.
-            if name_is_none && debug_info.names.iter().all(|name| name.is_none()) {
+            given_names.insert_name(idx, name);
+            // If the given names attribute has all None entries, remove it from the map.
+            if name_is_none && given_names.are_all_names_unset() {
                 occupied.remove();
             }
         }
-        Entry::Vacant(vacant) => {
-            // Only insert a new debug info attribute if there's actually a name to set.
+        smalltable::Entry::Vacant(vacant) => {
+            // Only insert a new given names attribute if there's actually a name to set.
             if name.is_some() {
-                let mut debug_info = DebugInfoAttr::default();
-                debug_info.insert_name(idx, name);
-                vacant.insert(debug_info.into());
+                let mut given_names = GivenNamesAttr::default();
+                given_names.insert_name(idx, name);
+                vacant.insert(given_names.into());
             }
         }
     }
 }
 
 fn remove_name_from_attr_map(attributes: &mut AttributeDict, idx: usize) {
-    if let Entry::Occupied(mut occupied) = attributes.0.entry(ATTR_KEY_DEBUG_INFO.clone()) {
-        let debug_info = occupied
+    if let smalltable::Entry::Occupied(mut occupied) =
+        attributes.0.entry(ATTR_KEY_GIVEN_NAMES.clone())
+    {
+        let given_names = occupied
             .get_mut()
-            .downcast_mut::<DebugInfoAttr>()
-            .expect("Existing attribute entry for debug info incorrect");
-        debug_info.remove_name(idx);
-        // If the debug info attribute has no more names, remove it from the map.
-        if debug_info.names.iter().all(|name| name.is_none()) {
+            .downcast_mut::<GivenNamesAttr>()
+            .expect("Existing attribute entry for given names incorrect");
+        given_names.remove_name(idx);
+        // If the given names attribute has no more names, remove it from the map.
+        if given_names.are_all_names_unset() {
             occupied.remove();
         }
     }
@@ -162,8 +89,8 @@ fn remove_name_from_attr_map(attributes: &mut AttributeDict, idx: usize) {
 
 fn get_name_from_attr_map(attributes: &AttributeDict, idx: usize) -> Option<Identifier> {
     attributes
-        .get::<DebugInfoAttr>(&ATTR_KEY_DEBUG_INFO)
-        .and_then(|debug_info| debug_info.get_name(idx))
+        .get::<GivenNamesAttr>(&ATTR_KEY_GIVEN_NAMES)
+        .and_then(|given_names| given_names.get_name(idx))
 }
 
 /// Set the name for a result in an [Operation].
@@ -299,9 +226,11 @@ pub fn erase_given_names(ctx: &mut Context, op: Ptr<Operation>) {
 
 #[cfg(test)]
 mod tests {
-    use alloc::vec;
-    use pliron::derive::pliron_op;
-
+    use super::{
+        get_block_arg_name, get_operation_result_name, insert_block_arg_name,
+        insert_operation_result_name, remove_block_arg_name, remove_operation_result_name,
+        set_block_arg_name, set_operation_result_name,
+    };
     use crate::{
         basic_block::BasicBlock,
         builtin::{
@@ -309,20 +238,17 @@ mod tests {
             types::{IntegerType, Signedness},
         },
         context::Context,
-        debug_info::{
-            get_block_arg_name, get_operation_result_name, insert_block_arg_name,
-            insert_operation_result_name, remove_block_arg_name, remove_operation_result_name,
-            set_block_arg_name, set_operation_result_name,
-        },
         op::Op,
         operation::{Operation, verify_operation},
         result::Result,
     };
+    use alloc::vec;
+    use pliron::derive::pliron_op;
 
     #[pliron_op(
         name = "test.zero",
         format,
-            interfaces = [OneResultInterface, NOpdsInterface<0>],
+        interfaces = [OneResultInterface, NOpdsInterface<0>],
         verifier = "succ",
     )]
     struct ZeroOp;

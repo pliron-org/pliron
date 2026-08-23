@@ -10,10 +10,9 @@ use pliron_derive::op_interface;
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::BranchOpInterface,
+    builtin::{given_names::set_block_arg_name, op_interfaces::BranchOpInterface},
     common_traits::Named,
     context::{Context, Ptr},
-    debug_info::set_block_arg_name,
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
         walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},

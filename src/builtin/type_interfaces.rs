@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
+//! Builtin dialect type interfaces
+
 use crate::{
     context::Context,
     result::Result,

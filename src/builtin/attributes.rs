@@ -1,23 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-use core::hash::{Hash, Hasher};
-
-use alloc::{boxed::Box, string::String, vec::Vec};
-use pliron::derive::{attr_interface_impl, pliron_attr};
-use rustc_apfloat::Float;
-use thiserror::Error;
+//! Builtin dialect attributes
 
 use crate::{
     attribute::{AttrObj, AttributeDict},
     builtin::{
-        attr_interfaces::FloatAttr,
+        attr_interfaces::{FloatAttr, OutlinedAttr},
         types::{FP16Type, FP32Type, FP64Type},
     },
     combine::{
-        Parser, between, many1,
+        Parser, attempt, between, many1,
         parser::char::{char, digit, spaces},
-        token,
+        sep_by, token,
     },
     common_traits::Verify,
     context::{Context, Ptr},
@@ -35,9 +30,19 @@ use crate::{
     utils::{
         apfloat::{self, double_to_f64, f32_to_single, f64_to_double, single_to_f32},
         apint::APInt,
+        vec_exns::VecExtns,
     },
     verify_err_noloc,
 };
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
+use core::hash::{Hash, Hasher};
+use pliron::derive::{attr_interface_impl, pliron_attr};
+use rustc_apfloat::Float;
+use thiserror::Error;
 
 use super::{
     attr_interfaces::{MaterializableAttr, TypedAttrInterface},
@@ -654,6 +659,99 @@ impl TypedAttrInterface for TypeAttr {
 )]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct OperandSegmentSizesAttr(pub Vec<u32>);
+
+crate::dict_key!(
+    /// Key for given names of operation results and block arguments.
+    ATTR_KEY_GIVEN_NAMES, "builtin_given_names"
+);
+
+/// Given names management for [Operation](crate::operation::Operation) results
+/// and [BasicBlock](crate::basic_block::BasicBlock) arguments.
+/// See [given_names](crate::builtin::given_names) for utility functions around this.
+#[pliron_attr(name = "builtin.given_names", verifier = "succ")]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Default)]
+pub struct GivenNamesAttr {
+    names: Vec<Option<Identifier>>,
+}
+
+#[attr_interface_impl]
+impl OutlinedAttr for GivenNamesAttr {}
+
+// Accessors used by [given_names](crate::builtin::given_names).
+impl GivenNamesAttr {
+    /// Are all names set to `None`?
+    pub(in crate::builtin) fn are_all_names_unset(&self) -> bool {
+        self.names.iter().all(|name| name.is_none())
+    }
+
+    /// Get the name at `idx`.
+    pub(in crate::builtin) fn get_name(&self, idx: usize) -> Option<Identifier> {
+        self.names.get(idx).cloned().flatten()
+    }
+
+    /// Set the name at `idx`.
+    pub(in crate::builtin) fn set_name(&mut self, idx: usize, name: Option<Identifier>) {
+        self.names.grow_to(idx + 1, |_| None);
+        *self.names.get_mut(idx).unwrap() = name;
+    }
+
+    /// Insert a name at `idx`, moving everything currently at `idx` to the right.
+    pub(in crate::builtin) fn insert_name(&mut self, idx: usize, name: Option<Identifier>) {
+        self.names.grow_to(idx, |_| None);
+        self.names.insert(idx, name);
+    }
+
+    /// Remove a name at `idx`, moving everything currently after `idx` to the left.
+    pub(in crate::builtin) fn remove_name(&mut self, idx: usize) {
+        if idx < self.names.len() {
+            self.names.remove(idx);
+        }
+    }
+}
+
+impl Printable for GivenNamesAttr {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(
+            f,
+            "[{}]",
+            self.names
+                .iter()
+                .map(|name| match name {
+                    Some(name) => name.print(ctx, state).to_string(),
+                    None => "?".to_string(),
+                })
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    }
+}
+
+impl Parsable for GivenNamesAttr {
+    type Arg = ();
+    type Parsed = Self;
+
+    fn parse<'a>(
+        state_stream: &mut StateStream<'a>,
+        _arg: Self::Arg,
+    ) -> ParseResult<'a, Self::Parsed> {
+        between(
+            token('[').skip(spaces()),
+            spaces().with(token(']')),
+            sep_by(
+                attempt(token('?').map(|_| None)).or(Identifier::parser(()).map(Some)),
+                token(',').skip(spaces()),
+            ),
+        )
+        .map(|names| GivenNamesAttr { names })
+        .parse_stream(state_stream)
+        .into()
+    }
+}
 
 #[cfg(test)]
 mod tests {

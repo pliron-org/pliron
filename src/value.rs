@@ -14,9 +14,9 @@
 use crate::{
     arg_error,
     basic_block::BasicBlock,
+    builtin::given_names,
     common_traits::{Named, Verify},
     context::{Context, Ptr},
-    debug_info,
     identifier::Identifier,
     linked_list::{ContainsLinkedList, LinkedList},
     location::{Located, Location},
@@ -282,8 +282,10 @@ impl Value {
     pub fn set_name(&self, ctx: &Context, name: Option<Identifier>) {
         let index = self.find_index(ctx);
         match self.defining_entity {
-            DefiningEntity::Op(op) => debug_info::set_operation_result_name(ctx, op, index, name),
-            DefiningEntity::Block(block) => debug_info::set_block_arg_name(ctx, block, index, name),
+            DefiningEntity::Op(op) => given_names::set_operation_result_name(ctx, op, index, name),
+            DefiningEntity::Block(block) => {
+                given_names::set_block_arg_name(ctx, block, index, name)
+            }
         }
     }
 
@@ -325,8 +327,8 @@ impl Named for Value {
     fn given_name(&self, ctx: &Context) -> Option<Identifier> {
         let index = self.find_index(ctx);
         match self.defining_entity {
-            DefiningEntity::Op(op) => debug_info::get_operation_result_name(ctx, op, index),
-            DefiningEntity::Block(block) => debug_info::get_block_arg_name(ctx, block, index),
+            DefiningEntity::Op(op) => given_names::get_operation_result_name(ctx, op, index),
+            DefiningEntity::Block(block) => given_names::get_block_arg_name(ctx, block, index),
         }
     }
 

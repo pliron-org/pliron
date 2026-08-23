@@ -7,6 +7,7 @@ use pliron::{
     basic_block::{BasicBlock, BasicBlockVerifyErr},
     builtin::{
         attributes::StringAttr,
+        given_names::{erase_given_names, get_block_arg_name, get_operation_result_name},
         op_interfaces::{
             IsTerminatorInterface, OneRegionInterface, OneResultInterface,
             SingleBlockRegionInterface,
@@ -14,7 +15,6 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    debug_info::{erase_given_names, get_block_arg_name, get_operation_result_name},
     derive::pliron_op,
     dict_key,
     graph::walkers::{
@@ -120,8 +120,8 @@ fn replace_c0_with_c1_operand() -> Result<()> {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
-        !1 = [builtin_debug_info = builtin.debug_info [c1]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
+        !1 = [builtin_given_names = builtin.given_names [c1]]
     "#]]
     .assert_eq(&printed);
 
@@ -142,7 +142,7 @@ fn replace_c0_with_c1_operand() -> Result<()> {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c1]]
+        !0 = [builtin_given_names = builtin.given_names [c1]]
     "#]]
     .assert_eq(&printed);
 
@@ -198,7 +198,7 @@ fn test_replace_within_same_def_site() {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
     "#]]
     .assert_eq(&printed);
 
@@ -230,7 +230,7 @@ fn test_replace_within_same_def_site() {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
     "#]]
     .assert_eq(&printed);
 }
@@ -960,7 +960,7 @@ fn print_simple() -> Result<()> {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
     "#]]
     .assert_eq(&printed);
     println!("{printed}");
@@ -1021,7 +1021,7 @@ fn parse_function_with_attrs() -> Result<()> {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
     "#]]
     .assert_eq(&printed);
 
@@ -1044,7 +1044,7 @@ fn parse_function_with_attrs() -> Result<()> {
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 3], []
         !1 = @[<in-memory>: line: 7, column: 7], []
-        !2 = @[<in-memory>: line: 8, column: 9], [builtin_debug_info = builtin.debug_info [c0]]
+        !2 = @[<in-memory>: line: 8, column: 9], [builtin_given_names = builtin.given_names [c0]]
         !3 = @[<in-memory>: line: 9, column: 9], []
         !4 = @[<in-memory>: line: 4, column: 5], []
         !5 = @[<in-memory>: line: 1, column: 1], []
@@ -1200,7 +1200,7 @@ fn test_preorder_forward_walk() {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
 
         builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
         {
@@ -1280,7 +1280,7 @@ fn walker_print() {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
 
         builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
         {
@@ -1338,7 +1338,7 @@ fn test_postorder_forward_walk() {
         }
 
         outlined_attributes:
-        !0 = [builtin_debug_info = builtin.debug_info [c0]]
+        !0 = [builtin_given_names = builtin.given_names [c0]]
 
     "#]]
     .assert_eq(&ops);
@@ -1647,7 +1647,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 9], []
         !1 = @[<in-memory>: line: 5, column: 13], []
-        !2 = @[<in-memory>: line: 6, column: 17], [builtin_debug_info = builtin.debug_info [c0_op_2_0_res0]]
+        !2 = @[<in-memory>: line: 6, column: 17], [builtin_given_names = builtin.given_names [c0_op_2_0_res0]]
         !3 = @[<in-memory>: line: 7, column: 17], []
         !4 = @[<in-memory>: line: 4, column: 13], []
         !5 = @[<in-memory>: line: 2, column: 9], []
@@ -1677,7 +1677,7 @@ fn block_attrs_parse_roundtrip() -> Result<()> {
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 9], []
         !1 = @[<in-memory>: line: 5, column: 13], []
-        !2 = @[<in-memory>: line: 6, column: 17], [builtin_debug_info = builtin.debug_info [c0_op_2_0_res0]]
+        !2 = @[<in-memory>: line: 6, column: 17], [builtin_given_names = builtin.given_names [c0_op_2_0_res0]]
         !3 = @[<in-memory>: line: 7, column: 17], []
         !4 = @[<in-memory>: line: 4, column: 13], []
         !5 = @[<in-memory>: line: 2, column: 9], []

@@ -80,7 +80,7 @@ fn one_result_zero_operands() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -117,7 +117,7 @@ fn one_result_zero_operands_canonical() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -156,8 +156,8 @@ fn one_result_one_operand() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
-        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_given_names = builtin.given_names [res1]]
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -195,8 +195,8 @@ fn two_result_two_operands() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
-        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1a, res1b]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_given_names = builtin.given_names [res1a, res1b]]
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -234,8 +234,8 @@ fn two_results_one_operand() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
-        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1a, res1b]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_given_names = builtin.given_names [res1a, res1b]]
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -273,8 +273,8 @@ fn opdtypes() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
-        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_given_names = builtin.given_names [res1]]
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -313,8 +313,8 @@ fn one_result_one_operand_typesig() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
-        !2 = @[<in-memory>: line: 4, column: 13], [builtin_debug_info = builtin.debug_info [res1]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
+        !2 = @[<in-memory>: line: 4, column: 13], [builtin_given_names = builtin.given_names [res1]]
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -352,7 +352,7 @@ fn opdtype() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 5, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
@@ -391,7 +391,7 @@ fn attr_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -430,7 +430,7 @@ fn attr_op2() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -457,7 +457,7 @@ fn attr_op2() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -496,7 +496,7 @@ fn attr_op2_labeled() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -523,7 +523,7 @@ fn attr_op2_labeled() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -562,7 +562,7 @@ fn attr_op2_labeled_delimited() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -589,7 +589,7 @@ fn attr_op2_labeled_delimited() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -628,7 +628,7 @@ fn attr_op2_delimited() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -655,7 +655,7 @@ fn attr_op2_delimited() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -691,7 +691,7 @@ fn attr_op3() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -739,9 +739,9 @@ fn if_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 5, column: 15], []
-        !3 = @[<in-memory>: line: 6, column: 17], [builtin_debug_info = builtin.debug_info [res1]]
+        !3 = @[<in-memory>: line: 6, column: 17], [builtin_given_names = builtin.given_names [res1]]
         !4 = @[<in-memory>: line: 7, column: 17], []
         !5 = @[<in-memory>: line: 4, column: 13], []
         !6 = @[<in-memory>: line: 9, column: 13], []
@@ -800,12 +800,12 @@ fn if_else_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 5, column: 15], []
-        !3 = @[<in-memory>: line: 6, column: 17], [builtin_debug_info = builtin.debug_info [res1]]
+        !3 = @[<in-memory>: line: 6, column: 17], [builtin_given_names = builtin.given_names [res1]]
         !4 = @[<in-memory>: line: 7, column: 17], []
         !5 = @[<in-memory>: line: 9, column: 15], []
-        !6 = @[<in-memory>: line: 10, column: 17], [builtin_debug_info = builtin.debug_info [res2]]
+        !6 = @[<in-memory>: line: 10, column: 17], [builtin_given_names = builtin.given_names [res2]]
         !7 = @[<in-memory>: line: 11, column: 17], []
         !8 = @[<in-memory>: line: 4, column: 13], []
         !9 = @[<in-memory>: line: 13, column: 13], []
@@ -849,9 +849,9 @@ fn br_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
-        !3 = @[<in-memory>: line: 5, column: 11], [builtin_debug_info = builtin.debug_info [arg0]]
+        !3 = @[<in-memory>: line: 5, column: 11], [builtin_given_names = builtin.given_names [arg0]]
         !4 = @[<in-memory>: line: 6, column: 13], []
         !5 = @[<in-memory>: line: 1, column: 1], []
     "#]]
@@ -898,7 +898,7 @@ fn multiple_successors_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 5, column: 11], []
         !4 = @[<in-memory>: line: 6, column: 13], []
@@ -961,12 +961,12 @@ fn multiple_regions_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 7], []
-        !1 = @[<in-memory>: line: 4, column: 9], [builtin_debug_info = builtin.debug_info [res]]
+        !1 = @[<in-memory>: line: 4, column: 9], [builtin_given_names = builtin.given_names [res]]
         !2 = @[<in-memory>: line: 7, column: 17], []
-        !3 = @[<in-memory>: line: 8, column: 21], [builtin_debug_info = builtin.debug_info [res0]]
+        !3 = @[<in-memory>: line: 8, column: 21], [builtin_given_names = builtin.given_names [res0]]
         !4 = @[<in-memory>: line: 9, column: 21], []
         !5 = @[<in-memory>: line: 11, column: 17], []
-        !6 = @[<in-memory>: line: 12, column: 21], [builtin_debug_info = builtin.debug_info [res1]]
+        !6 = @[<in-memory>: line: 12, column: 21], [builtin_given_names = builtin.given_names [res1]]
         !7 = @[<in-memory>: line: 13, column: 21], []
         !8 = @[<in-memory>: line: 5, column: 9], []
         !9 = @[<in-memory>: line: 16, column: 9], []
@@ -1009,7 +1009,7 @@ fn attr_dict_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 2, column: 11], []
-        !1 = @[<in-memory>: line: 3, column: 13], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 3, column: 13], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 4, column: 13], []
         !3 = @[<in-memory>: line: 8, column: 13], []
         !4 = @[<in-memory>: line: 1, column: 1], []
@@ -1124,10 +1124,10 @@ fn multiple_regions4_op() {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 4, column: 17], []
-        !1 = @[<in-memory>: line: 5, column: 21], [builtin_debug_info = builtin.debug_info [res0]]
+        !1 = @[<in-memory>: line: 5, column: 21], [builtin_given_names = builtin.given_names [res0]]
         !2 = @[<in-memory>: line: 6, column: 21], []
         !3 = @[<in-memory>: line: 8, column: 17], []
-        !4 = @[<in-memory>: line: 9, column: 21], [builtin_debug_info = builtin.debug_info [res1]]
+        !4 = @[<in-memory>: line: 9, column: 21], [builtin_given_names = builtin.given_names [res1]]
         !5 = @[<in-memory>: line: 10, column: 21], []
         !6 = @[<in-memory>: line: 1, column: 1], []
     "#]]

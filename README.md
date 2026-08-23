@@ -29,7 +29,7 @@
   }
 
   outlined_attributes:
-  !0 = [builtin_debug_info = builtin.debug_info [c0]]
+  !0 = [builtin_given_names = builtin.given_names [c0]]
   ```
 * `pliron` provides an [LLVM Dialect](pliron-llvm/README.md) and
 consequently an [`llvm-opt` tool](pliron-llvm/llvm-opt/README.md)

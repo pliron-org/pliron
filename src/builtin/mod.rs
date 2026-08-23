@@ -5,13 +5,9 @@
 
 pub mod attr_interfaces;
 pub mod attributes;
+pub mod given_names;
 pub mod interface_impls;
 pub mod op_interfaces;
 pub mod ops;
 pub mod type_interfaces;
 pub mod types;
-
-crate::dict_key!(
-    /// Key for debug info related attributes.
-    ATTR_KEY_DEBUG_INFO, "builtin_debug_info"
-);

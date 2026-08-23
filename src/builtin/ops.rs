@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-use alloc::{
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
-use thiserror::Error;
+//! Builtin dialect ops
 
+use super::{
+    attr_interfaces::TypedAttrInterface,
+    attributes::TypeAttr,
+    op_interfaces::{
+        self, IsolatedFromAboveInterface, NOpdsInterface, OneRegionInterface, OneResultInterface,
+        SingleBlockRegionInterface, SymbolOpInterface, SymbolTableInterface,
+    },
+    types::{FunctionType, UnitType},
+};
 use crate::{
     attribute::{AttrObj, AttributeDict, attr_cast},
     basic_block::BasicBlock,
@@ -39,17 +43,13 @@ use crate::{
     r#type::{TypeHandle, Typed, TypedHandle},
     verify_err,
 };
-use pliron::derive::{op_interface_impl, pliron_op};
-
-use super::{
-    attr_interfaces::TypedAttrInterface,
-    attributes::TypeAttr,
-    op_interfaces::{
-        self, IsolatedFromAboveInterface, NOpdsInterface, OneRegionInterface, OneResultInterface,
-        SingleBlockRegionInterface, SymbolOpInterface, SymbolTableInterface,
-    },
-    types::{FunctionType, UnitType},
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
 };
+use pliron::derive::{op_interface_impl, pliron_op};
+use thiserror::Error;
 
 /// Represents a module, a top level container operation.
 ///

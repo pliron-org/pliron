@@ -12,11 +12,13 @@ use thiserror::Error;
 use crate::{
     attribute::{AttributeDict, verify_attr},
     basic_block::{BasicBlock, BasicBlockVerifyErr},
-    builtin::op_interfaces::{IsTerminatorInterface, SymbolOpInterface},
+    builtin::{
+        given_names,
+        op_interfaces::{IsTerminatorInterface, SymbolOpInterface},
+    },
     combine::{Parser, attempt, parser::char::spaces, token},
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
-    debug_info,
     graph::{
         self,
         dominance::DomInfo,
@@ -262,7 +264,7 @@ impl Operation {
     pub fn insert_result(this: Ptr<Self>, ctx: &Context, res_idx: usize, ty: TypeHandle) {
         let new_res = OpResult::new(ctx, ty);
         this.deref_mut(ctx).results.insert(res_idx, new_res);
-        debug_info::insert_operation_result_name(ctx, this, res_idx, None);
+        given_names::insert_operation_result_name(ctx, this, res_idx, None);
     }
 
     /// Remove the result at `res_idx`, shifting existing results, from `res_idx + 1`, to the left.
@@ -276,7 +278,7 @@ impl Operation {
             res_idx,
             OpDbg { op: this, ctx }
         );
-        debug_info::remove_operation_result_name(ctx, this, res_idx);
+        given_names::remove_operation_result_name(ctx, this, res_idx);
         this.deref_mut(ctx).results.remove(res_idx);
     }
 
