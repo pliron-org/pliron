@@ -3680,7 +3680,7 @@ pub enum InsertExtractValueErr {
 /// |-----|-------|
 /// | `res` | LLVM vector type |
 #[pliron_op(
-    name = "llvm.insert_element",
+    name = "llvm.insertelement",
     format = "$0 `, ` $1 `, ` $2 ` : ` type($0)",
     interfaces = [OneResultInterface, NOpdsInterface<3>],
     operands = (vector, element, index)
@@ -3755,7 +3755,7 @@ pub enum InsertExtractElementOpVerifyErr {
 /// |-----|-------|
 /// | `res` | LLVM type |
 #[pliron_op(
-    name = "llvm.extract_element",
+    name = "llvm.extractelement",
     format = "$0 `, ` $1 ` : ` type($0)",
     interfaces = [OneResultInterface, NOpdsInterface<2>],
     operands = (vector, index)
