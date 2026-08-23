@@ -27,9 +27,9 @@ use core::hash::{Hash, Hasher};
 use crate::{
     attribute::{AttrObj, Attribute, AttributeDict},
     basic_block::BasicBlock,
+    builtin::attributes::GivenNamesAttr,
     common_traits::Named,
     context::{Context, Ptr},
-    debug_info::DebugInfoAttr,
     identifier::Identifier,
     irbuild::{cloning::IrMapping, decontext::StableHash},
     linked_list::ContainsLinkedList,
@@ -51,10 +51,10 @@ pub struct IgnoreConfig {
     pub ignore_attr: fn(ctx: &Context, attr: &dyn Attribute) -> bool,
 }
 
-/// Ignore location information and [DebugInfoAttr]s.
+/// Ignore location information and [GivenNamesAttr]s.
 pub const IGNORE_LOC_NAMES: IgnoreConfig = IgnoreConfig {
     ignore_loc: true,
-    ignore_attr: |_ctx, attr| attr.is::<DebugInfoAttr>(),
+    ignore_attr: |_ctx, attr| attr.is::<GivenNamesAttr>(),
 };
 
 /// The result of equivalence checking b/w two IR entities

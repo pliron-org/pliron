@@ -40,7 +40,6 @@ pub mod basic_block;
 pub mod builtin;
 pub mod common_traits;
 pub mod context;
-pub mod debug_info;
 pub mod dialect;
 pub mod graph;
 pub mod identifier;

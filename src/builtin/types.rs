@@ -1,9 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-use alloc::vec::Vec;
-
-use pliron::derive::{pliron_type, type_interface_impl};
+//! Builtin dialect types
 
 use crate::{
     builtin::type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
@@ -18,6 +16,8 @@ use crate::{
     r#type::{Type, TypeHandle, TypeSig, TypedHandle},
     utils::apfloat::{self, GetSemantics, Semantics},
 };
+use alloc::vec::Vec;
+use pliron::derive::{pliron_type, type_interface_impl};
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 pub enum Signedness {

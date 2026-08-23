@@ -708,7 +708,7 @@ fn ir_printing_dir_writes_before_and_after_files() -> Result<()> {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 7], []
-        !1 = @[<in-memory>: line: 4, column: 7], [builtin_debug_info = builtin.debug_info [c]]
+        !1 = @[<in-memory>: line: 4, column: 7], [builtin_given_names = builtin.given_names [c]]
         !2 = @[<in-memory>: line: 5, column: 7], []
         !3 = @[<in-memory>: line: 2, column: 5], []
     "#]]
@@ -723,7 +723,7 @@ fn ir_printing_dir_writes_before_and_after_files() -> Result<()> {
 
         outlined_attributes:
         !0 = @[<in-memory>: line: 3, column: 7], []
-        !1 = @[<in-memory>: line: 4, column: 7], [builtin_debug_info = builtin.debug_info [c]]
+        !1 = @[<in-memory>: line: 4, column: 7], [builtin_given_names = builtin.given_names [c]]
         !2 = @[<in-memory>: line: 2, column: 5], []
     "#]]
     .assert_eq(&after);

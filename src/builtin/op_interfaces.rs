@@ -1,13 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-use alloc::{
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
-use pliron::derive::op_interface;
-use thiserror::Error;
+//! Builtin dialect op interfaces
 
 use crate::{
     basic_block::BasicBlock,
@@ -32,6 +26,13 @@ use crate::{
     value::Value,
     verify_err, verify_error,
 };
+use alloc::{
+    string::{String, ToString},
+    vec,
+    vec::Vec,
+};
+use pliron::derive::op_interface;
+use thiserror::Error;
 
 use super::attributes::IdentifierAttr;
 

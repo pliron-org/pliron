@@ -8,7 +8,10 @@ use thiserror::Error;
 
 use crate::{
     attribute::{AttributeDict, verify_attr},
-    builtin::op_interfaces::{IsTerminatorInterface, NoTerminatorInterface},
+    builtin::{
+        given_names,
+        op_interfaces::{IsTerminatorInterface, NoTerminatorInterface},
+    },
     combine::{
         optional,
         parser::{Parser, char::spaces},
@@ -16,7 +19,6 @@ use crate::{
     },
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
-    debug_info::{self, set_block_arg_name},
     identifier::Identifier,
     indented_block,
     irfmt::{
@@ -209,7 +211,7 @@ impl BasicBlock {
     pub fn insert_argument(block: Ptr<BasicBlock>, ctx: &Context, arg_idx: usize, ty: TypeHandle) {
         let new_block_arg = BlockArgument::new(ctx, ty);
         block.deref_mut(ctx).args.insert(arg_idx, new_block_arg);
-        debug_info::insert_block_arg_name(ctx, block, arg_idx, None);
+        given_names::insert_block_arg_name(ctx, block, arg_idx, None);
     }
 
     /// Remove the argument at `arg_idx`, shifting subsequent arguments to the left.
@@ -223,7 +225,7 @@ impl BasicBlock {
             arg_idx,
             block.deref(ctx).unique_name(ctx)
         );
-        debug_info::remove_block_arg_name(ctx, block, arg_idx);
+        given_names::remove_block_arg_name(ctx, block, arg_idx);
         block.deref_mut(ctx).args.remove(arg_idx);
     }
 
@@ -544,7 +546,7 @@ impl Parsable for BasicBlock {
                 &(name.clone(), arg_loc),
                 def,
             )?;
-            set_block_arg_name(state_stream.state.ctx, block, arg_idx, Some(name));
+            given_names::set_block_arg_name(state_stream.state.ctx, block, arg_idx, Some(name));
         }
 
         // Register in outline parse state if !N was found.
