@@ -677,28 +677,31 @@ pub struct GivenNamesAttr {
 #[attr_interface_impl]
 impl OutlinedAttr for GivenNamesAttr {}
 
-// Accessors used by [given_names](crate::builtin::given_names), which owns the logic
-// for mapping result / block-argument indices onto this attribute.
+// Accessors used by [given_names](crate::builtin::given_names).
 impl GivenNamesAttr {
     /// Are all names set to `None`?
     pub(in crate::builtin) fn are_all_names_unset(&self) -> bool {
         self.names.iter().all(|name| name.is_none())
     }
 
+    /// Get the name at `idx`.
     pub(in crate::builtin) fn get_name(&self, idx: usize) -> Option<Identifier> {
         self.names.get(idx).cloned().flatten()
     }
 
+    /// Set the name at `idx`.
     pub(in crate::builtin) fn set_name(&mut self, idx: usize, name: Option<Identifier>) {
         self.names.grow_to(idx + 1, |_| None);
         *self.names.get_mut(idx).unwrap() = name;
     }
 
+    /// Insert a name at `idx`, moving everything currently at `idx` to the right.
     pub(in crate::builtin) fn insert_name(&mut self, idx: usize, name: Option<Identifier>) {
         self.names.grow_to(idx, |_| None);
         self.names.insert(idx, name);
     }
 
+    /// Remove a name at `idx`, moving everything currently after `idx` to the left.
     pub(in crate::builtin) fn remove_name(&mut self, idx: usize) {
         if idx < self.names.len() {
             self.names.remove(idx);
