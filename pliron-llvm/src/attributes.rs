@@ -11,7 +11,10 @@ use core::fmt::Display;
 use thiserror::Error;
 
 use pliron::{
-    builtin::{attr_interfaces::TypedAttrInterface, attributes::IntegerAttr},
+    builtin::{
+        attr_interfaces::TypedAttrInterface,
+        attributes::{IntegerAttr, StringAttr},
+    },
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
     context::Context,
@@ -282,7 +285,6 @@ impl TypedAttrInterface for PoisonAttr {
 }
 
 /// Memory ordering for an atomic operation
-/// (`atomicrmw` / `cmpxchg` / `fence` / atomic `load` / `store`).
 #[pliron_attr(name = "llvm.atomic_ordering", verifier = "succ", format)]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum AtomicOrderingAttr {
@@ -312,6 +314,31 @@ pub enum AtomicRmwKindAttr {
     FSub,
     FMax,
     FMin,
+}
+
+/// Synchronization scope of an atomic operation
+#[pliron_attr(name = "llvm.sync_scope", verifier = "succ", format)]
+#[derive(PartialEq, Eq, Clone, Debug, Default, Hash)]
+pub enum SyncScopeAttr {
+    /// Synchronizes with all other threads in the system.
+    #[default]
+    System,
+    /// Synchronizes only with other atomic operations in the same thread.
+    SingleThread,
+    /// A target specific scope, named in LLVM-IR.
+    NamedScope(StringAttr),
+}
+
+impl SyncScopeAttr {
+    /// The LLVM-IR name of this scope. The system scope is unnamed in LLVM-IR
+    /// and hence maps to the empty string (as expected by `LLVMGetSyncScopeID`).
+    pub fn to_name(&self) -> String {
+        match self {
+            SyncScopeAttr::SingleThread => "singlethread".to_string(),
+            SyncScopeAttr::System => String::new(),
+            SyncScopeAttr::NamedScope(name) => name.as_str().to_string(),
+        }
+    }
 }
 
 #[pliron_attr(
@@ -456,6 +483,18 @@ mod tests {
             AtomicRmwKindAttr::FMin,
         ] {
             assert_attr_roundtrips(ctx, kind);
+        }
+    }
+
+    #[test]
+    fn test_sync_scope_attr_roundtrip() {
+        let ctx = &mut Context::default();
+        for scope in [
+            SyncScopeAttr::SingleThread,
+            SyncScopeAttr::System,
+            SyncScopeAttr::NamedScope(StringAttr::new("device".to_string())),
+        ] {
+            assert_attr_roundtrips(ctx, scope);
         }
     }
 

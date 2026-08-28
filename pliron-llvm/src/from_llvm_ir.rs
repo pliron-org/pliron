@@ -13,7 +13,7 @@ use pliron::{
     attribute::AttrObj,
     basic_block::BasicBlock,
     builtin::{
-        attributes::{BytesAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
+        attributes::{BytesAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
         op_interfaces::{
             AtMostOneRegionInterface, CallOpCallable, OneResultInterface,
             SingleBlockRegionInterface,
@@ -47,7 +47,8 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, FastmathFlagsAttr,
-        ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr, PoisonAttr, UndefAttr, ZeroAttr,
+        ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr, PoisonAttr, SyncScopeAttr,
+        UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMModule, LLVMType, LLVMValue, basic_block_iter, function_iter,
@@ -970,17 +971,30 @@ fn convert_rmw_kind_from_llvm(k: LLVMAtomicRMWBinOp) -> AtomicRmwKindAttr {
     }
 }
 
-/// Recover pliron syncscope (`None` = system) from an atomic instruction.
-///
-/// LLVM's built-in `SyncScope` ids are `SingleThread = 0` and `System = 1`;
-/// any named scope (e.g. NVVM "device"/"block") is assigned an id >= 2. LLVM-C
-/// exposes the id but not its name, so only the two built-in scopes round-trip;
-/// named scopes cannot be mapped back to a name and fall back to the system
-/// scope.
-fn syncscope_from_llvm(inst: LLVMValue) -> Option<String> {
+/// Build [SyncScopeAttr] of an atomic instruction.
+fn syncscope_from_llvm(inst: LLVMValue) -> SyncScopeAttr {
+    /// LLVM-C provides no function to get a SyncScope name from its SyncScope ID.
+    /// So extract the sync scope name from the instruction's printed form,
+    /// which spells a named scope as `syncscope("<name>")`. The name is printed
+    /// escaped, so a `"` in it cannot be mistaken for the closing quote.
+    fn syncscope_name(inst: LLVMValue) -> Option<String> {
+        let printed = llvm_print_value_to_string(inst)?;
+        let (_, rest) = printed.split_once("syncscope(\"")?;
+        let (name, _) = rest.split_once('"')?;
+        Some(name.to_string())
+    }
+
     match llvm_get_atomic_sync_scope_id(inst) {
-        0 => Some("singlethread".to_string()),
-        _ => None,
+        // LLVM's built-in scope ids: `SyncScope::SingleThread` and `SyncScope::System`.
+        // Every other id is a named scope, unique only within the `LLVMContext`.
+        0 => SyncScopeAttr::SingleThread,
+        1 => SyncScopeAttr::System,
+        _ => syncscope_name(inst)
+            .map(|name| SyncScopeAttr::NamedScope(StringAttr::new(name)))
+            .unwrap_or_else(|| {
+                log::warn!("Could not recover sync scope name; falling back to the system scope");
+                SyncScopeAttr::System
+            }),
     }
 }
 

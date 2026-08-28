@@ -3210,7 +3210,7 @@ pub fn llvm_get_inline_asm_constraint_string(v: LLVMValue) -> String {
 /// LLVMGetInlineAsmHasSideEffects
 pub fn llvm_get_inline_asm_has_side_effects(v: LLVMValue) -> bool {
     assert!(llvm_is_a::inline_asm(v));
-    unsafe { LLVMGetInlineAsmHasSideEffects(v.into()) != 0 }
+    unsafe { LLVMGetInlineAsmHasSideEffects(v.into()).to_bool() }
 }
 
 /// LLVMGetInlineAsmFunctionType

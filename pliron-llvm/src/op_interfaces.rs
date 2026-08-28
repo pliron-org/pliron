@@ -41,7 +41,7 @@ use pliron::{
 };
 
 use crate::{
-    attributes::{AlignmentAttr, FastmathFlagsAttr},
+    attributes::{AlignmentAttr, FastmathFlagsAttr, SyncScopeAttr},
     types::{VectorType, VectorTypeKind},
 };
 
@@ -241,6 +241,60 @@ pub trait FastMathFlags {
             .is_none()
         {
             return verify_err!(op.loc(), FastmathFlagMissingErr);
+        }
+
+        Ok(())
+    }
+}
+
+dict_key!(
+    /// Attribute key for the synchronization scope of an atomic [Op].
+    ATTR_KEY_SYNC_SCOPE,
+    "llvm_syncscope"
+);
+
+#[derive(Error, Debug)]
+#[error("Synchronization scope missing on Op")]
+pub struct SyncScopeMissingErr;
+
+/// Atomic [Op]s that have a synchronization scope.
+#[op_interface]
+pub trait SyncScopeInterface {
+    /// Get the synchronization scope of this [Op].
+    fn syncscope(&self, ctx: &Context) -> SyncScopeAttr
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref(ctx)
+            .attributes
+            .get::<SyncScopeAttr>(&ATTR_KEY_SYNC_SCOPE)
+            .expect("Synchronization scope missing or is of incorrect type")
+            .clone()
+    }
+
+    /// Set the synchronization scope of this [Op].
+    fn set_syncscope(&self, ctx: &Context, syncscope: SyncScopeAttr)
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref_mut(ctx)
+            .attributes
+            .set(ATTR_KEY_SYNC_SCOPE.clone(), syncscope);
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let op = op.get_operation().deref(ctx);
+        if op
+            .attributes
+            .get::<SyncScopeAttr>(&ATTR_KEY_SYNC_SCOPE)
+            .is_none()
+        {
+            return verify_err!(op.loc(), SyncScopeMissingErr);
         }
 
         Ok(())
