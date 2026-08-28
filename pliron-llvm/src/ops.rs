@@ -1791,10 +1791,38 @@ impl AtomicRmwOp {
     attributes = (
         llvm_cas_success_ordering: AtomicOrderingAttr,
         llvm_cas_failure_ordering: AtomicOrderingAttr
-    ),
-    verifier = "succ"
+    )
 )]
 pub struct AtomicCmpxchgOp;
+
+#[derive(Error, Debug)]
+enum AtomicCmpxchgOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for cmpxchg ordering")]
+    OrderingAttrErr,
+    #[error("cmpxchg failure ordering cannot be release or acq_rel")]
+    InvalidFailureOrdering,
+}
+
+impl Verify for AtomicCmpxchgOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // AtomicCmpXchgInst::isValid{Success,Failure}Ordering. Neither ordering
+        // may be non-atomic or unordered, which AtomicOrderingAttr cannot express.
+        if self.get_attr_llvm_cas_success_ordering(ctx).is_none() {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::OrderingAttrErr);
+        }
+        let Some(failure) = self.get_attr_llvm_cas_failure_ordering(ctx) else {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *failure,
+            AtomicOrderingAttr::Release | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::InvalidFailureOrdering);
+        }
+        Ok(())
+    }
+}
 
 impl AtomicCmpxchgOp {
     /// Create a new [AtomicCmpxchgOp].
@@ -1835,10 +1863,31 @@ impl AtomicCmpxchgOp {
     name = "llvm.fence",
     format = "attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_fence_ordering, $AtomicOrderingAttr)",
     interfaces = [NResultsInterface<0>, NOpdsInterface<0>, SyncScopeInterface],
-    attributes = (llvm_fence_ordering: AtomicOrderingAttr),
-    verifier = "succ"
+    attributes = (llvm_fence_ordering: AtomicOrderingAttr)
 )]
 pub struct FenceOp;
+
+#[derive(Error, Debug)]
+enum FenceOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for fence ordering")]
+    OrderingAttrErr,
+    #[error("fence ordering cannot be monotonic")]
+    InvalidOrdering,
+}
+
+impl Verify for FenceOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitFenceInst.
+        let Some(ordering) = self.get_attr_llvm_fence_ordering(ctx) else {
+            return verify_err!(loc, FenceOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(*ordering, AtomicOrderingAttr::Monotonic) {
+            return verify_err!(loc, FenceOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
 
 impl FenceOp {
     /// Create a new [FenceOp].
@@ -1872,10 +1921,34 @@ impl FenceOp {
         SyncScopeInterface,
     ],
     operands = (ptr: PointerType),
-    attributes = (llvm_ld_ordering: AtomicOrderingAttr),
-    verifier = "succ"
+    attributes = (llvm_ld_ordering: AtomicOrderingAttr)
 )]
 pub struct AtomicLoadOp;
+
+#[derive(Error, Debug)]
+enum AtomicLoadOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for atomic load ordering")]
+    OrderingAttrErr,
+    #[error("atomic load ordering cannot be release or acq_rel")]
+    InvalidOrdering,
+}
+
+impl Verify for AtomicLoadOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitLoadInst.
+        let Some(ordering) = self.get_attr_llvm_ld_ordering(ctx) else {
+            return verify_err!(loc, AtomicLoadOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *ordering,
+            AtomicOrderingAttr::Release | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicLoadOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
 
 impl AtomicLoadOp {
     /// Create a new [AtomicLoadOp].
@@ -1918,10 +1991,34 @@ impl AtomicLoadOp {
         SyncScopeInterface
     ],
     operands = (value, ptr: PointerType),
-    attributes = (llvm_st_ordering: AtomicOrderingAttr),
-    verifier = "succ"
+    attributes = (llvm_st_ordering: AtomicOrderingAttr)
 )]
 pub struct AtomicStoreOp;
+
+#[derive(Error, Debug)]
+enum AtomicStoreOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for atomic store ordering")]
+    OrderingAttrErr,
+    #[error("atomic store ordering cannot be acquire or acq_rel")]
+    InvalidOrdering,
+}
+
+impl Verify for AtomicStoreOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitStoreInst.
+        let Some(ordering) = self.get_attr_llvm_st_ordering(ctx) else {
+            return verify_err!(loc, AtomicStoreOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *ordering,
+            AtomicOrderingAttr::Acquire | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicStoreOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
 
 impl AtomicStoreOp {
     /// Create a new [AtomicStoreOp].

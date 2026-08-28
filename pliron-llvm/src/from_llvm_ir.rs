@@ -975,8 +975,9 @@ fn convert_rmw_kind_from_llvm(k: LLVMAtomicRMWBinOp) -> AtomicRmwKindAttr {
 fn syncscope_from_llvm(inst: LLVMValue) -> SyncScopeAttr {
     /// LLVM-C provides no function to get a SyncScope name from its SyncScope ID.
     /// So extract the sync scope name from the instruction's printed form,
-    /// which spells a named scope as `syncscope("<name>")`. The name is printed
-    /// escaped, so a `"` in it cannot be mistaken for the closing quote.
+    /// which spells a named scope as `syncscope("<name>")`. The printed name is
+    /// escaped (so a `"` in it cannot be mistaken for the closing quote).
+    /// TODO: Unescape it and support names with escapes.
     fn syncscope_name(inst: LLVMValue) -> Option<String> {
         let printed = llvm_print_value_to_string(inst)?;
         let (_, rest) = printed.split_once("syncscope(\"")?;
