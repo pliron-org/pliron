@@ -65,7 +65,7 @@ use llvm_sys::{
         LLVMPositionBuilderBefore, LLVMPrintModuleToFile, LLVMPrintModuleToString,
         LLVMPrintTypeToString, LLVMPrintValueToString, LLVMReplaceAllUsesWith,
         LLVMScalableVectorType, LLVMSetAlignment, LLVMSetFastMathFlags, LLVMSetInitializer,
-        LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
+        LLVMSetDataLayout, LLVMSetLinkage, LLVMSetNNeg, LLVMStructCreateNamed, LLVMStructSetBody,
         LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
         LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
     },
@@ -2716,6 +2716,11 @@ mod llvm_module {
             Self(unsafe {
                 LLVMModuleCreateWithNameInContext(to_c_str(module_id).as_ptr(), context.inner_ref())
             })
+        }
+
+        /// Set the target data layout used when constructing instructions.
+        pub fn set_data_layout(&self, data_layout: &str) {
+            unsafe { LLVMSetDataLayout(self.0, to_c_str(data_layout).as_ptr()) }
         }
 
         /// Parse IR from [str] into [LLVMModule]

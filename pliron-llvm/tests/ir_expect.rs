@@ -25,6 +25,34 @@ fn to_llvm_ir_o1(input: &str) -> Result<String> {
 }
 
 #[test]
+fn data_layout_sets_alloca_address_space() -> Result<()> {
+    let input = r#"
+        builtin.module @m {
+        ^block_0_0():
+          llvm.func @foo: llvm.func <llvm.void(builtin.integer i32) variadic = false> [] {
+          ^entry_block_1_0(n: builtin.integer i32):
+            ptr = llvm.alloca [builtin.integer i32 x n] : llvm.ptr (5);
+            llvm.return
+          }
+        }
+    "#;
+
+    let ctx = &mut Context::new();
+    let module_op = common::parse_op_verify(ctx, input)?;
+    let llvm_ctx = LLVMContext::default();
+    let llvm_mod = to_llvm_ir::convert_module_with_data_layout(
+        ctx,
+        &llvm_ctx,
+        module_op,
+        Some("e-p:64:64-A5"),
+    )?;
+
+      let ir = llvm_mod.to_string();
+      assert!(ir.contains("addrspace(5)"), "{ir}");
+    Ok(())
+}
+
+#[test]
 fn float_select_preserves_fastmath_flags() -> Result<()> {
     let input = r#"
         builtin.module @m {

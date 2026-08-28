@@ -2582,8 +2582,22 @@ pub fn convert_module(
     llvm_ctx: &LLVMContext,
     module: ModuleOp,
 ) -> Result<LLVMModule> {
+    convert_module_with_data_layout(ctx, llvm_ctx, module, None)
+}
+
+/// Convert pliron [ModuleOp] to [LLVMModule], optionally using `data_layout`
+/// while constructing LLVM instructions.
+pub fn convert_module_with_data_layout(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module: ModuleOp,
+    data_layout: Option<&str>,
+) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
     let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
+    if let Some(data_layout) = data_layout {
+        llvm_module.set_data_layout(data_layout);
+    }
     let cctx = &mut ConversionContext::new(llvm_ctx, &llvm_module);
 
     // Setup the scratch builder for evaluating constants.
