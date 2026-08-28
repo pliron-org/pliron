@@ -47,8 +47,8 @@ fn data_layout_sets_alloca_address_space() -> Result<()> {
         Some("e-p:64:64-A5"),
     )?;
 
-      let ir = llvm_mod.to_string();
-      assert!(ir.contains("addrspace(5)"), "{ir}");
+    let ir = llvm_mod.to_string();
+    assert!(ir.contains("addrspace(5)"), "{ir}");
     Ok(())
 }
 
