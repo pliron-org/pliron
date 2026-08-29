@@ -7,7 +7,7 @@
 
 use expect_test::expect;
 use pliron::{context::Context, init_env_logger_for_tests, printable::Printable, result::Result};
-use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron_llvm::{llvm_sys::core::LLVMContext, ops::SelectOpVerifyErr, to_llvm_ir};
 
 mod common;
 
@@ -70,11 +70,8 @@ fn int_select_with_fastmath_flags_is_rejected() {
     "#;
 
     let err = to_llvm_ir_o1(input).expect_err("verifier must reject the flags");
-    assert!(
-        err.to_string()
-            .contains("Fast-math flags are only allowed on selects of floating-point type"),
-        "unexpected error: {err}"
-    );
+    let err = err.err.downcast_ref::<SelectOpVerifyErr>().unwrap();
+    assert!(matches!(err, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr));
 }
 
 /// A `select` with fast-math flags imported from LLVM IR must carry the flags
