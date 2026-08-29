@@ -7,7 +7,7 @@
 
 use expect_test::expect;
 use pliron::{context::Context, init_env_logger_for_tests, printable::Printable, result::Result};
-use pliron_llvm::{llvm_sys::core::LLVMContext, ops::SelectOpVerifyErr, to_llvm_ir};
+use pliron_llvm::{from_llvm_ir, llvm_sys::core::LLVMContext, ops::SelectOpVerifyErr, to_llvm_ir};
 
 mod common;
 
@@ -25,9 +25,11 @@ fn to_llvm_ir_o1(input: &str) -> Result<String> {
 }
 
 #[test]
-fn data_layout_sets_alloca_address_space() -> Result<()> {
+fn data_layout_target_triple() -> Result<()> {
     let input = r#"
-        builtin.module @m {
+        builtin.module @m
+          [llvm_data_layout: builtin.string "e-p:64:64-A5",
+           llvm_target_triple: builtin.string "amdgcn-amd-amdhsa"] {
         ^block_0_0():
           llvm.func @foo: llvm.func <llvm.void(builtin.integer i32) variadic = false> [] {
           ^entry_block_1_0(n: builtin.integer i32):
@@ -40,15 +42,49 @@ fn data_layout_sets_alloca_address_space() -> Result<()> {
     let ctx = &mut Context::new();
     let module_op = common::parse_op_verify(ctx, input)?;
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module_with_data_layout(
-        ctx,
-        &llvm_ctx,
-        module_op,
-        Some("e-p:64:64-A5"),
-    )?;
+    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
 
-    let ir = llvm_mod.to_string();
-    assert!(ir.contains("addrspace(5)"), "{ir}");
+    expect![[r#"
+        ; ModuleID = 'm'
+        source_filename = "m"
+        target datalayout = "e-p:64:64-A5"
+        target triple = "amdgcn-amd-amdhsa"
+
+        define void @foo(i32 %0) {
+        entry_block_1_0_block2v1:
+          %ptr_v1 = alloca i32, i32 %0, align 4, addrspace(5)
+          ret void
+        }
+    "#]]
+    .assert_eq(&llvm_mod.to_string());
+    assert_eq!(llvm_mod.data_layout(), "e-p:64:64-A5");
+    assert_eq!(llvm_mod.target_triple(), "amdgcn-amd-amdhsa");
+
+    // The data layout and target triple must survive a round trip back to pliron.
+    let ctx2 = &mut Context::new();
+    let module_op2 = from_llvm_ir::convert_module(ctx2, &llvm_mod)?;
+    expect![[r#"
+        builtin.module @m 
+          [llvm_data_layout: builtin.string "e-p:64:64-A5", llvm_target_triple: builtin.string "amdgcn-amd-amdhsa"]
+        {
+          ^block_0_0_block1v1() !0:
+            llvm.func @foo: llvm.func <llvm.void (builtin.integer i32) variadic = false>
+              [] 
+            {
+              ^entry_block_1_0_block2v1(n_v0: builtin.integer i32) !1:
+                ptr_v1 = llvm.alloca [builtin.integer i32 x n_v0]  : llvm.ptr (5) !2;
+                llvm.return  !3
+            } !4
+        }"#]].assert_eq(&module_op2.disp(ctx).to_string());
+    assert_eq!(
+        pliron_llvm::attributes::get_data_layout(ctx2, module_op2).as_deref(),
+        Some("e-p:64:64-A5")
+    );
+    assert_eq!(
+        pliron_llvm::attributes::get_target_triple(ctx2, module_op2).as_deref(),
+        Some("amdgcn-amd-amdhsa")
+    );
+
     Ok(())
 }
 

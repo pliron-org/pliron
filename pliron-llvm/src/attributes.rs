@@ -14,13 +14,15 @@ use pliron::{
     builtin::{
         attr_interfaces::TypedAttrInterface,
         attributes::{IntegerAttr, StringAttr},
+        ops::ModuleOp,
     },
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
     context::Context,
     derive::{attr_interface_impl, format, pliron_attr},
-    impl_printable_for_display, input_error,
+    dict_key, impl_printable_for_display, input_error,
     location::Located,
+    op::Op,
     parsable::{IntoParseResult, Parsable},
     printable::Printable,
     result::Result,
@@ -515,4 +517,52 @@ mod tests {
             assert_attr_roundtrips(ctx, FPHalfAttr(value));
         }
     }
+}
+
+dict_key!(
+    /// Attribute key for the LLVM data layout string of a [ModuleOp].
+    ATTR_KEY_LLVM_DATA_LAYOUT,
+    "llvm_data_layout"
+);
+
+dict_key!(
+    /// Attribute key for the LLVM target triple of a [ModuleOp].
+    ATTR_KEY_LLVM_TARGET_TRIPLE,
+    "llvm_target_triple"
+);
+
+/// Get the LLVM data layout of `module`, if set.
+pub fn get_data_layout(ctx: &Context, module: ModuleOp) -> Option<String> {
+    module
+        .get_operation()
+        .deref(ctx)
+        .attributes
+        .get::<StringAttr>(&ATTR_KEY_LLVM_DATA_LAYOUT)
+        .map(|attr| attr.clone().into())
+}
+
+/// Set the LLVM data layout of `module`.
+pub fn set_data_layout(ctx: &Context, module: ModuleOp, data_layout: String) {
+    module.get_operation().deref_mut(ctx).attributes.set(
+        ATTR_KEY_LLVM_DATA_LAYOUT.clone(),
+        StringAttr::new(data_layout),
+    );
+}
+
+/// Get the LLVM target triple of `module`, if set.
+pub fn get_target_triple(ctx: &Context, module: ModuleOp) -> Option<String> {
+    module
+        .get_operation()
+        .deref(ctx)
+        .attributes
+        .get::<StringAttr>(&ATTR_KEY_LLVM_TARGET_TRIPLE)
+        .map(|attr| attr.clone().into())
+}
+
+/// Set the LLVM target triple of `module`.
+pub fn set_target_triple(ctx: &Context, module: ModuleOp, target_triple: String) {
+    module.get_operation().deref_mut(ctx).attributes.set(
+        ATTR_KEY_LLVM_TARGET_TRIPLE.clone(),
+        StringAttr::new(target_triple),
+    );
 }
