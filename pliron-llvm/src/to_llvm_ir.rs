@@ -83,7 +83,7 @@ use crate::{
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
-        PointerTypeResult,
+        PointerTypeResult, SyncScopeInterface,
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,
@@ -888,10 +888,7 @@ impl ToLLVMValue for AtomicRmwOp {
                 .get_attr_llvm_rmw_ordering(ctx)
                 .expect("atomicrmw missing ordering"),
         );
-        let scope = self
-            .get_attr_llvm_rmw_syncscope(ctx)
-            .map(|s| String::from((*s).clone()))
-            .unwrap_or_default();
+        let scope = self.syncscope(ctx).to_name();
         let ssid = llvm_get_sync_scope_id(llvm_ctx, &scope);
         Ok(llvm_build_atomic_rmw(
             &cctx.builder,
@@ -929,10 +926,7 @@ impl ToLLVMValue for AtomicCmpxchgOp {
                 .get_attr_llvm_cas_failure_ordering(ctx)
                 .expect("cmpxchg missing failure ordering"),
         );
-        let scope = self
-            .get_attr_llvm_cas_syncscope(ctx)
-            .map(|s| String::from((*s).clone()))
-            .unwrap_or_default();
+        let scope = self.syncscope(ctx).to_name();
         let ssid = llvm_get_sync_scope_id(llvm_ctx, &scope);
         Ok(llvm_build_atomic_cmpxchg(
             &cctx.builder,
@@ -959,10 +953,7 @@ impl ToLLVMValue for FenceOp {
                 .get_attr_llvm_fence_ordering(ctx)
                 .expect("fence missing ordering"),
         );
-        let scope = self
-            .get_attr_llvm_fence_syncscope(ctx)
-            .map(|s| String::from((*s).clone()))
-            .unwrap_or_default();
+        let scope = self.syncscope(ctx).to_name();
         let ssid = llvm_get_sync_scope_id(llvm_ctx, &scope);
         Ok(llvm_build_fence(&cctx.builder, ordering, ssid, ""))
     }
@@ -994,10 +985,7 @@ impl ToLLVMValue for AtomicLoadOp {
                 .expect("atomic load missing ordering"),
         );
         llvm_set_ordering(load, ordering);
-        let scope = self
-            .get_attr_llvm_ld_syncscope(ctx)
-            .map(|s| String::from((*s).clone()))
-            .unwrap_or_default();
+        let scope = self.syncscope(ctx).to_name();
         llvm_set_atomic_sync_scope_id(load, llvm_get_sync_scope_id(llvm_ctx, &scope));
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(load, alignment);
@@ -1027,10 +1015,7 @@ impl ToLLVMValue for AtomicStoreOp {
                 .expect("atomic store missing ordering"),
         );
         llvm_set_ordering(store, ordering);
-        let scope = self
-            .get_attr_llvm_st_syncscope(ctx)
-            .map(|s| String::from((*s).clone()))
-            .unwrap_or_default();
+        let scope = self.syncscope(ctx).to_name();
         llvm_set_atomic_sync_scope_id(store, llvm_get_sync_scope_id(llvm_ctx, &scope));
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(store, alignment);

@@ -62,13 +62,14 @@ use crate::{
     attributes::{
         AddressSpaceAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr, CaseValuesAttr,
         FCmpPredicateAttr, FastmathFlagsAttr, InsertExtractValueIndicesAttr, LinkageAttr,
-        ShuffleVectorMaskAttr,
+        ShuffleVectorMaskAttr, SyncScopeAttr,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
         IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag, PointerTypeResult,
         ScalarOrVectorOpd, ScalarOrVectorOpdImpls, ScalarOrVectorRes, ScalarOrVectorResImpls,
+        SyncScopeInterface,
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
@@ -1720,30 +1721,30 @@ impl StoreOp {
 /// | `res` | the old value (same type as `val`) |
 #[pliron_op(
     name = "llvm.atomicrmw",
-    format = "attr($llvm_rmw_kind, $AtomicRmwKindAttr) ` ` $0 `, ` $1 ` ` opt_attr($llvm_rmw_syncscope, $StringAttr, label($syncscope)) attr($llvm_rmw_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    format = "attr($llvm_rmw_kind, $AtomicRmwKindAttr) ` ` $0 `, ` $1 ` ` attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_rmw_ordering, $AtomicOrderingAttr) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         NOpdsInterface<2>,
+        SyncScopeInterface,
     ],
     operands = (ptr: PointerType, val),
     attributes = (
         llvm_rmw_kind: AtomicRmwKindAttr,
-        llvm_rmw_ordering: AtomicOrderingAttr,
-        llvm_rmw_syncscope: StringAttr
+        llvm_rmw_ordering: AtomicOrderingAttr
     ),
     verifier = "succ"
 )]
 pub struct AtomicRmwOp;
 
 impl AtomicRmwOp {
-    /// Create a new [AtomicRmwOp]. `syncscope` is `None` for the system scope.
+    /// Create a new [AtomicRmwOp].
     pub fn new(
         ctx: &mut Context,
         ptr: Value,
         val: Value,
         kind: AtomicRmwKindAttr,
         ordering: AtomicOrderingAttr,
-        syncscope: Option<String>,
+        syncscope: SyncScopeAttr,
     ) -> Self {
         use pliron::r#type::Typed;
         let res_ty = val.get_type(ctx);
@@ -1758,9 +1759,7 @@ impl AtomicRmwOp {
         let op = AtomicRmwOp { op };
         op.set_attr_llvm_rmw_kind(ctx, kind);
         op.set_attr_llvm_rmw_ordering(ctx, ordering);
-        if let Some(scope) = syncscope {
-            op.set_attr_llvm_rmw_syncscope(ctx, StringAttr::new(scope));
-        }
+        op.set_syncscope(ctx, syncscope);
         op
     }
 }
@@ -1782,23 +1781,51 @@ impl AtomicRmwOp {
 /// | `res` | `{ value, i1 }` (loaded value, success flag) |
 #[pliron_op(
     name = "llvm.cmpxchg",
-    format = "$0 `, ` $1 `, ` $2 ` ` opt_attr($llvm_cas_syncscope, $StringAttr, label($syncscope)) attr($llvm_cas_success_ordering, $AtomicOrderingAttr) ` ` attr($llvm_cas_failure_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    format = "$0 `, ` $1 `, ` $2 ` ` attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_cas_success_ordering, $AtomicOrderingAttr) ` ` attr($llvm_cas_failure_ordering, $AtomicOrderingAttr) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         NOpdsInterface<3>,
+        SyncScopeInterface,
     ],
     operands = (ptr: PointerType, cmp, new_val),
     attributes = (
         llvm_cas_success_ordering: AtomicOrderingAttr,
-        llvm_cas_failure_ordering: AtomicOrderingAttr,
-        llvm_cas_syncscope: StringAttr
-    ),
-    verifier = "succ"
+        llvm_cas_failure_ordering: AtomicOrderingAttr
+    )
 )]
 pub struct AtomicCmpxchgOp;
 
+#[derive(Error, Debug)]
+enum AtomicCmpxchgOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for cmpxchg ordering")]
+    OrderingAttrErr,
+    #[error("cmpxchg failure ordering cannot be release or acq_rel")]
+    InvalidFailureOrdering,
+}
+
+impl Verify for AtomicCmpxchgOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // AtomicCmpXchgInst::isValid{Success,Failure}Ordering. Neither ordering
+        // may be non-atomic or unordered, which AtomicOrderingAttr cannot express.
+        if self.get_attr_llvm_cas_success_ordering(ctx).is_none() {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::OrderingAttrErr);
+        }
+        let Some(failure) = self.get_attr_llvm_cas_failure_ordering(ctx) else {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *failure,
+            AtomicOrderingAttr::Release | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicCmpxchgOpVerifyErr::InvalidFailureOrdering);
+        }
+        Ok(())
+    }
+}
+
 impl AtomicCmpxchgOp {
-    /// Create a new [AtomicCmpxchgOp]. `syncscope` is `None` for the system scope.
+    /// Create a new [AtomicCmpxchgOp].
     pub fn new(
         ctx: &mut Context,
         ptr: Value,
@@ -1806,7 +1833,7 @@ impl AtomicCmpxchgOp {
         new_val: Value,
         success_ordering: AtomicOrderingAttr,
         failure_ordering: AtomicOrderingAttr,
-        syncscope: Option<String>,
+        syncscope: SyncScopeAttr,
     ) -> Self {
         use pliron::r#type::Typed;
         let val_ty = cmp.get_type(ctx);
@@ -1825,9 +1852,7 @@ impl AtomicCmpxchgOp {
         let op = AtomicCmpxchgOp { op };
         op.set_attr_llvm_cas_success_ordering(ctx, success_ordering);
         op.set_attr_llvm_cas_failure_ordering(ctx, failure_ordering);
-        if let Some(scope) = syncscope {
-            op.set_attr_llvm_cas_syncscope(ctx, StringAttr::new(scope));
-        }
+        op.set_syncscope(ctx, syncscope);
         op
     }
 }
@@ -1836,22 +1861,41 @@ impl AtomicCmpxchgOp {
 /// results.
 #[pliron_op(
     name = "llvm.fence",
-    format = "opt_attr($llvm_fence_syncscope, $StringAttr, label($syncscope)) attr($llvm_fence_ordering, $AtomicOrderingAttr)",
-    interfaces = [NResultsInterface<0>, NOpdsInterface<0>],
-    attributes = (llvm_fence_ordering: AtomicOrderingAttr, llvm_fence_syncscope: StringAttr),
-    verifier = "succ"
+    format = "attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_fence_ordering, $AtomicOrderingAttr)",
+    interfaces = [NResultsInterface<0>, NOpdsInterface<0>, SyncScopeInterface],
+    attributes = (llvm_fence_ordering: AtomicOrderingAttr)
 )]
 pub struct FenceOp;
 
+#[derive(Error, Debug)]
+enum FenceOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for fence ordering")]
+    OrderingAttrErr,
+    #[error("fence ordering cannot be monotonic")]
+    InvalidOrdering,
+}
+
+impl Verify for FenceOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitFenceInst.
+        let Some(ordering) = self.get_attr_llvm_fence_ordering(ctx) else {
+            return verify_err!(loc, FenceOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(*ordering, AtomicOrderingAttr::Monotonic) {
+            return verify_err!(loc, FenceOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
+
 impl FenceOp {
-    /// Create a new [FenceOp]. `syncscope` is `None` for the system scope.
-    pub fn new(ctx: &mut Context, ordering: AtomicOrderingAttr, syncscope: Option<String>) -> Self {
+    /// Create a new [FenceOp].
+    pub fn new(ctx: &mut Context, ordering: AtomicOrderingAttr, syncscope: SyncScopeAttr) -> Self {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
         let op = FenceOp { op };
         op.set_attr_llvm_fence_ordering(ctx, ordering);
-        if let Some(scope) = syncscope {
-            op.set_attr_llvm_fence_syncscope(ctx, StringAttr::new(scope));
-        }
+        op.set_syncscope(ctx, syncscope);
         op
     }
 }
@@ -1869,26 +1913,51 @@ impl FenceOp {
 /// | `res` | the loaded value |
 #[pliron_op(
     name = "llvm.atomic_load",
-    format = "$0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` opt_attr($llvm_ld_syncscope, $StringAttr, label($syncscope)) attr($llvm_ld_ordering, $AtomicOrderingAttr) ` : ` type($0)",
+    format = "$0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_ld_ordering, $AtomicOrderingAttr) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
         AlignableOpInterface,
+        SyncScopeInterface,
     ],
     operands = (ptr: PointerType),
-    attributes = (llvm_ld_ordering: AtomicOrderingAttr, llvm_ld_syncscope: StringAttr),
-    verifier = "succ"
+    attributes = (llvm_ld_ordering: AtomicOrderingAttr)
 )]
 pub struct AtomicLoadOp;
 
+#[derive(Error, Debug)]
+enum AtomicLoadOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for atomic load ordering")]
+    OrderingAttrErr,
+    #[error("atomic load ordering cannot be release or acq_rel")]
+    InvalidOrdering,
+}
+
+impl Verify for AtomicLoadOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitLoadInst.
+        let Some(ordering) = self.get_attr_llvm_ld_ordering(ctx) else {
+            return verify_err!(loc, AtomicLoadOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *ordering,
+            AtomicOrderingAttr::Release | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicLoadOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
+
 impl AtomicLoadOp {
-    /// Create a new [AtomicLoadOp]. `syncscope` is `None` for the system scope.
+    /// Create a new [AtomicLoadOp].
     pub fn new(
         ctx: &mut Context,
         ptr: Value,
         res_ty: TypeHandle,
         ordering: AtomicOrderingAttr,
-        syncscope: Option<String>,
+        syncscope: SyncScopeAttr,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -1900,9 +1969,7 @@ impl AtomicLoadOp {
         );
         let op = AtomicLoadOp { op };
         op.set_attr_llvm_ld_ordering(ctx, ordering);
-        if let Some(scope) = syncscope {
-            op.set_attr_llvm_ld_syncscope(ctx, StringAttr::new(scope));
-        }
+        op.set_syncscope(ctx, syncscope);
         op
     }
 }
@@ -1916,26 +1983,51 @@ impl AtomicLoadOp {
 /// | `ptr` | [PointerType] |
 #[pliron_op(
     name = "llvm.atomic_store",
-    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` opt_attr($llvm_st_syncscope, $StringAttr, label($syncscope)) attr($llvm_st_ordering, $AtomicOrderingAttr)",
+    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` ` attr($llvm_syncscope, $SyncScopeAttr, label($syncscope)) ` ` attr($llvm_st_ordering, $AtomicOrderingAttr)",
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,
-        NOpdsInterface<2>
+        NOpdsInterface<2>,
+        SyncScopeInterface
     ],
     operands = (value, ptr: PointerType),
-    attributes = (llvm_st_ordering: AtomicOrderingAttr, llvm_st_syncscope: StringAttr),
-    verifier = "succ"
+    attributes = (llvm_st_ordering: AtomicOrderingAttr)
 )]
 pub struct AtomicStoreOp;
 
+#[derive(Error, Debug)]
+enum AtomicStoreOpVerifyErr {
+    #[error("Missing or incorrect type of attribute for atomic store ordering")]
+    OrderingAttrErr,
+    #[error("atomic store ordering cannot be acquire or acq_rel")]
+    InvalidOrdering,
+}
+
+impl Verify for AtomicStoreOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        // Verifier::visitStoreInst.
+        let Some(ordering) = self.get_attr_llvm_st_ordering(ctx) else {
+            return verify_err!(loc, AtomicStoreOpVerifyErr::OrderingAttrErr);
+        };
+        if matches!(
+            *ordering,
+            AtomicOrderingAttr::Acquire | AtomicOrderingAttr::AcqRel
+        ) {
+            return verify_err!(loc, AtomicStoreOpVerifyErr::InvalidOrdering);
+        }
+        Ok(())
+    }
+}
+
 impl AtomicStoreOp {
-    /// Create a new [AtomicStoreOp]. `syncscope` is `None` for the system scope.
+    /// Create a new [AtomicStoreOp].
     pub fn new(
         ctx: &mut Context,
         value: Value,
         ptr: Value,
         ordering: AtomicOrderingAttr,
-        syncscope: Option<String>,
+        syncscope: SyncScopeAttr,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -1947,9 +2039,7 @@ impl AtomicStoreOp {
         );
         let op = AtomicStoreOp { op };
         op.set_attr_llvm_st_ordering(ctx, ordering);
-        if let Some(scope) = syncscope {
-            op.set_attr_llvm_st_syncscope(ctx, StringAttr::new(scope));
-        }
+        op.set_syncscope(ctx, syncscope);
         op
     }
 }

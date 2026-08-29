@@ -7,7 +7,7 @@
 
 use expect_test::expect;
 use pliron::{context::Context, init_env_logger_for_tests, printable::Printable, result::Result};
-use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron_llvm::{llvm_sys::core::LLVMContext, ops::SelectOpVerifyErr, to_llvm_ir};
 
 mod common;
 
@@ -98,11 +98,8 @@ fn int_select_with_fastmath_flags_is_rejected() {
     "#;
 
     let err = to_llvm_ir_o1(input).expect_err("verifier must reject the flags");
-    assert!(
-        err.to_string()
-            .contains("Fast-math flags are only allowed on selects of floating-point type"),
-        "unexpected error: {err}"
-    );
+    let err = err.err.downcast_ref::<SelectOpVerifyErr>().unwrap();
+    assert!(matches!(err, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr));
 }
 
 /// A `select` with fast-math flags imported from LLVM IR must carry the flags
@@ -265,6 +262,64 @@ fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
           store %Nested { %Packed <{ i8 1, i32 2 }>, %Unpacked { i8 3, i32 4 }, i16 9 }, ptr %nested_v26, align 4
           %list_v32 = alloca %List, align 8
           store %List { i32 10, ptr null }, ptr %list_v32, align 8
+          ret void
+        }
+    "#]]
+    .assert_eq(&out);
+    Ok(())
+}
+
+#[test]
+fn named_syncscopes_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+
+    let input = r#"
+        define void @f(ptr %p) {
+        entry:
+          fence syncscope("device") seq_cst
+          fence syncscope("singlethread") seq_cst
+          fence seq_cst
+          %v = load atomic i32, ptr %p syncscope("agent") seq_cst, align 4
+          store atomic i32 %v, ptr %p syncscope("block") seq_cst, align 4
+          ret void
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "syncscopes")?;
+
+    expect![[r#"
+        builtin.module @syncscopes 
+        {
+          ^block1v1():
+            llvm.func @f: llvm.func <llvm.void (llvm.ptr (0)) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1(v0: llvm.ptr (0)):
+                llvm.fence syncscope : NamedScope("device") SeqCst;
+                llvm.fence syncscope : SingleThread SeqCst;
+                llvm.fence syncscope : System SeqCst;
+                v_v1 = llvm.atomic_load v0 [align : 4] syncscope : NamedScope("agent") SeqCst : builtin.integer i32 !0;
+                llvm.atomic_store *v0 <- v_v1 [align : 4] syncscope : NamedScope("block") SeqCst;
+                llvm.return 
+            }
+        }"#]].assert_eq(&module_op.disp(ctx).to_string());
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out = out_mod.to_string();
+    expect![[r#"
+        ; ModuleID = 'syncscopes'
+        source_filename = "syncscopes"
+
+        define void @f(ptr %0) {
+        entry_block2v1:
+          fence syncscope("device") seq_cst
+          fence syncscope("singlethread") seq_cst
+          fence seq_cst
+          %v_v1 = load atomic i32, ptr %0 syncscope("agent") seq_cst, align 4
+          store atomic i32 %v_v1, ptr %0 syncscope("block") seq_cst, align 4
           ret void
         }
     "#]]
