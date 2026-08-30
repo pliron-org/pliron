@@ -516,10 +516,6 @@ pub mod to_llvm_ir {
 
     /// Build the LLVM metadata node for entry `id` of the module's metadata table,
     /// building whatever it refers to along the way.
-    ///
-    /// Metadata nodes may be cyclic (`!0 = distinct !{!0, ...}`), which the C-API can only
-    /// express by creating a temporary node, referring to that, and then replacing it with
-    /// the real node.
     fn convert_md_node(
         ctx: &Context,
         llvm_ctx: &LLVMContext,
@@ -529,6 +525,9 @@ pub mod to_llvm_ir {
         if let Some(md) = cctx.md.node_map.get(&id) {
             return Ok(*md);
         }
+        // Metadata nodes may be cyclic (`!0 = distinct !{!0, ...}`), which the C-API can only
+        // express by creating a temporary node, referring to that, and then replacing it with
+        // the real node.
         if cctx.md.in_progress.contains(&id) {
             // A back edge: refer to a temporary that is replaced with the real node once
             // that node has been built.
@@ -598,10 +597,6 @@ pub mod to_llvm_ir {
 
     /// Build every node of the module's metadata table, and add the module's named
     /// metadata (`!llvm.module.flags = !{!0, !1}`).
-    ///
-    /// Must be called after the module's globals and functions have been created, since
-    /// metadata may refer to them, and before the function bodies are converted, since
-    /// their instructions attach metadata.
     pub(crate) fn convert_module_metadata(
         ctx: &Context,
         llvm_ctx: &LLVMContext,
