@@ -261,10 +261,19 @@ pub mod from_llvm_ir {
         let llvm_operands = llvm_get_md_node_operands(md_val);
         let mut operands = Vec::with_capacity(llvm_operands.len());
         for operand in &llvm_operands {
-            // An operand we cannot represent is left out.
-            if let Some(operand) = convert_md_operand(ctx, cctx, module, *operand)? {
-                operands.push(operand);
-            }
+            // If any operand cannot be represented, we drop the entire node.
+            // (missing operands may make the node inconsistent with its semantics).
+            let Some(operand) = convert_md_operand(ctx, cctx, module, *operand)? else {
+                // LLVM prints an unnamed node as `<0x...> = !{...}`.
+                // We only want its definition for warning.
+                let printed = llvm_print_value_to_string(md_val).unwrap_or_default();
+                let printed = printed.split_once(" = ").map_or(&*printed, |(_, def)| def);
+                log::warn!("Dropping metadata node {printed} with an operand we cannot represent");
+                cctx.md.node_map.insert(md, None);
+                // The id reserved above goes unused; its empty table entry is harmless.
+                return Ok(None);
+            };
+            operands.push(operand);
         }
 
         // The C-API can neither tell us whether a node is `distinct` nor create a distinct
@@ -289,8 +298,7 @@ pub mod from_llvm_ir {
     }
 
     /// Convert one operand of an LLVM metadata node. An `operand` of `None` is LLVM's
-    /// `null` operand; a `None` result is an operand that cannot be represented and is
-    /// left out of the node altogether.
+    /// `null` operand; a `None` result is an operand that cannot be represented.
     fn convert_md_operand(
         ctx: &Context,
         cctx: &mut ConversionContext,

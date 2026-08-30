@@ -278,9 +278,8 @@ fn debug_info_metadata_is_dropped() -> Result<()> {
     let ctx = &mut Context::new();
     let (module_op, printed) = from_llvm_ir(ctx, input)?;
 
-    // The generic node survives, without the DIFile operand it referred to: it looks
-    // the way it would have, had the module been built without debug info. `!dbg` and
-    // `!llvm.dbg.cu` are gone entirely.
+    // The generic node referring to a `DIFile` goes with it.
+    // `!dbg` and `!llvm.dbg.cu` are gone entirely too.
     expect![[r#"
         builtin.module @metadata_test 
         {
@@ -298,9 +297,9 @@ fn debug_info_metadata_is_dropped() -> Result<()> {
         } !1
 
         outlined_attributes:
-        !0 = [llvm_metadata = llvm.md_attachments ["my.kind" = #0], builtin_given_names = builtin.given_names [a]]
+        !0 = [builtin_given_names = builtin.given_names [a]]
         !1 = [llvm_named_metadata = llvm.named_md ["llvm.module.flags" = [#1]], llvm_metadata_defs = llvm.md_table [
-          #0 = !{!"a tuple that survives"},
+          #0 = !{},
           #1 = !{builtin.integer <2: i32>, !"Debug Info Version", builtin.integer <3: i32>}
         ]]
     "#]].assert_eq(&printed);
@@ -321,14 +320,13 @@ fn debug_info_metadata_is_dropped() -> Result<()> {
 
         define void @f(i32 %0) {
         entry_block2v1:
-          %a_v2 = add i32 %0, 1, !my.kind !1
+          %a_v2 = add i32 %0, 1
           ret void
         }
 
         !llvm.module.flags = !{!0}
 
         !0 = !{i32 2, !"Debug Info Version", i32 3}
-        !1 = !{!"a tuple that survives"}
     "#]]
     .assert_eq(&llvm_mod.to_string());
     Ok(())
@@ -508,14 +506,13 @@ fn non_utf8_metadata_string_is_dropped() -> Result<()> {
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1():
-                llvm.return  !0
+                llvm.return 
             }
-        } !1
+        } !0
 
         outlined_attributes:
-        !0 = [llvm_metadata = llvm.md_attachments ["my.kind" = #0]]
-        !1 = [llvm_metadata_defs = llvm.md_table [
-          #0 = !{!"ok", !"also ok"}
+        !0 = [llvm_metadata_defs = llvm.md_table [
+          #0 = !{}
         ]]
     "#]]
     .assert_eq(&printed);
@@ -523,7 +520,7 @@ fn non_utf8_metadata_string_is_dropped() -> Result<()> {
 }
 
 /// LLVM intrinsics have no counterpart in the pliron module,
-/// so metadata naming one has that operand dropped (with a warning).
+/// so a metadata node naming one is dropped (with a warning).
 #[test]
 fn metadata_referring_to_an_intrinsic_is_dropped() -> Result<()> {
     let input = r#"
@@ -546,22 +543,21 @@ fn metadata_referring_to_an_intrinsic_is_dropped() -> Result<()> {
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1():
-                llvm.return  !0
+                llvm.return 
             }
-        } !1
+        } !0
 
         outlined_attributes:
-        !0 = [llvm_metadata = llvm.md_attachments ["my.kind" = #0]]
-        !1 = [llvm_metadata_defs = llvm.md_table [
-          #0 = !{!"callee"}
+        !0 = [llvm_metadata_defs = llvm.md_table [
+          #0 = !{}
         ]]
     "#]]
     .assert_eq(&printed);
     Ok(())
 }
 
-/// A constant that has no attribute counterpart (an alias, here)
-/// is dropped from the node (with a warning).
+/// An alias has no counterpart in the pliron module, so a metadata node
+/// with an alias as an operand is dropped (with a warning).
 #[test]
 fn unsupported_constant_metadata_operand_is_dropped() -> Result<()> {
     let input = r#"
@@ -587,14 +583,13 @@ fn unsupported_constant_metadata_operand_is_dropped() -> Result<()> {
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1():
-                llvm.return  !0
+                llvm.return 
             }
-        } !1
+        } !0
 
         outlined_attributes:
-        !0 = [llvm_metadata = llvm.md_attachments ["my.kind" = #0]]
-        !1 = [llvm_metadata_defs = llvm.md_table [
-          #0 = !{!"aliased"}
+        !0 = [llvm_metadata_defs = llvm.md_table [
+          #0 = !{}
         ]]
     "#]]
     .assert_eq(&printed);
