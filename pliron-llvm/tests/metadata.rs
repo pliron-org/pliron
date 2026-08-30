@@ -712,5 +712,9 @@ fn non_temporal_store_emits_metadata() -> Result<()> {
         !0 = !{i32 1}
     "#]]
     .assert_eq(&llvm_mod.to_string());
+
+    llvm_mod
+        .verify()
+        .expect("Verification of LLVM Module failed");
     Ok(())
 }
