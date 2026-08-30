@@ -6,23 +6,34 @@
 
 #![cfg(feature = "llvm-sys")]
 
+use core::num::NonZero;
+
 use expect_test::expect;
 use pliron::{
-    builtin::ops::ModuleOp,
+    builtin::{
+        attributes::IntegerAttr,
+        op_interfaces::SingleBlockRegionInterface,
+        ops::ModuleOp,
+        types::{IntegerType, Signedness},
+    },
     context::{Context, Ptr},
     graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
     init_env_logger_for_tests,
+    linked_list::ContainsLinkedList,
     op::Op,
     operation::Operation,
     printable::Printable,
     result::{Error, Result},
+    utils::apint::APInt,
 };
 use pliron_llvm::{
     llvm_sys::core::LLVMContext,
     metadata::{
-        MetadataVerifyErr, get_attachments, get_metadata_table, get_named_metadata, verify_metadata,
+        MdNodeAttr, MdOperandAttr, MetadataVerifyErr, attach_new_metadata, get_attachments,
+        get_metadata_table, get_named_metadata, verify_metadata,
     },
     metadata_conversions::to_llvm_ir::MdToLLVMErr,
+    ops::{FuncOp, StoreOp},
     to_llvm_ir,
 };
 
@@ -644,6 +655,61 @@ fn escaped_metadata_kind_name_roundtrips() -> Result<()> {
         }
 
         !0 = !{!"contents"}
+    "#]]
+    .assert_eq(&llvm_mod.to_string());
+    Ok(())
+}
+
+// A simple test that attaches a `nontemporal` md node to a store.
+#[test]
+fn non_temporal_store_emits_metadata() -> Result<()> {
+    let input = r#"
+      define void @stream(ptr %out, <8 x float> %val) {
+        store <8 x float> %val, ptr %out, align 4
+        ret void
+      }
+    "#;
+
+    let ctx = &mut Context::new();
+    let (module_op, _) = from_llvm_ir(ctx, input)?;
+    let func = Operation::get_op::<FuncOp>(
+        module_op
+            .get_body(ctx, 0)
+            .deref(ctx)
+            .iter(ctx)
+            .next()
+            .unwrap(),
+        ctx,
+    )
+    .unwrap();
+    let store = func
+        .get_entry_block(ctx)
+        .unwrap()
+        .deref(ctx)
+        .iter(ctx)
+        .find(|op| Operation::get_op::<StoreOp>(*op, ctx).is_some())
+        .expect("@stream has a store");
+
+    let i32_ty = IntegerType::get(ctx, 32, Signedness::Signless);
+    let one = IntegerAttr::new(i32_ty, APInt::from_u64(1, NonZero::new(32).unwrap()));
+    // `!{i32 1}`, the node `!nontemporal` expects.
+    let node = MdNodeAttr::new_tuple(vec![MdOperandAttr::Constant(Box::new(one))]);
+    attach_new_metadata(ctx, store, "nontemporal", node)?;
+    verify_metadata(ctx, module_op)?;
+
+    let llvm_ctx = LLVMContext::default();
+    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    expect![[r#"
+        ; ModuleID = 'metadata_test'
+        source_filename = "metadata_test"
+
+        define void @stream(ptr %0, <8 x float> %1) {
+        entry_block2v1:
+          store <8 x float> %1, ptr %0, align 4, !nontemporal !0
+          ret void
+        }
+
+        !0 = !{i32 1}
     "#]]
     .assert_eq(&llvm_mod.to_string());
     Ok(())

@@ -43,6 +43,7 @@ use alloc::{string::String, vec::Vec};
 use thiserror::Error;
 
 use pliron::{
+    arg_err,
     attribute::AttrObj,
     builtin::{attr_interfaces::OutlinedAttr, ops::ModuleOp},
     combine::{Parser, attempt, between, choice, not_followed_by, parser::char::spaces, token},
@@ -278,6 +279,17 @@ impl MdTableAttr {
     /// Add `node` to the table and get the [MdNodeId] it can be referred to by.
     pub fn push(&mut self, node: MdNodeAttr) -> MdNodeId {
         self.0.push_back(node) as MdNodeId
+    }
+
+    /// Add `node` to the table, unless it is a non-`distinct` node that is structurally
+    /// equal to one already in the table, and get the [MdNodeId] to refer to it by.
+    pub fn push_uniqued(&mut self, node: MdNodeAttr) -> MdNodeId {
+        if !node.is_distinct()
+            && let Some((id, _)) = self.iter().find(|(_, existing)| **existing == node)
+        {
+            return id;
+        }
+        self.push(node)
     }
 
     /// Reserve an id for a node whose operands aren't known yet, so that the node
@@ -623,17 +635,58 @@ pub fn attach_metadata(ctx: &Context, op: Ptr<Operation>, kind: impl Into<String
     set_attachments(ctx, op, attachments);
 }
 
-/// Starting at `op` and walking up its ancestors, find the metadata table of the
-/// enclosing module that metadata references in `op` resolve against.
-pub fn find_metadata_table(ctx: &Context, op: Ptr<Operation>) -> Option<MdTableAttr> {
+/// Starting at `op` and walking up its ancestors, find the enclosing [ModuleOp].
+pub fn find_enclosing_module(ctx: &Context, op: Ptr<Operation>) -> Option<ModuleOp> {
     let mut cur = Some(op);
     while let Some(op) = cur {
         if let Some(module_op) = Operation::get_op::<ModuleOp>(op, ctx) {
-            return get_metadata_table(ctx, module_op);
+            return Some(module_op);
         }
         cur = op.deref(ctx).get_parent_op(ctx);
     }
     None
+}
+
+/// Starting at `op` and walking up its ancestors, find the [metadata table](MdTableAttr)
+/// of the enclosing [ModuleOp].
+pub fn find_metadata_table(ctx: &Context, op: Ptr<Operation>) -> Option<MdTableAttr> {
+    find_enclosing_module(ctx, op).and_then(|module_op| get_metadata_table(ctx, module_op))
+}
+
+/// Error enum for metadata addition.
+#[derive(Debug, Error)]
+pub enum MdAddErr {
+    #[error("Cannot add a metadata node for an operation that is not inside a module")]
+    NoEnclosingModule,
+}
+
+/// Add `node` to the metadata table of the module enclosing `op`, creating the table
+/// if the module doesn't have one yet, and get the [MdNodeId] to refer to it by.
+///
+/// A non-`distinct` node already in the table isn't added again.
+pub fn add_metadata_node(ctx: &Context, op: Ptr<Operation>, node: MdNodeAttr) -> Result<MdNodeId> {
+    let Some(module_op) = find_enclosing_module(ctx, op) else {
+        let loc = op.deref(ctx).loc();
+        return arg_err!(loc, MdAddErr::NoEnclosingModule);
+    };
+    let mut table = get_metadata_table(ctx, module_op).unwrap_or_default();
+    let node_id = table.push_uniqued(node);
+    set_metadata_table(ctx, module_op, table);
+    Ok(node_id)
+}
+
+/// Add `node` to the metadata table of the module enclosing `op`,
+/// and attach it to `op` under the LLVM metadata kind `kind`,
+/// replacing any existing attachment for that kind.
+pub fn attach_new_metadata(
+    ctx: &Context,
+    op: Ptr<Operation>,
+    kind: impl Into<String>,
+    node: MdNodeAttr,
+) -> Result<MdNodeId> {
+    let node_id = add_metadata_node(ctx, op, node)?;
+    attach_metadata(ctx, op, kind, node_id);
+    Ok(node_id)
 }
 
 #[derive(Debug, Error)]

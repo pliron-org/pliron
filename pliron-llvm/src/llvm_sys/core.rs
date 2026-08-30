@@ -3289,11 +3289,6 @@ impl From<LLVMMetadata> for LLVMMetadataRef {
     }
 }
 
-/// Is `val` an `MDNode` that is not `ValueAsMetadata`?
-pub fn md_node_value(val: LLVMValue) -> bool {
-    llvm_is_a::md_node(val) && !llvm_is_a::value_as_metadata(val)
-}
-
 /// Is `md` an `MDNode`?
 fn is_md_node(md: LLVMMetadata) -> bool {
     !matches!(
@@ -3456,7 +3451,7 @@ pub fn llvm_global_copy_all_metadata(val: LLVMValue) -> Vec<(u32, LLVMMetadata)>
 /// LLVMSetMetadata
 pub fn llvm_set_metadata(inst: LLVMValue, kind_id: u32, node: LLVMValue) {
     assert!(llvm_is_a::instruction(inst));
-    assert!(md_node_value(node));
+    assert!(llvm_is_a::md_node(node));
     unsafe { LLVMSetMetadata(inst.into(), kind_id, node.into()) }
 }
 
@@ -3502,7 +3497,7 @@ pub fn llvm_get_named_metadata_operands(module: &LLVMModule, name: &str) -> Vec<
 
 /// LLVMAddNamedMetadataOperand
 pub fn llvm_add_named_metadata_operand(module: &LLVMModule, name: &str, val: LLVMValue) {
-    assert!(md_node_value(val));
+    assert!(llvm_is_a::md_node(val));
     let name = to_c_str(name);
     unsafe { LLVMAddNamedMetadataOperand(module.inner_ref(), name.as_ptr(), val.into()) }
 }
