@@ -1771,6 +1771,15 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
 
     let m = ModuleOp::new(ctx, module_name);
 
+    let data_layout = module.data_layout();
+    if !data_layout.is_empty() {
+        crate::attributes::set_data_layout(ctx, m, data_layout);
+    }
+    let target_triple = module.target_triple();
+    if !target_triple.is_empty() {
+        crate::attributes::set_target_triple(ctx, m, target_triple);
+    }
+
     // Convert globals.
     for gv in global_iter(module) {
         let m_gv = convert_global(ctx, cctx, gv)?;

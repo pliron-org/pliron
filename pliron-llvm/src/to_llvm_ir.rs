@@ -2569,6 +2569,13 @@ pub fn convert_module(
 ) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
     let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
+    // Set data-layout up-front, it affects how instructions are built.
+    if let Some(data_layout) = crate::attributes::get_data_layout(ctx, module) {
+        llvm_module.set_data_layout(&data_layout);
+    }
+    if let Some(target_triple) = crate::attributes::get_target_triple(ctx, module) {
+        llvm_module.set_target_triple(&target_triple);
+    }
     let cctx = &mut ConversionContext::new(llvm_ctx, &llvm_module);
 
     // Setup the scratch builder for evaluating constants.

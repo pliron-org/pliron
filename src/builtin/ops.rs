@@ -90,6 +90,17 @@ impl Printable for ModuleOp {
     ) -> core::fmt::Result {
         symb_op_header(self).fmt(ctx, state, f)?;
         write!(f, " ")?;
+        let mut attributes_to_print_separately =
+            self.op.deref(ctx).attributes.clone_skip_outlined();
+        attributes_to_print_separately
+            .0
+            .retain(|key, _| key != &*ATTR_KEY_SYM_NAME);
+        if !attributes_to_print_separately.0.is_empty() {
+            indented_block!(state, {
+                write!(f, "{}", indented_nl(state))?;
+                attributes_to_print_separately.fmt(ctx, state, f)?;
+            });
+        }
         region(self).fmt(ctx, state, f)?;
         Ok(())
     }
@@ -116,14 +127,19 @@ impl Parsable for ModuleOp {
             vec![],
             0,
         );
-        let mut parser =
-            spaced(token('@').with(Identifier::parser(()))).and(spaced(Region::parser(op)));
+        let mut parser = (
+            spaced(token('@').with(Identifier::parser(()))),
+            spaced(optional(AttributeDict::parser(()))),
+            spaced(Region::parser(op)),
+        );
         parser
             .parse_stream(state_stream)
-            .map(|(name, _region)| -> OpObj {
-                let op = ModuleOp { op };
-                op.set_symbol_name(state_stream.state.ctx, name);
-                OpObj::new(op)
+            .map(|(name, attributes, _region)| -> OpObj {
+                let ctx = &mut state_stream.state.ctx;
+                op.deref_mut(ctx).attributes = attributes.unwrap_or_default();
+                let opop = ModuleOp { op };
+                opop.set_symbol_name(ctx, name);
+                OpObj::new(opop)
             })
             .into()
     }

@@ -45,9 +45,9 @@ use llvm_sys::{
         LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
         LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType, LLVMGetCalledValue,
         LLVMGetCmpXchgFailureOrdering, LLVMGetCmpXchgSuccessOrdering, LLVMGetConstOpcode,
-        LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags, LLVMGetFirstBasicBlock,
-        LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction, LLVMGetFirstParam,
-        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
+        LLVMGetDataLayoutStr, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
+        LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
+        LLVMGetFirstParam, LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
         LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInlineAsm,
         LLVMGetInlineAsmAsmString, LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
         LLVMGetInlineAsmHasSideEffects, LLVMGetInsertBlock, LLVMGetInstructionOpcode,
@@ -60,7 +60,7 @@ use llvm_sys::{
         LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
         LLVMGetPreviousFunction, LLVMGetPreviousGlobal, LLVMGetPreviousInstruction,
         LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStructElementTypes, LLVMGetStructName,
-        LLVMGetSwitchCaseValue, LLVMGetTypeKind, LLVMGetUndef, LLVMGetUndefMaskElem,
+        LLVMGetSwitchCaseValue, LLVMGetTarget, LLVMGetTypeKind, LLVMGetUndef, LLVMGetUndefMaskElem,
         LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize, LLVMGlobalGetValueType,
         LLVMHalfTypeInContext, LLVMInstructionEraseFromParent, LLVMIntTypeInContext,
         LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
@@ -69,10 +69,10 @@ use llvm_sys::{
         LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
         LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
         LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
-        LLVMSetAtomicSyncScopeID, LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage,
-        LLVMSetNNeg, LLVMSetOrdering, LLVMStructCreateNamed, LLVMStructSetBody,
-        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
-        LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
+        LLVMSetAtomicSyncScopeID, LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer,
+        LLVMSetLinkage, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMStructCreateNamed,
+        LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf,
+        LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
@@ -2799,6 +2799,26 @@ mod llvm_module {
             Self(unsafe {
                 LLVMModuleCreateWithNameInContext(to_c_str(module_id).as_ptr(), context.inner_ref())
             })
+        }
+
+        /// Set the target data layout used when constructing instructions.
+        pub fn set_data_layout(&self, data_layout: &str) {
+            unsafe { LLVMSetDataLayout(self.0, to_c_str(data_layout).as_ptr()) }
+        }
+
+        /// Get the target data layout of this module. Empty if it isn't set.
+        pub fn data_layout(&self) -> String {
+            cstr_to_string(unsafe { LLVMGetDataLayoutStr(self.0) }).unwrap_or_default()
+        }
+
+        /// Set the target triple of this module.
+        pub fn set_target_triple(&self, target_triple: &str) {
+            unsafe { LLVMSetTarget(self.0, to_c_str(target_triple).as_ptr()) }
+        }
+
+        /// Get the target triple of this module. Empty if it isn't set.
+        pub fn target_triple(&self) -> String {
+            cstr_to_string(unsafe { LLVMGetTarget(self.0) }).unwrap_or_default()
         }
 
         /// Parse IR from [str] into [LLVMModule]

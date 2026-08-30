@@ -1,5 +1,3 @@
-target triple = "x86_64-pc-linux-gnu"
-
 ; For Unix x86_64 platforms, va_list is the following struct:
 %struct.va_list = type { i32, i32, ptr, ptr }
 
