@@ -20,12 +20,23 @@ jobs:
 
     - uses: Swatinem/rust-cache@v2
 
+    - name: Cache LLVM
+      id: cache-llvm
+      uses: actions/cache@v4
+      with:
+        path: ~/llvm
+        key: LLVM-23.1.0-rc3-macOS-ARM64
+
+    - name: Download LLVM
+      if: steps.cache-llvm.outputs.cache-hit != 'true'
+      run: |
+        url="https://github.com/llvm/llvm-project/releases/download/llvmorg-23.1.0-rc3/LLVM-23.1.0-rc3-macOS-ARM64.tar.xz"
+        mkdir -p "$HOME/llvm"
+        curl -fsSL "$url" | tar -xJ -C "$HOME/llvm" --strip-components=1
+
     - name: Setup LLVM
       run: |
-        # brew install llvm@23
-        # llvm_prefix="$(brew --prefix llvm@23)"
-        brew install llvm
-        llvm_prefix="$(brew --prefix llvm)"
+        llvm_prefix="$HOME/llvm"
         echo "LLVM_SYS_231_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
         echo "CLANG_BINARY_PATH=$llvm_prefix/bin/clang" >> "$GITHUB_ENV"
         echo "LLI_BINARY_PATH=$llvm_prefix/bin/lli" >> "$GITHUB_ENV"
