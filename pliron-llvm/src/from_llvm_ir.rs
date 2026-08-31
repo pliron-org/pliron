@@ -69,10 +69,15 @@ use crate::{
         llvm_get_nuw, llvm_get_operand, llvm_get_ordering, llvm_get_param_types,
         llvm_get_pointer_address_space, llvm_get_return_type, llvm_get_struct_element_types,
         llvm_get_struct_name, llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind,
-        llvm_get_value_name, llvm_get_vector_size, llvm_global_get_value_type, llvm_is_a,
-        llvm_is_declaration, llvm_is_function_type_var_arg, llvm_is_opaque_struct,
-        llvm_is_packed_struct, llvm_lookup_intrinsic_id, llvm_print_value_to_string, llvm_type_of,
+        llvm_get_value_name, llvm_get_vector_size, llvm_global_get_value_type,
+        llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_is_a, llvm_is_declaration,
+        llvm_is_function_type_var_arg, llvm_is_opaque_struct, llvm_is_packed_struct,
+        llvm_lookup_intrinsic_id, llvm_print_value_to_string, llvm_type_of,
         llvm_value_as_basic_block, llvm_value_is_basic_block, param_iter,
+    },
+    metadata_conversions::from_llvm_ir::{
+        MD_KIND_DBG, MdConversionContext, convert_global_object_metadata,
+        convert_instruction_metadata, convert_module_metadata, md_kind_name,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
@@ -201,7 +206,7 @@ impl ConstLLVMValueToAttr for FP64Type {
 }
 
 /// Try to build an [AttrObj] for the LLVM constant `val`.
-fn const_llvm_value_to_attr(
+pub(crate) fn const_llvm_value_to_attr(
     ctx: &Context,
     cctx: &mut ConversionContext,
     val: LLVMValue,
@@ -376,7 +381,7 @@ pub fn convert_linkage(linkage: LLVMLinkage) -> LinkageAttr {
 
 /// Mapping from LLVM entities to pliron entities.
 #[derive(Default)]
-struct ConversionContext {
+pub(crate) struct ConversionContext {
     /// A map from LLVM's Values to pliron's Values.
     value_map: HMap<LLVMValue, Value>,
     /// A map from LLVM's basic blocks to plirons'.
@@ -392,6 +397,8 @@ struct ConversionContext {
     constants_inserter: Option<IRInserter<DummyListener>>,
     /// Identifier legaliser
     id_legaliser: identifier::Legaliser,
+    /// State for converting the module's metadata.
+    pub(crate) md: MdConversionContext,
 }
 
 impl ConversionContext {
@@ -494,6 +501,7 @@ fn rpo(function: LLVMValue) -> Vec<LLVMBasicBlock> {
     revpo
 }
 
+/// Conversion errors
 #[derive(Error, Debug)]
 pub enum ConversionErr {
     #[error("Unable to get operand with idx {0}")]
@@ -1607,12 +1615,20 @@ fn convert_instruction(
 fn convert_block(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
+    module: &LLVMModule,
     block: LLVMBasicBlock,
     m_block: Ptr<BasicBlock>,
 ) -> Result<()> {
     let mut inserter = IRInserter::<DummyListener>::new_at_block_end(m_block);
     for inst in instruction_iter(block) {
         if llvm_get_instruction_opcode(inst) == LLVMOpcode::LLVMPHI {
+            // We drop metadata attached to PHIs. TODO: Attach them to the block's [AttributeDict].
+            for (kind_id, _) in llvm_instruction_get_all_metadata_other_than_debug_loc(inst) {
+                let kind = md_kind_name(cctx, module, kind_id)?;
+                if kind != MD_KIND_DBG {
+                    log::warn!("Dropping metadata \"{kind}\" attached to a PHI");
+                }
+            }
             let ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
             let arg_idx = BasicBlock::push_argument(m_block, ctx, ty);
             cctx.value_map
@@ -1620,6 +1636,7 @@ fn convert_block(
         } else {
             let m_inst = convert_instruction(ctx, cctx, inst)?;
             inserter.insert_operation(ctx, m_inst);
+            convert_instruction_metadata(ctx, cctx, module, inst, m_inst)?;
             let m_inst_result = m_inst.deref(ctx).results().next();
             // LLVM instructions have at most one result.
             if let Some(result) = m_inst_result {
@@ -1637,12 +1654,15 @@ fn convert_block(
 fn convert_function(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
+    module: &LLVMModule,
     function: LLVMValue,
 ) -> Result<FuncOp> {
     assert!(llvm_is_a::function(function));
 
     let llvm_name = llvm_get_value_name(function).expect("Expected function to have a name");
-    let name = cctx.id_legaliser.legalise(&llvm_name);
+    let name = cctx
+        .md
+        .legalized_symbol_name(&mut cctx.id_legaliser, function);
     let fn_ty = convert_type(ctx, cctx, llvm_global_get_value_type(function))?;
     let fn_ty = TypedHandle::from_handle(fn_ty, ctx)?;
     // Create a new FuncOp.
@@ -1654,6 +1674,8 @@ fn convert_function(
     if llvm_name != <Identifier as Into<String>>::into(name) {
         m_func.set_llvm_symbol_name(ctx, llvm_name);
     }
+
+    convert_global_object_metadata(ctx, cctx, module, function, m_func.get_operation())?;
 
     // If function is just a declaration, we have nothing more to do.
     if llvm_is_declaration(function) {
@@ -1697,7 +1719,7 @@ fn convert_function(
             .block_map
             .get(&block)
             .expect("We have an unmapped block !");
-        convert_block(ctx, cctx, block, m_block)?;
+        convert_block(ctx, cctx, module, block, m_block)?;
     }
 
     Ok(m_func)
@@ -1706,10 +1728,13 @@ fn convert_function(
 fn convert_global(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
+    module: &LLVMModule,
     global: LLVMValue,
 ) -> Result<GlobalOp> {
     let llvm_name = llvm_get_value_name(global).unwrap_or_default();
-    let name = cctx.id_legaliser.legalise(&llvm_name);
+    let name = cctx
+        .md
+        .legalized_symbol_name(&mut cctx.id_legaliser, global);
 
     let ty = convert_type(
         ctx,
@@ -1759,6 +1784,8 @@ fn convert_global(
         }
     }
 
+    convert_global_object_metadata(ctx, cctx, module, global, op.get_operation())?;
+
     Ok(op)
 }
 
@@ -1780,9 +1807,25 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
         crate::attributes::set_target_triple(ctx, m, target_triple);
     }
 
+    {
+        // Note down every global and function name up front
+        // to handle forwarded references for metadata conversion.
+        for gv in global_iter(module) {
+            cctx.md.legalized_symbol_name(&mut cctx.id_legaliser, gv);
+        }
+        for fun in function_iter(module) {
+            let llvm_name = llvm_get_value_name(fun).expect("Expected function to have a name");
+            if llvm_lookup_intrinsic_id(&llvm_name).is_some() {
+                // Skip LLVM intrinsics.
+                continue;
+            }
+            cctx.md.legalized_symbol_name(&mut cctx.id_legaliser, fun);
+        }
+    }
+
     // Convert globals.
     for gv in global_iter(module) {
-        let m_gv = convert_global(ctx, cctx, gv)?;
+        let m_gv = convert_global(ctx, cctx, module, gv)?;
         m.append_operation(ctx, m_gv.get_operation(), 0);
     }
 
@@ -1794,10 +1837,13 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
             // Skip LLVM intrinsics.
             continue;
         }
-        let m_fun = convert_function(ctx, cctx, fun)?;
+        let m_fun = convert_function(ctx, cctx, module, fun)?;
         m.append_operation(ctx, m_fun.get_operation(), 0);
         func_map.insert(fun, m_fun);
     }
+
+    // Fill the metadata table now, after the globals and functions have been converted.
+    convert_module_metadata(ctx, cctx, module, m)?;
 
     // We need to insert [BlockTagOp]s for blocks with their address taken.
     for ((func, block), tag) in &cctx.block_tag_map {

@@ -18,9 +18,9 @@ use llvm_sys::{
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
         LLVMAddCase, LLVMAddDestination, LLVMAddFunction, LLVMAddGlobal,
-        LLVMAddGlobalInAddressSpace, LLVMAddIncoming, LLVMAppendBasicBlockInContext,
-        LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr, LLVMBuildAdd,
-        LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
+        LLVMAddGlobalInAddressSpace, LLVMAddIncoming, LLVMAddNamedMetadataOperand,
+        LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBlockAddress,
+        LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
         LLVMBuildAtomicCmpXchgSyncScope, LLVMBuildAtomicRMWSyncScope, LLVMBuildBitCast,
         LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
@@ -38,46 +38,59 @@ use llvm_sys::{
         LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
         LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
         LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDeleteGlobal,
-        LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule, LLVMDoubleTypeInContext,
-        LLVMDumpModule, LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
-        LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
-        LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID, LLVMGetBasicBlockName,
+        LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
+        LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType,
+        LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGetAggregateElement,
+        LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2, LLVMGetAsString,
+        LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID, LLVMGetBasicBlockName,
         LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
         LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType, LLVMGetCalledValue,
         LLVMGetCmpXchgFailureOrdering, LLVMGetCmpXchgSuccessOrdering, LLVMGetConstOpcode,
         LLVMGetDataLayoutStr, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
         LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
-        LLVMGetFirstParam, LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
-        LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInlineAsm,
-        LLVMGetInlineAsmAsmString, LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
+        LLVMGetFirstNamedMetadata, LLVMGetFirstParam, LLVMGetGEPSourceElementType,
+        LLVMGetICmpPredicate, LLVMGetIncomingBlock, LLVMGetIncomingValue, LLVMGetIndices,
+        LLVMGetInitializer, LLVMGetInlineAsm, LLVMGetInlineAsmAsmString,
+        LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
         LLVMGetInlineAsmHasSideEffects, LLVMGetInsertBlock, LLVMGetInstructionOpcode,
         LLVMGetInstructionParent, LLVMGetIntTypeWidth, LLVMGetIntrinsicDeclaration,
-        LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage, LLVMGetMaskValue,
-        LLVMGetModuleIdentifier, LLVMGetNNeg, LLVMGetNSW, LLVMGetNUW, LLVMGetNamedFunction,
-        LLVMGetNamedGlobal, LLVMGetNextBasicBlock, LLVMGetNextFunction, LLVMGetNextGlobal,
-        LLVMGetNextInstruction, LLVMGetNextParam, LLVMGetNumArgOperands, LLVMGetNumIndices,
-        LLVMGetNumMaskElements, LLVMGetNumOperands, LLVMGetOperand, LLVMGetOrdering, LLVMGetParam,
-        LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
+        LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage, LLVMGetMDKindIDInContext,
+        LLVMGetMDNodeNumOperands, LLVMGetMDNodeOperands, LLVMGetMDString, LLVMGetMaskValue,
+        LLVMGetModuleContext, LLVMGetModuleIdentifier, LLVMGetNNeg, LLVMGetNSW, LLVMGetNUW,
+        LLVMGetNamedFunction, LLVMGetNamedGlobal, LLVMGetNamedMetadataName,
+        LLVMGetNamedMetadataNumOperands, LLVMGetNamedMetadataOperands, LLVMGetNextBasicBlock,
+        LLVMGetNextFunction, LLVMGetNextGlobal, LLVMGetNextInstruction, LLVMGetNextNamedMetadata,
+        LLVMGetNextParam, LLVMGetNumArgOperands, LLVMGetNumIndices, LLVMGetNumMaskElements,
+        LLVMGetNumOperands, LLVMGetOperand, LLVMGetOrdering, LLVMGetParam, LLVMGetParamTypes,
+        LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
         LLVMGetPreviousFunction, LLVMGetPreviousGlobal, LLVMGetPreviousInstruction,
         LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStructElementTypes, LLVMGetStructName,
         LLVMGetSwitchCaseValue, LLVMGetTarget, LLVMGetTypeKind, LLVMGetUndef, LLVMGetUndefMaskElem,
-        LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize, LLVMGlobalGetValueType,
-        LLVMHalfTypeInContext, LLVMInstructionEraseFromParent, LLVMIntTypeInContext,
-        LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
-        LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct,
-        LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMModuleCreateWithNameInContext,
+        LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize, LLVMGlobalCopyAllMetadata,
+        LLVMGlobalGetValueType, LLVMGlobalSetMetadata, LLVMHalfTypeInContext,
+        LLVMInstructionEraseFromParent, LLVMInstructionGetAllMetadataOtherThanDebugLoc,
+        LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst,
+        LLVMIsAUser, LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg,
+        LLVMIsOpaqueStruct, LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMMDNodeInContext2,
+        LLVMMDStringInContext2, LLVMMetadataAsValue, LLVMModuleCreateWithNameInContext,
         LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
         LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
         LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
         LLVMSetAtomicSyncScopeID, LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer,
-        LLVMSetLinkage, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMStructCreateNamed,
-        LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf,
-        LLVMValueAsBasicBlock, LLVMValueIsBasicBlock, LLVMVectorType, LLVMVoidTypeInContext,
+        LLVMSetLinkage, LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget,
+        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
+        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
+        LLVMValueMetadataEntriesGetKind, LLVMValueMetadataEntriesGetMetadata, LLVMVectorType,
+        LLVMVoidTypeInContext,
+    },
+    debuginfo::{
+        LLVMDisposeTemporaryMDNode, LLVMGetMetadataKind, LLVMMetadataKind,
+        LLVMMetadataReplaceAllUsesWith, LLVMTemporaryMDNode,
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
-        LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMMemoryBufferRef, LLVMModuleRef,
-        LLVMTypeRef, LLVMValueRef,
+        LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMMemoryBufferRef, LLVMMetadataRef,
+        LLVMModuleRef, LLVMTypeRef, LLVMValueMetadataEntry, LLVMValueRef,
     },
 };
 
@@ -352,10 +365,11 @@ pub mod llvm_is_a {
         LLVMIsABlockAddress, LLVMIsACallInst, LLVMIsAConstant, LLVMIsAConstantExpr,
         LLVMIsAConstantFP, LLVMIsAConstantInt, LLVMIsAExtractElementInst, LLVMIsAExtractValueInst,
         LLVMIsAFCmpInst, LLVMIsAFPToUIInst, LLVMIsAFenceInst, LLVMIsAGetElementPtrInst,
-        LLVMIsAGlobalValue, LLVMIsAGlobalVariable, LLVMIsAICmpInst, LLVMIsAIndirectBrInst,
-        LLVMIsAInlineAsm, LLVMIsAInsertElementInst, LLVMIsAInsertValueInst, LLVMIsAInstruction,
-        LLVMIsAInvokeInst, LLVMIsALoadInst, LLVMIsAPHINode, LLVMIsAShuffleVectorInst,
-        LLVMIsAStoreInst, LLVMIsASwitchInst, LLVMIsAUIToFPInst, LLVMIsAZExtInst,
+        LLVMIsAGlobalObject, LLVMIsAGlobalValue, LLVMIsAGlobalVariable, LLVMIsAICmpInst,
+        LLVMIsAIndirectBrInst, LLVMIsAInlineAsm, LLVMIsAInsertElementInst, LLVMIsAInsertValueInst,
+        LLVMIsAInstruction, LLVMIsAInvokeInst, LLVMIsALoadInst, LLVMIsAMDNode, LLVMIsAMDString,
+        LLVMIsAPHINode, LLVMIsAShuffleVectorInst, LLVMIsAStoreInst, LLVMIsASwitchInst,
+        LLVMIsAUIToFPInst, LLVMIsAValueAsMetadata, LLVMIsAZExtInst,
     };
 
     use super::*;
@@ -378,6 +392,26 @@ pub mod llvm_is_a {
     /// LLVMIsAInstruction
     pub fn instruction(val: LLVMValue) -> bool {
         unsafe { !LLVMIsAInstruction(val.into()).is_null() }
+    }
+
+    /// LLVMIsAGlobalObject
+    pub fn global_object(val: LLVMValue) -> bool {
+        unsafe { !LLVMIsAGlobalObject(val.into()).is_null() }
+    }
+
+    /// LLVMIsAMDNode
+    pub fn md_node(val: LLVMValue) -> bool {
+        unsafe { !LLVMIsAMDNode(val.into()).is_null() }
+    }
+
+    /// LLVMIsAValueAsMetadata
+    pub fn value_as_metadata(val: LLVMValue) -> bool {
+        unsafe { !LLVMIsAValueAsMetadata(val.into()).is_null() }
+    }
+
+    /// LLVMIsAMDString
+    pub fn md_string(val: LLVMValue) -> bool {
+        unsafe { !LLVMIsAMDString(val.into()).is_null() }
     }
 
     /// LLVMIsAConstantInt
@@ -3237,4 +3271,262 @@ pub fn llvm_get_inline_asm_has_side_effects(v: LLVMValue) -> bool {
 pub fn llvm_get_inline_asm_function_type(v: LLVMValue) -> LLVMType {
     assert!(llvm_is_a::inline_asm(v));
     unsafe { LLVMGetInlineAsmFunctionType(v.into()).into() }
+}
+
+/// Opaque wrapper around LLVMMetadataRef to hide the raw pointer.
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+pub struct LLVMMetadata(LLVMMetadataRef);
+
+impl From<LLVMMetadataRef> for LLVMMetadata {
+    fn from(md: LLVMMetadataRef) -> Self {
+        LLVMMetadata(md)
+    }
+}
+
+impl From<LLVMMetadata> for LLVMMetadataRef {
+    fn from(md: LLVMMetadata) -> Self {
+        md.0
+    }
+}
+
+/// Is `md` an `MDNode`?
+fn is_md_node(md: LLVMMetadata) -> bool {
+    !matches!(
+        llvm_get_metadata_kind(md),
+        LLVMMetadataKind::LLVMMDStringMetadataKind
+            | LLVMMetadataKind::LLVMConstantAsMetadataMetadataKind
+            | LLVMMetadataKind::LLVMLocalAsMetadataMetadataKind
+            | LLVMMetadataKind::LLVMDistinctMDOperandPlaceholderMetadataKind
+            | LLVMMetadataKind::LLVMDIArgListMetadataKind
+    )
+}
+
+/// Convert metadata operands (`None` being a null operand) to what the C-API expects.
+fn md_operands_to_raw(operands: &[Option<LLVMMetadata>]) -> Vec<LLVMMetadataRef> {
+    operands
+        .iter()
+        .map(|opd| opd.map_or(ptr::null_mut(), |opd| opd.into()))
+        .collect()
+}
+
+/// LLVMGetMDKindIDInContext
+pub fn llvm_get_md_kind_id_in_context(ctx: &LLVMContext, name: &str) -> u32 {
+    let name = to_c_str(name);
+    unsafe {
+        LLVMGetMDKindIDInContext(ctx.inner_ref(), name.as_ptr(), name.to_bytes().len() as u32)
+    }
+}
+
+/// LLVMMDStringInContext2
+pub fn llvm_md_string_in_context2(ctx: &LLVMContext, s: &str) -> LLVMMetadata {
+    unsafe {
+        LLVMMDStringInContext2(
+            ctx.inner_ref(),
+            s.as_ptr() as *const ::core::ffi::c_char,
+            s.len(),
+        )
+        .into()
+    }
+}
+
+/// LLVMMDNodeInContext2.
+pub fn llvm_md_node_in_context2(
+    ctx: &LLVMContext,
+    operands: &[Option<LLVMMetadata>],
+) -> LLVMMetadata {
+    let mut operands = md_operands_to_raw(operands);
+    unsafe { LLVMMDNodeInContext2(ctx.inner_ref(), operands.as_mut_ptr(), operands.len()).into() }
+}
+
+/// LLVMTemporaryMDNode
+///
+/// The returned node must either be disposed with [llvm_dispose_temporary_md_node]
+/// or replaced with [llvm_metadata_replace_all_uses_with].
+pub fn llvm_temporary_md_node(
+    ctx: &LLVMContext,
+    operands: &[Option<LLVMMetadata>],
+) -> LLVMMetadata {
+    let mut operands = md_operands_to_raw(operands);
+    unsafe { LLVMTemporaryMDNode(ctx.inner_ref(), operands.as_mut_ptr(), operands.len()).into() }
+}
+
+/// LLVMDisposeTemporaryMDNode
+pub fn llvm_dispose_temporary_md_node(temp: LLVMMetadata) {
+    unsafe { LLVMDisposeTemporaryMDNode(temp.into()) }
+}
+
+/// LLVMMetadataReplaceAllUsesWith
+///
+/// `temp` must be created by [llvm_temporary_md_node] and is destroyed by this call.
+pub fn llvm_metadata_replace_all_uses_with(temp: LLVMMetadata, replacement: LLVMMetadata) {
+    unsafe { LLVMMetadataReplaceAllUsesWith(temp.into(), replacement.into()) }
+}
+
+/// LLVMGetMetadataKind
+pub fn llvm_get_metadata_kind(md: LLVMMetadata) -> LLVMMetadataKind {
+    unsafe { LLVMGetMetadataKind(md.into()) }
+}
+
+/// LLVMMetadataAsValue
+pub fn llvm_metadata_as_value(ctx: &LLVMContext, md: LLVMMetadata) -> LLVMValue {
+    unsafe { LLVMMetadataAsValue(ctx.inner_ref(), md.into()).into() }
+}
+
+/// LLVMValueAsMetadata
+pub fn llvm_value_as_metadata(val: LLVMValue) -> LLVMMetadata {
+    unsafe { LLVMValueAsMetadata(val.into()).into() }
+}
+
+/// LLVMGetMDString
+///
+/// An `MDString`'s contents are arbitrary bytes.
+/// This function returns `None` if the contents aren't valid UTF-8.
+pub fn llvm_get_md_string(val: LLVMValue) -> Option<String> {
+    assert!(llvm_is_a::md_string(val));
+    let mut len: u32 = 0;
+    let ptr = unsafe { LLVMGetMDString(val.into(), &mut len) };
+    if ptr.is_null() {
+        return None;
+    }
+    String::from_utf8(c_array_to_vec(ptr as *const u8, len as usize)).ok()
+}
+
+/// LLVMGetMDNodeOperands
+///
+/// A `None` entry is a null operand
+pub fn llvm_get_md_node_operands(val: LLVMValue) -> Vec<Option<LLVMValue>> {
+    assert!(llvm_is_a::md_node(val));
+    let num_operands = unsafe { LLVMGetMDNodeNumOperands(val.into()) } as usize;
+    let mut operands = unsafe { uninitialized_vec::<LLVMValueRef>(num_operands) };
+    unsafe {
+        LLVMGetMDNodeOperands(val.into(), operands.assume_init_mut().as_mut_ptr());
+        operands
+            .assume_init()
+            .into_iter()
+            .map(|opd| (!opd.is_null()).then(|| opd.into()))
+            .collect()
+    }
+}
+
+/// Collect the `(metadata kind id, node)` pairs of a `LLVMValueMetadataEntry` array,
+/// and dispose of the array.
+fn value_metadata_entries_to_vec(
+    entries: *mut LLVMValueMetadataEntry,
+    num_entries: usize,
+) -> Vec<(u32, LLVMMetadata)> {
+    let result = (0..num_entries)
+        .map(|idx| unsafe {
+            (
+                LLVMValueMetadataEntriesGetKind(entries, idx as u32),
+                LLVMValueMetadataEntriesGetMetadata(entries, idx as u32).into(),
+            )
+        })
+        .collect();
+    unsafe { LLVMDisposeValueMetadataEntries(entries) };
+    result
+}
+
+/// LLVMInstructionGetAllMetadataOtherThanDebugLoc.
+///
+/// Despite its name, the instruction's debug location (`!dbg`) *is* included.
+/// The C-API function calls `Instruction::getAllMetadata`, not `getAllMetadataOtherThanDebugLoc`.
+pub fn llvm_instruction_get_all_metadata_other_than_debug_loc(
+    inst: LLVMValue,
+) -> Vec<(u32, LLVMMetadata)> {
+    assert!(llvm_is_a::instruction(inst));
+    let mut num_entries: usize = 0;
+    let entries =
+        unsafe { LLVMInstructionGetAllMetadataOtherThanDebugLoc(inst.into(), &mut num_entries) };
+    value_metadata_entries_to_vec(entries, num_entries)
+}
+
+/// LLVMGlobalCopyAllMetadata
+pub fn llvm_global_copy_all_metadata(val: LLVMValue) -> Vec<(u32, LLVMMetadata)> {
+    assert!(llvm_is_a::global_object(val) || llvm_is_a::instruction(val));
+    let mut num_entries: usize = 0;
+    let entries = unsafe { LLVMGlobalCopyAllMetadata(val.into(), &mut num_entries) };
+    value_metadata_entries_to_vec(entries, num_entries)
+}
+
+/// LLVMSetMetadata
+pub fn llvm_set_metadata(inst: LLVMValue, kind_id: u32, node: LLVMValue) {
+    assert!(llvm_is_a::instruction(inst));
+    assert!(llvm_is_a::md_node(node));
+    unsafe { LLVMSetMetadata(inst.into(), kind_id, node.into()) }
+}
+
+/// LLVMGlobalSetMetadata
+pub fn llvm_global_set_metadata(global: LLVMValue, kind_id: u32, md: LLVMMetadata) {
+    assert!(llvm_is_a::global_object(global));
+    assert!(is_md_node(md));
+    unsafe { LLVMGlobalSetMetadata(global.into(), kind_id, md.into()) }
+}
+
+/// The names of all the named metadata (`!llvm.module.flags = !{...}`) in `module`.
+/// LLVMGetFirstNamedMetadata / LLVMGetNextNamedMetadata / LLVMGetNamedMetadataName.
+pub fn llvm_named_metadata_names(module: &LLVMModule) -> Vec<String> {
+    let mut names = vec![];
+    let mut cur = unsafe { LLVMGetFirstNamedMetadata(module.inner_ref()) };
+    while !cur.is_null() {
+        let mut len: usize = 0;
+        let name = unsafe { LLVMGetNamedMetadataName(cur, &mut len) };
+        if let Some(name) = sized_cstr_to_string(name, len) {
+            names.push(name);
+        }
+        cur = unsafe { LLVMGetNextNamedMetadata(cur) };
+    }
+    names
+}
+
+/// LLVMGetNamedMetadataNumOperands / LLVMGetNamedMetadataOperands.
+/// The operands come back as values wrapping metadata.
+pub fn llvm_get_named_metadata_operands(module: &LLVMModule, name: &str) -> Vec<LLVMValue> {
+    let name = to_c_str(name);
+    let num_operands =
+        unsafe { LLVMGetNamedMetadataNumOperands(module.inner_ref(), name.as_ptr()) } as usize;
+    let mut operands = unsafe { uninitialized_vec::<LLVMValueRef>(num_operands) };
+    unsafe {
+        LLVMGetNamedMetadataOperands(
+            module.inner_ref(),
+            name.as_ptr(),
+            operands.assume_init_mut().as_mut_ptr(),
+        );
+        operands.assume_init().into_iter().map(Into::into).collect()
+    }
+}
+
+/// LLVMAddNamedMetadataOperand
+pub fn llvm_add_named_metadata_operand(module: &LLVMModule, name: &str, val: LLVMValue) {
+    assert!(llvm_is_a::md_node(val));
+    let name = to_c_str(name);
+    unsafe { LLVMAddNamedMetadataOperand(module.inner_ref(), name.as_ptr(), val.into()) }
+}
+
+/// LLVMGetMDKindIDInContext
+pub fn llvm_get_md_kind_id_in_module(module: &LLVMModule, name: &str) -> u32 {
+    let name = to_c_str(name);
+    unsafe {
+        let ctx = LLVMGetModuleContext(module.inner_ref());
+        LLVMGetMDKindIDInContext(ctx, name.as_ptr(), name.to_bytes().len() as u32)
+    }
+}
+
+/// LLVMMDNodeInContext2
+pub fn llvm_md_node_in_module(
+    module: &LLVMModule,
+    operands: &[Option<LLVMMetadata>],
+) -> LLVMMetadata {
+    let mut operands = md_operands_to_raw(operands);
+    unsafe {
+        let ctx = LLVMGetModuleContext(module.inner_ref());
+        LLVMMDNodeInContext2(ctx, operands.as_mut_ptr(), operands.len()).into()
+    }
+}
+
+/// LLVMMetadataAsValue
+pub fn llvm_metadata_as_value_in_module(module: &LLVMModule, md: LLVMMetadata) -> LLVMValue {
+    unsafe {
+        let ctx = LLVMGetModuleContext(module.inner_ref());
+        LLVMMetadataAsValue(ctx, md.into()).into()
+    }
 }

@@ -36,6 +36,7 @@ pub mod attributes;
 pub mod builtin_to_llvm;
 pub mod function_call_utils;
 pub mod interface_impls;
+pub mod metadata;
 pub mod op_interfaces;
 pub mod ops;
 pub mod types;
@@ -44,6 +45,8 @@ pub mod types;
 pub mod from_llvm_ir;
 #[cfg(feature = "llvm-sys")]
 pub mod llvm_sys;
+#[cfg(feature = "llvm-sys")]
+pub mod metadata_conversions;
 #[cfg(feature = "llvm-sys")]
 pub mod to_llvm_ir;
 

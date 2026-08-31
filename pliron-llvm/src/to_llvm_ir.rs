@@ -81,6 +81,9 @@ use crate::{
         llvm_set_ordering, llvm_struct_create_named, llvm_struct_set_body,
         llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
     },
+    metadata_conversions::to_llvm_ir::{
+        MdConversionContext, convert_md_attachments, convert_module_metadata,
+    },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
         PointerTypeResult, SyncScopeInterface,
@@ -102,15 +105,15 @@ use crate::{
 /// Mapping from pliron entities to LLVM entities.
 pub struct ConversionContext<'a> {
     // The current LLVMModule being converted to.
-    cur_llvm_module: &'a LLVMModule,
+    pub(crate) cur_llvm_module: &'a LLVMModule,
     // A map from pliron Values to LLVM Values.
     value_map: HMap<Value, LLVMValue>,
     // A map from pliron basic blocks to LLVM.
     block_map: HMap<Ptr<BasicBlock>, LLVMBasicBlock>,
     // A map from pliron functions to LLVM functions.
-    function_map: HMap<Identifier, LLVMValue>,
+    pub(crate) function_map: HMap<Identifier, LLVMValue>,
     // A map from pliron globals to LLVM globals.
-    globals_map: HMap<Identifier, LLVMValue>,
+    pub(crate) globals_map: HMap<Identifier, LLVMValue>,
     // A map from `(function symbol, block tag)` to the corresponding LLVM block.
     block_tags: HMap<(Identifier, u64), LLVMBasicBlock>,
     // A map from every placeholder we insert to
@@ -124,6 +127,8 @@ pub struct ConversionContext<'a> {
     builder: LLVMBuilder,
     // Scratch builder in a scratch function for attempting to evaluate constants.
     scratch_builder: LLVMBuilder,
+    // State for converting the module's metadata.
+    pub(crate) md: MdConversionContext,
 }
 
 impl<'a> ConversionContext<'a> {
@@ -140,6 +145,7 @@ impl<'a> ConversionContext<'a> {
             type_cache: HMap::default(),
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
+            md: MdConversionContext::default(),
         }
     }
 
@@ -150,6 +156,7 @@ impl<'a> ConversionContext<'a> {
     }
 }
 
+/// Conversion errors.
 #[derive(Error, Debug)]
 pub enum ToLLVMErr {
     #[error("Type {0} does not have a conversion to LLVM type implemented")]
@@ -2038,10 +2045,13 @@ fn convert_block(
             );
         };
         let op_llvm = op_conv.convert(ctx, llvm_ctx, cctx)?;
-        let opr_ref = opr.deref(ctx);
-        // LLVM instructions have at most one result.
-        if opr_ref.get_num_results() == 1 {
-            cctx.value_map.insert(opr_ref.get_result(0), op_llvm);
+        convert_md_attachments(ctx, llvm_ctx, cctx, opr, op_llvm)?;
+        {
+            let opr_ref = opr.deref(ctx);
+            // LLVM instructions have at most one result.
+            if opr_ref.get_num_results() == 1 {
+                cctx.value_map.insert(opr_ref.get_result(0), op_llvm);
+            }
         }
     }
 
@@ -2106,7 +2116,7 @@ fn convert_function(
 
 /// Attributes that can be converted to a constant [LLVMValue]
 #[attr_interface]
-trait AttrToLLVMConst {
+pub(crate) trait AttrToLLVMConst {
     /// Convert from pliron [Attribute] to a constant [LLVMValue].
     fn convert(
         &self,
@@ -2623,7 +2633,15 @@ pub fn convert_module(
         }
     }
 
+    // The module's metadata may refer to the globals and functions declared above, and
+    // the instructions converted below attach metadata, so this goes in between.
+    convert_module_metadata(ctx, llvm_ctx, cctx, module)?;
+
     for op in module.get_body(ctx, 0).deref(ctx).iter(ctx) {
+        if let Some(func_op) = Operation::get_op::<FuncOp>(op, ctx) {
+            let func_llvm = cctx.function_map[&func_op.get_symbol_name(ctx)];
+            convert_md_attachments(ctx, llvm_ctx, cctx, op, func_llvm)?;
+        }
         if let Some(func_op) = Operation::get_op::<FuncOp>(op, ctx)
             && !func_op.is_declaration(ctx)
         {
@@ -2645,6 +2663,7 @@ pub fn convert_module(
             if let Some(alignment) = global_op.alignment(ctx) {
                 llvm_set_alignment(global_llvm, alignment);
             }
+            convert_md_attachments(ctx, llvm_ctx, cctx, op, global_llvm)?;
         }
     }
 
