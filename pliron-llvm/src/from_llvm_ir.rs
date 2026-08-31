@@ -314,6 +314,7 @@ fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Re
         LLVMTypeKind::LLVMBFloatTypeKind => todo!(),
         LLVMTypeKind::LLVMX86_AMXTypeKind => todo!(),
         LLVMTypeKind::LLVMTargetExtTypeKind => todo!(),
+        LLVMTypeKind::LLVMByteTypeKind => todo!(),
     };
 
     let converted_ty = converted_ty?;
@@ -420,17 +421,17 @@ fn successors(block: LLVMBasicBlock) -> Vec<LLVMBasicBlock> {
     };
 
     match llvm_get_instruction_opcode(term) {
-        LLVMOpcode::LLVMBr => {
-            if llvm_get_num_operands(term) == 1 {
-                // Conditional branch
-                vec![llvm_value_as_basic_block(llvm_get_operand(term, 0))]
-            } else {
-                assert!(llvm_get_num_operands(term) == 3);
-                vec![
-                    llvm_value_as_basic_block(llvm_get_operand(term, 1)),
-                    llvm_value_as_basic_block(llvm_get_operand(term, 2)),
-                ]
-            }
+        LLVMOpcode::LLVMUncondBr => {
+            assert!(llvm_get_num_operands(term) == 1);
+            vec![llvm_value_as_basic_block(llvm_get_operand(term, 0))]
+        }
+        LLVMOpcode::LLVMCondBr => {
+            // Operands are ordered condition, true destination, false destination.
+            assert!(llvm_get_num_operands(term) == 3);
+            vec![
+                llvm_value_as_basic_block(llvm_get_operand(term, 1)),
+                llvm_value_as_basic_block(llvm_get_operand(term, 2)),
+            ]
         }
         LLVMOpcode::LLVMSwitch => {
             // The first two operands are the condition value and the default destination.
@@ -522,6 +523,8 @@ pub enum ConversionErr {
     FloatConstNotFloatType,
     #[error("Switch case value is not an integer constant")]
     SwitchCaseNonIntConst,
+    #[error("Splat constant of a scalable vector type is not supported")]
+    ScalableVectorSplatConst,
 }
 
 /// If a value is a ConstantOp with integer type, return the value.
@@ -554,6 +557,13 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
     let ll_ty = llvm_type_of(val);
     let ty = convert_type(ctx, cctx, ll_ty)?;
 
+    let ll_ty_kind = llvm_get_type_kind(ll_ty);
+    // Splats go down the path of other constant vectors
+    let is_vector = matches!(
+        ll_ty_kind,
+        LLVMTypeKind::LLVMVectorTypeKind | LLVMTypeKind::LLVMScalableVectorTypeKind
+    );
+
     // Insert a new constant instruction in the entry block.
     fn insert_const_inst(ctx: &mut Context, cctx: &mut ConversionContext, op: Ptr<Operation>) {
         cctx.constants_inserter
@@ -578,14 +588,14 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             insert_const_inst(ctx, cctx, null_op.get_operation());
             cctx.value_map.insert(val, null_op.get_result(ctx));
         }
-        LLVMValueKind::LLVMConstantIntValueKind => {
+        LLVMValueKind::LLVMConstantIntValueKind if !is_vector => {
             let val_attr = const_llvm_value_to_attr(ctx, cctx, val)?
                 .expect("ConstantInt value's type must implement ConstLLVMValueToAttr");
             let const_op = ConstantOp::new(ctx, val_attr);
             insert_const_inst(ctx, cctx, const_op.get_operation());
             cctx.value_map.insert(val, const_op.get_result(ctx));
         }
-        LLVMValueKind::LLVMConstantFPValueKind => {
+        LLVMValueKind::LLVMConstantFPValueKind if !is_vector => {
             let Some(val_attr) = const_llvm_value_to_attr(ctx, cctx, val)? else {
                 return input_err_noloc!(ConversionErr::FloatConstNotFloatType);
             };
@@ -797,7 +807,14 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
             cctx.value_map.insert(val, zero_op.get_result(ctx));
         }
         LLVMValueKind::LLVMConstantVectorValueKind
-        | LLVMValueKind::LLVMConstantDataVectorValueKind => {
+        | LLVMValueKind::LLVMConstantDataVectorValueKind
+        | LLVMValueKind::LLVMConstantIntValueKind
+        | LLVMValueKind::LLVMConstantFPValueKind => {
+            if matches!(ll_ty_kind, LLVMTypeKind::LLVMScalableVectorTypeKind) {
+                // A scalable vector's element count isn't known statically, so
+                // the splat cannot be built up with `insertelement`s.
+                return input_err_noloc!(ConversionErr::ScalableVectorSplatConst);
+            }
             let num_elements = llvm_get_vector_size(ll_ty);
             let mut element_vals = vec![];
             for i in 0..num_elements {
@@ -872,6 +889,7 @@ fn process_constant(ctx: &mut Context, cctx: &mut ConversionContext, val: LLVMVa
         LLVMValueKind::LLVMInstructionValueKind => todo!(),
         LLVMValueKind::LLVMConstantTargetNoneValueKind => todo!(),
         LLVMValueKind::LLVMConstantPtrAuthValueKind => todo!(),
+        LLVMValueKind::LLVMConstantByteValueKind => todo!(),
     }
     Ok(())
 }
@@ -1162,42 +1180,45 @@ fn convert_instruction(
             let res_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
             Ok(BitcastOp::new(ctx, arg, res_ty).get_operation())
         }
-        LLVMOpcode::LLVMBr => {
-            if !opds.is_empty() {
-                assert!(
-                    succs.len() == 2,
-                    "Conditional branch must have two successors"
-                );
-                let true_dest_opds = convert_branch_args(
-                    ctx,
-                    cctx,
-                    llvm_get_instruction_parent(inst).unwrap(),
-                    llvm_value_as_basic_block(llvm_get_operand(inst, 2)),
-                )?;
-                let false_dest_opds = convert_branch_args(
-                    ctx,
-                    cctx,
-                    llvm_get_instruction_parent(inst).unwrap(),
-                    llvm_value_as_basic_block(llvm_get_operand(inst, 1)),
-                )?;
-                Ok(CondBrOp::new(
-                    ctx,
-                    get_operand(opds, 0)?,
-                    get_operand(succs, 1)?,
-                    true_dest_opds,
-                    get_operand(succs, 0)?,
-                    false_dest_opds,
-                )
-                .get_operation())
-            } else {
-                let dest_opds = convert_branch_args(
-                    ctx,
-                    cctx,
-                    llvm_get_instruction_parent(inst).unwrap(),
-                    llvm_value_as_basic_block(llvm_get_operand(inst, 0)),
-                )?;
-                Ok(BrOp::new(ctx, get_operand(succs, 0)?, dest_opds).get_operation())
-            }
+        LLVMOpcode::LLVMUncondBr => {
+            let dest_opds = convert_branch_args(
+                ctx,
+                cctx,
+                llvm_get_instruction_parent(inst).unwrap(),
+                llvm_value_as_basic_block(llvm_get_operand(inst, 0)),
+            )?;
+            Ok(BrOp::new(ctx, get_operand(succs, 0)?, dest_opds).get_operation())
+        }
+        LLVMOpcode::LLVMCondBr => {
+            assert!(
+                opds.len() == 1,
+                "Conditional branch must have one condition"
+            );
+            assert!(
+                succs.len() == 2,
+                "Conditional branch must have two successors"
+            );
+            let true_dest_opds = convert_branch_args(
+                ctx,
+                cctx,
+                llvm_get_instruction_parent(inst).unwrap(),
+                llvm_value_as_basic_block(llvm_get_operand(inst, 1)),
+            )?;
+            let false_dest_opds = convert_branch_args(
+                ctx,
+                cctx,
+                llvm_get_instruction_parent(inst).unwrap(),
+                llvm_value_as_basic_block(llvm_get_operand(inst, 2)),
+            )?;
+            Ok(CondBrOp::new(
+                ctx,
+                get_operand(opds, 0)?,
+                get_operand(succs, 0)?,
+                true_dest_opds,
+                get_operand(succs, 1)?,
+                false_dest_opds,
+            )
+            .get_operation())
         }
         LLVMOpcode::LLVMCall => {
             unreachable!("Should've already been processed separately")

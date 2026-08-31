@@ -65,21 +65,22 @@ use llvm_sys::{
         LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
         LLVMGetPreviousFunction, LLVMGetPreviousGlobal, LLVMGetPreviousInstruction,
         LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStructElementTypes, LLVMGetStructName,
-        LLVMGetSwitchCaseValue, LLVMGetTarget, LLVMGetTypeKind, LLVMGetUndef, LLVMGetUndefMaskElem,
-        LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize, LLVMGlobalCopyAllMetadata,
-        LLVMGlobalGetValueType, LLVMGlobalSetMetadata, LLVMHalfTypeInContext,
-        LLVMInstructionEraseFromParent, LLVMInstructionGetAllMetadataOtherThanDebugLoc,
-        LLVMIntTypeInContext, LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst,
-        LLVMIsAUser, LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg,
-        LLVMIsOpaqueStruct, LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMMDNodeInContext2,
-        LLVMMDStringInContext2, LLVMMetadataAsValue, LLVMModuleCreateWithNameInContext,
-        LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
-        LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
-        LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
-        LLVMSetAtomicSyncScopeID, LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer,
-        LLVMSetLinkage, LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget,
-        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
-        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
+        LLVMGetSwitchCaseValue, LLVMGetSyncScopeID, LLVMGetTarget, LLVMGetTypeKind, LLVMGetUndef,
+        LLVMGetUndefMaskElem, LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize,
+        LLVMGlobalCopyAllMetadata, LLVMGlobalGetValueType, LLVMGlobalSetMetadata,
+        LLVMHalfTypeInContext, LLVMInstructionEraseFromParent,
+        LLVMInstructionGetAllMetadataOtherThanDebugLoc, LLVMIntTypeInContext,
+        LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
+        LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct,
+        LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMMDNodeInContext2, LLVMMDStringInContext2,
+        LLVMMetadataAsValue, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext,
+        LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore, LLVMPrintModuleToFile,
+        LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
+        LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetAtomicSyncScopeID,
+        LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage,
+        LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMStructCreateNamed,
+        LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf,
+        LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
         LLVMValueMetadataEntriesGetKind, LLVMValueMetadataEntriesGetMetadata, LLVMVectorType,
         LLVMVoidTypeInContext,
     },
@@ -3046,17 +3047,6 @@ pub(super) fn handle_err(err: LLVMErrorRef) -> Result<(), String> {
             Err(err_msg)
         }
     }
-}
-
-// llvm-sys 221's binding for `LLVMGetSyncScopeID` is missing its return type,
-// so we re-declare the correct signature.
-// See https://gitlab.com/taricorp/llvm-sys.rs/-/work_items/84
-unsafe extern "C" {
-    fn LLVMGetSyncScopeID(
-        c: llvm_sys::prelude::LLVMContextRef,
-        name: *const core::ffi::c_char,
-        slen: usize,
-    ) -> core::ffi::c_uint;
 }
 
 /// LLVMGetSyncScopeID

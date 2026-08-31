@@ -30,13 +30,13 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/apt-archives
-        key: llvm-22-apt-archives-${{ runner.os }}
+        key: llvm-23-apt-archives-${{ runner.os }}
 
     - name: Setup LLVM
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 22 all
+        sudo ./llvm.sh 23 all
         sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-archives
 
     - name: Install testsuite dependencies
@@ -49,7 +49,7 @@ jobs:
 
     - name: Run llvm-opt testsuite
       env:
-        CLANG: clang-22
+        CLANG: clang-23
         LLVM_OPT: ${{ github.workspace }}/target/debug/llvm-opt
         LLVM_OPT_WRAPPER: ${{ github.workspace }}/pliron-llvm/llvm-opt/llvm-opt-wrapper.sh
       run: bash pliron-llvm/llvm-opt/tests/testsuite.sh

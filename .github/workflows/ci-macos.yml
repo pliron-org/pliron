@@ -22,9 +22,9 @@ jobs:
 
     - name: Setup LLVM
       run: |
-        brew install llvm@22
-        llvm_prefix="$(brew --prefix llvm@22)"
-        echo "LLVM_SYS_221_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
+        brew install llvm@23
+        llvm_prefix="$(brew --prefix llvm@23)"
+        echo "LLVM_SYS_231_PREFIX=$llvm_prefix" >> "$GITHUB_ENV"
         echo "CLANG_BINARY_PATH=$llvm_prefix/bin/clang" >> "$GITHUB_ENV"
         echo "LLI_BINARY_PATH=$llvm_prefix/bin/lli" >> "$GITHUB_ENV"
 
