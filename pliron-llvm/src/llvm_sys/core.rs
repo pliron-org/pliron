@@ -73,18 +73,18 @@ use llvm_sys::{
         LLVMHalfTypeInContext, LLVMInstructionEraseFromParent,
         LLVMInstructionGetAllMetadataOtherThanDebugLoc, LLVMIntTypeInContext,
         LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
-        LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsOpaqueStruct,
-        LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMMDNodeInContext2, LLVMMDStringInContext2,
-        LLVMMetadataAsValue, LLVMModuleCreateWithNameInContext, LLVMPointerTypeInContext,
-        LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore, LLVMPrintModuleToFile,
-        LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
-        LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetAtomicSyncScopeID,
-        LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage,
-        LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMStructCreateNamed,
-        LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf,
-        LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
-        LLVMValueMetadataEntriesGetKind, LLVMValueMetadataEntriesGetMetadata, LLVMVectorType,
-        LLVMVoidTypeInContext,
+        LLVMIsConstantString, LLVMIsDeclaration, LLVMIsFunctionVarArg, LLVMIsGlobalConstant,
+        LLVMIsOpaqueStruct, LLVMIsPackedStruct, LLVMLookupIntrinsicID, LLVMMDNodeInContext2,
+        LLVMMDStringInContext2, LLVMMetadataAsValue, LLVMModuleCreateWithNameInContext,
+        LLVMPointerTypeInContext, LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore,
+        LLVMPrintModuleToFile, LLVMPrintModuleToString, LLVMPrintTypeToString,
+        LLVMPrintValueToString, LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment,
+        LLVMSetAtomicSyncScopeID, LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetGlobalConstant,
+        LLVMSetInitializer, LLVMSetLinkage, LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering,
+        LLVMSetTarget, LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext,
+        LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueAsMetadata,
+        LLVMValueIsBasicBlock, LLVMValueMetadataEntriesGetKind,
+        LLVMValueMetadataEntriesGetMetadata, LLVMVectorType, LLVMVoidTypeInContext,
     },
     debuginfo::{
         LLVMDisposeTemporaryMDNode, LLVMGetMetadataKind, LLVMMetadataKind,
@@ -661,6 +661,12 @@ pub fn llvm_get_named_global(module: &LLVMModule, name: &str) -> Option<LLVMValu
 pub fn llvm_is_declaration(val: LLVMValue) -> bool {
     assert!(llvm_is_a::global_value(val));
     unsafe { LLVMIsDeclaration(val.into()).to_bool() }
+}
+
+/// LLVMIsGlobalConstant
+pub fn llvm_is_global_constant(val: LLVMValue) -> bool {
+    assert!(llvm_is_a::global_variable(val));
+    unsafe { LLVMIsGlobalConstant(val.into()).to_bool() }
 }
 
 /// LLVMTypeIsSized
@@ -1458,6 +1464,12 @@ pub fn llvm_set_initializer(val: LLVMValue, init: LLVMValue) {
     assert!(llvm_is_a::global_variable(val));
     assert!(llvm_is_a::constant(init));
     unsafe { LLVMSetInitializer(val.into(), init.into()) }
+}
+
+/// LLVMSetGlobalConstant
+pub fn llvm_set_global_constant(val: LLVMValue, is_constant: bool) {
+    assert!(llvm_is_a::global_variable(val));
+    unsafe { LLVMSetGlobalConstant(val.into(), is_constant.into()) }
 }
 
 /// LLVMAddGlobal
