@@ -70,9 +70,10 @@ use crate::{
         llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind, llvm_get_value_name,
         llvm_get_vector_size, llvm_get_volatile, llvm_global_get_value_type,
         llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_is_a, llvm_is_declaration,
-        llvm_is_function_type_var_arg, llvm_is_opaque_struct, llvm_is_packed_struct,
-        llvm_lookup_intrinsic_id, llvm_print_type_to_string, llvm_print_value_to_string,
-        llvm_type_of, llvm_value_as_basic_block, llvm_value_is_basic_block, param_iter,
+        llvm_is_function_type_var_arg, llvm_is_global_constant, llvm_is_opaque_struct,
+        llvm_is_packed_struct, llvm_lookup_intrinsic_id, llvm_print_type_to_string,
+        llvm_print_value_to_string, llvm_type_of, llvm_value_as_basic_block,
+        llvm_value_is_basic_block, param_iter,
     },
     metadata_conversions::from_llvm_ir::{
         MD_KIND_DBG, MdConversionContext, convert_global_object_metadata,
@@ -1820,6 +1821,10 @@ fn convert_global(
     let alignment = llvm_get_alignment(global);
     if alignment != 0 {
         op.set_alignment(ctx, alignment);
+    }
+
+    if llvm_is_global_constant(global) {
+        op.set_constant(ctx, true);
     }
 
     if let Some(init) = llvm_get_initializer(global) {

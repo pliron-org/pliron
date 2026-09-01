@@ -77,9 +77,10 @@ use crate::{
         llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
-        llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
-        llvm_set_ordering, llvm_set_volatile, llvm_struct_create_named, llvm_struct_set_body,
-        llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
+        llvm_set_fast_math_flags, llvm_set_global_constant, llvm_set_initializer, llvm_set_linkage,
+        llvm_set_nneg, llvm_set_ordering, llvm_set_volatile, llvm_struct_create_named,
+        llvm_struct_set_body, llvm_struct_type_in_context, llvm_type_of, llvm_vector_type,
+        llvm_void_type_in_context,
     },
     metadata_conversions::to_llvm_ir::{
         MdConversionContext, convert_md_attachments, convert_module_metadata,
@@ -2795,6 +2796,7 @@ pub fn convert_module(
             {
                 llvm_set_initializer(global_llvm, initializer);
             }
+            llvm_set_global_constant(global_llvm, global_op.is_constant(ctx));
             if let Some(linkage) = global_op.get_attr_llvm_global_linkage(ctx) {
                 let llvm_linkage: LLVMLinkage = convert_linkage(linkage.clone());
                 llvm_set_linkage(global_llvm, llvm_linkage);
