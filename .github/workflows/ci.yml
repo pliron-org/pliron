@@ -29,13 +29,13 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.cache/apt-archives
-        key: llvm-22-apt-archives-${{ runner.os }}
+        key: llvm-23-apt-archives-${{ runner.os }}
 
     - name: Setup LLVM
       run: |
         wget https://apt.llvm.org/llvm.sh
         chmod +x llvm.sh
-        sudo ./llvm.sh 22 all
+        sudo ./llvm.sh 23 all
         # apt falls back to downloading as root when the sandboxed `_apt`
         # user can't write into our redirected (non-standard) cache dir,
         # leaving root-owned files that the later cache-save step (running

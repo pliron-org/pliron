@@ -6,7 +6,7 @@ into `pliron`'s LLVM dialect and to emit LLVM bitcode back from the dialect.
 Example usage:
 1. Compile [fib.c](tests/resources/fib.c) into LLVM-IR:
   
-    `$clang-22 -c -emit-llvm -o /tmp/fib.bc fib.c `
+    `$clang-23 -c -emit-llvm -o /tmp/fib.bc fib.c `
 
 2. Convert the LLVM bitcode to LLVM dialect in `pliron` and back to
 LLVM bitcode (the binary `llvm-opt`, produced in your cargo's target
@@ -16,7 +16,7 @@ directory must be in `$PATH`):
 
 3. Compile the output fibonacci LLVM-IR into a binary:
 
-    `$clang-22 -o /tmp/fib /tmp/fib.opt.ll`
+    `$clang-23 -o /tmp/fib /tmp/fib.opt.ll`
 
 4. Run the fibonacci binary to see the first few fibonacci numbers
 printed.
