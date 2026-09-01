@@ -240,19 +240,48 @@ fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
     let ctx = &mut Context::new();
     let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "gep_flags")?;
 
-    let pliron_text = module_op.disp(ctx).to_string();
-    assert!(pliron_text.contains("<NUSW>"));
-    assert!(pliron_text.contains("<NUW>"));
-    assert!(pliron_text.contains("<INBOUNDS>"));
-    assert!(pliron_text.contains("<INBOUNDS | NUW>"));
+    let pliron_text = module_op
+        .disp(ctx)
+        .to_string()
+        .lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n");
+    expect![[r#"
+        builtin.module @gep_flags
+        {
+          ^block1v1():
+            llvm.func @gep_flags: llvm.func <llvm.ptr (0)(llvm.ptr (0), builtin.integer i64) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage]
+            {
+              ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i64):
+                plain_v2 = llvm.gep <builtin.integer i8> (v0, v1)[OperandIdx(1)] : llvm.ptr (0) !0;
+                nusw_v3 = llvm.gep <builtin.integer i8> (v0, v1)<NUSW>[OperandIdx(1)] : llvm.ptr (0) !1;
+                nuw_v4 = llvm.gep <builtin.integer i8> (v0, v1)<NUW>[OperandIdx(1)] : llvm.ptr (0) !2;
+                inbounds_v5 = llvm.gep <builtin.integer i8> (v0, v1)<INBOUNDS>[OperandIdx(1)] : llvm.ptr (0) !3;
+                both_v6 = llvm.gep <builtin.integer i8> (v0, v1)<INBOUNDS | NUW>[OperandIdx(1)] : llvm.ptr (0) !4;
+                llvm.return both_v6
+            }
+        }"#]].assert_eq(&pliron_text);
 
     let out_llvm_ctx = LLVMContext::default();
     let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
     let out = out_mod.to_string();
-    assert!(out.contains("getelementptr nusw i8"));
-    assert!(out.contains("getelementptr nuw i8"));
-    assert!(out.contains("getelementptr inbounds i8"));
-    assert!(out.contains("getelementptr inbounds nuw i8"));
+    expect![[r#"
+        ; ModuleID = 'gep_flags'
+        source_filename = "gep_flags"
+
+        define ptr @gep_flags(ptr %0, i64 %1) {
+        entry_block2v1:
+          %plain_v2 = getelementptr i8, ptr %0, i64 %1
+          %nusw_v3 = getelementptr nusw i8, ptr %0, i64 %1
+          %nuw_v4 = getelementptr nuw i8, ptr %0, i64 %1
+          %inbounds_v5 = getelementptr inbounds i8, ptr %0, i64 %1
+          %both_v6 = getelementptr inbounds nuw i8, ptr %0, i64 %1
+          ret ptr %both_v6
+        }
+    "#]]
+    .assert_eq(&out);
     Ok(())
 }
 

@@ -175,24 +175,16 @@ impl From<GepNoWrapFlagsAttr> for GepNoWrapFlags {
 
 impl Display for GepNoWrapFlagsAttr {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let flags = self.0.normalized();
-        write!(f, "<")?;
-        let mut first = true;
-        let mut emit = |name: &str| -> core::fmt::Result {
-            if !first {
-                write!(f, " | ")?;
-            }
-            first = false;
-            write!(f, "{name}")
-        };
+        let mut flags = self.0.normalized();
+
+        // `inbounds` implies `nusw`, but LLVM prints the implied `nusw`
+        // implicitly rather than redundantly.
         if flags.contains(GepNoWrapFlags::INBOUNDS) {
-            emit("INBOUNDS")?;
-        } else if flags.contains(GepNoWrapFlags::NUSW) {
-            emit("NUSW")?;
+            flags.remove(GepNoWrapFlags::NUSW);
         }
-        if flags.contains(GepNoWrapFlags::NUW) {
-            emit("NUW")?;
-        }
+
+        write!(f, "<")?;
+        bitflags::parser::to_writer(&flags, &mut *f)?;
         write!(f, ">")
     }
 }
@@ -580,19 +572,31 @@ mod tests {
     fn test_gep_no_wrap_flags_attr_parse_invalid() {
         let ctx = &mut Context::default();
         let input = "<INVALIDFLAG>";
-        match parse_from_str(GepNoWrapFlagsAttr::parser(()), ctx, input) {
-            Ok(parsed) => {
-                panic!("Expected error, but got: {}", parsed);
-            }
-            Err(e) => {
-                expect![[r#"
-                    Compilation error: invalid input program.
-                    Parse error at line: 1, column: 1
-                    Error parsing GEP no-wrap flags: unrecognized named flag `INVALIDFLAG`
-                "#]]
-                .assert_eq(&e.to_string());
-            }
-        }
+
+        let err = parse_from_str(GepNoWrapFlagsAttr::parser(()), ctx, input)
+            .expect_err("invalid GEP no-wrap flag must fail to parse");
+        let parse_errors = err
+            .err
+            .downcast_ref::<pliron::combine::easy::Errors<
+                char,
+                char,
+                pliron::combine::stream::position::SourcePosition,
+            >>()
+            .expect("expected combine parser errors");
+
+        let parse_err = parse_errors
+            .errors
+            .iter()
+            .find_map(|err| match err {
+                pliron::combine::easy::Error::Other(err) => {
+                    err.downcast_ref::<GepNoWrapFlagParseErr>()
+                }
+                _ => None,
+            })
+            .expect("expected GepNoWrapFlagParseErr");
+
+        expect!["Error parsing GEP no-wrap flags: unrecognized named flag `INVALIDFLAG`"]
+            .assert_eq(&parse_err.to_string());
     }
 
     fn assert_attr_roundtrips<A>(ctx: &mut Context, attr: A)
