@@ -10,6 +10,7 @@ use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
     init_env_logger_for_tests,
+    op::Op,
     printable::Printable,
     result::{Error, Result},
 };
@@ -18,8 +19,8 @@ use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::LLVMContext,
     ops::{ConstantOpVerifyErr, SelectOpVerifyErr},
+    to_llvm_ir,
 };
-
 mod common;
 
 fn to_llvm_ir_o1(input: &str) -> Result<String> {
@@ -697,5 +698,42 @@ fn named_syncscopes_roundtrip() -> Result<()> {
         }
     "#]]
     .assert_eq(&out);
+    Ok(())
+}
+
+#[test]
+fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define i32 @volatile_rw(ptr %p, i32 %x) {
+        entry:
+          %v = load volatile i32, ptr %p, align 4
+          store volatile i32 %x, ptr %p, align 4
+          %plain = load i32, ptr %p, align 4
+          store i32 %plain, ptr %p, align 4
+          ret i32 %v
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "volatile_load_store")?;
+
+    let pliron_text = module_op.get_operation().disp(ctx).to_string();
+    assert_eq!(pliron_text.matches("[volatile : true]").count(), 2);
+
+    // The printed Pliron form must itself round-trip through the parser. This also
+    // verifies that non-volatile load/store syntax remains unambiguous next to alignment.
+    let reparsed_ctx = &mut Context::new();
+    let reparsed_module = common::parse_op_verify(reparsed_ctx, &pliron_text)?;
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
+    let out = out_mod.to_string();
+
+    assert_eq!(out.matches("load volatile").count(), 1);
+    assert_eq!(out.matches("store volatile").count(), 1);
+    assert_eq!(out.matches("load i32").count(), 1);
+    assert_eq!(out.matches("store i32").count(), 1);
     Ok(())
 }

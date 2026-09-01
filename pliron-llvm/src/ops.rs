@@ -32,6 +32,7 @@ use pliron::{
     },
     common_traits::{Named, Verify},
     context::{Context, Ptr},
+    dict_key,
     graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
     identifier::Identifier,
     indented_block, input_err,
@@ -1642,6 +1643,12 @@ impl GetElementPtrOp {
     }
 }
 
+dict_key!(
+    /// Attribute key for volatile memory operations.
+    ATTR_KEY_LLVM_VOLATILE,
+    "llvm_volatile"
+);
+
 #[derive(Error, Debug)]
 pub enum LoadOpVerifyErr {
     #[error("Load operand must be a pointer")]
@@ -1661,7 +1668,7 @@ pub enum LoadOpVerifyErr {
 /// | `res` | sized LLVM type |
 #[pliron_op(
     name = "llvm.load",
-    format = "$0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
+    format = "opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `] `)) $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
@@ -1685,6 +1692,24 @@ impl LoadOp {
             ),
         }
     }
+
+    /// Return whether this is a volatile load.
+    pub fn is_volatile(&self, ctx: &Context) -> bool {
+        self.get_operation()
+            .deref(ctx)
+            .attributes
+            .get::<BoolAttr>(&ATTR_KEY_LLVM_VOLATILE)
+            .map(|attr| attr.clone().into())
+            .unwrap_or(false)
+    }
+
+    /// Set whether this is a volatile load.
+    pub fn set_volatile(&self, ctx: &Context, is_volatile: bool) {
+        self.get_operation()
+            .deref_mut(ctx)
+            .attributes
+            .set(ATTR_KEY_LLVM_VOLATILE.clone(), BoolAttr::new(is_volatile));
+    }
 }
 
 #[derive(Error, Debug)]
@@ -1703,7 +1728,7 @@ pub enum StoreOpVerifyErr {
 /// | `value` | Sized type |
 #[pliron_op(
     name = "llvm.store",
-    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
+    format = "opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `] `)) `*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,
@@ -1726,6 +1751,24 @@ impl StoreOp {
                 0,
             ),
         }
+    }
+
+    /// Return whether this is a volatile store.
+    pub fn is_volatile(&self, ctx: &Context) -> bool {
+        self.get_operation()
+            .deref(ctx)
+            .attributes
+            .get::<BoolAttr>(&ATTR_KEY_LLVM_VOLATILE)
+            .map(|attr| attr.clone().into())
+            .unwrap_or(false)
+    }
+
+    /// Set whether this is a volatile store.
+    pub fn set_volatile(&self, ctx: &Context, is_volatile: bool) {
+        self.get_operation()
+            .deref_mut(ctx)
+            .attributes
+            .set(ATTR_KEY_LLVM_VOLATILE.clone(), BoolAttr::new(is_volatile));
     }
 }
 

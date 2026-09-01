@@ -68,7 +68,7 @@ use crate::{
         llvm_get_operand, llvm_get_ordering, llvm_get_param_types, llvm_get_pointer_address_space,
         llvm_get_return_type, llvm_get_struct_element_types, llvm_get_struct_name,
         llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind, llvm_get_value_name,
-        llvm_get_vector_size, llvm_global_get_value_type,
+        llvm_get_vector_size, llvm_get_volatile, llvm_global_get_value_type,
         llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_is_a, llvm_is_declaration,
         llvm_is_function_type_var_arg, llvm_is_opaque_struct, llvm_is_packed_struct,
         llvm_lookup_intrinsic_id, llvm_print_type_to_string, llvm_print_value_to_string,
@@ -1455,8 +1455,12 @@ fn convert_instruction(
             let ptr = get_operand(opds, 0)?;
             let alignment = llvm_get_alignment(inst);
             let ordering = llvm_get_ordering(inst);
+            let is_volatile = llvm_get_volatile(inst);
             if matches!(ordering, LLVMAtomicOrdering::LLVMAtomicOrderingNotAtomic) {
                 let load_op = LoadOp::new(ctx, ptr, res_ty);
+                if is_volatile {
+                    load_op.set_volatile(ctx, true);
+                }
                 if alignment != 0 {
                     load_op.set_alignment(ctx, alignment);
                 }
@@ -1561,8 +1565,12 @@ fn convert_instruction(
             let (value_opd, ptr_opd) = (get_operand(opds, 0)?, get_operand(opds, 1)?);
             let alignment = llvm_get_alignment(inst);
             let ordering = llvm_get_ordering(inst);
+            let is_volatile = llvm_get_volatile(inst);
             if matches!(ordering, LLVMAtomicOrdering::LLVMAtomicOrderingNotAtomic) {
                 let store_op = StoreOp::new(ctx, value_opd, ptr_opd);
+                if is_volatile {
+                    store_op.set_volatile(ctx, true);
+                }
                 if alignment != 0 {
                     store_op.set_alignment(ctx, alignment);
                 }
