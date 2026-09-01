@@ -220,6 +220,42 @@ fn llvm_ir_select_without_fastmath_flags_omits_attr() -> Result<()> {
     Ok(())
 }
 
+/// GEP no-wrap flags must survive LLVM -> pliron -> LLVM conversion.
+#[test]
+fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define ptr @gep_flags(ptr %p, i64 %i) {
+        entry:
+          %plain = getelementptr i8, ptr %p, i64 %i
+          %nusw = getelementptr nusw i8, ptr %p, i64 %i
+          %nuw = getelementptr nuw i8, ptr %p, i64 %i
+          %inbounds = getelementptr inbounds i8, ptr %p, i64 %i
+          %both = getelementptr inbounds nuw i8, ptr %p, i64 %i
+          ret ptr %both
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "gep_flags")?;
+
+    let pliron_text = module_op.disp(ctx).to_string();
+    assert!(pliron_text.contains("<NUSW>"));
+    assert!(pliron_text.contains("<NUW>"));
+    assert!(pliron_text.contains("<INBOUNDS>"));
+    assert!(pliron_text.contains("<INBOUNDS | NUW>"));
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out = out_mod.to_string();
+    assert!(out.contains("getelementptr nusw i8"));
+    assert!(out.contains("getelementptr nuw i8"));
+    assert!(out.contains("getelementptr inbounds i8"));
+    assert!(out.contains("getelementptr inbounds nuw i8"));
+    Ok(())
+}
+
 /// Combinations of `struct` types
 #[test]
 fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {

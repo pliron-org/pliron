@@ -60,11 +60,11 @@ use crate::{
         llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd,
         llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg,
         llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
-        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep2, llvm_build_icmp,
-        llvm_build_indirect_br, llvm_build_insert_element, llvm_build_insert_value,
-        llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or,
-        llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void,
-        llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
+        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags,
+        llvm_build_icmp, llvm_build_indirect_br, llvm_build_insert_element,
+        llvm_build_insert_value, llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr,
+        llvm_build_mul, llvm_build_or, llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret,
+        llvm_build_ret_void, llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
         llvm_build_shuffle_vector, llvm_build_sitofp, llvm_build_srem, llvm_build_store,
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
@@ -1509,12 +1509,13 @@ impl ToLLVMValue for GetElementPtrOp {
         let base = convert_value_operand(cctx, ctx, &self.get_operand_src_ptr(ctx))?;
 
         let src_elem_type = convert_type(ctx, llvm_ctx, cctx, self.src_elem_type(ctx))?;
-        let gep_op = llvm_build_gep2(
+        let gep_op = llvm_build_gep_with_no_wrap_flags(
             &cctx.builder,
             src_elem_type,
             base,
             &indices,
             self.get_result(ctx).unique_name(ctx).as_ref(),
+            self.no_wrap_flags(ctx),
         );
         Ok(gep_op)
     }

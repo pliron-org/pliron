@@ -130,6 +130,111 @@ impl Parsable for FastmathFlagsAttr {
     }
 }
 
+bitflags! {
+    /// No-wrap flags for getelementptr operations.
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+    pub struct GepNoWrapFlags: u8 {
+        const INBOUNDS = 1;
+        const NUSW = 2;
+        const NUW = 4;
+    }
+}
+
+impl GepNoWrapFlags {
+    /// Normalize flags to LLVM semantics: `inbounds` implies `nusw`.
+    pub fn normalized(self) -> Self {
+        if self.contains(Self::INBOUNDS) {
+            self | Self::NUSW
+        } else {
+            self
+        }
+    }
+}
+
+#[pliron_attr(name = "llvm.gep_no_wrap_flags", verifier = "succ")]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct GepNoWrapFlagsAttr(pub GepNoWrapFlags);
+
+impl Default for GepNoWrapFlagsAttr {
+    fn default() -> Self {
+        Self(GepNoWrapFlags::empty())
+    }
+}
+
+impl From<GepNoWrapFlags> for GepNoWrapFlagsAttr {
+    fn from(value: GepNoWrapFlags) -> Self {
+        Self(value.normalized())
+    }
+}
+
+impl From<GepNoWrapFlagsAttr> for GepNoWrapFlags {
+    fn from(attr: GepNoWrapFlagsAttr) -> Self {
+        attr.0
+    }
+}
+
+impl Display for GepNoWrapFlagsAttr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let flags = self.0.normalized();
+        write!(f, "<")?;
+        let mut first = true;
+        let mut emit = |name: &str| -> core::fmt::Result {
+            if !first {
+                write!(f, " | ")?;
+            }
+            first = false;
+            write!(f, "{name}")
+        };
+        if flags.contains(GepNoWrapFlags::INBOUNDS) {
+            emit("INBOUNDS")?;
+        } else if flags.contains(GepNoWrapFlags::NUSW) {
+            emit("NUSW")?;
+        }
+        if flags.contains(GepNoWrapFlags::NUW) {
+            emit("NUW")?;
+        }
+        write!(f, ">")
+    }
+}
+
+impl_printable_for_display!(GepNoWrapFlagsAttr);
+
+#[derive(Debug, Error)]
+#[error("Error parsing GEP no-wrap flags: {0}")]
+pub struct GepNoWrapFlagParseErr(pub bitflags::parser::ParseError);
+
+impl Parsable for GepNoWrapFlagsAttr {
+    type Arg = ();
+    type Parsed = Self;
+
+    fn parse<'a>(
+        state_stream: &mut pliron::parsable::StateStream<'a>,
+        _arg: Self::Arg,
+    ) -> pliron::parsable::ParseResult<'a, Self::Parsed> {
+        let pos = state_stream.loc();
+        let allowed_chars = combine::choice!(
+            combine::parser::char::space().map(|c| c.to_string()),
+            combine::parser::char::alpha_num().map(|c| c.to_string()),
+            combine::parser::char::char('|').map(|c: char| c.to_string())
+        );
+
+        let (parsed, _): (Vec<String>, _) = combine::between(
+            combine::parser::char::char('<').with(spaces()),
+            spaces().with(combine::parser::char::char('>')),
+            combine::many(allowed_chars),
+        )
+        .parse_stream(state_stream)
+        .into_result()?;
+        let parsed_string = parsed.concat();
+
+        let (flags, _) = bitflags::parser::from_str::<GepNoWrapFlags>(&parsed_string)
+            .map_err(|e| input_error!(pos.clone(), GepNoWrapFlagParseErr(e)))
+            .into_parse_result()?;
+
+        Ok(GepNoWrapFlagsAttr(flags.normalized())).into_parse_result()
+    }
+}
+
 #[pliron_attr(name = "llvm.icmp_predicate", verifier = "succ", format)]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum ICmpPredicateAttr {
@@ -435,6 +540,55 @@ mod tests {
                     Compilation error: invalid input program.
                     Parse error at line: 1, column: 1
                     Error parsing fastmath flags: unrecognized named flag `INVALIDFLAG`
+                "#]]
+                .assert_eq(&e.to_string());
+            }
+        }
+    }
+
+    #[test]
+    fn test_gep_no_wrap_flags_attr_fmt() {
+        let ctx = &Context::default();
+
+        let flags: GepNoWrapFlagsAttr = (GepNoWrapFlags::NUSW | GepNoWrapFlags::NUW).into();
+        expect!["<NUSW | NUW>"].assert_eq(&flags.disp(ctx).to_string());
+
+        let flags: GepNoWrapFlagsAttr = (GepNoWrapFlags::INBOUNDS | GepNoWrapFlags::NUW).into();
+        expect!["<INBOUNDS | NUW>"].assert_eq(&flags.disp(ctx).to_string());
+    }
+
+    #[test]
+    fn test_gep_no_wrap_flags_inbounds_implies_nusw() {
+        let flags: GepNoWrapFlagsAttr = GepNoWrapFlags::INBOUNDS.into();
+
+        assert!(flags.0.contains(GepNoWrapFlags::INBOUNDS));
+        assert!(flags.0.contains(GepNoWrapFlags::NUSW));
+    }
+
+    #[test]
+    fn test_gep_no_wrap_flags_attr_parse_valid() {
+        let ctx = &mut Context::default();
+
+        let parsed =
+            parse_from_str(GepNoWrapFlagsAttr::parser(()), ctx, "<INBOUNDS | NUW>").expect_ok(ctx);
+        assert!(parsed.0.contains(GepNoWrapFlags::INBOUNDS));
+        assert!(parsed.0.contains(GepNoWrapFlags::NUSW));
+        assert!(parsed.0.contains(GepNoWrapFlags::NUW));
+    }
+
+    #[test]
+    fn test_gep_no_wrap_flags_attr_parse_invalid() {
+        let ctx = &mut Context::default();
+        let input = "<INVALIDFLAG>";
+        match parse_from_str(GepNoWrapFlagsAttr::parser(()), ctx, input) {
+            Ok(parsed) => {
+                panic!("Expected error, but got: {}", parsed);
+            }
+            Err(e) => {
+                expect![[r#"
+                    Compilation error: invalid input program.
+                    Parse error at line: 1, column: 1
+                    Error parsing GEP no-wrap flags: unrecognized named flag `INVALIDFLAG`
                 "#]]
                 .assert_eq(&e.to_string());
             }

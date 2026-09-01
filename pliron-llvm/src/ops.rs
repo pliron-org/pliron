@@ -91,7 +91,9 @@ use pliron::derive::{op_interface_impl, pliron_op};
 use thiserror::Error;
 
 use super::{
-    attributes::{GepIndexAttr, GepIndicesAttr, ICmpPredicateAttr},
+    attributes::{
+        GepIndexAttr, GepIndicesAttr, GepNoWrapFlags, GepNoWrapFlagsAttr, ICmpPredicateAttr,
+    },
     types::PointerType,
 };
 
@@ -1477,11 +1479,11 @@ pub enum GetElementPtrOpErr {
 /// | `res` | LLVM pointer type |
 #[pliron_op(
     name = "llvm.gep",
-    format = "`<` attr($gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` attr($gep_indices, $GepIndicesAttr) ` : ` type($0)",
+    format = "`<` attr($gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($gep_indices, $GepIndicesAttr) ` : ` type($0)",
     interfaces = [OneResultInterface],
     operands = (src_ptr, dynamic_indices),
     results = (_: PointerType),
-    attributes = (gep_src_elem_type: TypeAttr, gep_indices: GepIndicesAttr)
+    attributes = (gep_src_elem_type: TypeAttr, gep_indices: GepIndicesAttr, gep_no_wrap_flags: GepNoWrapFlagsAttr)
 )]
 pub struct GetElementPtrOp;
 
@@ -1524,6 +1526,17 @@ impl GetElementPtrOp {
         indices: Vec<GepIndex>,
         src_elem_type: TypeHandle,
     ) -> Self {
+        Self::new_with_no_wrap_flags(ctx, base, indices, src_elem_type, GepNoWrapFlags::empty())
+    }
+
+    /// Create a new [GetElementPtrOp] with LLVM no-wrap flags.
+    pub fn new_with_no_wrap_flags(
+        ctx: &mut Context,
+        base: Value,
+        indices: Vec<GepIndex>,
+        src_elem_type: TypeHandle,
+        no_wrap_flags: GepNoWrapFlags,
+    ) -> Self {
         use pliron::r#type::Typed;
 
         // A GEP result inherits the address space of its base pointer.
@@ -1560,7 +1573,16 @@ impl GetElementPtrOp {
 
         op.set_attr_gep_indices(ctx, GepIndicesAttr(attr));
         op.set_attr_gep_src_elem_type(ctx, src_elem_type);
+        if !no_wrap_flags.is_empty() {
+            op.set_attr_gep_no_wrap_flags(ctx, no_wrap_flags.into());
+        }
         op
+    }
+
+    /// Get the GEP no-wrap flags.
+    pub fn no_wrap_flags(&self, ctx: &Context) -> GepNoWrapFlags {
+        self.get_attr_gep_no_wrap_flags(ctx)
+            .map_or(GepNoWrapFlags::empty(), |attr| attr.0.normalized())
     }
 
     /// Get the source pointer's element type.
