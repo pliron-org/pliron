@@ -81,6 +81,7 @@ use crate::{
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOpWithFastMathFlags, IntBinArithOpWithOverflowFlag, LlvmSymbolName,
+        VolatilityOpInterface,
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,

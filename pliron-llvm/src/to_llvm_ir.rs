@@ -86,7 +86,7 @@ use crate::{
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
-        PointerTypeResult, SyncScopeInterface,
+        PointerTypeResult, SyncScopeInterface, VolatilityOpInterface,
     },
     ops::{
         AShrOp, AddOp, AddrSpaceCastOp, AddressOfOp, AllocaOp, AndOp, AtomicCmpxchgOp,

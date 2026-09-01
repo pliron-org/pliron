@@ -720,7 +720,7 @@ fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
     let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "volatile_load_store")?;
 
     let pliron_text = module_op.get_operation().disp(ctx).to_string();
-    assert_eq!(pliron_text.matches("[volatile : true]").count(), 2);
+    expect!["2"].assert_eq(&pliron_text.matches("[volatile : true]").count().to_string());
 
     // The printed Pliron form must itself round-trip through the parser. This also
     // verifies that non-volatile load/store syntax remains unambiguous next to alignment.
@@ -731,9 +731,18 @@ fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
     let out_mod = to_llvm_ir::convert_module(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
     let out = out_mod.to_string();
 
-    assert_eq!(out.matches("load volatile").count(), 1);
-    assert_eq!(out.matches("store volatile").count(), 1);
-    assert_eq!(out.matches("load i32").count(), 1);
-    assert_eq!(out.matches("store i32").count(), 1);
+    let memory_op_summary = format!(
+        "load volatile: {}\nstore volatile: {}\nload: {}\nstore: {}",
+        out.matches("load volatile").count(),
+        out.matches("store volatile").count(),
+        out.matches("load i32").count(),
+        out.matches("store i32").count(),
+    );
+    expect![[r#"
+        load volatile: 1
+        store volatile: 1
+        load: 1
+        store: 1"#]]
+    .assert_eq(&memory_op_summary);
     Ok(())
 }
