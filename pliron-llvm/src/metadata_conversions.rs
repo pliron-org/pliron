@@ -56,6 +56,11 @@ pub mod from_llvm_ir {
     }
 
     impl MdConversionContext {
+        /// The pliron symbol name for an LLVM global object, if the module has one.
+        pub(crate) fn symbol_name(&self, val: LLVMValue) -> Option<Identifier> {
+            self.symbol_names.get(&val).cloned()
+        }
+
         /// The pliron symbol name for an LLVM global object.
         /// It is legalised and remembered when seen first.
         pub(crate) fn legalized_symbol_name(

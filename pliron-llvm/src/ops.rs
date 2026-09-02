@@ -60,9 +60,10 @@ use pliron::{
 
 use crate::{
     attributes::{
-        AddressSpaceAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr, CaseValuesAttr,
-        FCmpPredicateAttr, FastmathFlagsAttr, InsertExtractValueIndicesAttr, LinkageAttr,
-        ShuffleVectorMaskAttr, SyncScopeAttr,
+        AddressSpaceAttr, AggregateAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr,
+        BytesAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr,
+        InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr, SplatAttr,
+        SymbolAddrAttr, SyncScopeAttr,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
@@ -171,7 +172,7 @@ impl Verify for ReturnOp {
 /// No operands or results.
 #[pliron_op(
     name = "llvm.unreachable",
-    format,
+    format = "",
     interfaces = [IsTerminatorInterface, NOpdsInterface<0>, NResultsInterface<0>],
     verifier = "succ"
 )]
@@ -2387,15 +2388,16 @@ impl Verify for CallOp {
 /// Constant value operation for the LLVM dialect.
 /// Similar to MLIR's [llvm.mlir.constant](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirconstant-llvmconstantop).
 ///
-/// This operation represents a constant value that must be an integer or float attribute.
-/// Unlike `builtin.constant` which supports any attribute type, `llvm.constant` enforces
-/// that the value must be either an integer or float.
+/// The constant value is held as one of the following attributes:
+/// [IntegerAttr], [dyn FloatAttr](FloatAttr), [AggregateAttr](crate::attributes::AggregateAttr)
+/// [SplatAttr](crate::attributes::SplatAttr), [BytesAttr](crate::attributes::BytesAttr),
+/// [SymbolAddrAttr](crate::attributes::SymbolAddrAttr).
 ///
 /// ### Results:
 ///
 /// | result | description |
 /// |-----|-------|
-/// | `result` | integer or float type |
+/// | `result` | the type of the value attribute |
 #[pliron_op(
     name = "llvm.constant",
     format = "`<` $llvm_constant_value `>` ` : ` type($0)",
@@ -2410,10 +2412,12 @@ impl ConstantOp {
         self.get_attr_llvm_constant_value(ctx).unwrap().clone()
     }
 
-    /// Create a new [ConstantOp].
+    /// Create a new [ConstantOp] holding `value`.
+    ///
+    /// **Panics** if `value` doesn't implement [TypedAttrInterface].
     pub fn new(ctx: &mut Context, value: AttrObj) -> Self {
         let result_type = attr_cast::<dyn TypedAttrInterface>(&*value)
-            .expect("ConstantOp const value must provide TypedAttrInterface")
+            .expect("ConstantOp value must provide TypedAttrInterface")
             .get_type(ctx);
         let op = Operation::new(
             ctx,
@@ -2430,18 +2434,43 @@ impl ConstantOp {
 }
 
 #[derive(Error, Debug)]
-#[error("{}: Unexpected type", ConstantOp::get_opid_static())]
 pub enum ConstantOpVerifyErr {
-    #[error("ConstantOp must have either an integer or a float value")]
-    InvalidValue,
+    #[error("{0} not allowed on a ConstantOp")]
+    InvalidValue(String),
+    #[error("The value attribute is of type {0}, but the constant is of type {1}")]
+    ResultTypeMismatch(String, String),
 }
 
 impl Verify for ConstantOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         let value = self.get_value(ctx);
-        if !(value.is::<IntegerAttr>() || attr_impls::<dyn FloatAttr>(&*value)) {
-            verify_err!(loc, ConstantOpVerifyErr::InvalidValue)?;
+        let result_type = self.result_type(ctx);
+
+        if !(value.is::<IntegerAttr>()
+            || attr_impls::<dyn FloatAttr>(&*value)
+            || value.is::<AggregateAttr>()
+            || value.is::<SplatAttr>()
+            || value.is::<BytesAttr>()
+            || value.is::<SymbolAddrAttr>())
+        {
+            verify_err!(
+                loc.clone(),
+                ConstantOpVerifyErr::InvalidValue(value.get_attr_id().to_string())
+            )?;
+        }
+
+        let value_type = attr_cast::<dyn TypedAttrInterface>(&*value)
+            .map(|typed| typed.get_type(ctx))
+            .expect("All allowed attributes (above) implement TypedAttrInterface");
+        if value_type != result_type {
+            verify_err!(
+                loc,
+                ConstantOpVerifyErr::ResultTypeMismatch(
+                    value_type.disp(ctx).to_string(),
+                    result_type.disp(ctx).to_string()
+                )
+            )?
         }
         Ok(())
     }
@@ -2580,6 +2609,10 @@ pub enum GlobalOpVerifyErr {
     MissingType,
     #[error("GlobalOp cannot have both an initializer value and initializer region")]
     InvalidInitializer,
+    #[error("The initializer is of type {0}, but the global is of type {1}")]
+    InitializerTypeMismatch(String, String),
+    #[error("GlobalOp initializer region does not terminate with a return with value")]
+    InitializerRegionBadReturn,
 }
 
 /// Same as MLIR's LLVM dialect [GlobalOp](https://mlir.llvm.org/docs/Dialects/LLVM/#llvmmlirglobal-llvmglobalop)
@@ -2690,6 +2723,8 @@ impl IsDeclaration for GlobalOp {
 
 impl Verify for GlobalOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
+        use pliron::r#type::Typed;
+
         let loc = self.loc(ctx);
 
         // The name must be set. That is checked by the SymbolOpInterface.
@@ -2701,6 +2736,36 @@ impl Verify for GlobalOp {
         // Check that there is at most one initializer
         if self.get_initializer_value(ctx).is_some() && self.get_initializer_region(ctx).is_some() {
             return verify_err!(loc, GlobalOpVerifyErr::InvalidInitializer);
+        }
+
+        // The initializer, in whichever form it is specified, must be of the global's type.
+        let init_ty = if let Some(init) = self.get_initializer_value(ctx) {
+            attr_cast::<dyn TypedAttrInterface>(&*init).map(|typed| typed.get_type(ctx))
+        } else if let Some(init_block) = self.get_initializer_block(ctx) {
+            // An initializer region must end with a return of the global's value.
+            let Some(retval) = init_block
+                .deref(ctx)
+                .get_terminator(ctx)
+                .and_then(|term| Operation::get_op::<ReturnOp>(term, ctx))
+                .and_then(|ret| ret.retval(ctx))
+            else {
+                return verify_err!(loc, GlobalOpVerifyErr::InitializerRegionBadReturn);
+            };
+            Some(retval.get_type(ctx))
+        } else {
+            None
+        };
+        let global_ty = self.get_type(ctx);
+        if let Some(init_ty) = init_ty
+            && init_ty != global_ty
+        {
+            return verify_err!(
+                loc,
+                GlobalOpVerifyErr::InitializerTypeMismatch(
+                    init_ty.disp(ctx).to_string(),
+                    global_ty.disp(ctx).to_string()
+                )
+            );
         }
 
         Ok(())
