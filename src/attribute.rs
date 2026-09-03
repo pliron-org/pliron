@@ -49,7 +49,7 @@ use downcast_rs::{Downcast, impl_downcast};
 use dyn_clone::DynClone;
 
 use crate::{
-    builtin::attr_interfaces::OutlinedAttr,
+    builtin::attr_interfaces::{OutlinedAttr, TypedAttrInterface},
     combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
@@ -66,6 +66,7 @@ use crate::{
     result::Result,
     std_deps::sync::LazyLock,
     storage_uniquer::TypeValueHash,
+    r#type::TypeHandle,
     utils::{
         table::{HMap, SmallMap},
         trait_cast::impls_trait_static,
@@ -406,6 +407,31 @@ pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribut
 /// ```
 pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
     impls_trait_static::<A, I>()
+}
+
+/// If an [Attribute] impls [TypedAttrInterface], get its [Type](crate::type::Type).
+///
+/// ```
+/// use pliron::{
+///     attribute::attr_type,
+///     builtin::{
+///         attributes::{IntegerAttr, StringAttr},
+///         types::{IntegerType, Signedness},
+///     },
+///     context::Context,
+///     utils::apint::{APInt, bw},
+/// };
+/// let ctx = &Context::new();
+///
+/// let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+/// let int_attr = IntegerAttr::new(i64_ty, APInt::from_i64(42, bw(64)));
+/// assert_eq!(attr_type(&int_attr, ctx), Some(i64_ty.into()));
+///
+/// // A string carries no type.
+/// assert!(attr_type(&StringAttr::new("hello".to_string()), ctx).is_none());
+/// ```
+pub fn attr_type(attr: &dyn Attribute, ctx: &Context) -> Option<TypeHandle> {
+    attr_cast::<dyn TypedAttrInterface>(attr).map(|typed| typed.get_type(ctx))
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]
