@@ -2410,7 +2410,7 @@ impl OpToLLVMConstValue for ConstantOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let value = self.get_value(ctx);
+        let value = self.get_value(ctx) as AttrObj;
         const_attr_to_llvm_constant(&value, Some(self.loc(ctx)), ctx, llvm_ctx, cctx)
     }
 }

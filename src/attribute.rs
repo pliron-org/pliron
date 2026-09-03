@@ -409,6 +409,53 @@ pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static
     impls_trait_static::<A, I>()
 }
 
+/// Cast a boxed [Attribute] object to a boxed interface object.
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{
+///     attribute::{Attribute, boxed_attr_cast},
+///     builtin::{
+///         attr_interfaces::{FloatAttr, TypedAttrInterface},
+///         attributes::IntegerAttr,
+///         types::{IntegerType, Signedness},
+///     },
+///     context::Context,
+///     utils::apint::{APInt, bw},
+/// };
+/// let ctx = &Context::new();
+///
+/// let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+/// let int_attr = || -> Box<dyn Attribute> {
+///     Box::new(IntegerAttr::new(i64_ty, APInt::from_i64(42, bw(64))))
+/// };
+///
+/// let typed = boxed_attr_cast::<dyn TypedAttrInterface>(int_attr())
+///     .expect("IntegerAttr implements TypedAttrInterface");
+/// assert_eq!(typed.get_type(ctx), i64_ty.into());
+///
+/// // IntegerAttr isn't a float attribute, so the cast fails.
+/// assert!(boxed_attr_cast::<dyn FloatAttr>(int_attr()).is_none());
+/// ```
+///
+/// Casting to concrete [Attribute] types are intentionally rejected.
+/// ```compile_fail
+/// use pliron::attribute::{Attribute, boxed_attr_cast};
+/// use pliron::builtin::attributes::IntegerAttr;
+///
+/// fn wrong_cast(attr: Box<dyn Attribute>) {
+///     let _ = boxed_attr_cast::<IntegerAttr>(attr);
+/// }
+/// ```
+/// Use [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics)
+/// to cast to concrete [Attribute] types.
+pub fn boxed_attr_cast<T: ?Sized + AttrInterfaceMarker + 'static>(
+    attr: Box<dyn Attribute>,
+) -> Option<Box<T>> {
+    crate::utils::trait_cast::boxed_any_to_trait::<T>(attr as Box<dyn core::any::Any>)
+}
+
 /// If an [Attribute] impls [TypedAttrInterface], get its [Type](crate::type::Type).
 ///
 /// ```
