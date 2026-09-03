@@ -10,11 +10,11 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::num::NonZero;
+use core::{cell::Ref, num::NonZero};
 
 use pliron::{
     arg_err_noloc,
-    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls, boxed_attr_cast},
+    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
@@ -2408,9 +2408,18 @@ pub struct ConstantOp;
 
 impl ConstantOp {
     /// Get the constant value that this Op defines.
-    pub fn get_value(&self, ctx: &Context) -> Box<dyn TypedAttrInterface> {
-        let attr = self.get_attr_llvm_constant_value(ctx).unwrap().clone();
-        boxed_attr_cast(attr).unwrap()
+    /// The [Ref] is a borrow of the containing [Operation] object.
+    ///
+    /// Use [pliron::dyn_clone::clone_box] to clone the value if required.
+    pub fn get_value<'a>(&self, ctx: &'a Context) -> Ref<'a, dyn TypedAttrInterface> {
+        Ref::map(
+            self.get_attr_llvm_constant_value(ctx)
+                .expect("ConstantOp must have a value attribute"),
+            |attr| {
+                attr_cast::<dyn TypedAttrInterface>(&**attr)
+                    .expect("ConstantOp's value attribute must impl TypedAttrInterface")
+            },
+        )
     }
 
     /// Create a new [ConstantOp] holding `value`.

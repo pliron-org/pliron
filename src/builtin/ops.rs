@@ -13,7 +13,7 @@ use super::{
     types::{FunctionType, UnitType},
 };
 use crate::{
-    attribute::{Attribute, AttributeDict, attr_cast, attr_impls, boxed_attr_cast},
+    attribute::{Attribute, AttributeDict, attr_cast, attr_impls},
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{
@@ -49,6 +49,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use core::cell::Ref;
 use pliron::derive::{op_interface_impl, pliron_op};
 use thiserror::Error;
 
@@ -347,9 +348,18 @@ impl Verify for ConstantOp {
 
 impl ConstantOp {
     /// Get the constant value that this Op defines.
-    pub fn get_value(&self, ctx: &Context) -> Box<dyn TypedAttrInterface> {
-        let attr = self.get_attr_builtin_constant_value(ctx).unwrap().clone();
-        boxed_attr_cast(attr).unwrap()
+    /// The [Ref] is a borrow of the containing [Operation] object.
+    ///
+    /// Use [pliron::dyn_clone::clone_box] to clone the value if required.
+    pub fn get_value<'a>(&self, ctx: &'a Context) -> Ref<'a, dyn TypedAttrInterface> {
+        Ref::map(
+            self.get_attr_builtin_constant_value(ctx)
+                .expect("ConstantOp must have a value attribute"),
+            |attr| {
+                attr_cast::<dyn TypedAttrInterface>(&**attr)
+                    .expect("ConstantOp's value attribute must impl TypedAttrInterface")
+            },
+        )
     }
 
     /// Create a new [ConstantOp].

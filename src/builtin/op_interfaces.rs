@@ -651,7 +651,7 @@ pub trait SymbolTableInterface: SingleBlockRegionInterface + OneRegionInterface 
             symbol_table_collection: SymbolTableCollection::new(),
             res: Ok(()),
         };
-        walk_symbol_table(dyn_clone::clone_box(op), ctx, &mut state, callback);
+        walk_symbol_table(pliron::dyn_clone::clone_box(op), ctx, &mut state, callback);
         state.res
     }
 }

@@ -10,7 +10,7 @@ use llvm_sys::{
     LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
 };
 use pliron::{
-    attribute::{AttrObj, boxed_attr_cast},
+    attribute::{AttrObj, Attribute, boxed_attr_cast},
     basic_block::BasicBlock,
     builtin::{
         attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
@@ -548,7 +548,8 @@ fn get_const_op_as_int(ctx: &Context, val: Value) -> Option<IntegerAttr> {
     let defining_op = val.defining_op()?;
 
     Operation::get_op::<ConstantOp>(defining_op, ctx).and_then(|const_op| {
-        (const_op.get_value(ctx) as AttrObj)
+        let value = const_op.get_value(ctx);
+        (&*value as &dyn Attribute)
             .downcast_ref::<IntegerAttr>()
             .cloned()
     })

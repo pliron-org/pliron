@@ -39,21 +39,13 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{
-    fmt::{Debug, Display},
-    hash::{Hash, Hasher},
-    ops::Deref,
-};
-use downcast_rs::{Downcast, impl_downcast};
-use dyn_clone::DynClone;
-
 use crate::{
     builtin::attr_interfaces::{OutlinedAttr, TypedAttrInterface},
     combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
     dialect::{Dialect, DialectName},
+    dyn_clone::DynClone,
     identifier::Identifier,
     impl_printable_for_display, input_err,
     irfmt::{
@@ -72,6 +64,13 @@ use crate::{
         trait_cast::impls_trait_static,
     },
 };
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::{
+    fmt::{Debug, Display},
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
+use downcast_rs::{Downcast, impl_downcast};
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
 #[derive(Clone)]

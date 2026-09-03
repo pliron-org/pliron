@@ -69,7 +69,7 @@ impl SymbolTable {
             {
                 let sym = sym_op.get_symbol_name(ctx);
                 if let Some(prev_op) =
-                    symbol_table.insert(sym.clone(), dyn_clone::clone_box(sym_op))
+                    symbol_table.insert(sym.clone(), pliron::dyn_clone::clone_box(sym_op))
                 {
                     // It's the job of the verifier to have caught this. So we panic.
                     panic!(
@@ -249,7 +249,7 @@ pub fn nearest_symbol_table(
         if let Some(symbol_table) =
             op_cast::<dyn SymbolTableInterface>(Operation::get_op_dyn(op, ctx).as_ref())
         {
-            return Some(dyn_clone::clone_box(symbol_table));
+            return Some(pliron::dyn_clone::clone_box(symbol_table));
         }
         op = op.deref(ctx).get_parent_op(ctx)?;
     }
