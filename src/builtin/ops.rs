@@ -13,7 +13,7 @@ use super::{
     types::{FunctionType, UnitType},
 };
 use crate::{
-    attribute::{Attribute, AttributeDict, attr_cast, attr_impls},
+    attribute::{Attribute, AttributeDict, attr_cast},
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{
@@ -327,19 +327,33 @@ pub enum ConstantOpVerifyErr {
     MissingValue,
     #[error("ConstantOp's value attribute {0} does not implement TypedAttrInterface")]
     ValueNotTyped(String),
+    #[error("The value attribute is of type {0}, but the constant is of type {1}")]
+    ResultTypeMismatch(String, String),
 }
 
 impl Verify for ConstantOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
+        let result_type = self.result_type(ctx);
+
         let Some(value) = self.get_attr_builtin_constant_value(ctx) else {
             return verify_err!(loc, ConstantOpVerifyErr::MissingValue);
         };
         let value: &dyn Attribute = &**value;
-        if !attr_impls::<dyn TypedAttrInterface>(value) {
+        let Some(value) = attr_cast::<dyn TypedAttrInterface>(value) else {
             return verify_err!(
                 loc,
                 ConstantOpVerifyErr::ValueNotTyped(value.get_attr_id().to_string())
+            );
+        };
+
+        if value.get_type(ctx) != result_type {
+            return verify_err!(
+                loc,
+                ConstantOpVerifyErr::ResultTypeMismatch(
+                    value.get_type(ctx).disp(ctx).to_string(),
+                    result_type.disp(ctx).to_string()
+                )
             );
         }
         Ok(())
