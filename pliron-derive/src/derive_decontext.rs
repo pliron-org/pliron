@@ -268,6 +268,7 @@ pub(crate) fn derive_clone_attribute_into_context(input: TokenStream) -> syn::Re
         item_impl.into_token_stream(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+        interfaces::RegisterBoxedCast::Register,
     )
 }
 
@@ -300,6 +301,7 @@ pub(crate) fn derive_clone_type_into_context(input: TokenStream) -> syn::Result<
         item_impl.into_token_stream(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+        interfaces::RegisterBoxedCast::Skip,
     )
 }
 
@@ -665,6 +667,9 @@ mod tests {
                 }
             }
             ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext);
+            ::pliron::boxed_type_to_trait!(
+                Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext
+            );
             const _: () = {
                 #[cfg_attr(
                     not(target_family = "wasm"),

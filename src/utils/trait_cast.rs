@@ -6,7 +6,13 @@
 //!
 //! A user must specify [type_to_trait](crate::type_to_trait) for a type that implements
 //! a trait and needs to be casted to it, and then use [any_to_trait]
-//! to do the actual cast. See their documentation for details and examples.
+//! to do the actual cast.
+//!
+//! Similarly, a user must specify [boxed_type_to_trait](crate::boxed_type_to_trait) for a
+//! type whose boxed objects (`Box<dyn Any>`) need to be casted to boxed trait objects
+//! (`Box<dyn Trait>`), and then use [boxed_any_to_trait] to do the actual cast.
+//!
+//! See their documentation for details and examples.
 
 use core::any::{Any, TypeId};
 
@@ -21,7 +27,6 @@ use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 /// To cast from `dyn Trait1` to `dyn Trait2` (when the underlying type implements both),
 /// the user may use [downcast_rs] to easily upcast from `dyn Trait1` to [Any],
 /// and then use [any_to_trait] to cast to `dyn Trait2`.
-///
 /// Example:
 /// ```
 /// # use pliron::{type_to_trait, utils::trait_cast::any_to_trait};
@@ -50,54 +55,12 @@ use crate::{std_deps::sync::LazyLock, utils::table::HMap};
 pub fn any_to_trait<T: ?Sized + 'static>(r: &dyn Any) -> Option<&T> {
     TRAIT_CASTERS_MAP
         .get(&(r.type_id(), TypeId::of::<T>()))
-        .map(|info| {
-            (*info
-                .caster
+        .map(|caster| {
+            ((**caster)
                 // The caster function is set by `type_to_trait!`, and can only be of this type.
                 .downcast_ref::<for<'a> fn(&'a (dyn Any + 'static)) -> &'a T>()
                 .unwrap())(r)
         })
-}
-
-/// Cast a `Box<dyn Any>` object to a `Box<dyn Trait>` for any
-/// trait that the contained (in [Any]) type implements, and for which
-/// [type_to_trait](crate::type_to_trait) has been specified.
-///
-/// To cast from `Box<dyn Trait1>` to `Box<dyn Trait2>` (when the underlying type implements
-/// both), the user may use [downcast_rs] to easily upcast from `Box<dyn Trait1>` to
-/// `Box<dyn Any>`, and then use [boxed_any_to_trait] to cast to `Box<dyn Trait2>`.
-///
-/// Example:
-/// ```
-/// # use pliron::{type_to_trait, utils::trait_cast::boxed_any_to_trait};
-/// # use pliron::alloc::boxed::Box;
-/// # use core::any::Any;
-///
-/// trait Trait1 {}
-/// trait Trait2 {}
-///
-/// struct S;
-/// impl Trait1 for S {}
-/// impl Trait2 for S {}
-///
-/// type_to_trait!(S, Trait2);
-///
-/// let s1: Box<dyn Any> = Box::new(S);
-/// boxed_any_to_trait::<dyn Trait2>(s1).expect("Expected S to implement Trait2");
-///
-/// struct S2;
-/// let s2: Box<dyn Any> = Box::new(S2);
-/// assert!(boxed_any_to_trait::<dyn Trait2>(s2).is_none(), "S2 does not implement Trait2");
-/// ```
-pub fn boxed_any_to_trait<T: ?Sized + 'static>(r: Box<dyn Any>) -> Option<Box<T>> {
-    let key = ((*r).type_id(), TypeId::of::<T>());
-    TRAIT_CASTERS_MAP.get(&key).map(|info| {
-        (*info
-            .box_caster
-            // The caster function is set by `type_to_trait!`, and can only be of this type.
-            .downcast_ref::<fn(Box<dyn Any>) -> Box<T>>()
-            .unwrap())(r)
-    })
 }
 
 /// Check if type `T` was registered to be casted to trait `I`
@@ -126,10 +89,8 @@ pub struct TraitCasterInfo {
     pub from: TypeId,
     /// The trait to which we cast.
     pub to: TypeId,
-    /// The cast function pointer, for casting a `&dyn Any` to a `&dyn Trait`.
+    /// The cast function pointer.
     pub caster: &'static (dyn Any + Sync + Send),
-    /// The cast function pointer, for casting a `Box<dyn Any>` to a `Box<dyn Trait>`.
-    pub box_caster: &'static (dyn Any + Sync + Send),
 }
 
 #[cfg(not(target_family = "wasm"))]
@@ -150,8 +111,8 @@ pub mod statics {
 
     ::pliron::inventory::collect!(&'static TraitCasterInfo);
 
-    pub fn get_trait_casters() -> impl Iterator<Item = &'static TraitCasterInfo> {
-        ::pliron::inventory::iter::<&'static TraitCasterInfo>().copied()
+    pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfo> {
+        ::pliron::inventory::iter::<&'static TraitCasterInfo>()
     }
 }
 
@@ -159,12 +120,13 @@ pub use statics::*;
 
 #[doc(hidden)]
 /// A map of all the trait casters, indexed by the type_id of the object
-/// and the type_id of the trait to cast to. The map's values hold the
-/// cast function pointers.
-static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static TraitCasterInfo>> =
+/// and the type_id of the trait to cast to. The map's values are
+/// the cast function pointers. This is used to avoid having to search
+/// through the distributed slice every time we want to cast an object.
+static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
     LazyLock::new(|| {
         get_trait_casters()
-            .map(|info| ((info.from, info.to), info))
+            .map(|lazy| ((lazy.from, lazy.to), lazy.caster))
             .collect()
     });
 
@@ -207,12 +169,6 @@ macro_rules! type_to_trait {
                             &'a (dyn core::any::Any + 'static),
                         ) -> &'a (dyn $to_trait_name + 'static))
                         as &'static (dyn core::any::Any + Sync + Send),
-                    box_caster: &(boxed_cast_to_trait
-                        as fn(
-                            $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
-                        )
-                            -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static>)
-                        as &'static (dyn core::any::Any + Sync + Send),
                 };
 
             #[cfg(target_family = "wasm")]
@@ -228,13 +184,155 @@ macro_rules! type_to_trait {
                 // in `type_to_trait!` or `any_to_trait`, not their usage.
                 r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
             }
+        };
+    };
+}
+
+/// Cast a `Box<dyn Any>` object to a `Box<dyn Trait>` object for any
+/// trait that the contained (in [Any]) type implements, and for which
+/// [boxed_type_to_trait](crate::boxed_type_to_trait) has been specified.
+///
+/// To cast from `Box<dyn Trait1>` to `Box<dyn Trait2>` (when the underlying type implements
+/// both), the user may use [downcast_rs] to easily upcast from `Box<dyn Trait1>` to
+/// `Box<dyn Any>`, and then use [boxed_any_to_trait] to cast to `Box<dyn Trait2>`.
+///
+/// Example:
+/// ```
+/// # use pliron::{boxed_type_to_trait, utils::trait_cast::boxed_any_to_trait};
+/// # use pliron::alloc::boxed::Box;
+/// # use core::any::Any;
+///
+/// trait Trait1 {}
+/// trait Trait2 {}
+///
+/// struct S;
+/// impl Trait1 for S {}
+/// impl Trait2 for S {}
+///
+/// boxed_type_to_trait!(S, Trait2);
+///
+/// let s1: Box<dyn Any> = Box::new(S);
+/// boxed_any_to_trait::<dyn Trait2>(s1).expect("Expected S to implement Trait2");
+///
+/// struct S2;
+/// let s2: Box<dyn Any> = Box::new(S2);
+/// assert!(boxed_any_to_trait::<dyn Trait2>(s2).is_none(), "S2 does not implement Trait2");
+/// ```
+pub fn boxed_any_to_trait<T: ?Sized + 'static>(r: Box<dyn Any>) -> Option<Box<T>> {
+    BOXED_TRAIT_CASTERS_MAP
+        .get(&((*r).type_id(), TypeId::of::<T>()))
+        .map(|caster| {
+            ((**caster)
+                // The caster function is set by `boxed_type_to_trait!`,
+                // and can only be of this type.
+                .downcast_ref::<fn(Box<dyn Any>) -> Box<T>>()
+                .unwrap())(r)
+        })
+}
+
+#[doc(hidden)]
+/// Information to cast from a boxed Rust type to a boxed trait object.
+pub struct BoxedTraitCasterInfo {
+    /// The type from which we cast.
+    pub from: TypeId,
+    /// The trait to which we cast.
+    pub to: TypeId,
+    /// The cast function pointer.
+    pub caster: &'static (dyn Any + Sync + Send),
+}
+
+#[cfg(not(target_family = "wasm"))]
+pub mod boxed_statics {
+    use super::*;
+
+    #[::pliron::linkme::distributed_slice]
+    pub static BOXED_TRAIT_CASTERS: [BoxedTraitCasterInfo] = [..];
+
+    pub fn get_boxed_trait_casters() -> impl Iterator<Item = &'static BoxedTraitCasterInfo> {
+        BOXED_TRAIT_CASTERS.iter()
+    }
+}
+
+#[cfg(target_family = "wasm")]
+pub mod boxed_statics {
+    use super::*;
+
+    ::pliron::inventory::collect!(&'static BoxedTraitCasterInfo);
+
+    pub fn get_boxed_trait_casters() -> impl Iterator<Item = &'static &'static BoxedTraitCasterInfo>
+    {
+        ::pliron::inventory::iter::<&'static BoxedTraitCasterInfo>()
+    }
+}
+
+pub use boxed_statics::*;
+#[doc(hidden)]
+/// A map of all the boxed trait casters, indexed by the type_id of the object
+/// and the type_id of the trait to cast to. The map's values are
+/// the cast function pointers. This is used to avoid having to search
+/// through the distributed slice every time we want to cast an object.
+static BOXED_TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
+    LazyLock::new(|| {
+        get_boxed_trait_casters()
+            .map(|lazy| ((lazy.from, lazy.to), lazy.caster))
+            .collect()
+    });
+
+/// Specify that a boxed type may be casted to a boxed `dyn Trait` object.
+/// Use [boxed_any_to_trait] for the actual cast.
+/// Example:
+/// ```
+/// # use pliron::{boxed_type_to_trait, utils::trait_cast::boxed_any_to_trait};
+/// # use pliron::alloc::boxed::Box;
+/// # use core::any::Any;
+/// trait Trait {}
+/// struct S1;
+/// impl Trait for S1 {}
+/// boxed_type_to_trait!(S1, Trait);
+///
+/// let s1: Box<dyn Any> = Box::new(S1);
+/// boxed_any_to_trait::<dyn Trait>(s1).expect("Expected S1 to implement Trait");
+///
+/// struct S2;
+/// let s2: Box<dyn Any> = Box::new(S2);
+/// assert!(
+///     boxed_any_to_trait::<dyn Trait>(s2).is_none(),
+///     "S2 does not implement Trait"
+/// );
+/// ```
+#[macro_export]
+macro_rules! boxed_type_to_trait {
+    ($ty_name:ty, $to_trait_name:path) => {
+        // The rust way to do an anonymous module.
+        const _: () = {
+            #[cfg_attr(
+                not(target_family = "wasm"),
+                ::pliron::linkme::distributed_slice
+                    ($crate::utils::trait_cast::BOXED_TRAIT_CASTERS), linkme(crate = ::pliron::linkme)
+            )]
+            static BOXED_CAST_TO_TRAIT: $crate::utils::trait_cast::BoxedTraitCasterInfo =
+                $crate::utils::trait_cast::BoxedTraitCasterInfo {
+                    from: core::any::TypeId::of::<$ty_name>(),
+                    to: core::any::TypeId::of::<dyn $to_trait_name>(),
+                    caster: &(boxed_cast_to_trait
+                        as fn(
+                            $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
+                        )
+                            -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static>)
+                        as &'static (dyn core::any::Any + Sync + Send),
+                };
+
+            #[cfg(target_family = "wasm")]
+            ::pliron::inventory::submit! {
+                &BOXED_CAST_TO_TRAIT
+            }
 
             fn boxed_cast_to_trait(
                 r: $crate::alloc::boxed::Box<dyn core::any::Any + 'static>,
             ) -> $crate::alloc::boxed::Box<dyn $to_trait_name + 'static> {
                 // This function is only called when the type of `r` is `$ty_name`,
                 // so the downcast must succeed. A failure indicates an internal bug
-                // in `type_to_trait!` or `boxed_any_to_trait`, not their usage.
+                // in `boxed_type_to_trait!` or `boxed_any_to_trait`, not their usage.
                 r.downcast::<$ty_name>().unwrap() as $crate::alloc::boxed::Box<dyn $to_trait_name>
             }
         };
