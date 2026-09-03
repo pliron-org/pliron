@@ -15,7 +15,6 @@ pub mod from_llvm_ir {
     use pliron::{
         builtin::ops::ModuleOp,
         context::{Context, Ptr},
-        identifier::{self, Identifier},
         input_error_noloc,
         operation::Operation,
         result::Result,
@@ -42,8 +41,6 @@ pub mod from_llvm_ir {
     /// State for converting LLVM metadata
     #[derive(Default)]
     pub(crate) struct MdConversionContext {
-        /// Names of the globals and functions of the module.
-        symbol_names: HMap<LLVMValue, Identifier>,
         /// Already converted metadata nodes, mapped to their entry in [Self::table],
         /// or to `None` if the node is one we cannot represent and dropped.
         node_map: HMap<LLVMMetadata, Option<MdNodeId>>,
@@ -53,29 +50,6 @@ pub mod from_llvm_ir {
         kind_names: HMap<u32, String>,
         /// Whether the module's textual form has been scanned for metadata kind names.
         kind_names_scraped: bool,
-    }
-
-    impl MdConversionContext {
-        /// The pliron symbol name for an LLVM global object, if the module has one.
-        pub(crate) fn symbol_name(&self, val: LLVMValue) -> Option<Identifier> {
-            self.symbol_names.get(&val).cloned()
-        }
-
-        /// The pliron symbol name for an LLVM global object.
-        /// It is legalised and remembered when seen first.
-        pub(crate) fn legalized_symbol_name(
-            &mut self,
-            id_legaliser: &mut identifier::Legaliser,
-            val: LLVMValue,
-        ) -> Identifier {
-            if let Some(name) = self.symbol_names.get(&val) {
-                return name.clone();
-            }
-            let llvm_name = llvm_get_value_name(val).unwrap_or_default();
-            let name = id_legaliser.legalise(&llvm_name);
-            self.symbol_names.insert(val, name.clone());
-            name
-        }
     }
 
     /// Metadata conversion errors.
@@ -333,7 +307,7 @@ pub mod from_llvm_ir {
                     LLVMValueKind::LLVMGlobalVariableValueKind
                     | LLVMValueKind::LLVMFunctionValueKind => {
                         // A symbol that isn't in the pliron module has nothing we could refer to.
-                        match cctx.md.symbol_names.get(&val).cloned() {
+                        match cctx.symbol_name(val) {
                             Some(name) => Ok(Some(MdOperandAttr::Global(name))),
                             None => {
                                 log::warn!(

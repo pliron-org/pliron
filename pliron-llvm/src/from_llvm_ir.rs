@@ -116,7 +116,7 @@ pub(crate) fn const_llvm_value_to_attr(
 
         // The address of a global or a function, if we know it.
         LLVMValueKind::LLVMGlobalVariableValueKind | LLVMValueKind::LLVMFunctionValueKind => {
-            let Some(name) = cctx.md.symbol_name(val) else {
+            let Some(name) = cctx.symbol_name(val) else {
                 return Ok(None);
             };
             let ptr_ty = TypedHandle::<PointerType>::from_handle(ty, ctx)?;
@@ -393,11 +393,30 @@ pub(crate) struct ConversionContext {
     constants_inserter: Option<IRInserter<DummyListener>>,
     /// Identifier legaliser
     id_legaliser: identifier::Legaliser,
+    /// Names of the globals and functions of the module.
+    symbol_names: HMap<LLVMValue, Identifier>,
     /// State for converting the module's metadata.
     pub(crate) md: MdConversionContext,
 }
 
 impl ConversionContext {
+    /// The pliron symbol name for an LLVM global object, if the module has one.
+    pub(crate) fn symbol_name(&self, val: LLVMValue) -> Option<Identifier> {
+        self.symbol_names.get(&val).cloned()
+    }
+
+    /// The pliron symbol name for an LLVM global object.
+    /// It is legalised and remembered when seen first.
+    pub(crate) fn legalized_symbol_name(&mut self, val: LLVMValue) -> Identifier {
+        if let Some(name) = self.symbol_names.get(&val) {
+            return name.clone();
+        }
+        let llvm_name = llvm_get_value_name(val).unwrap_or_default();
+        let name = self.id_legaliser.legalise(&llvm_name);
+        self.symbol_names.insert(val, name.clone());
+        name
+    }
+
     /// Reset the value and block maps and initialize
     /// constants inserter to the start of the entry block.
     /// Identifier::Legaliser remains unmodified.
@@ -1683,9 +1702,7 @@ fn convert_function(
     assert!(llvm_is_a::function(function));
 
     let llvm_name = llvm_get_value_name(function).expect("Expected function to have a name");
-    let name = cctx
-        .md
-        .legalized_symbol_name(&mut cctx.id_legaliser, function);
+    let name = cctx.legalized_symbol_name(function);
     let fn_ty = convert_type(ctx, cctx, llvm_global_get_value_type(function))?;
     let fn_ty = TypedHandle::from_handle(fn_ty, ctx)?;
     // Create a new FuncOp.
@@ -1755,9 +1772,7 @@ fn convert_global(
     global: LLVMValue,
 ) -> Result<GlobalOp> {
     let llvm_name = llvm_get_value_name(global).unwrap_or_default();
-    let name = cctx
-        .md
-        .legalized_symbol_name(&mut cctx.id_legaliser, global);
+    let name = cctx.legalized_symbol_name(global);
 
     let ty = convert_type(
         ctx,
@@ -1834,7 +1849,7 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
         // Note down every global and function name up front
         // to handle forwarded references for metadata conversion.
         for gv in global_iter(module) {
-            cctx.md.legalized_symbol_name(&mut cctx.id_legaliser, gv);
+            cctx.legalized_symbol_name(gv);
         }
         for fun in function_iter(module) {
             let llvm_name = llvm_get_value_name(fun).expect("Expected function to have a name");
@@ -1842,7 +1857,7 @@ pub fn convert_module(ctx: &mut Context, module: &LLVMModule) -> Result<ModuleOp
                 // Skip LLVM intrinsics.
                 continue;
             }
-            cctx.md.legalized_symbol_name(&mut cctx.id_legaliser, fun);
+            cctx.legalized_symbol_name(fun);
         }
     }
 
