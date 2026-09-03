@@ -179,8 +179,6 @@ pub enum ToLLVMErr {
     CannotEvaluateToConst,
     #[error("BlockAddressOp refers to missing block tag {1} in function {0}")]
     MissingBlockTag(String, u64),
-    #[error("{0} is not the type of a constant aggregate")]
-    NotAnAggregateType(String),
     #[error("The attribute {0} is not an LLVM constant")]
     AttrNotConst(String),
     #[error("SymbolAddrAttr for {0} is invalid: {1}")]
@@ -2301,7 +2299,11 @@ impl AttrToLLVMConst for AggregateAttr {
         } else if ty_obj.is::<VectorType>() {
             Ok(llvm_const_vector(&elements))
         } else {
-            input_err_noloc!(ToLLVMErr::NotAnAggregateType(ty.disp(ctx).to_string()))
+            // The verifier has established that an aggregate is of one of these types.
+            panic!(
+                "An aggregate constant of type {}, which is not an array, a struct or a vector",
+                ty.disp(ctx)
+            )
         }
     }
 }

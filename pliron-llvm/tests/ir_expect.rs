@@ -404,8 +404,7 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
         }"#]]
     .assert_eq(&printed);
 
-    // The printed constants must parse back and verify. (Value and block names are
-    // re-generated on parsing, so the print isn't compared.)
+    // The printed constants must parse back and verify.
     let parse_ctx = &mut Context::new();
     common::parse_op_verify::<ModuleOp>(parse_ctx, &printed)?;
 
