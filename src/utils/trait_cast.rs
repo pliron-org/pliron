@@ -5,11 +5,10 @@
 //! for traits that the type contained by the [Any] object implements.
 //!
 //! A user must specify [type_to_trait](crate::type_to_trait) for a type that implements
-//! a trait and needs to be casted to it, and then use [any_to_trait]
-//! to do the actual cast.
+//! a trait and needs to be casted to it, and then use [any_to_trait] to do the actual cast.
 //!
-//! Similarly, a user must specify [boxed_type_to_trait](crate::boxed_type_to_trait) for a
-//! type whose boxed objects (`Box<dyn Any>`) need to be casted to boxed trait objects
+//! Similarly, a user must specify [boxed_type_to_trait](crate::boxed_type_to_trait) for
+//! a type whose boxed objects (`Box<dyn Any>`) need to be casted to boxed trait objects
 //! (`Box<dyn Trait>`), and then use [boxed_any_to_trait] to do the actual cast.
 //!
 //! See their documentation for details and examples.
