@@ -10,6 +10,7 @@ use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
     init_env_logger_for_tests,
+    op::Op,
     printable::Printable,
     result::{Error, Result},
 };
@@ -19,7 +20,6 @@ use pliron_llvm::{
     llvm_sys::core::LLVMContext,
     ops::{ConstantOpVerifyErr, SelectOpVerifyErr},
 };
-
 mod common;
 
 fn to_llvm_ir_o1(input: &str) -> Result<String> {
@@ -697,5 +697,69 @@ fn named_syncscopes_roundtrip() -> Result<()> {
         }
     "#]]
     .assert_eq(&out);
+    Ok(())
+}
+
+#[test]
+fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define i32 @volatile_rw(ptr %p, i32 %x) {
+        entry:
+          %v = load volatile i32, ptr %p, align 4
+          store volatile i32 %x, ptr %p, align 4
+          %plain = load i32, ptr %p, align 4
+          store i32 %plain, ptr %p, align 4
+          ret i32 %v
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "volatile_load_store")?;
+    let printed = module_op.get_operation().disp(ctx).to_string();
+
+    expect![[r#"
+        builtin.module @volatile_load_store 
+        {
+          ^block1v1():
+            llvm.func @volatile_rw: llvm.func <builtin.integer i32(llvm.ptr (0), builtin.integer i32) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i32):
+                v_v2 = llvm.load v0 [volatile : true][align : 4] : builtin.integer i32 !0;
+                llvm.store *v0 <- v1 [volatile : true][align : 4];
+                plain_v3 = llvm.load v0 [align : 4] : builtin.integer i32 !1;
+                llvm.store *v0 <- plain_v3 [align : 4];
+                llvm.return v_v2
+            }
+        }
+
+        outlined_attributes:
+        !0 = [builtin_given_names = builtin.given_names [v]]
+        !1 = [builtin_given_names = builtin.given_names [plain]]
+    "#]].assert_eq(&printed);
+
+    // Print and reparse.
+    let reparsed_ctx = &mut Context::new();
+    let reparsed_module = common::parse_op_verify::<ModuleOp>(reparsed_ctx, &printed)?;
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = common::to_llvm_ir_verify(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
+
+    expect![[r#"
+        ; ModuleID = 'volatile_load_store'
+        source_filename = "volatile_load_store"
+
+        define i32 @volatile_rw(ptr %0, i32 %1) {
+        entry_block2v1_block2v1:
+          %v_v2 = load volatile i32, ptr %0, align 4
+          store volatile i32 %1, ptr %0, align 4
+          %plain_v3 = load i32, ptr %0, align 4
+          store i32 %plain_v3, ptr %0, align 4
+          ret i32 %v_v2
+        }
+    "#]]
+    .assert_eq(&out_mod.to_string());
     Ok(())
 }
