@@ -21,7 +21,9 @@ impl ConstFoldInterface for ConstantOp {
         ctx: &Context,
         _operand_attrs: &[Option<AttrObj>],
     ) -> Vec<Option<AttrObj>> {
-        vec![Some(self.get_value(ctx))]
+        vec![Some(
+            pliron::dyn_clone::clone_box(&*self.get_value(ctx)) as AttrObj
+        )]
     }
 
     fn fold_in_place(

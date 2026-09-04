@@ -10,11 +10,11 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::num::NonZero;
+use core::{cell::Ref, num::NonZero};
 
 use pliron::{
     arg_err_noloc,
-    attribute::{AttrObj, AttributeDict, attr_cast, attr_impls},
+    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
@@ -2408,17 +2408,23 @@ pub struct ConstantOp;
 
 impl ConstantOp {
     /// Get the constant value that this Op defines.
-    pub fn get_value(&self, ctx: &Context) -> AttrObj {
-        self.get_attr_llvm_constant_value(ctx).unwrap().clone()
+    /// The [Ref] is a borrow of the containing [Operation] object.
+    ///
+    /// Use [pliron::dyn_clone::clone_box] to clone the value if required.
+    pub fn get_value<'a>(&self, ctx: &'a Context) -> Ref<'a, dyn TypedAttrInterface> {
+        Ref::map(
+            self.get_attr_llvm_constant_value(ctx)
+                .expect("ConstantOp must have a value attribute"),
+            |attr| {
+                attr_cast::<dyn TypedAttrInterface>(&**attr)
+                    .expect("ConstantOp's value attribute must impl TypedAttrInterface")
+            },
+        )
     }
 
     /// Create a new [ConstantOp] holding `value`.
-    ///
-    /// **Panics** if `value` doesn't implement [TypedAttrInterface].
-    pub fn new(ctx: &mut Context, value: AttrObj) -> Self {
-        let result_type = attr_cast::<dyn TypedAttrInterface>(&*value)
-            .expect("ConstantOp value must provide TypedAttrInterface")
-            .get_type(ctx);
+    pub fn new(ctx: &mut Context, value: Box<dyn TypedAttrInterface>) -> Self {
+        let result_type = value.get_type(ctx);
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),
@@ -2435,6 +2441,8 @@ impl ConstantOp {
 
 #[derive(Error, Debug)]
 pub enum ConstantOpVerifyErr {
+    #[error("ConstantOp does not have a value attribute")]
+    MissingValue,
     #[error("{0} not allowed on a ConstantOp")]
     InvalidValue(String),
     #[error("The value attribute is of type {0}, but the constant is of type {1}")]
@@ -2444,11 +2452,15 @@ pub enum ConstantOpVerifyErr {
 impl Verify for ConstantOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
-        let value = self.get_value(ctx);
         let result_type = self.result_type(ctx);
 
+        let Some(value) = self.get_attr_llvm_constant_value(ctx) else {
+            return verify_err!(loc, ConstantOpVerifyErr::MissingValue);
+        };
+        let value: &dyn Attribute = &**value;
+
         if !(value.is::<IntegerAttr>()
-            || attr_impls::<dyn FloatAttr>(&*value)
+            || attr_impls::<dyn FloatAttr>(value)
             || value.is::<AggregateAttr>()
             || value.is::<SplatAttr>()
             || value.is::<BytesAttr>()
@@ -2460,14 +2472,14 @@ impl Verify for ConstantOp {
             )?;
         }
 
-        let value_type = attr_cast::<dyn TypedAttrInterface>(&*value)
-            .map(|typed| typed.get_type(ctx))
-            .expect("All allowed attributes (above) implement TypedAttrInterface");
-        if value_type != result_type {
+        let value = attr_cast::<dyn TypedAttrInterface>(value)
+            .expect("All attributes we allow above implement TypedAttrInterface");
+
+        if value.get_type(ctx) != result_type {
             verify_err!(
                 loc,
                 ConstantOpVerifyErr::ResultTypeMismatch(
-                    value_type.disp(ctx).to_string(),
+                    value.get_type(ctx).disp(ctx).to_string(),
                     result_type.disp(ctx).to_string()
                 )
             )?

@@ -13,7 +13,7 @@ use super::{
     types::{FunctionType, UnitType},
 };
 use crate::{
-    attribute::{AttrObj, AttributeDict, attr_cast},
+    attribute::{Attribute, AttributeDict, attr_cast},
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{
@@ -44,10 +44,12 @@ use crate::{
     verify_err,
 };
 use alloc::{
+    boxed::Box,
     string::{String, ToString},
     vec,
     vec::Vec,
 };
+use core::cell::Ref;
 use pliron::derive::{op_interface_impl, pliron_op};
 use thiserror::Error;
 
@@ -316,21 +318,67 @@ impl Verify for FuncOp {
     format = "`<` $builtin_constant_value `>` ` : ` type($0)",
     interfaces = [NOpdsInterface<0>, OneResultInterface],
     attributes = (builtin_constant_value),
-    verifier = "succ"
 )]
 pub struct ConstantOp;
 
+#[derive(Error, Debug)]
+pub enum ConstantOpVerifyErr {
+    #[error("ConstantOp does not have a value attribute")]
+    MissingValue,
+    #[error("ConstantOp's value attribute {0} does not implement TypedAttrInterface")]
+    ValueNotTyped(String),
+    #[error("The value attribute is of type {0}, but the constant is of type {1}")]
+    ResultTypeMismatch(String, String),
+}
+
+impl Verify for ConstantOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        let result_type = self.result_type(ctx);
+
+        let Some(value) = self.get_attr_builtin_constant_value(ctx) else {
+            return verify_err!(loc, ConstantOpVerifyErr::MissingValue);
+        };
+        let value: &dyn Attribute = &**value;
+        let Some(value) = attr_cast::<dyn TypedAttrInterface>(value) else {
+            return verify_err!(
+                loc,
+                ConstantOpVerifyErr::ValueNotTyped(value.get_attr_id().to_string())
+            );
+        };
+
+        if value.get_type(ctx) != result_type {
+            return verify_err!(
+                loc,
+                ConstantOpVerifyErr::ResultTypeMismatch(
+                    value.get_type(ctx).disp(ctx).to_string(),
+                    result_type.disp(ctx).to_string()
+                )
+            );
+        }
+        Ok(())
+    }
+}
+
 impl ConstantOp {
     /// Get the constant value that this Op defines.
-    pub fn get_value(&self, ctx: &Context) -> AttrObj {
-        self.get_attr_builtin_constant_value(ctx).unwrap().clone()
+    /// The [Ref] is a borrow of the containing [Operation] object.
+    ///
+    /// Use [pliron::dyn_clone::clone_box] to clone the value if required.
+    pub fn get_value<'a>(&self, ctx: &'a Context) -> Ref<'a, dyn TypedAttrInterface> {
+        Ref::map(
+            self.get_attr_builtin_constant_value(ctx)
+                .expect("ConstantOp must have a value attribute"),
+            |attr| {
+                attr_cast::<dyn TypedAttrInterface>(&**attr)
+                    .expect("ConstantOp's value attribute must impl TypedAttrInterface")
+            },
+        )
     }
 
     /// Create a new [ConstantOp].
-    pub fn new(ctx: &mut Context, value: AttrObj) -> Self {
-        let result_type = attr_cast::<dyn TypedAttrInterface>(&*value)
-            .expect("ConstantOp const value must provide TypedAttrInterface")
-            .get_type(ctx);
+    pub fn new(ctx: &mut Context, value: Box<dyn TypedAttrInterface>) -> Self {
+        let result_type = value.get_type(ctx);
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),

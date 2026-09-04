@@ -88,7 +88,7 @@ impl ToLLVMDialect for BuiltinConstantOp {
         rewriter: &mut DialectConversionRewriter,
         _operands_info: &OperandsInfo,
     ) -> Result<()> {
-        let const_value = self.get_value(ctx);
+        let const_value = pliron::dyn_clone::clone_box(&*self.get_value(ctx));
 
         // Create the LLVM constant operation with the same value
         let llvm_const = LLVMConstantOp::new(ctx, const_value);
