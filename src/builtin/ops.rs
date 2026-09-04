@@ -20,7 +20,7 @@ use crate::{
             ATTR_KEY_SYM_NAME, NResultsInterface, NoTerminatorInterface, RegionKind,
             RegionKindInterface,
         },
-        ops::func_op_attr_names::ATTR_KEY_FUNC_TYPE,
+        ops::func_op_attr_names::ATTR_KEY_BUILTIN_FUNC_TYPE,
         type_interfaces::FunctionTypeInterface,
     },
     combine::{Parser, optional, token},
@@ -176,7 +176,7 @@ impl ModuleOp {
         NOpdsInterface<0>,
         NResultsInterface<0>
     ],
-    attributes = (func_type : TypeAttr),
+    attributes = (builtin_func_type : TypeAttr),
 )]
 pub struct FuncOp;
 
@@ -195,14 +195,14 @@ impl FuncOp {
 
         let opop = FuncOp { op };
         opop.set_symbol_name(ctx, name);
-        opop.set_attr_func_type(ctx, ty_attr);
+        opop.set_attr_builtin_func_type(ctx, ty_attr);
 
         opop
     }
 
     /// Get the function signature (type).
     pub fn get_type(&self, ctx: &Context) -> TypeHandle {
-        attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_func_type(ctx).unwrap())
+        attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_builtin_func_type(ctx).unwrap())
             .unwrap()
             .get_type(ctx)
     }
@@ -232,7 +232,7 @@ impl Printable for FuncOp {
             self.op.deref(ctx).attributes.clone_skip_outlined();
         attributes_to_print_separately
             .0
-            .retain(|key, _| key != &*ATTR_KEY_FUNC_TYPE && key != &*ATTR_KEY_SYM_NAME);
+            .retain(|key, _| key != &*ATTR_KEY_BUILTIN_FUNC_TYPE && key != &*ATTR_KEY_SYM_NAME);
         if !attributes_to_print_separately.0.is_empty() {
             indented_block!(state, {
                 write!(f, "{}", indented_nl(state))?;
@@ -283,7 +283,7 @@ impl Parsable for FuncOp {
                 let ty_attr = TypeAttr::new(fty);
                 let opop = FuncOp { op };
                 opop.set_symbol_name(ctx, fname);
-                opop.set_attr_func_type(ctx, ty_attr);
+                opop.set_attr_builtin_func_type(ctx, ty_attr);
                 OpObj::new(opop)
             })
             .into()

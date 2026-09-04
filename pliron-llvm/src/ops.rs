@@ -74,7 +74,7 @@ use crate::{
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
-        global_op_attr_names::{ATTR_KEY_GLOBAL_INITIALIZER, ATTR_KEY_LLVM_GLOBAL_TYPE},
+        global_op_attr_names::{ATTR_KEY_LLVM_GLOBAL_INITIALIZER, ATTR_KEY_LLVM_GLOBAL_TYPE},
     },
     types::{ArrayType, FuncType, StructLayout, StructType, VectorType},
 };
@@ -356,14 +356,14 @@ pub enum ICmpOpVerifyErr {
 /// | `res` | 1-bit signless integer |
 #[pliron_op(
     name = "llvm.icmp",
-    format = "$0 ` <` attr($icmp_predicate, $ICmpPredicateAttr) `> ` $1 ` : ` type($0)",
+    format = "$0 ` <` attr($llvm_icmp_predicate, $ICmpPredicateAttr) `> ` $1 ` : ` type($0)",
     interfaces = [
         SameOperandsType,
         OneResultInterface,
         NOpdsInterface<2>,
         ScalarOrVectorRes<IntegerType, 0>,
     ],
-    attributes = (icmp_predicate: ICmpPredicateAttr)
+    attributes = (llvm_icmp_predicate: ICmpPredicateAttr)
 )]
 pub struct ICmpOp;
 
@@ -394,13 +394,13 @@ impl ICmpOp {
             0,
         );
         let op = ICmpOp { op };
-        op.set_attr_icmp_predicate(ctx, pred);
+        op.set_attr_llvm_icmp_predicate(ctx, pred);
         op
     }
 
     /// Get the predicate
     pub fn predicate(&self, ctx: &Context) -> ICmpPredicateAttr {
-        self.get_attr_icmp_predicate(ctx)
+        self.get_attr_llvm_icmp_predicate(ctx)
             .expect("ICmpOp missing or incorrect predicate attribute type")
             .clone()
     }
@@ -410,7 +410,7 @@ impl Verify for ICmpOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
 
-        if self.get_attr_icmp_predicate(ctx).is_none() {
+        if self.get_attr_llvm_icmp_predicate(ctx).is_none() {
             verify_err!(loc.clone(), ICmpOpVerifyErr::PredAttrErr)?
         }
 
@@ -460,7 +460,7 @@ pub enum AllocaOpVerifyErr {
 /// | `res` | [PointerType] |
 #[pliron_op(
     name = "llvm.alloca",
-    format = "`[` attr($alloca_element_type, $TypeAttr) ` x ` $0 `]` ` ` \
+    format = "`[` attr($llvm_alloca_element_type, $TypeAttr) ` x ` $0 `]` ` ` \
     opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) \
     ` : ` type($0)",
     interfaces = [
@@ -470,14 +470,14 @@ pub enum AllocaOpVerifyErr {
     ],
     operands = (array_size: IntegerType),
     results = (_: PointerType),
-    attributes = (alloca_element_type: TypeAttr)
+    attributes = (llvm_alloca_element_type: TypeAttr)
 )]
 pub struct AllocaOp;
 impl Verify for AllocaOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         // Ensure correctness of element type.
-        if self.get_attr_alloca_element_type(ctx).is_none() {
+        if self.get_attr_llvm_alloca_element_type(ctx).is_none() {
             verify_err!(loc, AllocaOpVerifyErr::ElemTypeAttr)?
         }
         Ok(())
@@ -487,7 +487,7 @@ impl Verify for AllocaOp {
 #[op_interface_impl]
 impl PointerTypeResult for AllocaOp {
     fn result_pointee_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_attr_alloca_element_type(ctx)
+        self.get_attr_llvm_alloca_element_type(ctx)
             .expect("AllocaOp missing or incorrect type for elem_type attribute")
             .get_type(ctx)
     }
@@ -507,7 +507,7 @@ impl AllocaOp {
             0,
         );
         let op = AllocaOp { op };
-        op.set_attr_alloca_element_type(ctx, TypeAttr::new(elem_type));
+        op.set_attr_llvm_alloca_element_type(ctx, TypeAttr::new(elem_type));
         op
     }
 }
@@ -900,7 +900,7 @@ impl BranchOpInterface for CondBrOp {
     name = "llvm.switch",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
     operands = (condition, default_dest_opds, case_dest_opds),
-    attributes = (switch_case_values: CaseValuesAttr)
+    attributes = (llvm_switch_case_values: CaseValuesAttr)
 )]
 pub struct SwitchOp;
 
@@ -1104,7 +1104,7 @@ impl SwitchOp {
         // Set the operand segment sizes attribute.
         op.set_operand_segment_sizes(ctx, segment_sizes);
         // Set the case values
-        op.set_attr_switch_case_values(ctx, CaseValuesAttr(case_values));
+        op.set_attr_llvm_switch_case_values(ctx, CaseValuesAttr(case_values));
         op
     }
 
@@ -1112,7 +1112,7 @@ impl SwitchOp {
     /// (The default case cannot be / isn't included here).
     pub fn cases(&self, ctx: &Context) -> Vec<SwitchCase> {
         let case_values = &*self
-            .get_attr_switch_case_values(ctx)
+            .get_attr_llvm_switch_case_values(ctx)
             .expect("SwitchOp missing or incorrect case values attribute");
 
         let op = self.get_operation().deref(ctx);
@@ -1185,7 +1185,7 @@ impl Verify for SwitchOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
 
-        let Some(case_values) = self.get_attr_switch_case_values(ctx) else {
+        let Some(case_values) = self.get_attr_llvm_switch_case_values(ctx) else {
             verify_err!(loc.clone(), SwitchOpVerifyErr::CaseValuesAttrErr)?
         };
 
@@ -1480,11 +1480,15 @@ pub enum GetElementPtrOpErr {
 /// | `res` | LLVM pointer type |
 #[pliron_op(
     name = "llvm.gep",
-    format = "`<` attr($gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($gep_indices, $GepIndicesAttr) ` : ` type($0)",
+    format = "`<` attr($llvm_gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($llvm_gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($llvm_gep_indices, $GepIndicesAttr) ` : ` type($0)",
     interfaces = [OneResultInterface],
     operands = (src_ptr, dynamic_indices),
     results = (_: PointerType),
-    attributes = (gep_src_elem_type: TypeAttr, gep_indices: GepIndicesAttr, gep_no_wrap_flags: GepNoWrapFlagsAttr)
+    attributes = (
+        llvm_gep_src_elem_type: TypeAttr,
+        llvm_gep_indices: GepIndicesAttr,
+        llvm_gep_no_wrap_flags: GepNoWrapFlagsAttr
+    )
 )]
 pub struct GetElementPtrOp;
 
@@ -1500,7 +1504,7 @@ impl Verify for GetElementPtrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         // Ensure that we have the indices as an attribute.
-        if self.get_attr_gep_indices(ctx).is_none() {
+        if self.get_attr_llvm_gep_indices(ctx).is_none() {
             verify_err!(loc, GetElementPtrOpErr::IndicesAttrErr)?
         }
 
@@ -1572,23 +1576,23 @@ impl GetElementPtrOp {
         let src_elem_type = TypeAttr::new(src_elem_type);
         let op = GetElementPtrOp { op };
 
-        op.set_attr_gep_indices(ctx, GepIndicesAttr(attr));
-        op.set_attr_gep_src_elem_type(ctx, src_elem_type);
+        op.set_attr_llvm_gep_indices(ctx, GepIndicesAttr(attr));
+        op.set_attr_llvm_gep_src_elem_type(ctx, src_elem_type);
         if !no_wrap_flags.is_empty() {
-            op.set_attr_gep_no_wrap_flags(ctx, no_wrap_flags.into());
+            op.set_attr_llvm_gep_no_wrap_flags(ctx, no_wrap_flags.into());
         }
         op
     }
 
     /// Get the GEP no-wrap flags.
     pub fn no_wrap_flags(&self, ctx: &Context) -> GepNoWrapFlags {
-        self.get_attr_gep_no_wrap_flags(ctx)
+        self.get_attr_llvm_gep_no_wrap_flags(ctx)
             .map_or(GepNoWrapFlags::empty(), |attr| attr.0.normalized())
     }
 
     /// Get the source pointer's element type.
     pub fn src_elem_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_attr_gep_src_elem_type(ctx)
+        self.get_attr_llvm_gep_src_elem_type(ctx)
             .expect("GetElementPtrOp missing or has incorrect src_elem_type attribute type")
             .get_type(ctx)
     }
@@ -1596,7 +1600,7 @@ impl GetElementPtrOp {
     /// Get the indices of this GEP.
     pub fn indices(&self, ctx: &Context) -> Vec<GepIndex> {
         let op = &*self.op.deref(ctx);
-        self.get_attr_gep_indices(ctx)
+        self.get_attr_llvm_gep_indices(ctx)
             .unwrap()
             .0
             .iter()
@@ -2084,12 +2088,12 @@ impl AtomicStoreOp {
 /// | `res` | the asm result (a void type when there is none) |
 #[pliron_op(
     name = "llvm.inline_asm",
-    format = "attr($inline_asm_template, $StringAttr) `, ` attr($inline_asm_constraints, $StringAttr) ` convergent = ` attr($inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` convergent = ` attr($llvm_inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
     interfaces = [OneResultInterface],
     attributes = (
-        inline_asm_template: StringAttr,
-        inline_asm_constraints: StringAttr,
-        inline_asm_convergent: BoolAttr
+        llvm_inline_asm_template: StringAttr,
+        llvm_inline_asm_constraints: StringAttr,
+        llvm_inline_asm_convergent: BoolAttr
     ),
     verifier = "succ"
 )]
@@ -2115,9 +2119,9 @@ impl InlineAsmOp {
             0,
         );
         let op = InlineAsmOp { op };
-        op.set_attr_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
-        op.set_attr_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
-        op.set_attr_inline_asm_convergent(ctx, BoolAttr::new(convergent));
+        op.set_attr_llvm_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
+        op.set_attr_llvm_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
+        op.set_attr_llvm_inline_asm_convergent(ctx, BoolAttr::new(convergent));
         op
     }
 }
@@ -2668,7 +2672,7 @@ pub enum GlobalOpVerifyErr {
     ],
     attributes = (
         llvm_global_type: TypeAttr,
-        global_initializer,
+        llvm_global_initializer,
         llvm_global_linkage: LinkageAttr,
         llvm_global_addrspace: AddressSpaceAttr,
         llvm_global_constant: BoolAttr
@@ -2723,7 +2727,8 @@ impl pliron::r#type::Typed for GlobalOp {
 impl GlobalOp {
     /// Get the initializer value of this global variable.
     pub fn get_initializer_value(&self, ctx: &Context) -> Option<AttrObj> {
-        self.get_attr_global_initializer(ctx).map(|v| v.clone())
+        self.get_attr_llvm_global_initializer(ctx)
+            .map(|v| v.clone())
     }
 
     /// Get the initializer region's block of this global variable.
@@ -2745,7 +2750,7 @@ impl GlobalOp {
             self.get_initializer_region(ctx).is_none(),
             "Attempt to add an initializer value when there already is an initializer region"
         );
-        self.set_attr_global_initializer(ctx, value);
+        self.set_attr_llvm_global_initializer(ctx, value);
     }
 
     /// Add an initializer region (with an entry block) for this global variable.
@@ -2841,7 +2846,7 @@ impl Printable for GlobalOp {
         attributes_to_print_separately.0.retain(|key, _| {
             key != &*ATTR_KEY_LLVM_GLOBAL_TYPE
                 && key != &*ATTR_KEY_SYM_NAME
-                && key != &*ATTR_KEY_GLOBAL_INITIALIZER
+                && key != &*ATTR_KEY_LLVM_GLOBAL_INITIALIZER
         });
         indented_block!(state, {
             write!(
@@ -2932,22 +2937,22 @@ impl Parsable for GlobalOp {
 ///
 #[pliron_op(
     name = "llvm.addressof",
-    format = "`@` attr($global_name, $IdentifierAttr) ` : ` type($0)",
+    format = "`@` attr($llvm_global_name, $IdentifierAttr) ` : ` type($0)",
     interfaces = [OneResultInterface, NOpdsInterface<0>],
     results = (_: PointerType),
-    attributes = (global_name: IdentifierAttr),
+    attributes = (llvm_global_name: IdentifierAttr),
 )]
 pub struct AddressOfOp;
 
 #[derive(Error, Debug)]
 enum AddressOfOpVerifyErr {
-    #[error("AddressOfOp is missing its `global_name` attribute")]
+    #[error("AddressOfOp is missing its `llvm_global_name` attribute")]
     MissingGlobalName,
 }
 
 impl Verify for AddressOfOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        if self.get_attr_global_name(ctx).is_none() {
+        if self.get_attr_llvm_global_name(ctx).is_none() {
             verify_err!(self.loc(ctx), AddressOfOpVerifyErr::MissingGlobalName)?
         }
         Ok(())
@@ -2967,14 +2972,14 @@ impl AddressOfOp {
             0,
         );
         let op = AddressOfOp { op };
-        op.set_attr_global_name(ctx, IdentifierAttr::new(global_name));
+        op.set_attr_llvm_global_name(ctx, IdentifierAttr::new(global_name));
         op
     }
 
     /// Get the global name that this refers to.
     pub fn get_global_name(&self, ctx: &Context) -> Identifier {
-        self.get_attr_global_name(ctx)
-            .expect("AddressOfOp missing or has incorrect global_name attribute type")
+        self.get_attr_llvm_global_name(ctx)
+            .expect("AddressOfOp missing or has incorrect llvm_global_name attribute type")
             .clone()
             .into()
     }
@@ -3682,9 +3687,9 @@ impl Verify for UIToFPOp {
 /// | `res` | LLVM aggregate type |
 #[pliron_op(
     name = "llvm.insert_value",
-    format = "$0 attr($insert_value_indices, $InsertExtractValueIndicesAttr) `, ` $1 ` : ` type($0)",
+    format = "$0 attr($llvm_insert_value_indices, $InsertExtractValueIndicesAttr) `, ` $1 ` : ` type($0)",
     interfaces = [OneResultInterface, NOpdsInterface<2>],
-    attributes = (insert_value_indices: InsertExtractValueIndicesAttr)
+    attributes = (llvm_insert_value_indices: InsertExtractValueIndicesAttr)
 )]
 pub struct InsertValueOp;
 
@@ -3706,13 +3711,16 @@ impl InsertValueOp {
             0,
         );
         let op = InsertValueOp { op };
-        op.set_attr_insert_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
+        op.set_attr_llvm_insert_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
         op
     }
 
     /// Get the indices for inserting value into aggregate.
     pub fn indices(&self, ctx: &Context) -> Vec<u32> {
-        self.get_attr_insert_value_indices(ctx).unwrap().clone().0
+        self.get_attr_llvm_insert_value_indices(ctx)
+            .unwrap()
+            .clone()
+            .0
     }
 }
 
@@ -3720,7 +3728,7 @@ impl Verify for InsertValueOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         // Ensure that we have the indices as an attribute.
-        if self.get_attr_insert_value_indices(ctx).is_none() {
+        if self.get_attr_llvm_insert_value_indices(ctx).is_none() {
             verify_err!(loc.clone(), InsertExtractValueErr::IndicesAttrErr)?
         }
 
@@ -3762,9 +3770,9 @@ impl Verify for InsertValueOp {
 /// | `res` | LLVM type |
 #[pliron_op(
     name = "llvm.extract_value",
-    format = "$0 attr($extract_value_indices, $InsertExtractValueIndicesAttr) ` : ` type($0)",
+    format = "$0 attr($llvm_extract_value_indices, $InsertExtractValueIndicesAttr) ` : ` type($0)",
     interfaces = [OneResultInterface, OneOpdInterface],
-    attributes = (extract_value_indices: InsertExtractValueIndicesAttr)
+    attributes = (llvm_extract_value_indices: InsertExtractValueIndicesAttr)
 )]
 pub struct ExtractValueOp;
 
@@ -3772,7 +3780,7 @@ impl Verify for ExtractValueOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         // Ensure that we have the indices as an attribute.
-        if self.get_attr_extract_value_indices(ctx).is_none() {
+        if self.get_attr_llvm_extract_value_indices(ctx).is_none() {
             verify_err!(loc.clone(), InsertExtractValueErr::IndicesAttrErr)?
         }
 
@@ -3817,13 +3825,16 @@ impl ExtractValueOp {
             0,
         );
         let op = ExtractValueOp { op };
-        op.set_attr_extract_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
+        op.set_attr_llvm_extract_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
         Ok(op)
     }
 
     /// Get the indices for extracting value from aggregate.
     pub fn indices(&self, ctx: &Context) -> Vec<u32> {
-        self.get_attr_extract_value_indices(ctx).unwrap().clone().0
+        self.get_attr_llvm_extract_value_indices(ctx)
+            .unwrap()
+            .clone()
+            .0
     }
 
     /// Returns the type of the value at the given indices in the given aggregate type.
@@ -4365,7 +4376,7 @@ new_float_bin_op! {
 /// | `res` | i1 or vector of i1 |
 #[pliron_op(
     name = "llvm.fcmp",
-    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` <` attr($fcmp_predicate, $FCmpPredicateAttr) `> ` $1 ` : ` type($0)",
+    format = "attr($llvm_fast_math_flags, $FastmathFlagsAttr) ` ` $0 ` <` attr($llvm_fcmp_predicate, $FCmpPredicateAttr) `> ` $1 ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         SameOperandsType,
@@ -4374,7 +4385,7 @@ new_float_bin_op! {
         ScalarOrVectorRes<IntegerType, 0>,
         ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0>,
     ],
-    attributes = (fcmp_predicate: FCmpPredicateAttr)
+    attributes = (llvm_fcmp_predicate: FCmpPredicateAttr)
 )]
 pub struct FCmpOp;
 
@@ -4397,13 +4408,13 @@ impl FCmpOp {
             0,
         );
         let op = FCmpOp { op };
-        op.set_attr_fcmp_predicate(ctx, pred);
+        op.set_attr_llvm_fcmp_predicate(ctx, pred);
         op
     }
 
     /// Get the predicate
     pub fn predicate(&self, ctx: &Context) -> FCmpPredicateAttr {
-        self.get_attr_fcmp_predicate(ctx)
+        self.get_attr_llvm_fcmp_predicate(ctx)
             .expect("FCmpOp missing or incorrect predicate attribute type")
             .clone()
     }
@@ -4413,7 +4424,7 @@ impl Verify for FCmpOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
 
-        if self.get_attr_fcmp_predicate(ctx).is_none() {
+        if self.get_attr_llvm_fcmp_predicate(ctx).is_none() {
             verify_err!(loc.clone(), FCmpOpVerifyErr::PredAttrErr)?
         }
 
