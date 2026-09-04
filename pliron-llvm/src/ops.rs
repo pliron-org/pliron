@@ -2670,7 +2670,8 @@ pub enum GlobalOpVerifyErr {
         llvm_global_type: TypeAttr,
         global_initializer,
         llvm_global_linkage: LinkageAttr,
-        llvm_global_addrspace: AddressSpaceAttr
+        llvm_global_addrspace: AddressSpaceAttr,
+        llvm_global_constant: BoolAttr
     )
 )]
 pub struct GlobalOp;
@@ -2694,6 +2695,17 @@ impl GlobalOp {
     /// Set the address space of this global.
     pub fn set_address_space(&self, ctx: &mut Context, addr_space: u32) {
         self.set_attr_llvm_global_addrspace(ctx, AddressSpaceAttr(addr_space));
+    }
+
+    /// Whether this global is constant.
+    pub fn is_constant(&self, ctx: &Context) -> bool {
+        self.get_attr_llvm_global_constant(ctx)
+            .is_some_and(|attr| attr.clone().into())
+    }
+
+    /// Set whether this global is constant.
+    pub fn set_constant(&self, ctx: &mut Context, is_constant: bool) {
+        self.set_attr_llvm_global_constant(ctx, is_constant.into());
     }
 }
 
