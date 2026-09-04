@@ -70,7 +70,7 @@ use crate::{
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
         IntBinArithOpWithOverflowFlag, IsDeclaration, LlvmSymbolName, NNegFlag, PointerTypeResult,
         ScalarOrVectorOpd, ScalarOrVectorOpdImpls, ScalarOrVectorRes, ScalarOrVectorResImpls,
-        SyncScopeInterface,
+        SyncScopeInterface, VolatilityOpInterface,
     },
     ops::{
         func_op_attr_names::ATTR_KEY_LLVM_FUNC_TYPE,
@@ -1661,11 +1661,12 @@ pub enum LoadOpVerifyErr {
 /// | `res` | sized LLVM type |
 #[pliron_op(
     name = "llvm.load",
-    format = "$0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
+    format = "$0 ` ` opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `]`)) opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
         AlignableOpInterface,
+        VolatilityOpInterface,
     ],
     operands = (address: PointerType),
     verifier = "succ"
@@ -1703,10 +1704,11 @@ pub enum StoreOpVerifyErr {
 /// | `value` | Sized type |
 #[pliron_op(
     name = "llvm.store",
-    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
+    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `]`)) opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,
+        VolatilityOpInterface,
         NOpdsInterface<2>
     ],
     operands = (value, address: PointerType),

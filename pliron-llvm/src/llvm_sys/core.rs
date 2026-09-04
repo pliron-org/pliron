@@ -69,7 +69,7 @@ use llvm_sys::{
         LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStructElementTypes, LLVMGetStructName,
         LLVMGetSwitchCaseValue, LLVMGetSyncScopeID, LLVMGetTarget, LLVMGetTypeKind, LLVMGetUndef,
         LLVMGetUndefMaskElem, LLVMGetValueKind, LLVMGetValueName2, LLVMGetVectorSize,
-        LLVMGlobalCopyAllMetadata, LLVMGlobalGetValueType, LLVMGlobalSetMetadata,
+        LLVMGetVolatile, LLVMGlobalCopyAllMetadata, LLVMGlobalGetValueType, LLVMGlobalSetMetadata,
         LLVMHalfTypeInContext, LLVMInstructionEraseFromParent,
         LLVMInstructionGetAllMetadataOtherThanDebugLoc, LLVMIntTypeInContext,
         LLVMIntrinsicIsOverloaded, LLVMIsAFunction, LLVMIsATerminatorInst, LLVMIsAUser,
@@ -80,9 +80,9 @@ use llvm_sys::{
         LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
         LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetAtomicSyncScopeID,
         LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetInitializer, LLVMSetLinkage,
-        LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMStructCreateNamed,
-        LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf,
-        LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
+        LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget, LLVMSetVolatile,
+        LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext, LLVMTypeIsSized,
+        LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueAsMetadata, LLVMValueIsBasicBlock,
         LLVMValueMetadataEntriesGetKind, LLVMValueMetadataEntriesGetMetadata, LLVMVectorType,
         LLVMVoidTypeInContext,
     },
@@ -1254,6 +1254,18 @@ pub fn llvm_set_alignment(val: LLVMValue, align: u32) {
             || llvm_is_a::store_inst(val)
     );
     unsafe { LLVMSetAlignment(val.into(), align) }
+}
+
+/// LLVMGetVolatile
+pub fn llvm_get_volatile(val: LLVMValue) -> bool {
+    assert!(llvm_is_a::load_inst(val) || llvm_is_a::store_inst(val));
+    unsafe { LLVMGetVolatile(val.into()).to_bool() }
+}
+
+/// LLVMSetVolatile
+pub fn llvm_set_volatile(val: LLVMValue, is_volatile: bool) {
+    assert!(llvm_is_a::load_inst(val) || llvm_is_a::store_inst(val));
+    unsafe { LLVMSetVolatile(val.into(), is_volatile.into()) }
 }
 
 /// LLVMGetNumMaskElements

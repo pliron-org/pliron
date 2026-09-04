@@ -539,6 +539,47 @@ pub trait AlignableOpInterface {
     }
 }
 
+dict_key!(
+    /// Attribute key for volatile memory operations.
+    ATTR_KEY_LLVM_VOLATILE,
+    "llvm_volatile"
+);
+
+/// Ops that can be marked volatile.
+#[op_interface]
+pub trait VolatilityOpInterface {
+    /// Return whether this [Op] is volatile.
+    fn is_volatile(&self, ctx: &Context) -> bool
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref(ctx)
+            .attributes
+            .get::<BoolAttr>(&ATTR_KEY_LLVM_VOLATILE)
+            .map(|attr| attr.clone().into())
+            .unwrap_or(false)
+    }
+
+    /// Set whether this [Op] is volatile.
+    fn set_volatile(&self, ctx: &Context, is_volatile: bool)
+    where
+        Self: Sized,
+    {
+        self.get_operation()
+            .deref_mut(ctx)
+            .attributes
+            .set(ATTR_KEY_LLVM_VOLATILE.clone(), BoolAttr::new(is_volatile));
+    }
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum ScalarOrVectorErr {
     #[error("{0} is not {1} or a vector of it")]
