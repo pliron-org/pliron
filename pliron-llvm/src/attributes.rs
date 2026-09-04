@@ -848,7 +848,7 @@ mod tests {
             Parse error at line: 1, column: 1
             Error parsing GEP no-wrap flags: unrecognized named flag `INVALIDFLAG`
         "#]]
-            .assert_eq(&err.to_string());
+        .assert_eq(&err.to_string());
     }
 
     fn assert_attr_roundtrips<A>(ctx: &mut Context, attr: A)
