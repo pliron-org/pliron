@@ -943,7 +943,7 @@ impl BranchOpFoldInterface for SwitchOp {
             .value();
         // Successor 0 is the default destination; successors 1..N correspond to case_values[0..N-1].
         let case_values = self
-            .get_attr_switch_case_values(ctx)
+            .get_attr_llvm_switch_case_values(ctx)
             .expect("SwitchOp missing case values attribute");
         let taken = case_values
             .0
@@ -969,7 +969,7 @@ impl BranchOpFoldInterface for SwitchOp {
             .value();
         let successor_ind = {
             let case_values = self
-                .get_attr_switch_case_values(ctx)
+                .get_attr_llvm_switch_case_values(ctx)
                 .expect("SwitchOp missing case values attribute");
             case_values
                 .0

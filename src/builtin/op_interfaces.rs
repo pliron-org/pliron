@@ -160,7 +160,7 @@ pub trait OneSuccInterface: NSuccsInterface<1> {
 
 dict_key!(
     /// Key for the `operand_segment_sizes` attribute.
-    ATTR_KEY_OPERAND_SEGMENT_SIZES, "operand_segment_sizes"
+    ATTR_KEY_OPERAND_SEGMENT_SIZES, "builtin_operand_segment_sizes"
 );
 
 #[derive(Error, Debug)]
@@ -180,7 +180,7 @@ pub enum OperandSegmentInterfaceVerifyErr {
 /// ### Attribute(s):
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr](crate::builtin::attributes::OperandSegmentSizesAttr) |
+/// | builtin_operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr](crate::builtin::attributes::OperandSegmentSizesAttr) |
 #[op_interface]
 pub trait OperandSegmentInterface {
     /// Given a list of segmented operands, compute the segment sizes and flatten the operands
@@ -534,7 +534,7 @@ pub trait NoTerminatorInterface: SingleBlockRegionInterface {
 
 dict_key!(
     /// Key for symbol name attribute when the operation defines a symbol.
-    ATTR_KEY_SYM_NAME, "sym_name"
+    ATTR_KEY_SYM_NAME, "builtin_sym_name"
 );
 
 #[derive(Error, Debug)]
@@ -546,7 +546,7 @@ pub struct SymbolOpInterfaceErr;
 /// ### Attribute(s):
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | sym_name | [ATTR_KEY_SYM_NAME] | [IdentifierAttr](crate::builtin::attributes::IdentifierAttr) |
+/// | builtin_sym_name | [ATTR_KEY_SYM_NAME] | [IdentifierAttr](crate::builtin::attributes::IdentifierAttr) |
 #[op_interface]
 pub trait SymbolOpInterface {
     /// Get the name of the symbol defined by this operation.
@@ -1191,7 +1191,7 @@ pub enum CallOpInterfaceErr {
     CalleeTypeAttrIncorrectTypeErr,
 }
 
-dict_key!(ATTR_KEY_CALLEE_TYPE, "callee_type");
+dict_key!(ATTR_KEY_CALLEE_TYPE, "builtin_callee_type");
 
 /// A call-like op: Transfers control from one function to another.
 /// See MLIR's [CallOpInterface](https://mlir.llvm.org/docs/Interfaces/#callinterfaces).
@@ -1200,7 +1200,7 @@ dict_key!(ATTR_KEY_CALLEE_TYPE, "callee_type");
 ///
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | callee_type | [ATTR_KEY_CALLEE_TYPE] | [TypeAttr](crate::builtin::attributes::TypeAttr) |
+/// | builtin_callee_type | [ATTR_KEY_CALLEE_TYPE] | [TypeAttr](crate::builtin::attributes::TypeAttr) |
 #[op_interface]
 pub trait CallOpInterface {
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>

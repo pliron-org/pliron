@@ -1058,19 +1058,19 @@ impl ToLLVMValue for InlineAsmOp {
         let fn_ty = llvm_function_type(result_llvm_ty, &arg_types, false);
         let asm = String::from(
             (*self
-                .get_attr_inline_asm_template(ctx)
+                .get_attr_llvm_inline_asm_template(ctx)
                 .expect("inline asm missing template"))
             .clone(),
         );
         let constraints = String::from(
             (*self
-                .get_attr_inline_asm_constraints(ctx)
+                .get_attr_llvm_inline_asm_constraints(ctx)
                 .expect("inline asm missing constraints"))
             .clone(),
         );
         // `has_side_effects` is set unconditionally: this op does not model a
         // side-effects flag, and side-effecting asm is the safe default.
-        // NOTE: the op's `inline_asm_convergent` attribute is not applied here.
+        // NOTE: the op's `llvm_inline_asm_convergent` attribute is not applied here.
         // `convergent` is an LLVM call-site attribute (not part of the inline-asm
         // value), so converting to LLVM IR drops the convergent flag.
         let asm_val = llvm_get_inline_asm(
