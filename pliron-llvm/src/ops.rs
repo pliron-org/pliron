@@ -1661,7 +1661,7 @@ pub enum LoadOpVerifyErr {
 /// | `res` | sized LLVM type |
 #[pliron_op(
     name = "llvm.load",
-    format = "opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `] `)) $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
+    format = "$0 ` ` opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `]`)) opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`)) ` : ` type($0)",
     interfaces = [
         OneResultInterface,
         OneOpdInterface,
@@ -1704,7 +1704,7 @@ pub enum StoreOpVerifyErr {
 /// | `value` | Sized type |
 #[pliron_op(
     name = "llvm.store",
-    format = "opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `] `)) `*` $1 ` <- ` $0 ` ` opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
+    format = "`*` $1 ` <- ` $0 ` ` opt_attr($llvm_volatile, $BoolAttr, label($volatile), delimiters(`[`, `]`)) opt_attr($llvm_alignment, $AlignmentAttr, label($align), delimiters(`[`, `]`))",
     interfaces = [
         NResultsInterface<0>,
         AlignableOpInterface,

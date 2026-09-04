@@ -1517,7 +1517,8 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             if d.name == "opt_attr" {
                 Ok(quote! {
                     let #attr_name_ident = ::pliron::combine::parser::choice::optional
-                        (#delimited_labelled_parser).parse_stream(state_stream).into_result()?.0;
+                        (::pliron::combine::attempt(#delimited_labelled_parser))
+                        .parse_stream(state_stream).into_result()?.0;
                 })
             } else {
                 Ok(quote! {

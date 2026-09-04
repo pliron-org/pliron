@@ -19,7 +19,6 @@ use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::LLVMContext,
     ops::{ConstantOpVerifyErr, SelectOpVerifyErr},
-    to_llvm_ir,
 };
 mod common;
 
@@ -728,8 +727,8 @@ fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i32):
-                v_v2 = llvm.load [volatile : true] v0 [align : 4] : builtin.integer i32 !0;
-                llvm.store [volatile : true] *v0 <- v1 [align : 4];
+                v_v2 = llvm.load v0 [volatile : true][align : 4] : builtin.integer i32 !0;
+                llvm.store *v0 <- v1 [volatile : true][align : 4];
                 plain_v3 = llvm.load v0 [align : 4] : builtin.integer i32 !1;
                 llvm.store *v0 <- plain_v3 [align : 4];
                 llvm.return v_v2
@@ -746,7 +745,7 @@ fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
     let reparsed_module = common::parse_op_verify::<ModuleOp>(reparsed_ctx, &printed)?;
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = to_llvm_ir::convert_module(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
+    let out_mod = common::to_llvm_ir_verify(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
 
     expect![[r#"
         ; ModuleID = 'volatile_load_store'
