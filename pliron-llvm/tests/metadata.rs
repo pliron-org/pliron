@@ -116,10 +116,10 @@ fn metadata_from_llvm_ir() -> Result<()> {
                 llvm.br ^loop_block3v1(v3)
 
               ^loop_block3v1(v4: builtin.integer i64):
-                sp_v5 = llvm.gep <builtin.integer i32> (v1, v4)[OperandIdx(1)] : llvm.ptr (0) !0;
+                sp_v5 = llvm.gep <builtin.integer i32> (v1, v4)<INBOUNDS>[OperandIdx(1)] : llvm.ptr (0) !0;
                 v_v6 = llvm.load sp_v5 [align : 4] : builtin.integer i32 !1;
                 inc_v8 = llvm.add v_v6, v7 <{nsw=true,nuw=false}>: builtin.integer i32 !2;
-                dp_v9 = llvm.gep <builtin.integer i32> (v0, v4)[OperandIdx(1)] : llvm.ptr (0) !3;
+                dp_v9 = llvm.gep <builtin.integer i32> (v0, v4)<INBOUNDS>[OperandIdx(1)] : llvm.ptr (0) !3;
                 llvm.store *dp_v9 <- inc_v8 [align : 4] !4;
                 i_next_v11 = llvm.add v4, v10 <{nsw=true,nuw=true}>: builtin.integer i64 !5;
                 done_v13 = llvm.icmp i_next_v11 <EQ> v12 : builtin.integer i1 !6;
@@ -226,10 +226,10 @@ fn metadata_to_llvm_ir() -> Result<()> {
 
         loop_block3v1:                                    ; preds = %loop_block3v1, %entry_block2v1
           %v4 = phi i64 [ 0, %entry_block2v1 ], [ %i_next_v11, %loop_block3v1 ]
-          %sp_v5 = getelementptr i32, ptr %1, i64 %v4
+          %sp_v5 = getelementptr inbounds i32, ptr %1, i64 %v4
           %v_v6 = load i32, ptr %sp_v5, align 4, !tbaa !3, !alias.scope !7, !noalias !10
           %inc_v8 = add i32 %v_v6, 1
-          %dp_v9 = getelementptr i32, ptr %0, i64 %v4
+          %dp_v9 = getelementptr inbounds i32, ptr %0, i64 %v4
           store i32 %inc_v8, ptr %dp_v9, align 4, !tbaa !3, !alias.scope !10, !noalias !7, !my.custom.kind !12
           %i_next_v11 = add i64 %v4, 1
           %done_v13 = icmp eq i64 %i_next_v11, 16

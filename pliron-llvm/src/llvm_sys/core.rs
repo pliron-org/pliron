@@ -12,8 +12,9 @@ use std::{
 use llvm_sys::{
     LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMFastMathAllowContract, LLVMFastMathAllowReassoc,
     LLVMFastMathAllowReciprocal, LLVMFastMathApproxFunc, LLVMFastMathFlags, LLVMFastMathNoInfs,
-    LLVMFastMathNoNaNs, LLVMFastMathNoSignedZeros, LLVMFastMathNone, LLVMInlineAsmDialect,
-    LLVMIntPredicate, LLVMLinkage, LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
+    LLVMFastMathNoNaNs, LLVMFastMathNoSignedZeros, LLVMFastMathNone, LLVMGEPFlagInBounds,
+    LLVMGEPFlagNUSW, LLVMGEPFlagNUW, LLVMGEPNoWrapFlags, LLVMInlineAsmDialect, LLVMIntPredicate,
+    LLVMLinkage, LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
     analysis::LLVMVerifyModule,
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
@@ -26,21 +27,22 @@ use llvm_sys::{
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
         LLVMBuildFNeg, LLVMBuildFPExt, LLVMBuildFPToSI, LLVMBuildFPToUI, LLVMBuildFPTrunc,
         LLVMBuildFRem, LLVMBuildFSub, LLVMBuildFenceSyncScope, LLVMBuildFreeze, LLVMBuildGEP2,
-        LLVMBuildICmp, LLVMBuildIndirectBr, LLVMBuildInsertElement, LLVMBuildInsertValue,
-        LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMul, LLVMBuildOr, LLVMBuildPhi,
-        LLVMBuildPtrToInt, LLVMBuildRet, LLVMBuildRetVoid, LLVMBuildSDiv, LLVMBuildSExt,
-        LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect, LLVMBuildShl, LLVMBuildShuffleVector,
-        LLVMBuildStore, LLVMBuildSub, LLVMBuildSwitch, LLVMBuildTrunc, LLVMBuildUDiv,
-        LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable, LLVMBuildVAArg, LLVMBuildXor,
-        LLVMBuildZExt, LLVMCanValueUseFastMathFlags, LLVMClearInsertionPosition, LLVMConstArray2,
-        LLVMConstInt, LLVMConstIntGetZExtValue, LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal,
-        LLVMConstRealGetDouble, LLVMConstStringInContext2, LLVMConstVector, LLVMContextCreate,
-        LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams,
-        LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
-        LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
-        LLVMDeleteFunction, LLVMDeleteGlobal, LLVMDisposeMemoryBuffer, LLVMDisposeMessage,
-        LLVMDisposeModule, LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext,
-        LLVMDumpModule, LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
+        LLVMBuildGEPWithNoWrapFlags, LLVMBuildICmp, LLVMBuildIndirectBr, LLVMBuildInsertElement,
+        LLVMBuildInsertValue, LLVMBuildIntToPtr, LLVMBuildLShr, LLVMBuildLoad2, LLVMBuildMul,
+        LLVMBuildOr, LLVMBuildPhi, LLVMBuildPtrToInt, LLVMBuildRet, LLVMBuildRetVoid,
+        LLVMBuildSDiv, LLVMBuildSExt, LLVMBuildSIToFP, LLVMBuildSRem, LLVMBuildSelect,
+        LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub, LLVMBuildSwitch,
+        LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable,
+        LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt, LLVMCanValueUseFastMathFlags,
+        LLVMClearInsertionPosition, LLVMConstArray2, LLVMConstInt, LLVMConstIntGetZExtValue,
+        LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstRealGetDouble,
+        LLVMConstStringInContext2, LLVMConstVector, LLVMContextCreate, LLVMContextDispose,
+        LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
+        LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
+        LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDeleteGlobal,
+        LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
+        LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType,
+        LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGEPGetNoWrapFlags,
         LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
         LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID, LLVMGetBasicBlockName,
         LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
@@ -99,7 +101,7 @@ use crate::llvm_sys::{
     ToBool, c_array_to_vec, cstr_to_string, sized_cstr_to_string, to_c_str, uninitialized_vec,
 };
 
-use crate::attributes::FastmathFlags;
+use crate::attributes::{FastmathFlags, GepNoWrapFlags};
 
 /// Opaque wrapper around LLVMValueRef to hide the raw pointer
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
@@ -286,6 +288,39 @@ impl From<FastmathFlags> for LLVMFastMathFlags {
         }
         if flags.contains(FastmathFlags::REASSOC) {
             result |= LLVMFastMathAllowReassoc;
+        }
+        result
+    }
+}
+
+impl From<LLVMGEPNoWrapFlags> for GepNoWrapFlags {
+    fn from(flags: LLVMGEPNoWrapFlags) -> Self {
+        let mut result = GepNoWrapFlags::empty();
+        if flags & LLVMGEPFlagInBounds != 0 {
+            result |= GepNoWrapFlags::INBOUNDS;
+        }
+        if flags & LLVMGEPFlagNUSW != 0 {
+            result |= GepNoWrapFlags::NUSW;
+        }
+        if flags & LLVMGEPFlagNUW != 0 {
+            result |= GepNoWrapFlags::NUW;
+        }
+        result.normalized()
+    }
+}
+
+impl From<GepNoWrapFlags> for LLVMGEPNoWrapFlags {
+    fn from(flags: GepNoWrapFlags) -> Self {
+        let flags = flags.normalized();
+        let mut result = 0;
+        if flags.contains(GepNoWrapFlags::INBOUNDS) {
+            result |= LLVMGEPFlagInBounds;
+        }
+        if flags.contains(GepNoWrapFlags::NUSW) {
+            result |= LLVMGEPFlagNUSW;
+        }
+        if flags.contains(GepNoWrapFlags::NUW) {
+            result |= LLVMGEPFlagNUW;
         }
         result
     }
@@ -2056,6 +2091,35 @@ pub fn llvm_build_gep2(
     }
 }
 
+/// LLVMBuildGEPWithNoWrapFlags
+pub fn llvm_build_gep_with_no_wrap_flags(
+    builder: &LLVMBuilder,
+    ty: LLVMType,
+    ptr: LLVMValue,
+    indices: &[LLVMValue],
+    name: &str,
+    flags: GepNoWrapFlags,
+) -> LLVMValue {
+    assert!(llvm_get_insert_block(builder).is_some());
+    assert!(
+        llvm_get_type_kind(llvm_get_scalar_type(llvm_type_of(ptr)))
+            == LLVMTypeKind::LLVMPointerTypeKind
+    );
+    let mut indices: Vec<_> = indices.iter().cloned().map(Into::into).collect();
+    unsafe {
+        LLVMBuildGEPWithNoWrapFlags(
+            builder.inner_ref(),
+            ty.into(),
+            ptr.into(),
+            indices.as_mut_ptr(),
+            indices.len().try_into().unwrap(),
+            to_c_str(name).as_ptr(),
+            flags.into(),
+        )
+        .into()
+    }
+}
+
 /// LLVMBuildInsertElement
 pub fn llvm_build_insert_element(
     builder: &LLVMBuilder,
@@ -2761,6 +2825,16 @@ pub fn llvm_get_gep_source_element_type(gep: LLVMValue) -> LLVMType {
                 && llvm_get_const_opcode(gep) == LLVMOpcode::LLVMGetElementPtr)
     );
     unsafe { LLVMGetGEPSourceElementType(gep.into()).into() }
+}
+
+/// LLVMGEPGetNoWrapFlags
+pub fn llvm_get_gep_no_wrap_flags(gep: LLVMValue) -> GepNoWrapFlags {
+    assert!(
+        llvm_is_a::get_element_ptr_inst(gep)
+            || (llvm_is_a::constant_expr(gep)
+                && llvm_get_const_opcode(gep) == LLVMOpcode::LLVMGetElementPtr)
+    );
+    unsafe { LLVMGEPGetNoWrapFlags(gep.into()) }.into()
 }
 
 /// LLVMGetNumIndices

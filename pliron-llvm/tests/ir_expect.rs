@@ -231,6 +231,63 @@ fn llvm_ir_select_without_fastmath_flags_omits_attr() -> Result<()> {
     Ok(())
 }
 
+/// GEP no-wrap flags must survive LLVM -> pliron -> LLVM conversion.
+#[test]
+fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define ptr @gep_flags(ptr %p, i64 %i) {
+        entry:
+          %plain = getelementptr i8, ptr %p, i64 %i
+          %nusw = getelementptr nusw i8, ptr %p, i64 %i
+          %nuw = getelementptr nuw i8, ptr %p, i64 %i
+          %inbounds = getelementptr inbounds i8, ptr %p, i64 %i
+          %both = getelementptr inbounds nuw i8, ptr %p, i64 %i
+          ret ptr %both
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "gep_flags")?;
+
+    expect![[r#"
+        builtin.module @gep_flags 
+        {
+          ^block1v1():
+            llvm.func @gep_flags: llvm.func <llvm.ptr (0)(llvm.ptr (0), builtin.integer i64) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i64):
+                plain_v2 = llvm.gep <builtin.integer i8> (v0, v1)[OperandIdx(1)] : llvm.ptr (0) !0;
+                nusw_v3 = llvm.gep <builtin.integer i8> (v0, v1)<NUSW>[OperandIdx(1)] : llvm.ptr (0) !1;
+                nuw_v4 = llvm.gep <builtin.integer i8> (v0, v1)<NUW>[OperandIdx(1)] : llvm.ptr (0) !2;
+                inbounds_v5 = llvm.gep <builtin.integer i8> (v0, v1)<INBOUNDS>[OperandIdx(1)] : llvm.ptr (0) !3;
+                both_v6 = llvm.gep <builtin.integer i8> (v0, v1)<INBOUNDS | NUW>[OperandIdx(1)] : llvm.ptr (0) !4;
+                llvm.return both_v6
+            }
+        }"#]].assert_eq(&module_op.disp(ctx).to_string());
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
+    expect![[r#"
+        ; ModuleID = 'gep_flags'
+        source_filename = "gep_flags"
+
+        define ptr @gep_flags(ptr %0, i64 %1) {
+        entry_block2v1:
+          %plain_v2 = getelementptr i8, ptr %0, i64 %1
+          %nusw_v3 = getelementptr nusw i8, ptr %0, i64 %1
+          %nuw_v4 = getelementptr nuw i8, ptr %0, i64 %1
+          %inbounds_v5 = getelementptr inbounds i8, ptr %0, i64 %1
+          %both_v6 = getelementptr inbounds nuw i8, ptr %0, i64 %1
+          ret ptr %both_v6
+        }
+    "#]]
+    .assert_eq(&out_mod.to_string());
+    Ok(())
+}
+
 /// Combinations of `struct` types
 #[test]
 fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
