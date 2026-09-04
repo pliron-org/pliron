@@ -87,13 +87,22 @@ pub(crate) fn interface_define(
     Ok(output)
 }
 
+/// Whether an interface impl must also be registered for casting boxed objects
+/// (i.e., with `boxed_type_to_trait!`, in addition to `type_to_trait!`).
+pub(crate) enum RegisterBoxedCast {
+    Register,
+    Skip,
+}
+
 /// This macro does two things:
-/// 1. Mark that the rust type be castable to the interface via type_to_trait.
+/// 1. Mark that the rust type be castable to the interface via `type_to_trait!`
+///    (and via `boxed_type_to_trait!` when [RegisterBoxedCast::Register] is specified).
 /// 2. Register the trait verifier in the rust type's list of interface verifiers.
 pub(crate) fn interface_impl(
     input: proc_macro2::TokenStream,
     interface_verifiers_slice: Path,
     all_verifiers_fn_type: Path,
+    register_boxed_cast: RegisterBoxedCast,
 ) -> Result<proc_macro2::TokenStream> {
     let r#impl = syn::parse2::<ItemImpl>(input)?;
 
@@ -112,9 +121,14 @@ pub(crate) fn interface_impl(
     }
 
     let rust_ty = (*r#impl.self_ty).clone();
-    let trait_cast = quote! {
+    let mut trait_cast = quote! {
         ::pliron::type_to_trait!(#rust_ty, #intr_name);
     };
+    if matches!(register_boxed_cast, RegisterBoxedCast::Register) {
+        trait_cast.extend(quote! {
+            ::pliron::boxed_type_to_trait!(#rust_ty, #intr_name);
+        });
+    }
     let verifiers_entry = quote! {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]

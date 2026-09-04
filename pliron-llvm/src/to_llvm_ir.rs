@@ -8,11 +8,11 @@ use llvm_sys::{
     LLVMRealPredicate,
 };
 use pliron::{
-    attribute::{Attribute, attr_cast},
+    attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::{BytesAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
+        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
         op_interfaces::{
             AtMostOneRegionInterface, BranchOpInterface, CallOpCallable, CallOpInterface,
             OneOpdInterface, OneResultInterface, SingleBlockRegionInterface, SymbolOpInterface,
@@ -28,7 +28,7 @@ use pliron::{
     identifier::Identifier,
     input_err, input_err_noloc, input_error, input_error_noloc,
     linked_list::ContainsLinkedList,
-    location::Located,
+    location::{Located, Location},
     op::{Op, op_cast},
     operation::Operation,
     printable::Printable,
@@ -47,8 +47,8 @@ use thiserror::Error;
 
 use crate::{
     attributes::{
-        AtomicOrderingAttr, AtomicRmwKindAttr, FCmpPredicateAttr, ICmpPredicateAttr, LinkageAttr,
-        PoisonAttr, UndefAttr, ZeroAttr,
+        AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
+        ICmpPredicateAttr, LinkageAttr, PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
@@ -69,12 +69,12 @@ use crate::{
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
         llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_string_in_context,
-        llvm_const_vector, llvm_delete_global, llvm_double_type_in_context,
-        llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
-        llvm_get_named_function, llvm_get_param, llvm_get_pointer_address_space, llvm_get_poison,
-        llvm_get_sync_scope_id, llvm_get_undef, llvm_half_type_in_context,
-        llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
+        llvm_const_array, llvm_const_int, llvm_const_null, llvm_const_real,
+        llvm_const_string_in_context, llvm_const_struct, llvm_const_vector, llvm_delete_global,
+        llvm_double_type_in_context, llvm_float_type_in_context, llvm_function_type,
+        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param,
+        llvm_get_pointer_address_space, llvm_get_poison, llvm_get_sync_scope_id, llvm_get_undef,
+        llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
         llvm_set_fast_math_flags, llvm_set_initializer, llvm_set_linkage, llvm_set_nneg,
@@ -169,20 +169,20 @@ pub enum ToLLVMErr {
     UndefinedBlock(String),
     #[error("Number of block args in the source dialect equal the number of PHIs in target IR")]
     NumBlockArgsNumPhisMismatch,
-    #[error("ConstantOp value must implement AttrToLLVMConst")]
-    ConstOpNotConstVal,
     #[error(
         "Insert/Extract value instructions must specify exactly one index, an LLVM-C API limitation"
     )]
     InsertExtractValueIndices,
     #[error("GlobalOp Initializer region does not terminate with a return with value")]
     GlobalOpInitializerRegionBadReturn,
-    #[error("GlobalOp initializer attribute {0} must implement LLVM conversion")]
-    UnsupportedGlobalInitializerAttr(String),
     #[error("Cannot evaluate value to a constant")]
     CannotEvaluateToConst,
     #[error("BlockAddressOp refers to missing block tag {1} in function {0}")]
     MissingBlockTag(String, u64),
+    #[error("The attribute {0} is not an LLVM constant")]
+    AttrNotConst(String),
+    #[error("SymbolAddrAttr for {0} is invalid: {1}")]
+    InvalidSymbolAddr(String, String),
 }
 
 pub fn convert_ipredicate(pred: ICmpPredicateAttr) -> LLVMIntPredicate {
@@ -2246,6 +2246,144 @@ impl AttrToLLVMConst for PoisonAttr {
     }
 }
 
+/// Convert the constant attribute `attr` to an LLVM constant.
+fn const_attr_to_llvm_constant(
+    attr: &AttrObj,
+    loc: Option<Location>,
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    cctx: &mut ConversionContext,
+) -> Result<LLVMValue> {
+    let not_const = || input_err_noloc!(ToLLVMErr::AttrNotConst(attr.disp(ctx).to_string()));
+    let converted = match attr_cast::<dyn AttrToLLVMConst>(&**attr) {
+        Some(conv) => conv.convert(ctx, llvm_ctx, cctx),
+        None => not_const(),
+    };
+    // Check that the value we have is indeed an LLVM constant.
+    let converted = converted.and_then(|val| {
+        if llvm_is_a::constant(val) {
+            Ok(val)
+        } else {
+            not_const()
+        }
+    });
+    converted.map_err(|mut err| {
+        if let Some(loc) = loc {
+            err.set_loc(loc);
+        }
+        err
+    })
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for AggregateAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = self.ty();
+        let elements = self
+            .elements()
+            .iter()
+            .map(|element| const_attr_to_llvm_constant(element, None, ctx, llvm_ctx, cctx))
+            .collect::<Result<Vec<_>>>()?;
+
+        let ty_obj = ty.deref(ctx);
+        if let Some(array_ty) = ty_obj.downcast_ref::<ArrayType>() {
+            let elem_ty = convert_type(ctx, llvm_ctx, cctx, array_ty.elem_type())?;
+            Ok(llvm_const_array(elem_ty, &elements))
+        } else if ty_obj.is::<StructType>() {
+            let struct_ty = convert_type(ctx, llvm_ctx, cctx, ty)?;
+            Ok(llvm_const_struct(struct_ty, &elements))
+        } else if ty_obj.is::<VectorType>() {
+            Ok(llvm_const_vector(&elements))
+        } else {
+            // The verifier has established that an aggregate is of one of these types.
+            panic!(
+                "An aggregate constant of type {}, which is not an array, a struct or a vector",
+                ty.disp(ctx)
+            )
+        }
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for SplatAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let ty = self.ty();
+        let (num_elements, is_scalable) = {
+            let vector_ty = ty.deref(ctx);
+            (vector_ty.num_elements(), vector_ty.is_scalable())
+        };
+        let element = const_attr_to_llvm_constant(self.element(), None, ctx, llvm_ctx, cctx)?;
+        if !is_scalable {
+            // LLVM folds a vector of equal elements back into a splat constant.
+            return Ok(llvm_const_vector(&vec![element; num_elements as usize]));
+        }
+
+        // A scalable vector's element count isn't known statically,
+        // so there is no constant to list its elements out. We do what LLVM does:
+        // `shufflevector(insertelement(poison, element, 0), poison, zeroinitializer)`,
+        let vector_ty = convert_type(ctx, llvm_ctx, cctx, ty.into())?;
+        let poison = llvm_get_poison(vector_ty);
+        let index = llvm_const_int(llvm_int_type_in_context(llvm_ctx, 64), 0, false);
+        let inserted = llvm_build_insert_element(&cctx.scratch_builder, poison, element, index, "");
+        // An all-zeros mask of the vector's shape broadcasts element 0.
+        let mask_ty =
+            llvm_scalable_vector_type(llvm_int_type_in_context(llvm_ctx, 32), num_elements);
+        let splat = llvm_build_shuffle_vector(
+            &cctx.scratch_builder,
+            inserted,
+            poison,
+            llvm_const_null(mask_ty),
+            "",
+        );
+        Ok(splat)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for SymbolAddrAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        let sym = self.symbol();
+        let sym_val = cctx
+            .globals_map
+            .get(sym)
+            .or_else(|| cctx.function_map.get(sym))
+            .cloned()
+            .ok_or_else(|| {
+                input_error_noloc!(ToLLVMErr::InvalidSymbolAddr(
+                    sym.to_string(),
+                    "not a global or a function of the module".to_string()
+                ))
+            })?;
+
+        let declared_ty = convert_type(ctx, llvm_ctx, cctx, self.ty().into())?;
+        let actual_ty = llvm_type_of(sym_val);
+        // The verifier cannot check this, so we do it now.
+        if declared_ty != actual_ty {
+            return input_err_noloc!(ToLLVMErr::InvalidSymbolAddr(
+                sym.to_string(),
+                format!("declared type is {declared_ty}, but the symbol is of type {actual_ty}")
+            ));
+        }
+
+        Ok(sym_val)
+    }
+}
+
 /// Pliron [Op]s that can be converted to a constant [LLVMValue]
 #[op_interface]
 trait OpToLLVMConstValue {
@@ -2273,13 +2411,10 @@ impl OpToLLVMConstValue for ConstantOp {
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
     ) -> Result<LLVMValue> {
-        let op = self.get_operation().deref(ctx);
-        let value = self.get_value(ctx);
-        if let Some(const_val) = attr_cast::<dyn AttrToLLVMConst>(&*value) {
-            const_val.convert(ctx, llvm_ctx, cctx)
-        } else {
-            input_err!(op.loc(), ToLLVMErr::ConstOpNotConstVal)
-        }
+        let value = self
+            .get_attr_llvm_constant_value(ctx)
+            .expect("ConstantOp must have a value attribute");
+        const_attr_to_llvm_constant(&value, Some(self.loc(ctx)), ctx, llvm_ctx, cctx)
     }
 }
 
@@ -2541,13 +2676,14 @@ fn convert_global_initializer(
     global_op: GlobalOp,
 ) -> Result<Option<LLVMValue>> {
     if let Some(initializer) = global_op.get_initializer_value(ctx) {
-        let Some(bytes) = attr_cast::<dyn AttrToLLVMConst>(initializer.as_ref()) else {
-            return input_err!(
-                global_op.loc(ctx),
-                ToLLVMErr::UnsupportedGlobalInitializerAttr(initializer.get_attr_id().to_string())
-            );
-        };
-        return Ok(Some(bytes.convert(ctx, llvm_ctx, cctx)?));
+        let initializer_val = const_attr_to_llvm_constant(
+            &initializer,
+            Some(global_op.loc(ctx)),
+            ctx,
+            llvm_ctx,
+            cctx,
+        )?;
+        return Ok(Some(initializer_val));
     }
 
     if let Some(init_block) = global_op.get_initializer_block(ctx) {

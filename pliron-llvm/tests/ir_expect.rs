@@ -6,8 +6,20 @@
 #![cfg(feature = "llvm-sys")]
 
 use expect_test::expect;
-use pliron::{context::Context, init_env_logger_for_tests, printable::Printable, result::Result};
-use pliron_llvm::{from_llvm_ir, llvm_sys::core::LLVMContext, ops::SelectOpVerifyErr, to_llvm_ir};
+use pliron::{
+    builtin::ops::ModuleOp,
+    context::Context,
+    init_env_logger_for_tests,
+    printable::Printable,
+    result::{Error, Result},
+};
+use pliron_llvm::{
+    attributes::ConstAggregateVerifyErr,
+    from_llvm_ir,
+    llvm_sys::core::LLVMContext,
+    ops::{ConstantOpVerifyErr, SelectOpVerifyErr},
+    to_llvm_ir,
+};
 
 mod common;
 
@@ -20,7 +32,7 @@ fn to_llvm_ir_o1(input: &str) -> Result<String> {
     common::run_o1_passes_verify(ctx, module_op)?;
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     Ok(llvm_mod.to_string())
 }
 
@@ -42,7 +54,7 @@ fn data_layout_target_triple() -> Result<()> {
     let ctx = &mut Context::new();
     let module_op = common::parse_op_verify(ctx, input)?;
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
 
     expect![[r#"
         ; ModuleID = 'm'
@@ -170,7 +182,7 @@ fn llvm_ir_select_fastmath_flags_roundtrip() -> Result<()> {
         }"#]].assert_eq(&pliron_text);
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
     let out = out_mod.to_string();
     expect![[r#"
         ; ModuleID = 'select_fmf'
@@ -338,7 +350,7 @@ fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
     let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "struct_combos")?;
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
     let out = out_mod.to_string();
     expect![[r#"
         ; ModuleID = 'struct_combos'
@@ -368,6 +380,275 @@ fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
     "#]]
     .assert_eq(&out);
     Ok(())
+}
+
+/// Constant aggregates, vector splats,the symbol addresses as global initializers.
+#[test]
+fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        @g = global i32 0
+        @array = global [4 x i32] [i32 1, i32 2, i32 3, i32 4]
+        @struct = global { i32, float, ptr } { i32 1, float 2.0, ptr @g }
+        @nested = global [2 x { i32, i32 }] [{ i32, i32 } { i32 1, i32 2 },
+                                             { i32, i32 } { i32 3, i32 4 }]
+        @vtable = global [2 x ptr] [ptr @g, ptr @f]
+        @addr = global ptr @g
+        @string = global [6 x i8] c"hello\00"
+        @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
+        @splat = global <4 x i32> splat (i32 7)
+
+        define void @f(ptr %p) {
+        entry:
+          store [4 x i32] [i32 1, i32 2, i32 3, i32 4], ptr %p
+          store { i32, ptr } { i32 5, ptr @g }, ptr %p
+          store [6 x i8] c"hello\00", ptr %p
+          ret void
+        }
+
+        define <4 x i32> @fixed() {
+          ret <4 x i32> splat (i32 7)
+        }
+
+        define <4 x float> @fp() {
+          ret <4 x float> splat (float 2.5)
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "constants")?;
+    let printed = module_op.disp(ctx).to_string();
+    expect![[r#"
+        builtin.module @constants 
+        {
+          ^block1v1():
+            llvm.global @g : builtin.integer i32
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = builtin.integer <0: i32>;
+            llvm.global @array : llvm.array [4 x builtin.integer i32]
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>;
+            llvm.global @struct : llvm.struct <{ builtin.integer i32, builtin.fp32 , llvm.ptr (0) } : Unpacked>
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.single 2, llvm.symbol_addr <@g : llvm.ptr (0)>] : llvm.struct <{ builtin.integer i32, builtin.fp32 , llvm.ptr (0) } : Unpacked>>;
+            llvm.global @nested : llvm.array [2 x llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>]
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>, llvm.aggregate <[builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>] : llvm.array [2 x llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>]>;
+            llvm.global @vtable : llvm.array [2 x llvm.ptr (0)]
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[llvm.symbol_addr <@g : llvm.ptr (0)>, llvm.symbol_addr <@f : llvm.ptr (0)>] : llvm.array [2 x llvm.ptr (0)]>;
+            llvm.global @addr : llvm.ptr (0)
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.symbol_addr <@g : llvm.ptr (0)>;
+            llvm.global @string : llvm.array [6 x builtin.integer i8]
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.bytes [104, 101, 108, 108, 111, 0];
+            llvm.global @vector : llvm.vector <Fixed x 4 x builtin.integer i32>
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>;
+            llvm.global @splat : llvm.vector <Fixed x 4 x builtin.integer i32>
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>;
+            llvm.func @f: llvm.func <llvm.void (llvm.ptr (0)) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1(v0: llvm.ptr (0)):
+                v1 = llvm.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>> : llvm.array [4 x builtin.integer i32];
+                v2 = llvm.constant <llvm.aggregate <[builtin.integer <5: i32>, llvm.symbol_addr <@g : llvm.ptr (0)>] : llvm.struct <{ builtin.integer i32, llvm.ptr (0) } : Unpacked>>> : llvm.struct <{ builtin.integer i32, llvm.ptr (0) } : Unpacked>;
+                v3 = llvm.constant <llvm.bytes [104, 101, 108, 108, 111, 0]> : llvm.array [6 x builtin.integer i8];
+                llvm.store *v0 <- v1 [align : 4];
+                llvm.store *v0 <- v2 [align : 8];
+                llvm.store *v0 <- v3 [align : 1];
+                llvm.return 
+            };
+            llvm.func @fixed: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32>() variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block3v1():
+                v4 = llvm.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+                llvm.return v4
+            };
+            llvm.func @fp: llvm.func <llvm.vector <Fixed x 4 x builtin.fp32 >() variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block4v1():
+                v5 = llvm.constant <llvm.splat <builtin.single 2.5 : llvm.vector <Fixed x 4 x builtin.fp32 >>> : llvm.vector <Fixed x 4 x builtin.fp32 >;
+                llvm.return v5
+            }
+        }"#]]
+    .assert_eq(&printed);
+
+    // The printed constants must parse back and verify.
+    let parse_ctx = &mut Context::new();
+    common::parse_op_verify::<ModuleOp>(parse_ctx, &printed)?;
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
+    expect![[r#"
+        ; ModuleID = 'constants'
+        source_filename = "constants"
+
+        @g = global i32 0
+        @array = global [4 x i32] [i32 1, i32 2, i32 3, i32 4]
+        @struct = global { i32, float, ptr } { i32 1, float 2.000000e+00, ptr @g }
+        @nested = global [2 x { i32, i32 }] [{ i32, i32 } { i32 1, i32 2 }, { i32, i32 } { i32 3, i32 4 }]
+        @vtable = global [2 x ptr] [ptr @g, ptr @f]
+        @addr = global ptr @g
+        @string = global [6 x i8] c"hello\00"
+        @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
+        @splat = global <4 x i32> splat (i32 7)
+
+        define void @f(ptr %0) {
+        entry_block2v1:
+          store [4 x i32] [i32 1, i32 2, i32 3, i32 4], ptr %0, align 4
+          store { i32, ptr } { i32 5, ptr @g }, ptr %0, align 8
+          store [6 x i8] c"hello\00", ptr %0, align 1
+          ret void
+        }
+
+        define <4 x i32> @fixed() {
+        entry_block3v1:
+          ret <4 x i32> splat (i32 7)
+        }
+
+        define <4 x float> @fp() {
+        entry_block4v1:
+          ret <4 x float> splat (float 2.500000e+00)
+        }
+    "#]]
+    .assert_eq(&out_mod.to_string());
+
+    Ok(())
+}
+
+#[test]
+fn scalable_vector_splat() -> Result<()> {
+    init_env_logger_for_tests!();
+    let scalable_i32 = "llvm.vector <Scalable x 4 x builtin.integer i32>";
+    // We don't start from LLVM-IR as we can't import this
+    let input = format!(
+        r#"
+        builtin.module @m {{
+        ^block_0_0():
+          llvm.func @f: llvm.func <{scalable_i32}() variadic = false> [] {{
+          ^entry_block_1_0():
+            c = llvm.constant <llvm.splat <builtin.integer <7: i32> : {scalable_i32}>> : {scalable_i32};
+            llvm.return c
+          }}
+        }}
+    "#
+    );
+
+    let ctx = &mut Context::new();
+    let module_op = common::parse_op_verify::<ModuleOp>(ctx, &input)?;
+    let llvm_ctx = LLVMContext::default();
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
+    expect![[r#"
+        ; ModuleID = 'm'
+        source_filename = "m"
+
+        define <vscale x 4 x i32> @f() {
+        entry_block_1_0_block2v1:
+          ret <vscale x 4 x i32> splat (i32 7)
+        }
+    "#]]
+    .assert_eq(&llvm_mod.to_string());
+    Ok(())
+}
+
+#[test]
+fn ill_typed_constants_are_rejected() {
+    let module = |value: &str, ty: &str| {
+        format!(
+            r#"
+            builtin.module @m {{
+            ^block_0_0():
+              llvm.func @f: llvm.func <llvm.void() variadic = false> [] {{
+              ^entry_block_1_0():
+                c = llvm.constant <{value}> : {ty};
+                llvm.return
+              }}
+            }}
+        "#
+        )
+    };
+    // Utility to parse and verify a module, checking that it fails.
+    let rejected = |value: &str, ty: &str, expectation: &str| -> Error {
+        let ctx = &mut Context::new();
+        let Err(err) = common::parse_op_verify::<ModuleOp>(ctx, &module(value, ty)) else {
+            panic!("{expectation}");
+        };
+        err
+    };
+
+    let err = rejected(
+        "llvm.aggregate <[builtin.integer <1: i32>] : llvm.array [2 x builtin.integer i32]>",
+        "llvm.array [2 x builtin.integer i32]",
+        "an aggregate with too few elements must be rejected",
+    );
+    assert!(matches!(
+        err.err.downcast_ref::<ConstAggregateVerifyErr>().unwrap(),
+        ConstAggregateVerifyErr::NumElements(..)
+    ));
+
+    let err = rejected(
+        "llvm.aggregate <[builtin.integer <1: i64>, builtin.integer <2: i64>] \
+         : llvm.array [2 x builtin.integer i32]>",
+        "llvm.array [2 x builtin.integer i32]",
+        "an aggregate whose elements are ill typed must be rejected",
+    );
+    assert!(matches!(
+        err.err.downcast_ref::<ConstAggregateVerifyErr>().unwrap(),
+        ConstAggregateVerifyErr::ElementType(..)
+    ));
+
+    // A scalable vector's element count isn't known statically, so its elements cannot
+    // be listed out; such a constant has to be a splat.
+    let scalable = "llvm.vector <Scalable x 4 x builtin.integer i32>";
+    let err = rejected(
+        &format!("llvm.aggregate <[builtin.integer <1: i32>] : {scalable}>"),
+        scalable,
+        "a scalable vector with its elements listed must be rejected",
+    );
+    expect![[r#"
+        Compilation error: verification failed.
+        A constant of the scalable vector type llvm.vector <Scalable x 4 x builtin.integer i32> must use llvm.splat"#]].assert_eq(&err.to_string());
+
+    // A splat's type is a `VectorType`, so a non-vector one doesn't parse.
+    let err = rejected(
+        "llvm.splat <builtin.integer <1: i32> : llvm.array [2 x builtin.integer i32]>",
+        "llvm.array [2 x builtin.integer i32]",
+        "a splat of a non-vector type must be rejected",
+    );
+    expect![[r#"
+        Compilation error: invalid input program.
+        Parse error at line: 6, column: 75
+        Expected type llvm.vector, but found llvm.array
+    "#]]
+    .assert_eq(&err.to_string());
+
+    // A byte string's type is an array of exactly as many `i8`s as it has bytes.
+    let err = rejected(
+        "llvm.bytes [104, 105]",
+        "llvm.array [3 x builtin.integer i8]",
+        "a byte string whose array is of the wrong length must be rejected",
+    );
+    assert!(matches!(
+        err.err.downcast_ref::<ConstantOpVerifyErr>().unwrap(),
+        ConstantOpVerifyErr::ResultTypeMismatch(..)
+    ));
+
+    let err = rejected(
+        "llvm.bytes [104, 105]",
+        "llvm.array [2 x builtin.integer i32]",
+        "a byte string that isn't an array of i8 must be rejected",
+    );
+    assert!(matches!(
+        err.err.downcast_ref::<ConstantOpVerifyErr>().unwrap(),
+        ConstantOpVerifyErr::ResultTypeMismatch(..)
+    ));
+
+    let err = rejected(
+        "builtin.integer <1: i32>",
+        "builtin.integer i64",
+        "a value whose type isn't the constant's must be rejected",
+    );
+    assert!(matches!(
+        err.err.downcast_ref::<ConstantOpVerifyErr>().unwrap(),
+        ConstantOpVerifyErr::ResultTypeMismatch(..)
+    ));
 }
 
 #[test]
@@ -408,7 +689,7 @@ fn named_syncscopes_roundtrip() -> Result<()> {
         }"#]].assert_eq(&module_op.disp(ctx).to_string());
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
     let out = out_mod.to_string();
     expect![[r#"
         ; ModuleID = 'syncscopes'

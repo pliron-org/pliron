@@ -7,28 +7,37 @@ use alloc::{
     string::{String, ToString},
     vec::Vec,
 };
-use core::fmt::Display;
+use core::{
+    fmt::Display,
+    hash::{Hash, Hasher},
+};
 use thiserror::Error;
 
 use pliron::{
+    attribute::{AttrObj, attr_type},
     builtin::{
         attr_interfaces::TypedAttrInterface,
         attributes::{IntegerAttr, StringAttr},
         ops::ModuleOp,
+        types::{IntegerType, Signedness},
     },
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
     context::Context,
     derive::{attr_interface_impl, format, pliron_attr},
-    dict_key, impl_printable_for_display, input_error,
+    dict_key,
+    identifier::Identifier,
+    impl_printable_for_display, input_error,
     location::Located,
     op::Op,
     parsable::{IntoParseResult, Parsable},
     printable::Printable,
     result::Result,
-    r#type::TypeHandle,
+    r#type::{TypeHandle, TypedHandle},
     verify_err_noloc,
 };
+
+use crate::types::{ArrayType, PointerType, StructType, VectorType};
 
 use bitflags::bitflags;
 
@@ -380,6 +389,266 @@ pub struct PoisonAttr(pub TypeHandle);
 impl TypedAttrInterface for PoisonAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
+    }
+}
+
+/// An attribute containing a sequence of bytes: LLVM's `ConstantDataArray` of `i8`s.
+#[pliron_attr(
+    name = "llvm.bytes",
+    format = "`[` vec($0, CharSpace(`,`)) `]`",
+    verifier = "succ"
+)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct BytesAttr(Vec<u8>);
+
+impl BytesAttr {
+    /// Create a new [BytesAttr].
+    pub fn new(bytes: Vec<u8>) -> Self {
+        BytesAttr(bytes)
+    }
+}
+
+impl From<BytesAttr> for Vec<u8> {
+    fn from(value: BytesAttr) -> Self {
+        value.0
+    }
+}
+
+impl From<Vec<u8>> for BytesAttr {
+    fn from(value: Vec<u8>) -> Self {
+        BytesAttr::new(value)
+    }
+}
+
+impl AsRef<Vec<u8>> for BytesAttr {
+    fn as_ref(&self) -> &Vec<u8> {
+        &self.0
+    }
+}
+
+/// The type of [BytesAttr] is `[N x i8]`.
+#[attr_interface_impl]
+impl TypedAttrInterface for BytesAttr {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
+        let i8_ty = IntegerType::get(ctx, 8, Signedness::Signless);
+        ArrayType::get(ctx, i8_ty.into(), self.0.len() as u64).into()
+    }
+}
+
+/// A vector constant all of whose elements are `element`: LLVM's `splat (...)`
+#[pliron_attr(name = "llvm.splat", format = "`<` $element ` : ` $ty `>`")]
+#[derive(Clone, Debug)]
+pub struct SplatAttr {
+    element: AttrObj,
+    ty: TypedHandle<VectorType>,
+}
+
+impl PartialEq for SplatAttr {
+    fn eq(&self, other: &Self) -> bool {
+        self.ty == other.ty && PartialEq::eq(&self.element, &other.element)
+    }
+}
+
+impl Eq for SplatAttr {}
+
+impl Hash for SplatAttr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.element.hash(state);
+        self.ty.hash(state);
+    }
+}
+
+impl SplatAttr {
+    /// A vector constant of type `ty`, every element of which is `element`.
+    pub fn new(element: AttrObj, ty: TypedHandle<VectorType>) -> Self {
+        SplatAttr { element, ty }
+    }
+
+    /// The element that this splat repeats.
+    pub fn element(&self) -> &AttrObj {
+        &self.element
+    }
+
+    /// The vector type of this splat.
+    pub fn ty(&self) -> TypedHandle<VectorType> {
+        self.ty
+    }
+}
+
+#[attr_interface_impl]
+impl TypedAttrInterface for SplatAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.ty.into()
+    }
+}
+
+/// Verify that `element`, the `idx`'th element of an aggregate or splat, is of type `expected`.
+fn verify_element(
+    ctx: &Context,
+    idx: usize,
+    element: &AttrObj,
+    expected: TypeHandle,
+) -> Result<()> {
+    element.verify(ctx)?;
+    if let Some(ty) = attr_type(&**element, ctx)
+        && ty != expected
+    {
+        verify_err_noloc!(ConstAggregateVerifyErr::ElementType(
+            idx,
+            ty.disp(ctx).to_string(),
+            expected.disp(ctx).to_string()
+        ))?
+    }
+    Ok(())
+}
+
+impl Verify for SplatAttr {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        // That the type is a vector is the [TypedHandle]'s to guarantee.
+        let elem_ty = self.ty.deref(ctx).elem_type();
+        verify_element(ctx, 0, &self.element, elem_ty)
+    }
+}
+
+/// The address of a global variable or a function, LLVM's `ptr @symbol`.
+#[pliron_attr(
+    name = "llvm.symbol_addr",
+    format = "`<@` $symbol ` : ` $ty `>`",
+    verifier = "succ"
+)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct SymbolAddrAttr {
+    symbol: Identifier,
+    ty: TypedHandle<PointerType>,
+}
+
+impl SymbolAddrAttr {
+    /// The address, of pointer type `ty`, of `symbol` — a global or a function of
+    /// the module.
+    pub fn new(symbol: Identifier, ty: TypedHandle<PointerType>) -> Self {
+        SymbolAddrAttr { symbol, ty }
+    }
+
+    /// The symbol whose address this is.
+    pub fn symbol(&self) -> &Identifier {
+        &self.symbol
+    }
+
+    /// The pointer type of this address.
+    pub fn ty(&self) -> TypedHandle<PointerType> {
+        self.ty
+    }
+}
+
+#[attr_interface_impl]
+impl TypedAttrInterface for SymbolAddrAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.ty.into()
+    }
+}
+
+/// A constant aggregate, with a constant attribute per element:
+/// LLVM's `ConstantArray`, `ConstantStruct` or `ConstantVector`
+/// (and their `Data` variants)
+#[pliron_attr(
+    name = "llvm.aggregate",
+    format = "`<[` vec($elements, CharSpace(`,`)) `] : ` $ty `>`"
+)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash)]
+pub struct AggregateAttr {
+    elements: Vec<AttrObj>,
+    ty: TypeHandle,
+}
+
+impl AggregateAttr {
+    /// A constant aggregate of type `ty`, with one constant attribute per element.
+    pub fn new(elements: Vec<AttrObj>, ty: TypeHandle) -> Self {
+        AggregateAttr { elements, ty }
+    }
+
+    /// The elements of this aggregate.
+    pub fn elements(&self) -> &[AttrObj] {
+        &self.elements
+    }
+
+    /// The type of this aggregate.
+    pub fn ty(&self) -> TypeHandle {
+        self.ty
+    }
+}
+
+#[attr_interface_impl]
+impl TypedAttrInterface for AggregateAttr {
+    fn get_type(&self, _ctx: &Context) -> TypeHandle {
+        self.ty
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ConstAggregateVerifyErr {
+    #[error("{0} is not an array, struct or vector type")]
+    NotAnAggregate(String),
+    #[error("A constant of the scalable vector type {0} must use llvm.splat")]
+    ScalableAggregate(String),
+    #[error("Type {0} has {1} element(s), but {2} were provided")]
+    NumElements(String, u64, usize),
+    #[error("Element {0} is of type {1}, but {2} was expected")]
+    ElementType(usize, String, String),
+}
+
+impl Verify for AggregateAttr {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let ty = self.ty.deref(ctx);
+        if let Some(array_ty) = ty.downcast_ref::<ArrayType>() {
+            if array_ty.size() != self.elements.len() as u64 {
+                verify_err_noloc!(ConstAggregateVerifyErr::NumElements(
+                    self.ty.disp(ctx).to_string(),
+                    array_ty.size(),
+                    self.elements.len()
+                ))?
+            }
+            let elem_ty = array_ty.elem_type();
+            for (idx, element) in self.elements.iter().enumerate() {
+                verify_element(ctx, idx, element, elem_ty)?;
+            }
+        } else if let Some(struct_ty) = ty.downcast_ref::<StructType>() {
+            if struct_ty.is_opaque() || struct_ty.num_fields() != self.elements.len() {
+                verify_err_noloc!(ConstAggregateVerifyErr::NumElements(
+                    self.ty.disp(ctx).to_string(),
+                    if struct_ty.is_opaque() {
+                        0
+                    } else {
+                        struct_ty.num_fields() as u64
+                    },
+                    self.elements.len()
+                ))?
+            }
+            for (idx, element) in self.elements.iter().enumerate() {
+                verify_element(ctx, idx, element, struct_ty.field_type(idx))?;
+            }
+        } else if let Some(vector_ty) = ty.downcast_ref::<VectorType>() {
+            if vector_ty.is_scalable() {
+                verify_err_noloc!(ConstAggregateVerifyErr::ScalableAggregate(
+                    self.ty.disp(ctx).to_string()
+                ))?
+            }
+            if vector_ty.num_elements() as usize != self.elements.len() {
+                verify_err_noloc!(ConstAggregateVerifyErr::NumElements(
+                    self.ty.disp(ctx).to_string(),
+                    vector_ty.num_elements() as u64,
+                    self.elements.len()
+                ))?
+            }
+            let elem_ty = vector_ty.elem_type();
+            for (idx, element) in self.elements.iter().enumerate() {
+                verify_element(ctx, idx, element, elem_ty)?;
+            }
+        } else {
+            verify_err_noloc!(ConstAggregateVerifyErr::NotAnAggregate(
+                self.ty.disp(ctx).to_string()
+            ))?
+        }
+        Ok(())
     }
 }
 

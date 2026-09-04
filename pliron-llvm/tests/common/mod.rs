@@ -16,9 +16,11 @@ use pliron::{
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMMemoryBuffer, LLVMModule},
+    to_llvm_ir,
 };
 
 /// Parses an Op from the given input string, verifies, and returns it
+#[allow(dead_code)]
 pub fn parse_op_verify<O: Op>(ctx: &mut Context, input: &str) -> Result<O> {
     let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input)?;
     let module_op = Operation::get_op::<O>(op, ctx).unwrap();
@@ -62,4 +64,19 @@ pub fn parse_llvm_ir_verify(
     let module_op = from_llvm_ir::convert_module(ctx, &llvm_mod)?;
     verify_operation(module_op.get_operation(), ctx)?;
     Ok(module_op)
+}
+
+/// Converts `module_op` into an LLVM-IR module, and verifies it.
+#[cfg(feature = "llvm-sys")]
+#[allow(dead_code)]
+pub fn to_llvm_ir_verify(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module_op: ModuleOp,
+) -> Result<LLVMModule> {
+    let llvm_mod = to_llvm_ir::convert_module(ctx, llvm_ctx, module_op)?;
+    llvm_mod.verify().map_err(|err| {
+        pliron::verify_error_noloc!("Verification of the LLVM module failed: {}", err)
+    })?;
+    Ok(llvm_mod)
 }

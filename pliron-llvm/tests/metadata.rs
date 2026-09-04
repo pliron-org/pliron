@@ -213,7 +213,7 @@ fn metadata_to_llvm_ir() -> Result<()> {
     let (module_op, _) = from_llvm_ir(ctx, METADATA_LL)?;
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -322,7 +322,7 @@ fn debug_info_metadata_is_dropped() -> Result<()> {
 
     // What is left must still convert back to valid LLVM-IR.
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -362,7 +362,7 @@ fn global_object_metadata() -> Result<()> {
     let (module_op, _) = from_llvm_ir(ctx, input)?;
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -479,7 +479,7 @@ fn metadata_string_escaping_roundtrips() -> Result<()> {
     );
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx2, &llvm_ctx, reparsed)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx2, &llvm_ctx, reparsed)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -607,6 +607,63 @@ fn unsupported_constant_metadata_operand_is_dropped() -> Result<()> {
     Ok(())
 }
 
+/// macOS clang puts an aggregate constant in the `SDK Version` module flag. A module
+/// flag missing its value operand is invalid LLVM-IR, so this has to survive whole.
+#[test]
+fn module_flag_with_aggregate_constant_roundtrips() -> Result<()> {
+    let input = r#"
+      define void @f() {
+        ret void
+      }
+
+      !llvm.module.flags = !{!0, !1}
+
+      !0 = !{i32 2, !"SDK Version", [2 x i32] [i32 15, i32 1]}
+      !1 = !{i32 1, !"wchar_size", i32 4}
+    "#;
+
+    let ctx = &mut Context::new();
+    let (module_op, printed) = from_llvm_ir(ctx, input)?;
+    expect![[r#"
+        builtin.module @metadata_test 
+        {
+          ^block1v1():
+            llvm.func @f: llvm.func <llvm.void () variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1():
+                llvm.return 
+            }
+        } !0
+
+        outlined_attributes:
+        !0 = [llvm_named_metadata = llvm.named_md ["llvm.module.flags" = [#0, #1]], llvm_metadata_defs = llvm.md_table [
+          #0 = !{builtin.integer <2: i32>, !"SDK Version", llvm.aggregate <[builtin.integer <15: i32>, builtin.integer <1: i32>] : llvm.array [2 x builtin.integer i32]>},
+          #1 = !{builtin.integer <1: i32>, !"wchar_size", builtin.integer <4: i32>}
+        ]]
+    "#]]
+    .assert_eq(&printed);
+
+    let llvm_ctx = LLVMContext::default();
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
+    expect![[r#"
+        ; ModuleID = 'metadata_test'
+        source_filename = "metadata_test"
+
+        define void @f() {
+        entry_block2v1:
+          ret void
+        }
+
+        !llvm.module.flags = !{!0, !1}
+
+        !0 = !{i32 2, !"SDK Version", [2 x i32] [i32 15, i32 1]}
+        !1 = !{i32 1, !"wchar_size", i32 4}
+    "#]]
+    .assert_eq(&llvm_mod.to_string());
+    Ok(())
+}
+
 /// A metadata kind name that LLVM doesn't pre-register is recovered from the module's
 /// printed form, where LLVM escapes anything that isn't a name character.
 #[test]
@@ -644,7 +701,7 @@ fn escaped_metadata_kind_name_roundtrips() -> Result<()> {
     let ctx2 = &mut Context::new();
     let reparsed = common::parse_op_verify::<ModuleOp>(ctx2, &printed)?;
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx2, &llvm_ctx, reparsed)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx2, &llvm_ctx, reparsed)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -698,7 +755,7 @@ fn non_temporal_store_emits_metadata() -> Result<()> {
     verify_metadata(ctx, module_op)?;
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     expect![[r#"
         ; ModuleID = 'metadata_test'
         source_filename = "metadata_test"
@@ -712,9 +769,5 @@ fn non_temporal_store_emits_metadata() -> Result<()> {
         !0 = !{i32 1}
     "#]]
     .assert_eq(&llvm_mod.to_string());
-
-    llvm_mod
-        .verify()
-        .expect("Verification of LLVM Module failed");
     Ok(())
 }

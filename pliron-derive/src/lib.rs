@@ -672,6 +672,7 @@ pub fn op_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
         item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+        interfaces::RegisterBoxedCast::Skip,
     ))
 }
 
@@ -1011,6 +1012,7 @@ pub fn attr_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
         item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+        interfaces::RegisterBoxedCast::Register,
     ))
 }
 
@@ -1116,6 +1118,7 @@ pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
         item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
+        interfaces::RegisterBoxedCast::Skip,
     ))
 }
 

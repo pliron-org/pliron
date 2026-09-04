@@ -39,21 +39,13 @@
 //! [AttrObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{boxed::Box, string::String, vec::Vec};
-use core::{
-    fmt::{Debug, Display},
-    hash::{Hash, Hasher},
-    ops::Deref,
-};
-use downcast_rs::{Downcast, impl_downcast};
-use dyn_clone::DynClone;
-
 use crate::{
-    builtin::attr_interfaces::OutlinedAttr,
+    builtin::attr_interfaces::{OutlinedAttr, TypedAttrInterface},
     combine::{Parser, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
     dialect::{Dialect, DialectName},
+    dyn_clone::DynClone,
     identifier::Identifier,
     impl_printable_for_display, input_err,
     irfmt::{
@@ -66,11 +58,19 @@ use crate::{
     result::Result,
     std_deps::sync::LazyLock,
     storage_uniquer::TypeValueHash,
+    r#type::TypeHandle,
     utils::{
         table::{HMap, SmallMap},
         trait_cast::impls_trait_static,
     },
 };
+use alloc::{boxed::Box, string::String, vec::Vec};
+use core::{
+    fmt::{Debug, Display},
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
+use downcast_rs::{Downcast, impl_downcast};
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
 #[derive(Clone)]
@@ -406,6 +406,78 @@ pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribut
 /// ```
 pub fn attr_impls_static<A: Attribute, I: ?Sized + AttrInterfaceMarker + 'static>() -> bool {
     impls_trait_static::<A, I>()
+}
+
+/// Cast a boxed [Attribute] object to a boxed interface object.
+///
+/// Usage:
+///
+/// ```
+/// use pliron::{
+///     attribute::{Attribute, boxed_attr_cast},
+///     builtin::{
+///         attr_interfaces::{FloatAttr, TypedAttrInterface},
+///         attributes::IntegerAttr,
+///         types::{IntegerType, Signedness},
+///     },
+///     context::Context,
+///     utils::apint::{APInt, bw},
+/// };
+/// let ctx = &Context::new();
+///
+/// let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+/// let int_attr = || -> Box<dyn Attribute> {
+///     Box::new(IntegerAttr::new(i64_ty, APInt::from_i64(42, bw(64))))
+/// };
+///
+/// let typed = boxed_attr_cast::<dyn TypedAttrInterface>(int_attr())
+///     .expect("IntegerAttr implements TypedAttrInterface");
+/// assert_eq!(typed.get_type(ctx), i64_ty.into());
+///
+/// // IntegerAttr isn't a float attribute, so the cast fails.
+/// assert!(boxed_attr_cast::<dyn FloatAttr>(int_attr()).is_none());
+/// ```
+///
+/// Casting to concrete [Attribute] types are intentionally rejected.
+/// ```compile_fail
+/// use pliron::attribute::{Attribute, boxed_attr_cast};
+/// use pliron::builtin::attributes::IntegerAttr;
+///
+/// fn wrong_cast(attr: Box<dyn Attribute>) {
+///     let _ = boxed_attr_cast::<IntegerAttr>(attr);
+/// }
+/// ```
+/// Use [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics)
+/// to cast to concrete [Attribute] types.
+pub fn boxed_attr_cast<T: ?Sized + AttrInterfaceMarker + 'static>(
+    attr: Box<dyn Attribute>,
+) -> Option<Box<T>> {
+    crate::utils::trait_cast::boxed_any_to_trait::<T>(attr as Box<dyn core::any::Any>)
+}
+
+/// If an [Attribute] impls [TypedAttrInterface], get its [Type](crate::type::Type).
+///
+/// ```
+/// use pliron::{
+///     attribute::attr_type,
+///     builtin::{
+///         attributes::{IntegerAttr, StringAttr},
+///         types::{IntegerType, Signedness},
+///     },
+///     context::Context,
+///     utils::apint::{APInt, bw},
+/// };
+/// let ctx = &Context::new();
+///
+/// let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+/// let int_attr = IntegerAttr::new(i64_ty, APInt::from_i64(42, bw(64)));
+/// assert_eq!(attr_type(&int_attr, ctx), Some(i64_ty.into()));
+///
+/// // A string carries no type.
+/// assert!(attr_type(&StringAttr::new("hello".to_string()), ctx).is_none());
+/// ```
+pub fn attr_type(attr: &dyn Attribute, ctx: &Context) -> Option<TypeHandle> {
+    attr_cast::<dyn TypedAttrInterface>(attr).map(|typed| typed.get_type(ctx))
 }
 
 #[derive(Clone, Hash, PartialEq, Eq)]

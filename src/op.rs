@@ -45,7 +45,6 @@ use core::{
     ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
-use dyn_clone::DynClone;
 use thiserror::Error;
 
 use crate::{
@@ -58,6 +57,7 @@ use crate::{
     common_traits::{Named, Verify},
     context::{Context, Ptr, collect_deduped_interface_verifiers},
     dialect::{Dialect, DialectName},
+    dyn_clone::DynClone,
     identifier::Identifier,
     impl_printable_for_display, input_err,
     irfmt::{

@@ -34,25 +34,26 @@ use llvm_sys::{
         LLVMBuildShl, LLVMBuildShuffleVector, LLVMBuildStore, LLVMBuildSub, LLVMBuildSwitch,
         LLVMBuildTrunc, LLVMBuildUDiv, LLVMBuildUIToFP, LLVMBuildURem, LLVMBuildUnreachable,
         LLVMBuildVAArg, LLVMBuildXor, LLVMBuildZExt, LLVMCanValueUseFastMathFlags,
-        LLVMClearInsertionPosition, LLVMConstInt, LLVMConstIntGetZExtValue, LLVMConstNull,
-        LLVMConstReal, LLVMConstRealGetDouble, LLVMConstStringInContext2, LLVMConstVector,
-        LLVMContextCreate, LLVMContextDispose, LLVMCountIncoming, LLVMCountParamTypes,
-        LLVMCountParams, LLVMCountStructElementTypes, LLVMCreateBuilderInContext,
-        LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
-        LLVMDeleteFunction, LLVMDeleteGlobal, LLVMDisposeMemoryBuffer, LLVMDisposeMessage,
-        LLVMDisposeModule, LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext,
-        LLVMDumpModule, LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
-        LLVMGEPGetNoWrapFlags, LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType,
-        LLVMGetArrayLength2, LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID,
-        LLVMGetBasicBlockName, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
-        LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType,
-        LLVMGetCalledValue, LLVMGetCmpXchgFailureOrdering, LLVMGetCmpXchgSuccessOrdering,
-        LLVMGetConstOpcode, LLVMGetDataLayoutStr, LLVMGetElementType, LLVMGetFCmpPredicate,
-        LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal,
-        LLVMGetFirstInstruction, LLVMGetFirstNamedMetadata, LLVMGetFirstParam,
-        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
-        LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInlineAsm,
-        LLVMGetInlineAsmAsmString, LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
+        LLVMClearInsertionPosition, LLVMConstArray2, LLVMConstInt, LLVMConstIntGetZExtValue,
+        LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstRealGetDouble,
+        LLVMConstStringInContext2, LLVMConstVector, LLVMContextCreate, LLVMContextDispose,
+        LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
+        LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
+        LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDeleteGlobal,
+        LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
+        LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType,
+        LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGEPGetNoWrapFlags,
+        LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
+        LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID, LLVMGetBasicBlockName,
+        LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
+        LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType, LLVMGetCalledValue,
+        LLVMGetCmpXchgFailureOrdering, LLVMGetCmpXchgSuccessOrdering, LLVMGetConstOpcode,
+        LLVMGetDataLayoutStr, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
+        LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
+        LLVMGetFirstNamedMetadata, LLVMGetFirstParam, LLVMGetGEPSourceElementType,
+        LLVMGetICmpPredicate, LLVMGetIncomingBlock, LLVMGetIncomingValue, LLVMGetIndices,
+        LLVMGetInitializer, LLVMGetInlineAsm, LLVMGetInlineAsmAsmString,
+        LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
         LLVMGetInlineAsmHasSideEffects, LLVMGetInsertBlock, LLVMGetInstructionOpcode,
         LLVMGetInstructionParent, LLVMGetIntTypeWidth, LLVMGetIntrinsicDeclaration,
         LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage, LLVMGetMDKindIDInContext,
@@ -1099,11 +1100,42 @@ pub fn llvm_const_vector(elements: &[LLVMValue]) -> LLVMValue {
     unsafe { LLVMConstVector(elements.as_mut_ptr(), elements.len().try_into().unwrap()).into() }
 }
 
+/// LLVMConstArray2
+pub fn llvm_const_array(elem_ty: LLVMType, elements: &[LLVMValue]) -> LLVMValue {
+    assert!(elements.iter().all(|elem| llvm_is_a::constant(*elem)));
+    assert!(elements.iter().all(|elem| llvm_type_of(*elem) == elem_ty));
+    let mut elements = elements.iter().cloned().map(Into::into).collect::<Vec<_>>();
+    unsafe {
+        LLVMConstArray2(
+            elem_ty.into(),
+            elements.as_mut_ptr(),
+            elements.len().try_into().unwrap(),
+        )
+        .into()
+    }
+}
+
+/// LLVMConstNamedStruct
+pub fn llvm_const_struct(struct_ty: LLVMType, fields: &[LLVMValue]) -> LLVMValue {
+    assert!(llvm_get_type_kind(struct_ty) == LLVMTypeKind::LLVMStructTypeKind);
+    assert!(fields.iter().all(|field| llvm_is_a::constant(*field)));
+    let mut fields = fields.iter().cloned().map(Into::into).collect::<Vec<_>>();
+    unsafe {
+        LLVMConstNamedStruct(
+            struct_ty.into(),
+            fields.as_mut_ptr(),
+            fields.len().try_into().unwrap(),
+        )
+        .into()
+    }
+}
+
 /// LLVMConstIntGetZExtValue
 pub fn llvm_const_int_get_zext_value(val: LLVMValue) -> u64 {
     assert!(llvm_is_a::constant_int(val));
+    let ty = llvm_get_scalar_type(llvm_type_of(val));
     assert!(
-        llvm_get_int_type_width(llvm_type_of(val)) <= 64,
+        llvm_get_int_type_width(ty) <= 64,
         "llvm_const_int_get_zext_value is only valid for integer constants with width <= 64"
     );
     unsafe { LLVMConstIntGetZExtValue(val.into()) }

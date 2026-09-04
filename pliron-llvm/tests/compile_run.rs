@@ -389,6 +389,23 @@ fn test_consts() {
     );
 }
 
+/// Test constant aggregates, vector splats, byte strings and symbol addresses.
+#[test]
+fn test_const_aggr() {
+    init_env_logger_for_tests!();
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR.join("const_aggr.ll").to_str().unwrap(),
+        Passes::default(),
+        126,
+    );
+
+    test_llvm_ir_via_pliron(
+        RESOURCES_DIR.join("const_aggr.ll").to_str().unwrap(),
+        create_opt_pass_manager(),
+        126,
+    );
+}
+
 /// Test globals
 #[test]
 fn test_globals() {

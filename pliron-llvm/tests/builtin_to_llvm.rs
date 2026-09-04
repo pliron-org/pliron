@@ -17,7 +17,9 @@ use pliron::{
     pass::{AnalysisManager, OpPass, Pass, Passes},
     result::{ExpectOk, Result},
 };
-use pliron_llvm::{llvm_sys::core::LLVMContext, to_llvm_ir};
+use pliron_llvm::llvm_sys::core::LLVMContext;
+
+mod common;
 
 fn run_conversion_pipeline(input: &str) -> Result<String> {
     init_env_logger_for_tests!();
@@ -36,7 +38,7 @@ fn run_conversion_pipeline(input: &str) -> Result<String> {
     verify_operation(op, ctx)?;
 
     let llvm_ctx = LLVMContext::default();
-    let llvm_mod = to_llvm_ir::convert_module(ctx, &llvm_ctx, module_op)?;
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, module_op)?;
     Ok(llvm_mod.to_string())
 }
 
