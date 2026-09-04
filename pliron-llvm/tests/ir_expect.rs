@@ -718,31 +718,49 @@ fn llvm_ir_volatile_load_store_roundtrip() -> Result<()> {
     let llvm_ctx = LLVMContext::default();
     let ctx = &mut Context::new();
     let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "volatile_load_store")?;
+    let printed = module_op.get_operation().disp(ctx).to_string();
 
-    let pliron_text = module_op.get_operation().disp(ctx).to_string();
-    expect!["2"].assert_eq(&pliron_text.matches("[volatile : true]").count().to_string());
+    expect![[r#"
+        builtin.module @volatile_load_store 
+        {
+          ^block1v1():
+            llvm.func @volatile_rw: llvm.func <builtin.integer i32(llvm.ptr (0), builtin.integer i32) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i32):
+                v_v2 = llvm.load [volatile : true] v0 [align : 4] : builtin.integer i32 !0;
+                llvm.store [volatile : true] *v0 <- v1 [align : 4];
+                plain_v3 = llvm.load v0 [align : 4] : builtin.integer i32 !1;
+                llvm.store *v0 <- plain_v3 [align : 4];
+                llvm.return v_v2
+            }
+        }
 
-    // The printed Pliron form must itself round-trip through the parser. This also
-    // verifies that non-volatile load/store syntax remains unambiguous next to alignment.
+        outlined_attributes:
+        !0 = [builtin_given_names = builtin.given_names [v]]
+        !1 = [builtin_given_names = builtin.given_names [plain]]
+    "#]].assert_eq(&printed);
+
+    // Print and reparse.
     let reparsed_ctx = &mut Context::new();
-    let reparsed_module = common::parse_op_verify(reparsed_ctx, &pliron_text)?;
+    let reparsed_module = common::parse_op_verify::<ModuleOp>(reparsed_ctx, &printed)?;
 
     let out_llvm_ctx = LLVMContext::default();
     let out_mod = to_llvm_ir::convert_module(reparsed_ctx, &out_llvm_ctx, reparsed_module)?;
-    let out = out_mod.to_string();
 
-    let memory_op_summary = format!(
-        "load volatile: {}\nstore volatile: {}\nload: {}\nstore: {}",
-        out.matches("load volatile").count(),
-        out.matches("store volatile").count(),
-        out.matches("load i32").count(),
-        out.matches("store i32").count(),
-    );
     expect![[r#"
-        load volatile: 1
-        store volatile: 1
-        load: 1
-        store: 1"#]]
-    .assert_eq(&memory_op_summary);
+        ; ModuleID = 'volatile_load_store'
+        source_filename = "volatile_load_store"
+
+        define i32 @volatile_rw(ptr %0, i32 %1) {
+        entry_block2v1_block2v1:
+          %v_v2 = load volatile i32, ptr %0, align 4
+          store volatile i32 %1, ptr %0, align 4
+          %plain_v3 = load i32, ptr %0, align 4
+          store i32 %plain_v3, ptr %0, align 4
+          ret i32 %v_v2
+        }
+    "#]]
+    .assert_eq(&out_mod.to_string());
     Ok(())
 }
