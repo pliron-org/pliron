@@ -18,7 +18,6 @@ use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::LLVMContext,
     ops::{ConstantOpVerifyErr, SelectOpVerifyErr},
-    to_llvm_ir,
 };
 
 mod common;
@@ -252,19 +251,12 @@ fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
     let ctx = &mut Context::new();
     let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "gep_flags")?;
 
-    let pliron_text = module_op
-        .disp(ctx)
-        .to_string()
-        .lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n");
     expect![[r#"
-        builtin.module @gep_flags
+        builtin.module @gep_flags 
         {
           ^block1v1():
             llvm.func @gep_flags: llvm.func <llvm.ptr (0)(llvm.ptr (0), builtin.integer i64) variadic = false>
-              [llvm_function_linkage: llvm.linkage ExternalLinkage]
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1(v0: llvm.ptr (0), v1: builtin.integer i64):
                 plain_v2 = llvm.gep <builtin.integer i8> (v0, v1)[OperandIdx(1)] : llvm.ptr (0) !0;
@@ -274,11 +266,10 @@ fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
                 both_v6 = llvm.gep <builtin.integer i8> (v0, v1)<INBOUNDS | NUW>[OperandIdx(1)] : llvm.ptr (0) !4;
                 llvm.return both_v6
             }
-        }"#]].assert_eq(&pliron_text);
+        }"#]].assert_eq(&module_op.disp(ctx).to_string());
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = to_llvm_ir::convert_module(ctx, &out_llvm_ctx, module_op)?;
-    let out = out_mod.to_string();
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
     expect![[r#"
         ; ModuleID = 'gep_flags'
         source_filename = "gep_flags"
@@ -293,7 +284,7 @@ fn llvm_ir_gep_no_wrap_flags_roundtrip() -> Result<()> {
           ret ptr %both_v6
         }
     "#]]
-    .assert_eq(&out);
+    .assert_eq(&out_mod.to_string());
     Ok(())
 }
 
