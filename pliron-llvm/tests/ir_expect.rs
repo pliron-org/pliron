@@ -379,12 +379,13 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
     init_env_logger_for_tests!();
     let input = r#"
         @g = global i32 0
+        @g_const = constant i32 1
         @array = global [4 x i32] [i32 1, i32 2, i32 3, i32 4]
         @struct = global { i32, float, ptr } { i32 1, float 2.0, ptr @g }
         @nested = global [2 x { i32, i32 }] [{ i32, i32 } { i32 1, i32 2 },
                                              { i32, i32 } { i32 3, i32 4 }]
         @vtable = global [2 x ptr] [ptr @g, ptr @f]
-        @addr = global ptr @g
+        @addr = global ptr @g_const
         @string = global [6 x i8] c"hello\00"
         @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
         @splat = global <4 x i32> splat (i32 7)
@@ -416,6 +417,8 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
           ^block1v1():
             llvm.global @g : builtin.integer i32
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = builtin.integer <0: i32>;
+            llvm.global @g_const : builtin.integer i32
+              [llvm_global_linkage: llvm.linkage ExternalLinkage, llvm_global_constant: builtin.bool true] = builtin.integer <1: i32>;
             llvm.global @array : llvm.array [4 x builtin.integer i32]
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>;
             llvm.global @struct : llvm.struct <{ builtin.integer i32, builtin.fp32 , llvm.ptr (0) } : Unpacked>
@@ -425,7 +428,7 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
             llvm.global @vtable : llvm.array [2 x llvm.ptr (0)]
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[llvm.symbol_addr <@g : llvm.ptr (0)>, llvm.symbol_addr <@f : llvm.ptr (0)>] : llvm.array [2 x llvm.ptr (0)]>;
             llvm.global @addr : llvm.ptr (0)
-              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.symbol_addr <@g : llvm.ptr (0)>;
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.symbol_addr <@g_const : llvm.ptr (0)>;
             llvm.global @string : llvm.array [6 x builtin.integer i8]
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.bytes [104, 101, 108, 108, 111, 0];
             llvm.global @vector : llvm.vector <Fixed x 4 x builtin.integer i32>
@@ -462,27 +465,28 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
     .assert_eq(&printed);
 
     // The printed constants must parse back and verify.
-    let parse_ctx = &mut Context::new();
-    common::parse_op_verify::<ModuleOp>(parse_ctx, &printed)?;
+    let reparsed_ctx = &mut Context::new();
+    let reparsed_op = common::parse_op_verify::<ModuleOp>(reparsed_ctx, &printed)?;
 
     let out_llvm_ctx = LLVMContext::default();
-    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, module_op)?;
+    let out_mod = common::to_llvm_ir_verify(reparsed_ctx, &out_llvm_ctx, reparsed_op)?;
     expect![[r#"
         ; ModuleID = 'constants'
         source_filename = "constants"
 
         @g = global i32 0
+        @g_const = constant i32 1
         @array = global [4 x i32] [i32 1, i32 2, i32 3, i32 4]
         @struct = global { i32, float, ptr } { i32 1, float 2.000000e+00, ptr @g }
         @nested = global [2 x { i32, i32 }] [{ i32, i32 } { i32 1, i32 2 }, { i32, i32 } { i32 3, i32 4 }]
         @vtable = global [2 x ptr] [ptr @g, ptr @f]
-        @addr = global ptr @g
+        @addr = global ptr @g_const
         @string = global [6 x i8] c"hello\00"
         @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
         @splat = global <4 x i32> splat (i32 7)
 
         define void @f(ptr %0) {
-        entry_block2v1:
+        entry_block2v1_block2v1:
           store [4 x i32] [i32 1, i32 2, i32 3, i32 4], ptr %0, align 4
           store { i32, ptr } { i32 5, ptr @g }, ptr %0, align 8
           store [6 x i8] c"hello\00", ptr %0, align 1
@@ -490,12 +494,12 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
         }
 
         define <4 x i32> @fixed() {
-        entry_block3v1:
+        entry_block3v1_block3v1:
           ret <4 x i32> splat (i32 7)
         }
 
         define <4 x float> @fp() {
-        entry_block4v1:
+        entry_block4v1_block4v1:
           ret <4 x float> splat (float 2.500000e+00)
         }
     "#]]

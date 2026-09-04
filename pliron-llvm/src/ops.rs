@@ -2700,12 +2700,12 @@ impl GlobalOp {
     /// Whether this global is constant.
     pub fn is_constant(&self, ctx: &Context) -> bool {
         self.get_attr_llvm_global_constant(ctx)
-            .is_some_and(|attr| bool::from(attr.clone()))
+            .is_some_and(|attr| attr.clone().into())
     }
 
     /// Set whether this global is constant.
     pub fn set_constant(&self, ctx: &mut Context, is_constant: bool) {
-        self.set_attr_llvm_global_constant(ctx, BoolAttr::new(is_constant));
+        self.set_attr_llvm_global_constant(ctx, is_constant.into());
     }
 }
 
