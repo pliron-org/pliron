@@ -495,9 +495,8 @@ impl PointerTypeResult for AllocaOp {
 
 impl AllocaOp {
     /// Create a new [AllocaOp]
-    pub fn new(ctx: &mut Context, elem_type: TypeHandle, size: Value) -> Self {
-        // `alloca` yields a pointer in the default (stack) address space.
-        let ptr_ty = PointerType::get(ctx, 0).into();
+    pub fn new(ctx: &mut Context, elem_type: TypeHandle, size: Value, address_space: u32) -> Self {
+        let ptr_ty = PointerType::get(ctx, address_space).into();
         let op = Operation::new(
             ctx,
             Self::get_concrete_op_info(),

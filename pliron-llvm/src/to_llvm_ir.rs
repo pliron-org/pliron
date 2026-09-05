@@ -576,16 +576,25 @@ impl ToLLVMValue for AllocaOp {
     ) -> Result<LLVMValue> {
         let ty = convert_type(ctx, llvm_ctx, cctx, self.result_pointee_type(ctx))?;
         let size = convert_value_operand(cctx, ctx, &self.get_operand(ctx))?;
-        let alloca_op = llvm_build_array_alloca(
-            &cctx.builder,
-            ty,
-            size,
-            self.get_result(ctx).unique_name(ctx).as_ref(),
-        );
+        let name = self.get_result(ctx).unique_name(ctx);
+        let alloca_op = llvm_build_array_alloca(&cctx.builder, ty, size, name.as_ref());
         if let Some(alignment) = self.alignment(ctx) {
             llvm_set_alignment(alloca_op, alignment);
         }
-        Ok(alloca_op)
+
+        // LLVM's C API has no address space aware alloca builder: `LLVMBuildArrayAlloca`
+        // always allocates in the address space the data layout nominates for allocas.
+        // When the op's result asks for a different one, cast into it.
+        let res_ty = convert_type(ctx, llvm_ctx, cctx, self.result_type(ctx))?;
+        if llvm_type_of(alloca_op) == res_ty {
+            return Ok(alloca_op);
+        }
+        Ok(llvm_build_addrspacecast(
+            &cctx.builder,
+            alloca_op,
+            res_ty,
+            &format!("{name}.ascast"),
+        ))
     }
 }
 

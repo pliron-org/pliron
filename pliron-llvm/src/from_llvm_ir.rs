@@ -1169,7 +1169,8 @@ fn convert_instruction(
         LLVMOpcode::LLVMAlloca => {
             let elem_type = convert_type(ctx, cctx, llvm_get_allocated_type(inst))?;
             let size = get_operand(opds, 0)?;
-            let op = AllocaOp::new(ctx, elem_type, size);
+            let address_space = llvm_get_pointer_address_space(llvm_type_of(inst));
+            let op = AllocaOp::new(ctx, elem_type, size, address_space);
             let alignment = llvm_get_alignment(inst);
             if alignment != 0 {
                 op.set_alignment(ctx, alignment);
