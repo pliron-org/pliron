@@ -152,7 +152,7 @@ impl ToLLVMDialect for KalDeclOp {
         let size_const = BuiltinConstantOp::new(ctx, Box::new(size_attr));
         let size_val = size_const.get_result(ctx);
         rewriter.insert_op(ctx, &size_const);
-        let alloca = AllocaOp::new(ctx, elem_ty, size_val);
+        let alloca = AllocaOp::new(ctx, elem_ty, size_val, 0);
         let alloca_ptr = alloca.get_result(ctx);
         rewriter.insert_op(ctx, &alloca);
         rewriter.replace_operation_with_values(ctx, self.get_operation(), vec![alloca_ptr]);

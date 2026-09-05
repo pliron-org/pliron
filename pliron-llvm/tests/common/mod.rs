@@ -3,6 +3,10 @@
 use pliron::{
     builtin::ops::ModuleOp,
     context::Context,
+    irbuild::{
+        cloning::IrMapping,
+        equivalence::{EqResult, IGNORE_LOC_NAMES, operation_eq, operation_hash},
+    },
     irfmt::parsers::spaced,
     op::{Op, verify_op},
     operation::{Operation, verify_operation},
@@ -27,6 +31,36 @@ pub fn parse_op_verify<O: Op>(ctx: &mut Context, input: &str) -> Result<O> {
     log::debug!("Parsed PLIR:\n{}", module_op.get_operation().disp(ctx));
     verify_operation(op, ctx)?;
     Ok(module_op)
+}
+
+/// Verifies `op`, prints it, parses the printed text back into `ctx`, verifies that too,
+/// and asserts that the reparsed IR is structurally equal to (and hashes the same as) the
+/// original. Returns the printed text along with the reparsed op.
+#[allow(dead_code)]
+pub fn print_parse_verify<O: Op>(ctx: &mut Context, op: O) -> Result<(String, O)> {
+    verify_operation(op.get_operation(), ctx)?;
+
+    let printed = op.get_operation().disp(ctx).to_string();
+    let reparsed = parse_op_verify::<O>(ctx, &printed)?;
+
+    assert_eq!(
+        operation_eq(
+            ctx,
+            &mut IrMapping::default(),
+            op.get_operation(),
+            reparsed.get_operation(),
+            &IGNORE_LOC_NAMES,
+        ),
+        EqResult::Eq,
+        "IR parsed back from its printed form differs from the original"
+    );
+    assert_eq!(
+        operation_hash(ctx, op.get_operation(), &IGNORE_LOC_NAMES),
+        operation_hash(ctx, reparsed.get_operation(), &IGNORE_LOC_NAMES),
+        "IR parsed back from its printed form hashes differently from the original"
+    );
+
+    Ok((printed, reparsed))
 }
 
 /// Run O1 passes on `module_op`
