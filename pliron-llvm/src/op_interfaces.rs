@@ -20,7 +20,7 @@ use pliron::{
     derive::op_interface,
     dict_key,
     printable::Printable,
-    r#type::{Type, TypeInterfaceMarker, TypedHandle, type_impls},
+    r#type::{Type, TypeInterfaceHandle, TypeInterfaceMarker, TypedHandle, type_impls},
     utils::const_bound_n::I,
 };
 use thiserror::Error;
@@ -645,15 +645,17 @@ fn verify_t_or_vec_of_t<T: Type>(loc: Location, ty: &dyn Type, ctx: &Context) ->
 fn elem_ty_of_impls<I: ?Sized + TypeInterfaceMarker + 'static>(
     ty: TypeHandle,
     ctx: &Context,
-) -> TypeHandle {
-    let ty_ref = &*ty.deref(ctx);
-    if type_impls::<I>(ty_ref) {
-        return ty;
+) -> TypeInterfaceHandle<I> {
+    if let Ok(interface_handle) = TypeInterfaceHandle::from_handle(ty, ctx) {
+        return interface_handle;
     }
-    ty_ref
+    let ty_ref = &*ty.deref(ctx);
+    let elem_ty = ty_ref
         .downcast_ref::<VectorType>()
         .expect("verify() guarantees type impls I or is a vector whose elem impls I")
-        .elem_type()
+        .elem_type();
+    TypeInterfaceHandle::from_handle(elem_ty, ctx)
+        .expect("verify() guarantees element type impls I")
 }
 
 /// Verify that `ty` implements `I`, or is a [VectorType] whose element type implements `I`.
@@ -711,7 +713,7 @@ pub trait ScalarOrVectorOpd<T: Type, const N: usize> {
 #[op_interface]
 pub trait ScalarOrVectorOpdImpls<I: ?Sized + TypeInterfaceMarker + 'static, const N: usize> {
     /// Get the type of operand N, or its element type if its [VectorType].
-    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeHandle {
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeInterfaceHandle<I> {
         let op = &*self.get_operation().deref(ctx);
         elem_ty_of_impls::<I>(op.get_operand(N).get_type(ctx), ctx)
     }
@@ -759,7 +761,7 @@ pub trait ScalarOrVectorRes<T: Type, const N: usize> {
 #[op_interface]
 pub trait ScalarOrVectorResImpls<I: ?Sized + TypeInterfaceMarker + 'static, const N: usize> {
     /// Get the type of result N, or its element type if its [VectorType].
-    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeHandle {
+    fn scalar_or_vector_elem_ty(&self, ctx: &Context) -> TypeInterfaceHandle<I> {
         let op = &*self.get_operation().deref(ctx);
         elem_ty_of_impls::<I>(op.get_result(N).get_type(ctx), ctx)
     }
