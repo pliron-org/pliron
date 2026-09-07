@@ -48,7 +48,7 @@ use crate::{
     impl_printable_for_display, input_err,
     irfmt::parsers::spaced,
     location::Located,
-    parsable::{Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::{Error, Result},
     std_deps::sync::LazyLock,
@@ -432,7 +432,7 @@ impl Verify for TypeObj {
 pub struct TypedHandle<T: Type>(TypeHandle, PhantomData<T>);
 
 #[derive(Error, Debug)]
-#[error("TypedHandle mismatch: Constructing {expected} but provided {provided}")]
+#[error("TypedHandle mismatch: expected {expected} but provided {provided}")]
 pub struct TypedHandleErr {
     pub expected: String,
     pub provided: String,
@@ -440,8 +440,6 @@ pub struct TypedHandleErr {
 
 impl<T: Type> TypedHandle<T> {
     /// Return a [Ref] to the [Type]
-    /// This borrows from a RefCell and the borrow is live
-    /// as long as the returned [Ref] lives.
     pub fn deref<'a>(&self, ctx: &'a Context) -> Ref<'a, T> {
         Ref::map(self.0.deref(ctx), |t| {
             t.downcast_ref::<T>()
@@ -520,11 +518,13 @@ impl<T: Type + Parsable<Arg = (), Parsed = TypedHandle<T>>> Parsable for TypedHa
                 let loc = loc.clone();
                 combine::parser(move |parsable_state: &mut StateStream<'a>| {
                     if type_id != T::get_type_id_static() {
+                        let ctx = &*parsable_state.state.ctx;
                         input_err!(
                             loc.clone(),
-                            "Expected type {}, but found {}",
-                            T::get_type_id_static().disp(parsable_state.state.ctx),
-                            type_id.disp(parsable_state.state.ctx)
+                            TypedHandleErr {
+                                expected: T::get_type_id_static().disp(ctx).to_string(),
+                                provided: type_id.disp(ctx).to_string()
+                            }
                         )?
                     }
                     T::parser(arg).parse_stream(parsable_state).into()
@@ -617,6 +617,185 @@ pub fn type_impls<T: ?Sized + TypeInterfaceMarker + 'static>(ty: &dyn Type) -> b
 /// ```
 pub fn type_impls_static<T: Type, I: ?Sized + TypeInterfaceMarker + 'static>() -> bool {
     impls_trait_static::<T, I>()
+}
+
+/// A wrapper around [TypeHandle] whose underlying [Type] is statically known to
+/// implement the type interface `I`.
+///
+/// ```
+/// use pliron::{
+///     builtin::{type_interfaces::FloatTypeInterface, types::FP32Type},
+///     context::Context,
+///     r#type::TypeInterfaceHandle,
+/// };
+///
+/// let ctx = &mut Context::new();
+/// let fp32 = FP32Type::get(ctx);
+/// let handle: TypeInterfaceHandle<dyn FloatTypeInterface> = fp32.into();
+/// assert_eq!(handle.deref(ctx).get_semantics().bits, 32);
+/// ```
+pub struct TypeInterfaceHandle<I: ?Sized + TypeInterfaceMarker + 'static>(
+    TypeHandle,
+    PhantomData<I>,
+);
+
+#[derive(Error, Debug)]
+#[error("TypeInterfaceHandle mismatch: {provided} does not implement interface {interface}")]
+pub struct TypeInterfaceHandleErr {
+    pub interface: String,
+    pub provided: String,
+}
+
+/// A static promise that the [Type] `Self` implements the type interface `I`.
+///
+/// This is auto implemented by [type_interface_impl](pliron::derive::type_interface_impl)
+/// for every [Type] that implements an interface. A manual implementation making a false
+/// promise will trigger a runtime panic.
+///
+/// See also [type_impls_static], which answers the same question at run time.
+///
+/// Example:
+///
+/// ```compile_fail
+/// use pliron::{
+///     builtin::{type_interfaces::FloatTypeInterface, types::IntegerType},
+///     context::Context,
+///     r#type::TypeInterfaceHandle,
+/// };
+///
+/// let ctx = &mut Context::new();
+/// let i32_ty = IntegerType::get(ctx, 32, pliron::builtin::types::Signedness::Signed);
+/// // Compilation fails: `IntegerType` does not implement `FloatTypeInterface`.
+/// let handle: TypeInterfaceHandle<dyn FloatTypeInterface> = i32_ty.into();
+/// ```
+#[diagnostic::on_unimplemented(
+    message = "`{Self}` does not implement the type interface `{I}`.",
+    label = "Annotate `{Self}`'s implementation of this interface with #[type_interface_impl]",
+    note = "Use `TypeInterfaceHandle::from_handle` to check this at run time instead."
+)]
+pub trait TypeImplsInterface<I: ?Sized + TypeInterfaceMarker + 'static>: Type {}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> TypeInterfaceHandle<I> {
+    /// Return a [Ref] to the [Type], as an object of the interface `I`.
+    pub fn deref<'a>(&self, ctx: &'a Context) -> Ref<'a, I> {
+        Ref::map(self.0.deref(ctx), |ty| {
+            type_cast::<I>(ty).expect("Interface mismatch, inconsistent TypeInterfaceHandle")
+        })
+    }
+
+    /// Create a new [TypeInterfaceHandle] from a [TypeHandle].
+    pub fn from_handle(handle: TypeHandle, ctx: &Context) -> Result<TypeInterfaceHandle<I>> {
+        if type_impls::<I>(&*handle.deref(ctx)) {
+            Ok(TypeInterfaceHandle(handle, PhantomData::<I>))
+        } else {
+            arg_err_noloc!(TypeInterfaceHandleErr {
+                interface: core::any::type_name::<I>().to_string(),
+                provided: handle.disp(ctx).to_string()
+            })
+        }
+    }
+
+    /// Erase the static interface and return the underlying [TypeHandle].
+    pub fn to_handle(&self) -> TypeHandle {
+        self.0
+    }
+}
+
+impl<T: TypeImplsInterface<I>, I: ?Sized + TypeInterfaceMarker + 'static> From<TypedHandle<T>>
+    for TypeInterfaceHandle<I>
+{
+    fn from(value: TypedHandle<T>) -> Self {
+        assert!(
+            type_impls_static::<T, I>(),
+            "{} does not implement interface {}. \
+             Use the `type_interface_impl` macro",
+            core::any::type_name::<T>(),
+            core::any::type_name::<I>()
+        );
+        TypeInterfaceHandle(value.to_handle(), PhantomData::<I>)
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> From<TypeInterfaceHandle<I>> for TypeHandle {
+    fn from(value: TypeInterfaceHandle<I>) -> Self {
+        value.to_handle()
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Clone for TypeInterfaceHandle<I> {
+    fn clone(&self) -> TypeInterfaceHandle<I> {
+        *self
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Copy for TypeInterfaceHandle<I> {}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> PartialEq for TypeInterfaceHandle<I> {
+    fn eq(&self, other: &Self) -> bool {
+        self.0 == other.0
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Eq for TypeInterfaceHandle<I> {}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Hash for TypeInterfaceHandle<I> {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.hash(state);
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Debug for TypeInterfaceHandle<I> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        Debug::fmt(&self.0, f)
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Printable for TypeInterfaceHandle<I> {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        Printable::fmt(&self.0, ctx, state, f)
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Parsable for TypeInterfaceHandle<I> {
+    type Arg = ();
+    type Parsed = Self;
+
+    fn parse<'a>(
+        state_stream: &mut StateStream<'a>,
+        _arg: Self::Arg,
+    ) -> ParseResult<'a, Self::Parsed> {
+        let loc = state_stream.loc();
+        TypeHandle::parser(())
+            .then(move |handle| {
+                let loc = loc.clone();
+                combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                    let ctx = &*parsable_state.state.ctx;
+                    if !type_impls::<I>(&*handle.deref(ctx)) {
+                        input_err!(
+                            loc.clone(),
+                            TypeInterfaceHandleErr {
+                                interface: core::any::type_name::<I>().to_string(),
+                                provided: handle.disp(ctx).to_string()
+                            }
+                        )?
+                    }
+                    Ok(TypeInterfaceHandle(handle, PhantomData::<I>)).into_parse_result()
+                })
+            })
+            .parse_stream(state_stream)
+            .into_result()
+    }
+}
+
+impl<I: ?Sized + TypeInterfaceMarker + 'static> Verify for TypeInterfaceHandle<I> {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        self.0.verify(ctx)
+    }
 }
 
 /// Every type interface must have a function named `verify` with this type.

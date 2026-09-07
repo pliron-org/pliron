@@ -13,7 +13,8 @@ use pliron::{
         attributes::{IntegerAttr, StringAttr},
         op_interfaces::{NResultsVerifyErr, OneResultInterface},
         ops::ModuleOp,
-        types::{IntegerType, UnitType},
+        type_interfaces::FloatTypeInterface,
+        types::{FP32Type, IntegerType, Signedness, UnitType},
     },
     combine::stream::position::SourcePosition,
     common_traits::Verify,
@@ -30,7 +31,9 @@ use pliron::{
     printable::{self, Printable},
     result::{Error, ErrorKind, ExpectOk, Result},
     std_deps::sync::{LazyLock, Mutex},
-    r#type::{Type, TypeHandle, type_cast, verify_type},
+    r#type::{
+        Type, TypeHandle, TypeInterfaceHandle, TypeInterfaceHandleErr, type_cast, verify_type,
+    },
     utils::trait_cast::any_to_trait,
     verify_err,
 };
@@ -1139,4 +1142,68 @@ fn test_outline_attr_on_block() -> Result<()> {
     .assert_eq(&print2);
 
     Ok(())
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn test_type_interface_handle() {
+    let ctx = &mut Context::new();
+    let fp32 = FP32Type::get(ctx);
+    let i32_ty = IntegerType::get(ctx, 32, Signedness::Signed);
+
+    // `FP32Type` implements `FloatTypeInterface`
+    let handle: TypeInterfaceHandle<dyn FloatTypeInterface> = fp32.into();
+    // Interface methods are available with no cast at the point of use.
+    assert_eq!(handle.deref(ctx).get_semantics().bits, 32);
+    assert_eq!(handle.to_handle(), fp32.to_handle());
+
+    assert!(
+        TypeInterfaceHandle::<dyn FloatTypeInterface>::from_handle(fp32.to_handle(), ctx).is_ok()
+    );
+    assert!(matches!(
+        TypeInterfaceHandle::<dyn FloatTypeInterface>::from_handle(i32_ty.to_handle(), ctx),
+        Err(Error {
+            kind: ErrorKind::InvalidArgument,
+            err,
+            ..
+        })
+        if err.is::<TypeInterfaceHandleErr>()
+    ));
+}
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn test_type_interface_handle_parse_print() {
+    let ctx = &mut Context::new();
+    let fp32 = FP32Type::get(ctx);
+
+    let handle: TypeInterfaceHandle<dyn FloatTypeInterface> = fp32.into();
+    let printed = handle.disp(ctx).to_string();
+
+    // A `TypeInterfaceHandle` prints exactly like the `TypeHandle` it wraps.
+    assert_eq!(printed, fp32.to_handle().disp(ctx).to_string());
+
+    let parsed = parse_from_str(
+        TypeInterfaceHandle::<dyn FloatTypeInterface>::parser(()),
+        ctx,
+        &printed,
+    )
+    .expect_ok(ctx);
+    assert_eq!(parsed, handle);
+
+    // A type that does not implement the interface is rejected at parse time.
+    let printed = IntegerType::get(ctx, 32, Signedness::Signed)
+        .disp(ctx)
+        .to_string();
+    let err = parse_from_str(
+        TypeInterfaceHandle::<dyn FloatTypeInterface>::parser(()),
+        ctx,
+        &printed,
+    )
+    .expect_err("IntegerType must not implement FloatTypeInterface");
+    expect![[r#"
+        Compilation error: invalid input program.
+        Parse error at line: 1, column: 1
+        TypeInterfaceHandle mismatch: builtin.integer si32 does not implement interface dyn pliron::builtin::type_interfaces::FloatTypeInterface
+    "#]].assert_eq(&err.to_string());
 }
