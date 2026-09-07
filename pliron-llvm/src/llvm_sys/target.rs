@@ -3,60 +3,71 @@
 
 //! Safe(r) wrappers around llvm_sys::target
 
+use crate::llvm_sys::ToBool;
 use llvm_sys::target::{
     LLVM_InitializeAllAsmParsers, LLVM_InitializeAllAsmPrinters, LLVM_InitializeAllDisassemblers,
     LLVM_InitializeAllTargetInfos, LLVM_InitializeAllTargetMCs, LLVM_InitializeAllTargets,
     LLVM_InitializeNativeAsmParser, LLVM_InitializeNativeAsmPrinter,
     LLVM_InitializeNativeDisassembler, LLVM_InitializeNativeTarget,
 };
+use std::sync::{Mutex, PoisonError};
 
-use crate::llvm_sys::ToBool;
+/// Exclusive access to LLVM's target registry.
+static REGISTRY_LOCK: Mutex<()> = Mutex::new(());
+
+/// Do `f` with exclusive access to LLVM's target registry.
+fn with_registry_lock<R>(f: impl FnOnce() -> R) -> R {
+    // The lock protects LLVM's registry, not Rust data. A panic in another
+    // thread thus leaves no invalid state here. Ignore the poison flag.
+    let _guard = REGISTRY_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
+    f()
+}
 
 /// LLVM_InitializeAllTargetInfos
 pub fn llvm_initialize_all_target_infos() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllTargetInfos();
-    }
+    });
 }
 
 /// LLVM_InitializeAllTargets
 pub fn llvm_initialize_all_targets() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllTargets();
-    }
+    });
 }
 
 /// LLVM_InitializeAllTargetMCs
 pub fn llvm_initialize_all_target_mcs() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllTargetMCs();
-    }
+    });
 }
 
 /// LLVM_InitializeAllAsmPrinters
 pub fn llvm_initialize_all_asm_printers() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllAsmPrinters();
-    }
+    });
 }
 
 /// LLVM_InitializeAllAsmParsers
 pub fn llvm_initialize_all_asm_parsers() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllAsmParsers();
-    }
+    });
 }
 
 /// LLVM_InitializeAllDisassemblers
 pub fn llvm_initialize_all_disassemblers() {
-    unsafe {
+    with_registry_lock(|| unsafe {
         LLVM_InitializeAllDisassemblers();
-    }
+    });
 }
 
 /// LLVM_InitializeNativeTarget
 pub fn llvm_initialize_native_target() -> Result<(), String> {
-    if !unsafe { LLVM_InitializeNativeTarget().to_bool() } {
+    if !with_registry_lock(|| unsafe { LLVM_InitializeNativeTarget().to_bool() }) {
         Ok(())
     } else {
         Err("Failed to initialize native target".to_string())
@@ -65,7 +76,7 @@ pub fn llvm_initialize_native_target() -> Result<(), String> {
 
 /// LLVM_InitializeNativeAsmParser
 pub fn llvm_initialize_native_asm_parser() -> Result<(), String> {
-    if !unsafe { LLVM_InitializeNativeAsmParser().to_bool() } {
+    if !with_registry_lock(|| unsafe { LLVM_InitializeNativeAsmParser().to_bool() }) {
         Ok(())
     } else {
         Err("Failed to initialize native asm parser".to_string())
@@ -74,7 +85,7 @@ pub fn llvm_initialize_native_asm_parser() -> Result<(), String> {
 
 /// LLVM_InitializeNativeAsmParser
 pub fn llvm_initialize_native_asm_printer() -> Result<(), String> {
-    if !unsafe { LLVM_InitializeNativeAsmPrinter().to_bool() } {
+    if !with_registry_lock(|| unsafe { LLVM_InitializeNativeAsmPrinter().to_bool() }) {
         Ok(())
     } else {
         Err("Failed to initialize native asm printer".to_string())
@@ -83,7 +94,7 @@ pub fn llvm_initialize_native_asm_printer() -> Result<(), String> {
 
 /// LLVM_InitializeNativeDisassembler
 pub fn llvm_initialize_native_disassembler() -> Result<(), String> {
-    if !unsafe { LLVM_InitializeNativeDisassembler().to_bool() } {
+    if !with_registry_lock(|| unsafe { LLVM_InitializeNativeDisassembler().to_bool() }) {
         Ok(())
     } else {
         Err("Failed to initialize native disassembler".to_string())
