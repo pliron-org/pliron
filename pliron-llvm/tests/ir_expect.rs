@@ -638,7 +638,7 @@ fn ill_typed_constants_are_rejected() {
     expect![[r#"
         Compilation error: invalid input program.
         Parse error at line: 6, column: 75
-        Expected type llvm.vector, but found llvm.array
+        TypedHandle mismatch: expected llvm.vector but provided llvm.array
     "#]]
     .assert_eq(&err.to_string());
 

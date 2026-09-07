@@ -94,6 +94,14 @@ pub(crate) enum RegisterBoxedCast {
     Skip,
 }
 
+/// Records statically that the rust type implements the interface
+pub(crate) enum ImplsMarkerTrait {
+    /// Implement this marker trait for the rust type.
+    Implement(Path),
+    /// This kind of interface has no marker trait.
+    Skip,
+}
+
 /// This macro does two things:
 /// 1. Mark that the rust type be castable to the interface via `type_to_trait!`
 ///    (and via `boxed_type_to_trait!` when [RegisterBoxedCast::Register] is specified).
@@ -103,6 +111,7 @@ pub(crate) fn interface_impl(
     interface_verifiers_slice: Path,
     all_verifiers_fn_type: Path,
     register_boxed_cast: RegisterBoxedCast,
+    impls_marker_trait: ImplsMarkerTrait,
 ) -> Result<proc_macro2::TokenStream> {
     let r#impl = syn::parse2::<ItemImpl>(input)?;
 
@@ -144,6 +153,11 @@ pub(crate) fn interface_impl(
     let mut output = r#impl.to_token_stream();
     output.extend(trait_cast);
     output.extend(verifiers_entry);
+    if let ImplsMarkerTrait::Implement(impls_marker_trait) = impls_marker_trait {
+        output.extend(quote! {
+            impl #impls_marker_trait<dyn #intr_name> for #rust_ty {}
+        });
+    }
 
     Ok(output)
 }
