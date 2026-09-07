@@ -52,29 +52,30 @@ use crate::{
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
-        instruction_iter, llvm_add_case, llvm_add_destination, llvm_add_function,
-        llvm_add_global_in_address_space, llvm_add_incoming, llvm_append_basic_block_in_context,
-        llvm_array_type2, llvm_block_address, llvm_build_add, llvm_build_addrspacecast,
-        llvm_build_and, llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg,
-        llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br, llvm_build_call2,
-        llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd,
-        llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg,
-        llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
-        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags,
-        llvm_build_icmp, llvm_build_indirect_br, llvm_build_insert_element,
-        llvm_build_insert_value, llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr,
-        llvm_build_mul, llvm_build_or, llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret,
-        llvm_build_ret_void, llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
-        llvm_build_shuffle_vector, llvm_build_sitofp, llvm_build_srem, llvm_build_store,
-        llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
-        llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
-        llvm_build_zext, llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position,
-        llvm_const_array, llvm_const_int, llvm_const_null, llvm_const_real,
-        llvm_const_string_in_context, llvm_const_struct, llvm_const_vector, llvm_delete_global,
-        llvm_double_type_in_context, llvm_float_type_in_context, llvm_function_type,
-        llvm_get_inline_asm, llvm_get_named_function, llvm_get_param,
-        llvm_get_pointer_address_space, llvm_get_poison, llvm_get_sync_scope_id, llvm_get_undef,
-        llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
+        instruction_iter, llvm_add_call_site_enum_attribute, llvm_add_case, llvm_add_destination,
+        llvm_add_function, llvm_add_global_in_address_space, llvm_add_incoming,
+        llvm_append_basic_block_in_context, llvm_array_type2, llvm_block_address, llvm_build_add,
+        llvm_build_addrspacecast, llvm_build_and, llvm_build_array_alloca, llvm_build_ashr,
+        llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br,
+        llvm_build_call2, llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value,
+        llvm_build_fadd, llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul,
+        llvm_build_fneg, llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui,
+        llvm_build_fptrunc, llvm_build_freeze, llvm_build_frem, llvm_build_fsub,
+        llvm_build_gep_with_no_wrap_flags, llvm_build_icmp, llvm_build_indirect_br,
+        llvm_build_insert_element, llvm_build_insert_value, llvm_build_int_to_ptr,
+        llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or, llvm_build_phi,
+        llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void, llvm_build_sdiv,
+        llvm_build_select, llvm_build_sext, llvm_build_shl, llvm_build_shuffle_vector,
+        llvm_build_sitofp, llvm_build_srem, llvm_build_store, llvm_build_sub, llvm_build_switch,
+        llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp, llvm_build_unreachable,
+        llvm_build_urem, llvm_build_va_arg, llvm_build_xor, llvm_build_zext,
+        llvm_can_value_use_fast_math_flags, llvm_clear_insertion_position, llvm_const_array,
+        llvm_const_int, llvm_const_null, llvm_const_real, llvm_const_string_in_context,
+        llvm_const_struct, llvm_const_vector, llvm_delete_global, llvm_double_type_in_context,
+        llvm_float_type_in_context, llvm_function_type, llvm_get_inline_asm,
+        llvm_get_named_function, llvm_get_param, llvm_get_pointer_address_space, llvm_get_poison,
+        llvm_get_sync_scope_id, llvm_get_undef, llvm_half_type_in_context,
+        llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
         llvm_set_fast_math_flags, llvm_set_global_constant, llvm_set_initializer, llvm_set_linkage,
@@ -1079,9 +1080,11 @@ impl ToLLVMValue for InlineAsmOp {
         );
         // `has_side_effects` is set unconditionally: this op does not model a
         // side-effects flag, and side-effecting asm is the safe default.
-        // NOTE: the op's `llvm_inline_asm_convergent` attribute is not applied here.
-        // `convergent` is an LLVM call-site attribute (not part of the inline-asm
-        // value), so converting to LLVM IR drops the convergent flag.
+        let convergent = bool::from(
+            self.get_attr_llvm_inline_asm_convergent(ctx)
+                .expect("inline asm missing convergent flag")
+                .clone(),
+        );
         let asm_val = llvm_get_inline_asm(
             fn_ty,
             &asm,
@@ -1096,13 +1099,11 @@ impl ToLLVMValue for InlineAsmOp {
         } else {
             result_val.unique_name(ctx).to_string()
         };
-        Ok(llvm_build_call2(
-            &cctx.builder,
-            fn_ty,
-            asm_val,
-            &args,
-            &name,
-        ))
+        let call = llvm_build_call2(&cctx.builder, fn_ty, asm_val, &args, &name);
+        if convergent {
+            llvm_add_call_site_enum_attribute(llvm_ctx, call, "convergent");
+        }
+        Ok(call)
     }
 }
 

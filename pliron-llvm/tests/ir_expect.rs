@@ -355,6 +355,49 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn inline_asm_convergent_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define void @asm_convergent() {
+        entry:
+          call void asm sideeffect "nop", ""() #0
+          call void asm sideeffect "nop", ""()
+          ret void
+        }
+
+        attributes #0 = { convergent }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "inline_asm_convergent")?;
+
+    // Exercise the pliron printer/parser as part of the round trip and verify that
+    // the two LLVM inline-asm convergence states remain distinct in the dialect.
+    let (printed, reparsed) = common::print_parse_verify(ctx, module_op)?;
+    assert!(printed.contains("convergent = true"), "{printed}");
+    assert!(printed.contains("convergent = false"), "{printed}");
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, reparsed)?;
+    let out = out_mod.to_string();
+    let asm_calls: Vec<_> = out
+        .lines()
+        .filter(|line| line.contains("call void asm sideeffect \"nop\", \"\"()"))
+        .collect();
+    assert_eq!(asm_calls.len(), 2, "{out}");
+    assert!(asm_calls[0].contains(" #"), "{out}");
+    assert!(!asm_calls[1].contains(" #"), "{out}");
+    assert!(
+        out.lines()
+            .any(|line| line.starts_with("attributes #") && line.contains("convergent")),
+        "{out}"
+    );
+
+    Ok(())
+}
+
 /// Combinations of `struct` types
 #[test]
 fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
