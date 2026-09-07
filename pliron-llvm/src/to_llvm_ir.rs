@@ -48,23 +48,25 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
-        ICmpPredicateAttr, LinkageAttr, PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
+        FUNCTION_ATTRIBUTE_LLVM_NAMES, FunctionAttributes, ICmpPredicateAttr, LinkageAttr,
+        PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
     },
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
-        instruction_iter, llvm_add_case, llvm_add_destination, llvm_add_function,
-        llvm_add_global_in_address_space, llvm_add_incoming, llvm_append_basic_block_in_context,
-        llvm_array_type2, llvm_block_address, llvm_build_add, llvm_build_addrspacecast,
-        llvm_build_and, llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg,
-        llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br, llvm_build_call2,
-        llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd,
-        llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg,
-        llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
-        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags,
-        llvm_build_icmp, llvm_build_indirect_br, llvm_build_insert_element,
-        llvm_build_insert_value, llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr,
-        llvm_build_mul, llvm_build_or, llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret,
-        llvm_build_ret_void, llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
+        instruction_iter, llvm_add_call_site_enum_attribute, llvm_add_case, llvm_add_destination,
+        llvm_add_function, llvm_add_function_enum_attribute, llvm_add_global_in_address_space,
+        llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2,
+        llvm_block_address, llvm_build_add, llvm_build_addrspacecast, llvm_build_and,
+        llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw,
+        llvm_build_bitcast, llvm_build_br, llvm_build_call2, llvm_build_cond_br,
+        llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd, llvm_build_fcmp,
+        llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg, llvm_build_fpext,
+        llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc, llvm_build_freeze,
+        llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags, llvm_build_icmp,
+        llvm_build_indirect_br, llvm_build_insert_element, llvm_build_insert_value,
+        llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or,
+        llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void,
+        llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
         llvm_build_shuffle_vector, llvm_build_sitofp, llvm_build_srem, llvm_build_store,
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
@@ -102,6 +104,19 @@ use crate::{
     },
     types::{ArrayType, FuncType, PointerType, StructType, VectorType, VoidType},
 };
+
+fn add_function_attributes(
+    llvm_ctx: &LLVMContext,
+    value: LLVMValue,
+    attributes: FunctionAttributes,
+    add_attribute: fn(&LLVMContext, LLVMValue, &str),
+) {
+    for (attribute, llvm_name) in FUNCTION_ATTRIBUTE_LLVM_NAMES {
+        if attributes.contains(attribute) {
+            add_attribute(llvm_ctx, value, llvm_name);
+        }
+    }
+}
 
 /// Mapping from pliron entities to LLVM entities.
 pub struct ConversionContext<'a> {
@@ -1365,6 +1380,12 @@ impl ToLLVMValue for CallOp {
         {
             llvm_set_fast_math_flags(call_val, (*fmf).into());
         }
+        add_function_attributes(
+            llvm_ctx,
+            call_val,
+            self.function_attributes(ctx),
+            llvm_add_call_site_enum_attribute,
+        );
         Ok(call_val)
     }
 }
@@ -2762,6 +2783,12 @@ pub fn convert_module(
             let name = func_op.get_symbol_name(ctx);
             let llvm_name = func_op.llvm_symbol_name(ctx).unwrap_or(name.clone().into());
             let func_llvm = llvm_add_function(&llvm_module, &llvm_name, fn_ty_llvm);
+            add_function_attributes(
+                llvm_ctx,
+                func_llvm,
+                func_op.function_attributes(ctx),
+                llvm_add_function_enum_attribute,
+            );
             cctx.function_map.insert(name, func_llvm);
         }
         if let Some(global_op) = Operation::get_op::<GlobalOp>(op, ctx) {

@@ -10,18 +10,20 @@ use std::{
 };
 
 use llvm_sys::{
-    LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMFastMathAllowContract, LLVMFastMathAllowReassoc,
-    LLVMFastMathAllowReciprocal, LLVMFastMathApproxFunc, LLVMFastMathFlags, LLVMFastMathNoInfs,
-    LLVMFastMathNoNaNs, LLVMFastMathNoSignedZeros, LLVMFastMathNone, LLVMGEPFlagInBounds,
-    LLVMGEPFlagNUSW, LLVMGEPFlagNUW, LLVMGEPNoWrapFlags, LLVMInlineAsmDialect, LLVMIntPredicate,
-    LLVMLinkage, LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
+    LLVMAtomicOrdering, LLVMAtomicRMWBinOp, LLVMAttributeFunctionIndex, LLVMFastMathAllowContract,
+    LLVMFastMathAllowReassoc, LLVMFastMathAllowReciprocal, LLVMFastMathApproxFunc,
+    LLVMFastMathFlags, LLVMFastMathNoInfs, LLVMFastMathNoNaNs, LLVMFastMathNoSignedZeros,
+    LLVMFastMathNone, LLVMGEPFlagInBounds, LLVMGEPFlagNUSW, LLVMGEPFlagNUW, LLVMGEPNoWrapFlags,
+    LLVMInlineAsmDialect, LLVMIntPredicate, LLVMLinkage, LLVMOpcode, LLVMRealPredicate,
+    LLVMTypeKind, LLVMValueKind,
     analysis::LLVMVerifyModule,
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
-        LLVMAddCase, LLVMAddDestination, LLVMAddFunction, LLVMAddGlobal,
-        LLVMAddGlobalInAddressSpace, LLVMAddIncoming, LLVMAddNamedMetadataOperand,
-        LLVMAppendBasicBlockInContext, LLVMArrayType2, LLVMBasicBlockAsValue, LLVMBlockAddress,
-        LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
+        LLVMAddAttributeAtIndex, LLVMAddCallSiteAttribute, LLVMAddCase, LLVMAddDestination,
+        LLVMAddFunction, LLVMAddGlobal, LLVMAddGlobalInAddressSpace, LLVMAddIncoming,
+        LLVMAddNamedMetadataOperand, LLVMAppendBasicBlockInContext, LLVMArrayType2,
+        LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr, LLVMBuildAdd,
+        LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
         LLVMBuildAtomicCmpXchgSyncScope, LLVMBuildAtomicRMWSyncScope, LLVMBuildBitCast,
         LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
@@ -38,22 +40,23 @@ use llvm_sys::{
         LLVMConstNamedStruct, LLVMConstNull, LLVMConstReal, LLVMConstRealGetDouble,
         LLVMConstStringInContext2, LLVMConstVector, LLVMContextCreate, LLVMContextDispose,
         LLVMCountIncoming, LLVMCountParamTypes, LLVMCountParams, LLVMCountStructElementTypes,
-        LLVMCreateBuilderInContext, LLVMCreateMemoryBufferWithContentsOfFile,
-        LLVMCreateMemoryBufferWithMemoryRangeCopy, LLVMDeleteFunction, LLVMDeleteGlobal,
-        LLVMDisposeMemoryBuffer, LLVMDisposeMessage, LLVMDisposeModule,
-        LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext, LLVMDumpModule, LLVMDumpType,
-        LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType, LLVMGEPGetNoWrapFlags,
-        LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType, LLVMGetArrayLength2,
-        LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID, LLVMGetBasicBlockName,
-        LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator, LLVMGetBlockAddressBasicBlock,
-        LLVMGetBlockAddressFunction, LLVMGetCalledFunctionType, LLVMGetCalledValue,
-        LLVMGetCmpXchgFailureOrdering, LLVMGetCmpXchgSuccessOrdering, LLVMGetConstOpcode,
-        LLVMGetDataLayoutStr, LLVMGetElementType, LLVMGetFCmpPredicate, LLVMGetFastMathFlags,
-        LLVMGetFirstBasicBlock, LLVMGetFirstFunction, LLVMGetFirstGlobal, LLVMGetFirstInstruction,
-        LLVMGetFirstNamedMetadata, LLVMGetFirstParam, LLVMGetGEPSourceElementType,
-        LLVMGetICmpPredicate, LLVMGetIncomingBlock, LLVMGetIncomingValue, LLVMGetIndices,
-        LLVMGetInitializer, LLVMGetInlineAsm, LLVMGetInlineAsmAsmString,
-        LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
+        LLVMCreateBuilderInContext, LLVMCreateEnumAttribute,
+        LLVMCreateMemoryBufferWithContentsOfFile, LLVMCreateMemoryBufferWithMemoryRangeCopy,
+        LLVMDeleteFunction, LLVMDeleteGlobal, LLVMDisposeMemoryBuffer, LLVMDisposeMessage,
+        LLVMDisposeModule, LLVMDisposeValueMetadataEntries, LLVMDoubleTypeInContext,
+        LLVMDumpModule, LLVMDumpType, LLVMDumpValue, LLVMFloatTypeInContext, LLVMFunctionType,
+        LLVMGEPGetNoWrapFlags, LLVMGetAggregateElement, LLVMGetAlignment, LLVMGetAllocatedType,
+        LLVMGetArrayLength2, LLVMGetAsString, LLVMGetAtomicRMWBinOp, LLVMGetAtomicSyncScopeID,
+        LLVMGetBasicBlockName, LLVMGetBasicBlockParent, LLVMGetBasicBlockTerminator,
+        LLVMGetBlockAddressBasicBlock, LLVMGetBlockAddressFunction, LLVMGetCallSiteEnumAttribute,
+        LLVMGetCalledFunctionType, LLVMGetCalledValue, LLVMGetCmpXchgFailureOrdering,
+        LLVMGetCmpXchgSuccessOrdering, LLVMGetConstOpcode, LLVMGetDataLayoutStr,
+        LLVMGetElementType, LLVMGetEnumAttributeAtIndex, LLVMGetEnumAttributeKindForName,
+        LLVMGetFCmpPredicate, LLVMGetFastMathFlags, LLVMGetFirstBasicBlock, LLVMGetFirstFunction,
+        LLVMGetFirstGlobal, LLVMGetFirstInstruction, LLVMGetFirstNamedMetadata, LLVMGetFirstParam,
+        LLVMGetGEPSourceElementType, LLVMGetICmpPredicate, LLVMGetIncomingBlock,
+        LLVMGetIncomingValue, LLVMGetIndices, LLVMGetInitializer, LLVMGetInlineAsm,
+        LLVMGetInlineAsmAsmString, LLVMGetInlineAsmConstraintString, LLVMGetInlineAsmFunctionType,
         LLVMGetInlineAsmHasSideEffects, LLVMGetInsertBlock, LLVMGetInstructionOpcode,
         LLVMGetInstructionParent, LLVMGetIntTypeWidth, LLVMGetIntrinsicDeclaration,
         LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage, LLVMGetMDKindIDInContext,
@@ -92,8 +95,8 @@ use llvm_sys::{
     },
     error::{LLVMDisposeErrorMessage, LLVMErrorRef, LLVMGetErrorMessage},
     prelude::{
-        LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMMemoryBufferRef, LLVMMetadataRef,
-        LLVMModuleRef, LLVMTypeRef, LLVMValueMetadataEntry, LLVMValueRef,
+        LLVMAttributeRef, LLVMBasicBlockRef, LLVMBuilderRef, LLVMContextRef, LLVMMemoryBufferRef,
+        LLVMMetadataRef, LLVMModuleRef, LLVMTypeRef, LLVMValueMetadataEntry, LLVMValueRef,
     },
 };
 
@@ -2759,6 +2762,52 @@ pub fn llvm_get_undef(ty: LLVMType) -> LLVMValue {
 /// LLVMGetPoison
 pub fn llvm_get_poison(ty: LLVMType) -> LLVMValue {
     unsafe { LLVMGetPoison(ty.into()).into() }
+}
+
+fn llvm_enum_attribute_kind(name: &str) -> Option<u32> {
+    let c_name = to_c_str(name);
+    let kind = unsafe { LLVMGetEnumAttributeKindForName(c_name.as_ptr(), name.len()) };
+    (kind != 0).then_some(kind)
+}
+
+fn llvm_create_enum_attribute(ctx: &LLVMContext, name: &str) -> LLVMAttributeRef {
+    let kind = llvm_enum_attribute_kind(name)
+        .unwrap_or_else(|| panic!("Unknown LLVM enum attribute `{name}`"));
+    unsafe { LLVMCreateEnumAttribute(ctx.inner_ref(), kind, 0) }
+}
+
+/// Return whether `func` has the named enum/unit attribute at LLVM's function index.
+pub fn llvm_function_has_enum_attribute(func: LLVMValue, name: &str) -> bool {
+    assert!(llvm_is_a::function(func));
+    let Some(kind) = llvm_enum_attribute_kind(name) else {
+        return false;
+    };
+    unsafe { !LLVMGetEnumAttributeAtIndex(func.into(), LLVMAttributeFunctionIndex, kind).is_null() }
+}
+
+/// Add the named enum/unit attribute to `func` at LLVM's function index.
+pub fn llvm_add_function_enum_attribute(ctx: &LLVMContext, func: LLVMValue, name: &str) {
+    assert!(llvm_is_a::function(func));
+    let attr = llvm_create_enum_attribute(ctx, name);
+    unsafe { LLVMAddAttributeAtIndex(func.into(), LLVMAttributeFunctionIndex, attr) }
+}
+
+/// Return whether `call` has the named enum/unit attribute at the call site's function index.
+pub fn llvm_call_site_has_enum_attribute(call: LLVMValue, name: &str) -> bool {
+    assert!(llvm_is_a::call_inst(call));
+    let Some(kind) = llvm_enum_attribute_kind(name) else {
+        return false;
+    };
+    unsafe {
+        !LLVMGetCallSiteEnumAttribute(call.into(), LLVMAttributeFunctionIndex, kind).is_null()
+    }
+}
+
+/// Add the named enum/unit attribute to `call` at the call site's function index.
+pub fn llvm_add_call_site_enum_attribute(ctx: &LLVMContext, call: LLVMValue, name: &str) {
+    assert!(llvm_is_a::call_inst(call));
+    let attr = llvm_create_enum_attribute(ctx, name);
+    unsafe { LLVMAddCallSiteAttribute(call.into(), LLVMAttributeFunctionIndex, attr) }
 }
 
 /// LLVMAddFunction

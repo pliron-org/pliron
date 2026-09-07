@@ -61,9 +61,9 @@ use pliron::{
 use crate::{
     attributes::{
         AddressSpaceAttr, AggregateAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr,
-        BytesAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr,
-        InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr, SplatAttr,
-        SymbolAddrAttr, SyncScopeAttr,
+        BytesAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr, FunctionAttributes,
+        FunctionAttributesAttr, InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr,
+        SplatAttr, SymbolAddrAttr, SyncScopeAttr,
     },
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
@@ -2140,7 +2140,11 @@ impl InlineAsmOp {
 #[pliron_op(
     name = "llvm.call",
     interfaces = [OneResultInterface],
-    attributes = (llvm_call_callee: IdentifierAttr, llvm_call_fastmath_flags: FastmathFlagsAttr)
+    attributes = (
+        llvm_call_callee: IdentifierAttr,
+        llvm_call_fastmath_flags: FastmathFlagsAttr,
+        llvm_call_attributes: FunctionAttributesAttr
+    )
 )]
 pub struct CallOp;
 
@@ -2182,6 +2186,18 @@ impl CallOp {
         };
         op.set_callee_type(ctx, callee_ty.into());
         op
+    }
+
+    /// Get LLVM function-index attributes attached to this call site.
+    pub fn function_attributes(&self, ctx: &Context) -> FunctionAttributes {
+        self.get_attr_llvm_call_attributes(ctx)
+            .map(|attrs| attrs.0)
+            .unwrap_or(FunctionAttributes::empty())
+    }
+
+    /// Set LLVM function-index attributes attached to this call site.
+    pub fn set_function_attributes(&self, ctx: &mut Context, attributes: FunctionAttributes) {
+        self.set_attr_llvm_call_attributes(ctx, attributes.into());
     }
 }
 
@@ -2312,6 +2328,12 @@ impl Printable for CallOp {
             write!(f, " {}", fmf.print(ctx, state))?;
         }
 
+        if let Some(attributes) = self.get_attr_llvm_call_attributes(ctx)
+            && !attributes.0.is_empty()
+        {
+            write!(f, " {}", attributes.print(ctx, state))?;
+        }
+
         let args = self.args(ctx);
         let ty = self.callee_type(ctx);
         write!(
@@ -2339,25 +2361,32 @@ impl Parsable for CallOp {
         let indirect_callee = ssa_opd_parser().map(CallOpCallable::Indirect);
         let callee_parser = direct_callee.or(indirect_callee);
         let fastmath_flags_parser = optional(FastmathFlagsAttr::parser(()));
+        let function_attributes_parser = optional(FunctionAttributesAttr::parser(()));
         let args_parser = delimited_list_parser('(', ')', ',', ssa_opd_parser());
         let ty_parser = spaced(combine::token(':')).with(TypedHandle::<FuncType>::parser(()));
 
         let mut final_parser = spaced(callee_parser)
             .and(spaced(fastmath_flags_parser))
+            .and(spaced(function_attributes_parser))
             .and(spaced(args_parser))
             .and(ty_parser)
-            .then(move |(((callee, fastmath_flags), args), ty)| {
-                let results = results.clone();
-                combine::parser(move |parsable_state: &mut StateStream<'a>| {
-                    let ctx = &mut parsable_state.state.ctx;
-                    let op = CallOp::new(ctx, callee.clone(), ty, args.clone());
-                    if let Some(fmf) = &fastmath_flags {
-                        op.set_attr_llvm_call_fastmath_flags(ctx, *fmf);
-                    }
-                    process_parsed_ssa_defs(parsable_state, &results, op.get_operation())?;
-                    Ok(OpObj::new(op)).into_parse_result()
-                })
-            });
+            .then(
+                move |((((callee, fastmath_flags), function_attributes), args), ty)| {
+                    let results = results.clone();
+                    combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                        let ctx = &mut parsable_state.state.ctx;
+                        let op = CallOp::new(ctx, callee.clone(), ty, args.clone());
+                        if let Some(fmf) = &fastmath_flags {
+                            op.set_attr_llvm_call_fastmath_flags(ctx, *fmf);
+                        }
+                        if let Some(attributes) = &function_attributes {
+                            op.set_attr_llvm_call_attributes(ctx, *attributes);
+                        }
+                        process_parsed_ssa_defs(parsable_state, &results, op.get_operation())?;
+                        Ok(OpObj::new(op)).into_parse_result()
+                    })
+                },
+            );
 
         final_parser.parse_stream(state_stream).into_result()
     }
@@ -4696,7 +4725,11 @@ impl VAArgOp {
         NOpdsInterface<0>,
         LlvmSymbolName
     ],
-    attributes = (llvm_func_type: TypeAttr, llvm_function_linkage: LinkageAttr)
+    attributes = (
+        llvm_func_type: TypeAttr,
+        llvm_function_linkage: LinkageAttr,
+        llvm_function_attributes: FunctionAttributesAttr
+    )
 )]
 pub struct FuncOp;
 
@@ -4718,6 +4751,18 @@ impl FuncOp {
             .unwrap()
             .get_type(ctx);
         TypedHandle::from_handle(ty, ctx).unwrap()
+    }
+
+    /// Get LLVM function-index attributes attached to this function.
+    pub fn function_attributes(&self, ctx: &Context) -> FunctionAttributes {
+        self.get_attr_llvm_function_attributes(ctx)
+            .map(|attrs| attrs.0)
+            .unwrap_or(FunctionAttributes::empty())
+    }
+
+    /// Set LLVM function-index attributes attached to this function.
+    pub fn set_function_attributes(&self, ctx: &mut Context, attributes: FunctionAttributes) {
+        self.set_attr_llvm_function_attributes(ctx, attributes.into());
     }
 
     /// Get the entry block (if it exists) of this function.
