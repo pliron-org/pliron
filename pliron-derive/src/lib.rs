@@ -673,6 +673,7 @@ pub fn op_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
         interface_verifiers_slice,
         all_verifiers_fn_type,
         interfaces::RegisterBoxedCast::Skip,
+        interfaces::ImplsMarkerTrait::Skip,
     ))
 }
 
@@ -1013,6 +1014,7 @@ pub fn attr_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream
         interface_verifiers_slice,
         all_verifiers_fn_type,
         interfaces::RegisterBoxedCast::Register,
+        interfaces::ImplsMarkerTrait::Skip,
     ))
 }
 
@@ -1114,11 +1116,13 @@ pub fn type_interface(_attr: TokenStream, item: TokenStream) -> TokenStream {
 pub fn type_interface_impl(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let interface_verifiers_slice = parse_quote! { ::pliron::r#type::TYPE_INTERFACE_VERIFIERS };
     let all_verifiers_fn_type = parse_quote! { ::pliron::r#type::TypeInterfaceAllVerifiers };
+    let impls_marker_trait = parse_quote! { ::pliron::r#type::TypeImplsInterface };
     to_token_stream(interfaces::interface_impl(
         item.into(),
         interface_verifiers_slice,
         all_verifiers_fn_type,
         interfaces::RegisterBoxedCast::Skip,
+        interfaces::ImplsMarkerTrait::Implement(impls_marker_trait),
     ))
 }
 

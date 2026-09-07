@@ -3403,16 +3403,12 @@ impl Verify for FPExtOp {
         let opd_ty = ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
             self, ctx,
         );
-        let opd_ty = opd_ty.deref(ctx);
-        let opd_float_ty = type_cast::<dyn FloatTypeInterface>(&*opd_ty)
-            .expect("ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0> guarantees this");
+        let opd_float_ty = opd_ty.deref(ctx);
 
         let res_ty = ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
             self, ctx,
         );
-        let res_ty = res_ty.deref(ctx);
-        let res_float_ty = type_cast::<dyn FloatTypeInterface>(&*res_ty)
-            .expect("ScalarOrVectorResImpls<dyn FloatTypeInterface, 0> guarantees this");
+        let res_float_ty = res_ty.deref(ctx);
 
         let opd_shape =
             ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
@@ -3504,16 +3500,12 @@ impl Verify for FPTruncOp {
         let opd_ty = ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
             self, ctx,
         );
-        let opd_ty = opd_ty.deref(ctx);
-        let opd_float_ty = type_cast::<dyn FloatTypeInterface>(&*opd_ty)
-            .expect("ScalarOrVectorOpdImpls<dyn FloatTypeInterface, 0> guarantees this");
+        let opd_float_ty = opd_ty.deref(ctx);
 
         let res_ty = ScalarOrVectorResImpls::<dyn FloatTypeInterface, 0>::scalar_or_vector_elem_ty(
             self, ctx,
         );
-        let res_ty = res_ty.deref(ctx);
-        let res_float_ty = type_cast::<dyn FloatTypeInterface>(&*res_ty)
-            .expect("ScalarOrVectorResImpls<dyn FloatTypeInterface, 0> guarantees this");
+        let res_float_ty = res_ty.deref(ctx);
 
         let opd_shape =
             ScalarOrVectorOpdImpls::<dyn FloatTypeInterface, 0>::vector_shape(self, ctx);
