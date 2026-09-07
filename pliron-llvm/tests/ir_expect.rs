@@ -355,6 +355,41 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
     Ok(())
 }
 
+#[test]
+fn inline_asm_side_effects_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        define void @asm_side_effects() {
+        entry:
+          call void asm sideeffect "nop", ""()
+          call void asm "nop", ""()
+          ret void
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "inline_asm_side_effects")?;
+
+    // Exercise the pliron printer/parser as part of the round trip and verify that
+    // the two LLVM inline-asm side-effect states remain distinct in the dialect.
+    let (printed, reparsed) = common::print_parse_verify(ctx, module_op)?;
+    assert!(printed.contains("side_effects = true"), "{printed}");
+    assert!(printed.contains("side_effects = false"), "{printed}");
+
+    let out_llvm_ctx = LLVMContext::default();
+    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, reparsed)?;
+    let out = out_mod.to_string();
+    assert_eq!(out.matches("asm sideeffect").count(), 1, "{out}");
+    assert!(
+        out.contains("call void asm sideeffect \"nop\", \"\"()"),
+        "{out}"
+    );
+    assert!(out.contains("call void asm \"nop\", \"\"()"), "{out}");
+
+    Ok(())
+}
+
 /// Combinations of `struct` types
 #[test]
 fn llvm_ir_struct_combinations_roundtrip() -> Result<()> {
