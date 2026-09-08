@@ -8,7 +8,7 @@ use llvm_sys::{
     LLVMRealPredicate,
 };
 use pliron::{
-    attribute::{AttrObj, Attribute, attr_cast},
+    attribute::{Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
@@ -2281,14 +2281,20 @@ impl AttrToLLVMConst for PoisonAttr {
 
 /// Convert the constant attribute `attr` to an LLVM constant.
 fn const_attr_to_llvm_constant(
-    attr: &AttrObj,
+    attr: &dyn Attribute,
     loc: Option<Location>,
     ctx: &Context,
     llvm_ctx: &LLVMContext,
     cctx: &mut ConversionContext,
 ) -> Result<LLVMValue> {
-    let not_const = || input_err_noloc!(ToLLVMErr::AttrNotConst(attr.disp(ctx).to_string()));
-    let converted = match attr_cast::<dyn AttrToLLVMConst>(&**attr) {
+    let not_const = || {
+        input_err_noloc!(ToLLVMErr::AttrNotConst(format!(
+            "{} {}",
+            attr.get_attr_id(),
+            attr.disp(ctx)
+        )))
+    };
+    let converted = match attr_cast::<dyn AttrToLLVMConst>(attr) {
         Some(conv) => conv.convert(ctx, llvm_ctx, cctx),
         None => not_const(),
     };
@@ -2320,7 +2326,7 @@ impl AttrToLLVMConst for AggregateAttr {
         let elements = self
             .elements()
             .iter()
-            .map(|element| const_attr_to_llvm_constant(element, None, ctx, llvm_ctx, cctx))
+            .map(|element| const_attr_to_llvm_constant(&**element, None, ctx, llvm_ctx, cctx))
             .collect::<Result<Vec<_>>>()?;
 
         let ty_obj = ty.deref(ctx);
@@ -2447,7 +2453,7 @@ impl OpToLLVMConstValue for ConstantOp {
         let value = self
             .get_attr_llvm_constant_value(ctx)
             .expect("ConstantOp must have a value attribute");
-        const_attr_to_llvm_constant(&value, Some(self.loc(ctx)), ctx, llvm_ctx, cctx)
+        const_attr_to_llvm_constant(&**value, Some(self.loc(ctx)), ctx, llvm_ctx, cctx)
     }
 }
 
@@ -2710,7 +2716,7 @@ fn convert_global_initializer(
 ) -> Result<Option<LLVMValue>> {
     if let Some(initializer) = global_op.get_initializer_value(ctx) {
         let initializer_val = const_attr_to_llvm_constant(
-            &initializer,
+            &*initializer,
             Some(global_op.loc(ctx)),
             ctx,
             llvm_ctx,

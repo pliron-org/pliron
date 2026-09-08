@@ -11,7 +11,7 @@ pub mod from_llvm_ir {
         vec::Vec,
     };
 
-    use llvm_sys::{LLVMValueKind, debuginfo::LLVMMetadataKind};
+    use llvm_sys::debuginfo::LLVMMetadataKind;
     use pliron::{
         builtin::ops::ModuleOp,
         context::{Context, Ptr},
@@ -27,9 +27,9 @@ pub mod from_llvm_ir {
         llvm_sys::core::{
             LLVMMetadata, LLVMModule, LLVMValue, llvm_get_md_kind_id_in_module,
             llvm_get_md_node_operands, llvm_get_md_string, llvm_get_metadata_kind,
-            llvm_get_named_metadata_operands, llvm_get_value_kind, llvm_get_value_name,
-            llvm_global_copy_all_metadata, llvm_instruction_get_all_metadata_other_than_debug_loc,
-            llvm_md_node_in_module, llvm_metadata_as_value_in_module, llvm_named_metadata_names,
+            llvm_get_named_metadata_operands, llvm_global_copy_all_metadata,
+            llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_md_node_in_module,
+            llvm_metadata_as_value_in_module, llvm_named_metadata_names,
             llvm_print_module_to_string, llvm_print_value_to_string, llvm_value_as_metadata,
         },
         metadata::{
@@ -303,32 +303,15 @@ pub mod from_llvm_ir {
                 Ok(convert_md_node(ctx, cctx, module, md)?.map(MdOperandAttr::Node))
             }
             LLVMMetadataKind::LLVMConstantAsMetadataMetadataKind => {
-                match llvm_get_value_kind(val) {
-                    LLVMValueKind::LLVMGlobalVariableValueKind
-                    | LLVMValueKind::LLVMFunctionValueKind => {
-                        // A symbol that isn't in the pliron module has nothing we could refer to.
-                        match cctx.symbol_name(val) {
-                            Some(name) => Ok(Some(MdOperandAttr::Global(name))),
-                            None => {
-                                log::warn!(
-                                    "Dropping metadata operand referring to \"{}\", which has no \
-                                     counterpart in the pliron module",
-                                    llvm_get_value_name(val).unwrap_or_default()
-                                );
-                                Ok(None)
-                            }
-                        }
+                match const_llvm_value_to_attr(ctx, cctx, val)? {
+                    Some(attr) => Ok(Some(MdOperandAttr::Constant(attr))),
+                    None => {
+                        log::warn!(
+                            "Dropping unsupported constant metadata operand {}",
+                            llvm_print_value_to_string(val).unwrap_or_default()
+                        );
+                        Ok(None)
                     }
-                    _ => match const_llvm_value_to_attr(ctx, cctx, val)? {
-                        Some(attr) => Ok(Some(MdOperandAttr::Constant(attr))),
-                        None => {
-                            log::warn!(
-                                "Dropping unsupported constant metadata operand {}",
-                                llvm_print_value_to_string(val).unwrap_or_default()
-                            );
-                            Ok(None)
-                        }
-                    },
                 }
             }
             kind => {
@@ -482,8 +465,6 @@ pub mod to_llvm_ir {
     pub enum MdToLLVMErr {
         #[error("Metadata node #{0} is not in the module's metadata table")]
         DanglingNodeRef(MdNodeId),
-        #[error("Metadata refers to \"{0}\", which is not a global or a function in this module")]
-        UndefinedSymbol(String),
         #[error("Metadata operand {0} is not convertible to an LLVM constant")]
         OperandNotConst(String),
         #[error(
@@ -552,16 +533,6 @@ pub mod to_llvm_ir {
             MdOperandAttr::Null => None,
             MdOperandAttr::String(s) => Some(llvm_md_string_in_context2(llvm_ctx, s)),
             MdOperandAttr::Node(id) => Some(convert_md_node(ctx, llvm_ctx, cctx, *id)?),
-            MdOperandAttr::Global(name) => {
-                let val = cctx
-                    .globals_map
-                    .get(name)
-                    .or_else(|| cctx.function_map.get(name))
-                    .ok_or_else(|| {
-                        input_error_noloc!(MdToLLVMErr::UndefinedSymbol(name.to_string()))
-                    })?;
-                Some(llvm_value_as_metadata(*val))
-            }
             MdOperandAttr::Constant(attr) => {
                 let const_val = attr_cast::<dyn AttrToLLVMConst>(&**attr).ok_or_else(|| {
                     input_error_noloc!(MdToLLVMErr::OperandNotConst(attr.disp(ctx).to_string()))

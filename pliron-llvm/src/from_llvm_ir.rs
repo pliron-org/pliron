@@ -10,9 +10,10 @@ use llvm_sys::{
     LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
 };
 use pliron::{
-    attribute::{AttrObj, Attribute, boxed_attr_cast},
+    attribute::Attribute,
     basic_block::BasicBlock,
     builtin::{
+        attr_interfaces::TypedAttrInterface,
         attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
         op_interfaces::{
             AtMostOneRegionInterface, CallOpCallable, OneResultInterface,
@@ -103,12 +104,12 @@ use crate::{
     },
 };
 
-/// Try to build an [AttrObj] for the LLVM constant `val`.
+/// Try to build an attribute for the LLVM constant `val`.
 pub(crate) fn const_llvm_value_to_attr(
     ctx: &Context,
     cctx: &mut ConversionContext,
     val: LLVMValue,
-) -> Result<Option<AttrObj>> {
+) -> Result<Option<Box<dyn TypedAttrInterface>>> {
     let ll_ty = llvm_type_of(val);
     let ty = convert_type(ctx, cctx, ll_ty)?;
 
@@ -153,13 +154,15 @@ fn const_llvm_scalar_to_attr(
     ctx: &Context,
     val: LLVMValue,
     ty: TypeHandle,
-) -> Result<Option<AttrObj>> {
+) -> Result<Option<Box<dyn TypedAttrInterface>>> {
     let ty_obj = ty.deref(ctx);
 
     if let Some(vector_ty) = ty_obj.downcast_ref::<VectorType>() {
         let element = const_llvm_scalar_to_attr(ctx, val, vector_ty.elem_type())?;
         let vector_ty = TypedHandle::<VectorType>::from_handle(ty, ctx)?;
-        return Ok(element.map(|element| Box::new(SplatAttr::new(element, vector_ty)) as AttrObj));
+        return Ok(element.map(|element| {
+            Box::new(SplatAttr::new(element, vector_ty)) as Box<dyn TypedAttrInterface>
+        }));
     }
 
     if let Some(int_ty) = ty_obj.downcast_ref::<IntegerType>() {
@@ -189,11 +192,11 @@ fn const_llvm_scalar_to_attr(
     let (fp64, lost_info) = llvm_const_real_get_double(val);
     assert!(!lost_info, "Lost information when converting FP constant");
     if ty_obj.is::<FP16Type>() {
-        Ok(Some(FPHalfAttr(f64_to_half(fp64)).into()))
+        Ok(Some(Box::new(FPHalfAttr(f64_to_half(fp64)))))
     } else if ty_obj.is::<FP32Type>() {
-        Ok(Some(FPSingleAttr::from(fp64 as f32).into()))
+        Ok(Some(Box::new(FPSingleAttr::from(fp64 as f32))))
     } else if ty_obj.is::<FP64Type>() {
-        Ok(Some(FPDoubleAttr::from(fp64).into()))
+        Ok(Some(Box::new(FPDoubleAttr::from(fp64))))
     } else {
         Ok(None)
     }
@@ -207,7 +210,7 @@ fn const_llvm_aggregate_to_attr(
     val: LLVMValue,
     ll_ty: LLVMType,
     ty: TypeHandle,
-) -> Result<Option<AttrObj>> {
+) -> Result<Option<Box<dyn TypedAttrInterface>>> {
     let num_elements = match llvm_get_type_kind(ll_ty) {
         LLVMTypeKind::LLVMArrayTypeKind => llvm_get_array_length2(ll_ty),
         LLVMTypeKind::LLVMStructTypeKind => llvm_count_struct_element_types(ll_ty).into(),
@@ -575,7 +578,7 @@ fn const_llvm_value_to_const_op(
     cctx: &mut ConversionContext,
     val: LLVMValue,
 ) -> Result<bool> {
-    let Some(attr) = const_llvm_value_to_attr(ctx, cctx, val)?.and_then(boxed_attr_cast) else {
+    let Some(attr) = const_llvm_value_to_attr(ctx, cctx, val)? else {
         return Ok(false);
     };
     let const_op = ConstantOp::new(ctx, attr);

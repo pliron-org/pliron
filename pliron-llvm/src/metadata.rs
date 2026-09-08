@@ -38,14 +38,19 @@
 //! debug info nodes (`DILocation`, `DISubprogram`, ...) need extensions in [MdNodeAttr];
 //! until then, conversion from LLVM-IR drops them, with a warning.
 
-use alloc::{string::String, vec::Vec};
-
-use thiserror::Error;
-
+use crate::attributes::{AggregateAttr, SplatAttr, SymbolAddrAttr};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use pliron::{
     arg_err,
-    attribute::AttrObj,
-    builtin::{attr_interfaces::OutlinedAttr, ops::ModuleOp},
+    attribute::{Attribute, verify_attr},
+    builtin::{
+        attr_interfaces::{OutlinedAttr, TypedAttrInterface},
+        ops::ModuleOp,
+    },
     combine::{Parser, attempt, between, choice, not_followed_by, parser::char::spaces, token},
     context::{Context, Ptr},
     derive::{attr_interface_impl, pliron_attr},
@@ -54,7 +59,6 @@ use pliron::{
         IRNode, WALKCONFIG_PREORDER_FORWARD,
         interruptible::{WalkResult, immutable::walk_op, walk_advance, walk_break},
     },
-    identifier::Identifier,
     indented_block,
     irfmt::{
         parsers::{delimited_list_parser, list_parser},
@@ -66,9 +70,11 @@ use pliron::{
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, ListSeparator, Printable, indented_nl},
     result::{Error, Result},
+    symbol_table::SymbolTableCollection,
     utils::vec_exns::VecExtns,
     verify_err, verify_error,
 };
+use thiserror::Error;
 
 /// Index of a metadata node in the module's metadata table ([MdTableAttr]).
 pub type MdNodeId = u32;
@@ -105,7 +111,7 @@ dict_key!(
 
 /// An operand of a metadata node ([MdNodeAttr]).
 ///
-/// Contrary to its name, this isn't an [Attribute](pliron::attribute::Attribute).
+/// Contrary to its name, this isn't an [Attribute].
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum MdOperandAttr {
     /// A null operand. Printed as `null`.
@@ -114,12 +120,8 @@ pub enum MdOperandAttr {
     String(String),
     /// A reference to another node in the module's metadata table. Printed as `#42`.
     Node(MdNodeId),
-    /// LLVM's `ConstantAsMetadata` wrapping the address of a global or a function.
-    /// Printed as `@symbol_name`.
-    Global(Identifier),
-    /// LLVM's `ConstantAsMetadata` wrapping a constant value, held as the attribute
-    /// that an [llvm.constant](crate::ops::ConstantOp) would carry.
-    Constant(AttrObj),
+    /// LLVM's `ConstantAsMetadata` wrapping a constant value.
+    Constant(Box<dyn TypedAttrInterface>),
 }
 
 impl Printable for MdOperandAttr {
@@ -136,7 +138,6 @@ impl Printable for MdOperandAttr {
                 write_md_quoted(f, s)
             }
             MdOperandAttr::Node(id) => write!(f, "#{id}"),
-            MdOperandAttr::Global(name) => write!(f, "@{name}"),
             MdOperandAttr::Constant(attr) => attr.fmt(ctx, state, f),
         }
     }
@@ -162,10 +163,7 @@ impl Parsable for MdOperandAttr {
             token('#')
                 .with(MdNodeId::parser(()))
                 .map(MdOperandAttr::Node),
-            token('@')
-                .with(Identifier::parser(()))
-                .map(MdOperandAttr::Global),
-            AttrObj::parser(()).map(MdOperandAttr::Constant),
+            <Box<dyn TypedAttrInterface>>::parser(()).map(MdOperandAttr::Constant),
         ))
         .parse_stream(state_stream)
         .into()
@@ -695,13 +693,44 @@ pub enum MetadataVerifyErr {
     DanglingNodeRef(MdNodeId),
     #[error("Metadata is attached here, but the module has no metadata table")]
     NoTable,
+    #[error("Metadata refers to \"{0}\", which is not a symbol of this module")]
+    UndefinedSymbol(String),
 }
 
-/// Verify that every metadata reference in the module rooted at `module_op`
-/// resolves to a node in the module's metadata table.
-///
-/// This is not part of [Verify](pliron::common_traits::Verify) for the attributes
-/// above, since a reference can only be resolved with the enclosing module in hand.
+/// Ensure that symbols referred to by constant `attr` resolve in `module_op`.
+fn check_symbols_resolve(
+    ctx: &Context,
+    module_op: ModuleOp,
+    symbol_tables: &mut SymbolTableCollection,
+    attr: &dyn Attribute,
+    loc: &Location,
+) -> Result<()> {
+    if let Some(symbol_addr) = attr.downcast_ref::<SymbolAddrAttr>() {
+        let symbol = symbol_addr.symbol();
+        if symbol_tables
+            .lookup_symbol_in_table(ctx, Box::new(module_op), symbol)
+            .is_none()
+        {
+            verify_err!(
+                loc.clone(),
+                MetadataVerifyErr::UndefinedSymbol(symbol.to_string())
+            )?;
+        }
+    } else if let Some(aggregate) = attr.downcast_ref::<AggregateAttr>() {
+        for element in aggregate.elements() {
+            check_symbols_resolve(ctx, module_op, symbol_tables, &**element, loc)?;
+        }
+    } else if let Some(splat) = attr.downcast_ref::<SplatAttr>() {
+        check_symbols_resolve(ctx, module_op, symbol_tables, splat.element(), loc)?;
+    }
+    Ok(())
+}
+
+/// Verify that
+/// - Every metadata reference in the module rooted at `module_op`
+///   resolves to a node in the module's metadata table
+/// - Every constant that a metadata node holds verifies and refers
+///   only to symbols of the module.
 pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
     let module_op_ptr = module_op.get_operation();
     let table = get_metadata_table(ctx, module_op).unwrap_or_default();
@@ -715,10 +744,21 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
         Ok(())
     };
 
+    let mut symbol_tables = SymbolTableCollection::new();
     for (_, node) in table.iter() {
         for operand in node.operands() {
-            if let MdOperandAttr::Node(id) = operand {
-                check(*id, loc.clone())?;
+            match operand {
+                MdOperandAttr::Node(id) => check(*id, loc.clone())?,
+                MdOperandAttr::Constant(attr) => {
+                    verify_attr(&**attr, ctx).map_err(|mut err| {
+                        if err.loc.is_unknown() {
+                            err.set_loc(loc.clone());
+                        }
+                        err
+                    })?;
+                    check_symbols_resolve(ctx, module_op, &mut symbol_tables, &**attr, &loc)?
+                }
+                MdOperandAttr::Null | MdOperandAttr::String(_) => (),
             }
         }
     }
