@@ -4,6 +4,7 @@
 //! Attributes belonging to the LLVM dialect.
 
 use alloc::{
+    boxed::Box,
     string::{String, ToString},
     vec::Vec,
 };
@@ -14,7 +15,7 @@ use core::{
 use thiserror::Error;
 
 use pliron::{
-    attribute::{AttrObj, attr_type},
+    attribute::verify_attr,
     builtin::{
         attr_interfaces::TypedAttrInterface,
         attributes::{IntegerAttr, StringAttr},
@@ -438,7 +439,7 @@ impl TypedAttrInterface for BytesAttr {
 #[pliron_attr(name = "llvm.splat", format = "`<` $element ` : ` $ty `>`")]
 #[derive(Clone, Debug)]
 pub struct SplatAttr {
-    element: AttrObj,
+    element: Box<dyn TypedAttrInterface>,
     ty: TypedHandle<VectorType>,
 }
 
@@ -459,13 +460,13 @@ impl Hash for SplatAttr {
 
 impl SplatAttr {
     /// A vector constant of type `ty`, every element of which is `element`.
-    pub fn new(element: AttrObj, ty: TypedHandle<VectorType>) -> Self {
+    pub fn new(element: Box<dyn TypedAttrInterface>, ty: TypedHandle<VectorType>) -> Self {
         SplatAttr { element, ty }
     }
 
     /// The element that this splat repeats.
-    pub fn element(&self) -> &AttrObj {
-        &self.element
+    pub fn element(&self) -> &dyn TypedAttrInterface {
+        &*self.element
     }
 
     /// The vector type of this splat.
@@ -485,13 +486,12 @@ impl TypedAttrInterface for SplatAttr {
 fn verify_element(
     ctx: &Context,
     idx: usize,
-    element: &AttrObj,
+    element: &dyn TypedAttrInterface,
     expected: TypeHandle,
 ) -> Result<()> {
-    element.verify(ctx)?;
-    if let Some(ty) = attr_type(&**element, ctx)
-        && ty != expected
-    {
+    verify_attr(element, ctx)?;
+    let ty = element.get_type(ctx);
+    if ty != expected {
         verify_err_noloc!(ConstAggregateVerifyErr::ElementType(
             idx,
             ty.disp(ctx).to_string(),
@@ -505,7 +505,7 @@ impl Verify for SplatAttr {
     fn verify(&self, ctx: &Context) -> Result<()> {
         // That the type is a vector is the [TypedHandle]'s to guarantee.
         let elem_ty = self.ty.deref(ctx).elem_type();
-        verify_element(ctx, 0, &self.element, elem_ty)
+        verify_element(ctx, 0, self.element(), elem_ty)
     }
 }
 
@@ -555,18 +555,18 @@ impl TypedAttrInterface for SymbolAddrAttr {
 )]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct AggregateAttr {
-    elements: Vec<AttrObj>,
+    elements: Vec<Box<dyn TypedAttrInterface>>,
     ty: TypeHandle,
 }
 
 impl AggregateAttr {
     /// A constant aggregate of type `ty`, with one constant attribute per element.
-    pub fn new(elements: Vec<AttrObj>, ty: TypeHandle) -> Self {
+    pub fn new(elements: Vec<Box<dyn TypedAttrInterface>>, ty: TypeHandle) -> Self {
         AggregateAttr { elements, ty }
     }
 
     /// The elements of this aggregate.
-    pub fn elements(&self) -> &[AttrObj] {
+    pub fn elements(&self) -> &[Box<dyn TypedAttrInterface>] {
         &self.elements
     }
 
@@ -608,7 +608,7 @@ impl Verify for AggregateAttr {
             }
             let elem_ty = array_ty.elem_type();
             for (idx, element) in self.elements.iter().enumerate() {
-                verify_element(ctx, idx, element, elem_ty)?;
+                verify_element(ctx, idx, &**element, elem_ty)?;
             }
         } else if let Some(struct_ty) = ty.downcast_ref::<StructType>() {
             if struct_ty.is_opaque() || struct_ty.num_fields() != self.elements.len() {
@@ -623,7 +623,7 @@ impl Verify for AggregateAttr {
                 ))?
             }
             for (idx, element) in self.elements.iter().enumerate() {
-                verify_element(ctx, idx, element, struct_ty.field_type(idx))?;
+                verify_element(ctx, idx, &**element, struct_ty.field_type(idx))?;
             }
         } else if let Some(vector_ty) = ty.downcast_ref::<VectorType>() {
             if vector_ty.is_scalable() {
@@ -640,7 +640,7 @@ impl Verify for AggregateAttr {
             }
             let elem_ty = vector_ty.elem_type();
             for (idx, element) in self.elements.iter().enumerate() {
-                verify_element(ctx, idx, element, elem_ty)?;
+                verify_element(ctx, idx, &**element, elem_ty)?;
             }
         } else {
             verify_err_noloc!(ConstAggregateVerifyErr::NotAnAggregate(
