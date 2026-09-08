@@ -47,13 +47,13 @@ use crate::{
     dialect::{Dialect, DialectName},
     dyn_clone::DynClone,
     identifier::Identifier,
-    impl_printable_for_display, input_err,
+    impl_printable_for_display, input_err, input_error,
     irfmt::{
         parsers::{attr_parser, delimited_list_parser, spaced},
         printers::iter_with_sep,
     },
     location::Located,
-    parsable::{Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     result::Result,
     std_deps::sync::LazyLock,
@@ -64,13 +64,18 @@ use crate::{
         trait_cast::impls_trait_static,
     },
 };
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{
     fmt::{Debug, Display},
     hash::{Hash, Hasher},
     ops::Deref,
 };
 use downcast_rs::{Downcast, impl_downcast};
+use thiserror::Error;
 
 /// Convenience type to easily print and parse key-value pairs in an [AttributeDict].
 #[derive(Clone)]
@@ -266,6 +271,30 @@ impl Hash for AttrObj {
     }
 }
 
+/// Print [AttrId] followed by the attribute itself.
+///
+/// This is generally used through `AttrObj as Printable`,
+/// or `Box<dyn I> as Printable`.
+/// ```
+/// use pliron::{
+///     attribute::AttrObj, builtin::attributes::StringAttr, context::Context,
+///     printable::Printable,
+/// };
+/// let ctx = &Context::new();
+///
+/// let attr: AttrObj = Box::new(StringAttr::new("hello".to_string()));
+/// assert_eq!(attr.disp(ctx).to_string(), r#"builtin.string "hello""#);
+/// ```
+pub fn fmt_attr_obj(
+    attr: &dyn Attribute,
+    ctx: &Context,
+    state: &printable::State,
+    f: &mut core::fmt::Formatter<'_>,
+) -> core::fmt::Result {
+    write!(f, "{} ", attr.get_attr_id())?;
+    Printable::fmt(attr, ctx, state, f)
+}
+
 impl Printable for AttrObj {
     fn fmt(
         &self,
@@ -273,9 +302,60 @@ impl Printable for AttrObj {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        write!(f, "{} ", self.get_attr_id())?;
-        Printable::fmt(self.deref(), ctx, state, f)
+        fmt_attr_obj(self.deref(), ctx, state, f)
     }
+}
+
+#[derive(Debug, Error)]
+#[error("{provided} does not implement the attribute interface {interface}")]
+pub struct AttrInterfaceCastErr {
+    pub interface: String,
+    pub provided: String,
+}
+
+/// Parse `Box<dyn I>`.
+///
+/// This is generally used through `<Box<dyn I>>::parser` and not directly.
+/// ```
+/// use pliron::{
+///     builtin::{
+///         attr_interfaces::TypedAttrInterface,
+///         types::{IntegerType, Signedness},
+///     },
+///     context::Context,
+///     parsable::{Parsable, parse_from_str},
+/// };
+/// let ctx = &mut Context::new();
+///
+/// // `Box<dyn TypedAttrInterface>` parses through this.
+/// let parser = <Box<dyn TypedAttrInterface>>::parser(());
+/// let attr = parse_from_str(parser, ctx, "builtin.integer <42: si64>")
+///     .expect("An IntegerAttr has a type");
+/// assert_eq!(attr.get_type(ctx), IntegerType::get(ctx, 64, Signedness::Signed).into());
+///
+/// // A string carries no type, so it isn't a `TypedAttrInterface`.
+/// let parser = <Box<dyn TypedAttrInterface>>::parser(());
+/// assert!(parse_from_str(parser, ctx, r#"builtin.string "hello""#).is_err());
+/// ```
+pub fn parse_attr_interface_obj<'a, I: ?Sized + AttrInterfaceMarker + 'static>(
+    state_stream: &mut StateStream<'a>,
+) -> ParseResult<'a, Box<I>> {
+    let loc = state_stream.loc();
+    let (attr, _) = attr_parser().parse_stream(state_stream).into_result()?;
+
+    // The cast consumes the attribute, so name it for the error before casting.
+    let provided = attr.get_attr_id();
+    boxed_attr_cast::<I>(attr)
+        .ok_or_else(|| {
+            input_error!(
+                loc,
+                AttrInterfaceCastErr {
+                    interface: core::any::type_name::<I>().to_string(),
+                    provided: provided.to_string(),
+                }
+            )
+        })
+        .into_parse_result()
 }
 
 impl Parsable for AttrObj {

@@ -149,7 +149,7 @@ fn metadata_from_llvm_ir() -> Result<()> {
           #6 = distinct !{#6, !"copy"},
           #7 = !{#8},
           #8 = distinct !{#8, #6, !"copy: argument 0"},
-          #9 = !{!"custom", @g, null, builtin.integer <42: i64>},
+          #9 = !{!"custom", llvm.symbol_addr <@g : llvm.ptr (0)>, null, builtin.integer <42: i64>},
           #10 = distinct !{#10, #11, #12},
           #11 = !{!"llvm.loop.mustprogress"},
           #12 = !{!"llvm.loop.unroll.disable"},
