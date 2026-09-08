@@ -1517,6 +1517,47 @@ fn test_verify_operation_fails_on_undominated_block_argument_use() {
     assert!(matches!(err, DefUseVerifyErr::UseNotDominatedByDef(_)));
 }
 
+// Ensure that erasing a block whose argument has uses outside the block panics.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+#[should_panic(expected = "has use outside the block")]
+fn erase_block_with_used_argument() {
+    let ctx = &mut Context::new();
+    let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+    let func_ty =
+        pliron::builtin::types::FunctionType::get(ctx, vec![i64_ty.into()], vec![i64_ty.into()]);
+    let module = pliron::builtin::ops::ModuleOp::new(ctx, "bar".try_into().unwrap());
+    let func = pliron::builtin::ops::FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    module.append_operation(ctx, func.get_operation(), 0);
+
+    let entry = func.get_entry_block(ctx);
+    let arg = entry.deref(ctx).get_argument(0);
+
+    let bb2 = BasicBlock::new(ctx, None, vec![]);
+    bb2.insert_after(ctx, entry);
+
+    let br = Operation::new(
+        ctx,
+        BranchOp::get_concrete_op_info(),
+        vec![],
+        vec![],
+        vec![bb2],
+        0,
+    );
+    br.insert_at_back(entry, ctx);
+
+    ReturnOp::new(ctx, arg)
+        .get_operation()
+        .insert_at_back(bb2, ctx);
+
+    // Initial IR must be completely valid and verified before erase.
+    verify_operation(module.get_operation(), ctx).expect("IR should be valid");
+
+    // Precondition violation: entry has an argument used outside the block.
+    // Erasing entry must panic.
+    BasicBlock::erase(entry, ctx);
+}
+
 #[test]
 fn block_inline_attrs_print() -> Result<()> {
     let ctx = &mut Context::new();
