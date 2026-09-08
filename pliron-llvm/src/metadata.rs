@@ -46,7 +46,7 @@ use alloc::{
 };
 use pliron::{
     arg_err,
-    attribute::{AttrObj, Attribute, attr_impls, verify_attr},
+    attribute::{Attribute, verify_attr},
     builtin::{
         attr_interfaces::{OutlinedAttr, TypedAttrInterface},
         ops::ModuleOp,
@@ -121,7 +121,7 @@ pub enum MdOperandAttr {
     /// A reference to another node in the module's metadata table. Printed as `#42`.
     Node(MdNodeId),
     /// LLVM's `ConstantAsMetadata` wrapping a constant value.
-    Constant(AttrObj),
+    Constant(Box<dyn TypedAttrInterface>),
 }
 
 impl Printable for MdOperandAttr {
@@ -163,7 +163,7 @@ impl Parsable for MdOperandAttr {
             token('#')
                 .with(MdNodeId::parser(()))
                 .map(MdOperandAttr::Node),
-            AttrObj::parser(()).map(MdOperandAttr::Constant),
+            <Box<dyn TypedAttrInterface>>::parser(()).map(MdOperandAttr::Constant),
         ))
         .parse_stream(state_stream)
         .into()
@@ -695,8 +695,6 @@ pub enum MetadataVerifyErr {
     NoTable,
     #[error("Metadata refers to \"{0}\", which is not a symbol of this module")]
     UndefinedSymbol(String),
-    #[error("Metadata operand {0} is not a constant")]
-    NotAConstant(String),
 }
 
 /// Ensure that symbols referred to by constant `attr` resolve in `module_op`.
@@ -731,9 +729,8 @@ fn check_symbols_resolve(
 /// Verify that
 /// - Every metadata reference in the module rooted at `module_op`
 ///   resolves to a node in the module's metadata table
-/// - Every constant operand that a metadata node holds impls
-///   [TypedAttrInterface], verifies, and refers only to symbols
-///   of the module.
+/// - Every constant that a metadata node holds verifies and refers
+///   only to symbols of the module.
 pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
     let module_op_ptr = module_op.get_operation();
     let table = get_metadata_table(ctx, module_op).unwrap_or_default();
@@ -753,13 +750,6 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
             match operand {
                 MdOperandAttr::Node(id) => check(*id, loc.clone())?,
                 MdOperandAttr::Constant(attr) => {
-                    // Only a typed attribute can be an LLVM constant.
-                    if !attr_impls::<dyn TypedAttrInterface>(&**attr) {
-                        verify_err!(
-                            loc.clone(),
-                            MetadataVerifyErr::NotAConstant(attr.disp(ctx).to_string())
-                        )?;
-                    }
                     verify_attr(&**attr, ctx).map_err(|mut err| {
                         if err.loc.is_unknown() {
                             err.set_loc(loc.clone());
