@@ -71,7 +71,7 @@ pub struct Context {
     /// Storage for other uniqued objects.
     pub(crate) uniqued_any_store: UniqueStore<UniquedAny>,
     /// Arbitrary data storage. Use [Self::aux_data_map] for dictionary access.
-    pub aux_data: SlotMap<AuxDataIndex, Box<dyn Any>>,
+    pub aux_data: SlotMap<AuxDataIndex, Box<dyn Any + Send>>,
     /// A dictionary with keys mapping to an index in [Self::aux_data].
     pub aux_data_map: HMap<Identifier, AuxDataIndex>,
 }
@@ -131,6 +131,12 @@ impl Default for Context {
         ctx
     }
 }
+
+// Static assertion to ensure that [Context] is [Send].
+const _: () = {
+    const fn assert_send<T: Send>() {}
+    assert_send::<Context>();
+};
 
 pub(crate) mod private {
     use super::*;

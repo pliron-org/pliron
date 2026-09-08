@@ -10,7 +10,7 @@ use alloc::boxed::Box;
 use crate::{context::Context, storage_uniquer::TypeValueHash};
 
 /// [Box]ed [Any], used for unique storage.
-pub(crate) struct UniquedAny(Box<dyn Any>);
+pub(crate) struct UniquedAny(Box<dyn Any + Send>);
 
 /// A handle to the stored unique copy of an object.
 #[derive(PartialEq, Eq, Debug)]
@@ -34,7 +34,7 @@ impl<T: 'static> Hash for UniquedKey<T> {
 }
 
 /// Save a unique copy of an object and get a handle to the saved copy.
-pub fn save<T: Any + Hash + Eq>(ctx: &mut Context, t: T) -> UniquedKey<T> {
+pub fn save<T: Any + Hash + Eq + Send>(ctx: &mut Context, t: T) -> UniquedKey<T> {
     let hash = TypeValueHash::new(&t);
     let t = UniquedAny(Box::new(t));
     let eq = |t1: &UniquedAny, t2: &UniquedAny| -> bool {
