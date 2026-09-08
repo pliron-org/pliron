@@ -13,8 +13,7 @@ pub mod from_llvm_ir {
 
     use llvm_sys::debuginfo::LLVMMetadataKind;
     use pliron::{
-        attribute::boxed_attr_cast,
-        builtin::{attr_interfaces::TypedAttrInterface, ops::ModuleOp},
+        builtin::ops::ModuleOp,
         context::{Context, Ptr},
         input_error_noloc,
         operation::Operation,
@@ -305,11 +304,7 @@ pub mod from_llvm_ir {
             }
             LLVMMetadataKind::LLVMConstantAsMetadataMetadataKind => {
                 match const_llvm_value_to_attr(ctx, cctx, val)? {
-                    Some(attr) => {
-                        let attr = boxed_attr_cast::<dyn TypedAttrInterface>(attr)
-                            .expect("Every constant attribute we build has a type");
-                        Ok(Some(MdOperandAttr::Constant(attr)))
-                    }
+                    Some(attr) => Ok(Some(MdOperandAttr::Constant(attr))),
                     None => {
                         log::warn!(
                             "Dropping unsupported constant metadata operand {}",

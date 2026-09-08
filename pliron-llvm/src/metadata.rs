@@ -721,7 +721,7 @@ fn check_symbols_resolve(
             check_symbols_resolve(ctx, module_op, symbol_tables, &**element, loc)?;
         }
     } else if let Some(splat) = attr.downcast_ref::<SplatAttr>() {
-        check_symbols_resolve(ctx, module_op, symbol_tables, &**splat.element(), loc)?;
+        check_symbols_resolve(ctx, module_op, symbol_tables, splat.element(), loc)?;
     }
     Ok(())
 }
