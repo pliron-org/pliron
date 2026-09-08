@@ -21,6 +21,14 @@ pub(crate) fn interface_define(
     target_marker_trait: Path,
 ) -> Result<proc_macro2::TokenStream> {
     let mut r#trait = syn::parse2::<ItemTrait>(input.into())?;
+
+    if let Some(lifetime) = r#trait.generics.lifetimes().next() {
+        return Err(syn::Error::new_spanned(
+            lifetime,
+            "An interface cannot have a lifetime parameter",
+        ));
+    }
+
     let intr_name = r#trait.ident.clone();
     let generics = r#trait.generics.clone();
     // https://github.com/kardeiz/objekt-clonable/blob/master/dyn-clonable-impl/src/lib.rs
@@ -85,6 +93,79 @@ pub(crate) fn interface_define(
     });
 
     Ok(output)
+}
+
+/// Implement common traits for `Box<dyn Interface>`.
+///
+/// These all delegate to the `Attribute` that the interface object holds.
+pub(crate) fn attr_interface_obj_traits(
+    input: proc_macro::TokenStream,
+) -> Result<proc_macro2::TokenStream> {
+    let r#trait = syn::parse2::<ItemTrait>(input.into())?;
+    let intr_name = r#trait.ident.clone();
+    let generics = r#trait.generics.clone();
+    let (impl_generics, ty_generics, where_clause) = generics.split_for_impl();
+
+    // Only 'static lifetimes work, and that's checked for by `interface_define`.
+    let mut obj_where_clause = where_clause
+        .cloned()
+        .unwrap_or_else(|| parse_quote! { where });
+    for ty_param in generics.type_params() {
+        let ty_param = &ty_param.ident;
+        obj_where_clause
+            .predicates
+            .push(parse_quote! { #ty_param: 'static });
+    }
+
+    // Equality and hashing are on the interface object itself.
+    // `Box<dyn Interface>` gets them from the standard library's impls for `Box`.
+    Ok(quote! {
+        impl #impl_generics ::core::cmp::PartialEq for dyn #intr_name #ty_generics #obj_where_clause {
+            fn eq(&self, other: &Self) -> bool {
+                ::pliron::attribute::Attribute::eq_attr(self, other)
+            }
+        }
+
+        impl #impl_generics ::core::cmp::Eq for dyn #intr_name #ty_generics #obj_where_clause {}
+
+        impl #impl_generics ::core::hash::Hash for dyn #intr_name #ty_generics #obj_where_clause {
+            fn hash<__H: ::core::hash::Hasher>(&self, state: &mut __H) {
+                ::core::hash::Hasher::write_u64(
+                    state,
+                    ::pliron::attribute::Attribute::hash_attr(self).into(),
+                );
+            }
+        }
+
+        // Printable: Call the same formatting function that `AttrObj` does.
+        impl #impl_generics ::pliron::printable::Printable
+            for ::pliron::alloc::boxed::Box<dyn #intr_name #ty_generics> #obj_where_clause
+        {
+            fn fmt(
+                &self,
+                ctx: &::pliron::context::Context,
+                state: &::pliron::printable::State,
+                f: &mut ::core::fmt::Formatter<'_>,
+            ) -> ::core::fmt::Result {
+                ::pliron::attribute::fmt_attr_obj(&**self, ctx, state, f)
+            }
+        }
+
+        // Parsable: The box parses any attribute, and rejects one that isn't of this interface.
+        impl #impl_generics ::pliron::parsable::Parsable
+            for ::pliron::alloc::boxed::Box<dyn #intr_name #ty_generics> #obj_where_clause
+        {
+            type Arg = ();
+            type Parsed = Self;
+
+            fn parse<'a>(
+                state_stream: &mut ::pliron::parsable::StateStream<'a>,
+                _arg: Self::Arg,
+            ) -> ::pliron::parsable::ParseResult<'a, Self::Parsed> {
+                ::pliron::attribute::parse_attr_interface_obj(state_stream)
+            }
+        }
+    })
 }
 
 /// Whether an interface impl must also be registered for casting boxed objects

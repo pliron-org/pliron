@@ -961,13 +961,21 @@ pub fn attr_interface(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let verifier_type = parse_quote! { ::pliron::attribute::AttrInterfaceVerifier };
     let target_marker_trait = parse_quote! { ::pliron::attribute::AttrInterfaceMarker };
 
-    to_token_stream(interfaces::interface_define(
-        item,
+    let define = interfaces::interface_define(
+        item.clone(),
         supertrait,
         verifier_type,
         true,
         target_marker_trait,
-    ))
+    );
+
+    // Implement common traits for `dyn Interface` that we already implement for `AttrObj`.
+    let obj_traits = interfaces::attr_interface_obj_traits(item);
+
+    to_token_stream(define.and_then(|mut output| {
+        output.extend(obj_traits?);
+        Ok(output)
+    }))
 }
 
 /// Implement [Attribute](../pliron/attribute/trait.Attribute.html) Interface for an Attribute.
