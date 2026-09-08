@@ -6,11 +6,13 @@ mod common;
 use common::{ConstantOp, ReturnOp};
 use expect_test::expect;
 
+use std::hash::{DefaultHasher, Hash, Hasher};
+
 use pliron::{
-    attribute::{Attribute, attr_cast, verify_attr},
+    attribute::{AttrObj, Attribute, attr_cast, boxed_attr_cast, verify_attr},
     builtin::{
         attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
-        attributes::{IntegerAttr, StringAttr},
+        attributes::{IntegerAttr, StringAttr, TypeAttr},
         op_interfaces::{NResultsVerifyErr, OneResultInterface},
         ops::ModuleOp,
         type_interfaces::FloatTypeInterface,
@@ -355,6 +357,59 @@ impl TypedAttrInterface for MyAttr {
     }
 }
 
+/// A boxed attribute interface object behaves like an [AttrObj]: it compares, hashes,
+/// prints and parses as the attribute it holds.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn test_boxed_attr_interface_obj() {
+    let ctx = &mut Context::new();
+
+    let boxed = |s: &str| -> Box<dyn TestAttrInterfaceX> {
+        boxed_attr_cast(Box::new(StringAttr::new(s.to_string())) as AttrObj)
+            .expect("StringAttr implements TestAttrInterfaceX")
+    };
+
+    // `assert_eq` would compare the unsized `dyn` objects, so compare the boxes.
+    assert!(boxed("hello") == boxed("hello"));
+    assert!(boxed("hello") != boxed("world"));
+
+    let hash = |attr: Box<dyn TestAttrInterfaceX>| {
+        let mut hasher = DefaultHasher::new();
+        attr.hash(&mut hasher);
+        hasher.finish()
+    };
+    assert_eq!(hash(boxed("hello")), hash(boxed("hello")));
+
+    // The box prints the attribute's name, just as an `AttrObj` does, and parses
+    // that form back.
+    let printed = boxed("hello").disp(ctx).to_string();
+    assert_eq!(
+        printed,
+        (Box::new(StringAttr::new("hello".to_string())) as AttrObj)
+            .disp(ctx)
+            .to_string()
+    );
+    let parsed = parse_from_str(<Box<dyn TestAttrInterfaceX>>::parser(()), ctx, &printed)
+        .expect("the printed form must parse back");
+    assert!(parsed == boxed("hello"));
+
+    // An attribute that doesn't implement the interface is rejected.
+    let unit_ty_attr = (Box::new(TypeAttr::new(UnitType::get(ctx).into())) as AttrObj)
+        .disp(ctx)
+        .to_string();
+    let err = parse_from_str(
+        <Box<dyn TestAttrInterfaceX>>::parser(()),
+        ctx,
+        &unit_ty_attr,
+    )
+    .expect_err("TypeAttr doesn't implement TestAttrInterfaceX");
+    assert!(
+        err.to_string()
+            .contains("does not implement the attribute interface"),
+        "unexpected error: {err}"
+    );
+}
+
 static TEST_ATTR_VERIFIERS_OUTPUT: LazyLock<Mutex<String>> =
     LazyLock::new(|| Mutex::new("".into()));
 
@@ -644,6 +699,11 @@ static TEST_TYPE_VERIFIERS_OUTPUT_GENERIC: LazyLock<Mutex<String>> =
 
 #[type_interface]
 trait TestTypeInterfaceGeneric<T: Clone> {
+    /// Name of the type argument that this interface is instantiated with.
+    fn type_arg_name(&self) -> &'static str {
+        core::any::type_name::<T>()
+    }
+
     fn verify(_op: &dyn Type, _ctx: &Context) -> Result<()>
     where
         Self: Sized,
@@ -1148,20 +1208,27 @@ fn test_outline_attr_on_block() -> Result<()> {
 #[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
 fn test_type_interface_handle() {
     let ctx = &mut Context::new();
-    let fp32 = FP32Type::get(ctx);
+    let generic_ty = Type::instantiate(VerifyIntrTypeGeneric {}, ctx);
     let i32_ty = IntegerType::get(ctx, 32, Signedness::Signed);
 
-    // `FP32Type` implements `FloatTypeInterface`
-    let handle: TypeInterfaceHandle<dyn FloatTypeInterface> = fp32.into();
+    // `VerifyIntrTypeGeneric` implements `TestTypeInterfaceGeneric<i32>`
+    let handle: TypeInterfaceHandle<dyn TestTypeInterfaceGeneric<i32>> = generic_ty.into();
     // Interface methods are available with no cast at the point of use.
-    assert_eq!(handle.deref(ctx).get_semantics().bits, 32);
-    assert_eq!(handle.to_handle(), fp32.to_handle());
+    assert_eq!(handle.deref(ctx).type_arg_name(), "i32");
+    assert_eq!(handle.to_handle(), generic_ty.to_handle());
 
     assert!(
-        TypeInterfaceHandle::<dyn FloatTypeInterface>::from_handle(fp32.to_handle(), ctx).is_ok()
+        TypeInterfaceHandle::<dyn TestTypeInterfaceGeneric<i32>>::from_handle(
+            generic_ty.to_handle(),
+            ctx
+        )
+        .is_ok()
     );
     assert!(matches!(
-        TypeInterfaceHandle::<dyn FloatTypeInterface>::from_handle(i32_ty.to_handle(), ctx),
+        TypeInterfaceHandle::<dyn TestTypeInterfaceGeneric<i32>>::from_handle(
+            i32_ty.to_handle(),
+            ctx
+        ),
         Err(Error {
             kind: ErrorKind::InvalidArgument,
             err,
