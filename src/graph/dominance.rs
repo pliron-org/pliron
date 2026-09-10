@@ -236,7 +236,7 @@ where
         let mut res: HMap<G::Node, ISet<G::Node>> =
             graph.nodes(ctx).map(|n| (n, ISet::default())).collect();
         for b in graph.nodes(ctx) {
-            if graph.num_predecessors(ctx, &b) < 2 {
+            if !dom_tree.contains(&b) || graph.num_predecessors(ctx, &b) < 2 {
                 continue;
             }
             let preds = graph.predecessors(ctx, &b);
@@ -825,6 +825,42 @@ mod tests {
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
         assert_eq!(*df.frontier(&4), ISet::from_iter([3, 4, 11, 12]));
+    }
+
+    #[test]
+    fn dom_frontier_unreachable_multi_predecessor() {
+        // reachable:
+        //      0 (entry) -> 1 (exit)
+        // unreachable:
+        //      2 (dead_a) ----\
+        //                      -> 4 (dead_join)
+        //      3 (dead_b) ----/
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[4]),
+            /* 3 */ n(&[4]),
+            /* 4 */ n(&[]),
+        ];
+        let dom = compute_dominator_tree(&ctx, &ArenaGraph);
+        assert_eq!(dom.root(), Some(0));
+        assert_eq!(dom.num_nodes(), 2);
+        assert!(dom.contains(&0));
+        assert!(dom.contains(&1));
+        assert!(!dom.contains(&2));
+        assert!(!dom.contains(&3));
+        assert!(!dom.contains(&4));
+
+        let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
+
+        // Reachable-node behavior remains unchanged.
+        assert_eq!(*df.frontier(&0), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&1), ISet::from_iter([]));
+
+        // Unreachable nodes (including multi-predecessor join) receive empty frontiers.
+        assert_eq!(*df.frontier(&2), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&3), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&4), ISet::from_iter([]));
     }
 
     // --- Operation-level dominance tests ---
