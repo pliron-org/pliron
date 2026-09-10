@@ -13,9 +13,9 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::IntegerAttr,
+        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{BranchOpInterface, OneResultInterface},
-        types::{IntegerType, Signedness},
+        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     derive::op_interface_impl,
@@ -29,7 +29,11 @@ use pliron::{
         },
     },
     result::Result,
-    utils::apint::{APInt, bw},
+    r#type::TypeHandle,
+    utils::{
+        apfloat::{Double, Float, Half, Single},
+        apint::{APInt, bw},
+    },
     value::Value,
 };
 
@@ -315,6 +319,77 @@ fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -
     let flags = flags.0;
     (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
         || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+/// Convert a scalar integer constant to a floating-point attribute.
+///
+/// `signed` controls whether the input bit pattern is interpreted as a signed
+/// or unsigned integer. Values wider than 128 bits are left unfolded because
+/// rustc_apfloat's integer conversion entry points accept at most 128 bits.
+fn convert_int_to_float_attr(
+    ctx: &Context,
+    value: &APInt,
+    result_ty: TypeHandle,
+    signed: bool,
+) -> Option<AttrObj> {
+    if value.bw() > 128 {
+        return None;
+    }
+
+    let result_ty = result_ty.deref(ctx);
+    if result_ty.is::<FP16Type>() {
+        let value = if signed {
+            Half::from_i128(value.to_i128()).value
+        } else {
+            Half::from_u128(value.to_u128()).value
+        };
+        Some(Box::new(FPHalfAttr(value)) as AttrObj)
+    } else if result_ty.is::<FP32Type>() {
+        let value = if signed {
+            Single::from_i128(value.to_i128()).value
+        } else {
+            Single::from_u128(value.to_u128()).value
+        };
+        Some(Box::new(FPSingleAttr(value)) as AttrObj)
+    } else if result_ty.is::<FP64Type>() {
+        let value = if signed {
+            Double::from_i128(value.to_i128()).value
+        } else {
+            Double::from_u128(value.to_u128()).value
+        };
+        Some(Box::new(FPDoubleAttr(value)) as AttrObj)
+    } else {
+        panic!("invalid integer-to-floating-point cast: typecheck before optimizing")
+    }
+}
+
+/// Constant fold a scalar integer-to-floating-point cast.
+fn check_fold_int_to_float(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    signed: bool,
+    nneg: bool,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        return vec![None];
+    };
+    let operand = operand
+        .downcast_ref::<IntegerAttr>()
+        .expect("invalid operand type: typecheck before optimizing");
+    let value = operand.value();
+
+    // `uitofp nneg` produces poison when the input bit pattern is negative
+    // under signed interpretation.
+    if nneg
+        && value.slt(&APInt::zero(
+            NonZero::new(value.bw()).expect("operand has zero bitwidth"),
+        ))
+    {
+        return vec![None];
+    }
+
+    vec![convert_int_to_float_attr(ctx, &value, result_ty, signed)]
 }
 
 /// Constant fold a binary floating-point operation into a singleton vector
@@ -736,6 +811,38 @@ impl ConstFoldInterface for ZExtOp {
         let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
         vec![Some(res)]
     }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SIToFPOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_to_float(ctx, ops, self.result_type(ctx), true, false)
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for UIToFPOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_to_float(ctx, ops, self.result_type(ctx), false, self.nneg(ctx))
+    }
+
     fn fold_in_place(
         &self,
         ctx: &mut Context,
