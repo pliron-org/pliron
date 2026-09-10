@@ -13,9 +13,9 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::IntegerAttr,
+        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{BranchOpInterface, OneResultInterface},
-        types::{IntegerType, Signedness},
+        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     derive::op_interface_impl,
@@ -29,7 +29,11 @@ use pliron::{
         },
     },
     result::Result,
-    utils::apint::{APInt, bw},
+    r#type::TypeHandle,
+    utils::{
+        apfloat::FloatConvert,
+        apint::{APInt, bw},
+    },
     value::Value,
 };
 
@@ -315,6 +319,60 @@ fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -
     let flags = flags.0;
     (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
         || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+/// Convert a scalar floating-point attribute to `result_ty`. The verifier guarantees
+/// that the source and destination are different floating-point types.
+fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -> AttrObj {
+    let result_ty = result_ty.deref(ctx);
+
+    if result_ty.is::<FP16Type>() {
+        if let Some(value) = operand.downcast_ref::<FPSingleAttr>() {
+            return Box::new(FPHalfAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+        if let Some(value) = operand.downcast_ref::<FPDoubleAttr>() {
+            return Box::new(FPHalfAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+    } else if result_ty.is::<FP32Type>() {
+        if let Some(value) = operand.downcast_ref::<FPHalfAttr>() {
+            return Box::new(FPSingleAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+        if let Some(value) = operand.downcast_ref::<FPDoubleAttr>() {
+            return Box::new(FPSingleAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+    } else if result_ty.is::<FP64Type>() {
+        if let Some(value) = operand.downcast_ref::<FPHalfAttr>() {
+            return Box::new(FPDoubleAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+        if let Some(value) = operand.downcast_ref::<FPSingleAttr>() {
+            return Box::new(FPDoubleAttr(value.0.convert(&mut false).value)) as AttrObj;
+        }
+    }
+
+    panic!("invalid floating-point cast: typecheck before optimizing")
+}
+
+/// Constant fold a scalar floating-point cast.
+fn check_fold_float_cast(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    flags: FastmathFlagsAttr,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        return vec![None];
+    };
+    let Some(source) = attr_cast::<dyn FloatAttr>(&**operand) else {
+        return vec![None];
+    };
+    let result = convert_float_attr(ctx, operand, result_ty);
+    let result_float = attr_cast::<dyn FloatAttr>(&*result)
+        .expect("floating-point conversion must produce a floating-point attribute");
+
+    if fast_math_forbids_fold(flags, &[source, result_float]) {
+        return vec![None];
+    }
+    vec![Some(result)]
 }
 
 /// Constant fold a binary floating-point operation into a singleton vector
@@ -735,6 +793,36 @@ impl ConstFoldInterface for ZExtOp {
             value.zext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
         let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
         vec![Some(res)]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FPExtOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FPTruncOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
     }
     fn fold_in_place(
         &self,
