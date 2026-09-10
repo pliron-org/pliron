@@ -20,3 +20,24 @@ Each script:
   default: pliron-llvm/llvm-opt/llvm-opt-wrapper.sh
 - LLVM_OPT: path to llvm-opt binary
   default: target/debug/llvm-opt
+
+## Liveness benchmark corpus
+
+Set `PLIRON_LIVENESS_BENCH_DIR` while running a real-world wrapper test to preserve
+the unoptimized LLVM modules emitted by clang. The liveness benchmark consumes all
+`.ll` files found recursively in that directory. It performs one exhaustive
+value/program-point query sweep per module and reports tab-separated timing data.
+A module that triggers a liveness panic is reported and skipped so the remaining
+corpus can still be measured.
+
+Example using bzip2:
+
+```bash
+rm -rf /tmp/pliron-liveness-bzip2
+mkdir -p /tmp/pliron-liveness-bzip2
+cargo build -p llvm-opt
+PLIRON_LIVENESS_BENCH_DIR=/tmp/pliron-liveness-bzip2 \
+  bash pliron-llvm/llvm-opt/tests/testsuite/bzip2.sh
+PLIRON_LIVENESS_BENCH_DIR=/tmp/pliron-liveness-bzip2 \
+  cargo bench -p llvm-opt --bench liveness
+```
