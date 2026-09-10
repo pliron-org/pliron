@@ -29,7 +29,7 @@ use crate::{
 };
 
 type BitSet = hi_sparse_bitset::BitSet<hi_sparse_bitset::config::_128bit>;
-use hi_sparse_bitset::{ops as bitset_ops, reduce as bitset_reduce};
+use hi_sparse_bitset::{cache::DynamicCache, ops as bitset_ops, reduce_w_cache as bitset_reduce};
 
 /// This mirrors the approach from "Fast Liveness Checking for SSA-Form Programs":
 /// reduced reachability (`R`) and back-edge target closure (`Tq`) are precomputed
@@ -158,7 +158,7 @@ impl LivenessTq {
             // Add the children themselves
             let children_nodes: BitSet = child_indices.iter().copied().collect();
             // Union of children's sdom_tree plus the children themselves is the sdom_tree for this node.
-            let subtree = bitset_reduce(bitset_ops::Or, children_sdom_tree);
+            let subtree = bitset_reduce(bitset_ops::Or, children_sdom_tree, DynamicCache);
             sdom_tree[block_idx] =
                 (&subtree.map(Into::<BitSet>::into).unwrap_or_default() | &children_nodes).into();
         }
@@ -179,6 +179,7 @@ impl LivenessTq {
             let mut reach = bitset_reduce(
                 bitset_ops::Or,
                 reduced_successors[node].iter().map(|succ| &res[succ]),
+                DynamicCache,
             )
             .map(Into::<BitSet>::into)
             .unwrap_or_default();
@@ -237,6 +238,7 @@ impl LivenessTq {
             let mut t_q = bitset_reduce(
                 bitset_ops::Or,
                 t_up_sets[t].iter().map(|t_up| &tq_sets[t_up]),
+                DynamicCache,
             )
             .map(Into::<BitSet>::into)
             .unwrap_or_default();
@@ -256,6 +258,7 @@ impl LivenessTq {
                 bitset_ops::Or,
                 core::iter::once(&tq_sets[s])
                     .chain(back_edges_by_source[s].iter().map(|t| &tq_sets[*t])),
+                DynamicCache,
             )
             .map(Into::<BitSet>::into)
             .unwrap_or_default();
@@ -269,6 +272,7 @@ impl LivenessTq {
             let tq = bitset_reduce(
                 bitset_ops::Or,
                 reduced_successors[q].iter().map(|succ| &tq_sets[succ]),
+                DynamicCache,
             )
             .map(Into::<BitSet>::into)
             .unwrap_or_default();
@@ -1530,5 +1534,27 @@ mod tests {
             val,
             OpInsertionPoint::AfterOperation(_holder_2)
         ));
+    }
+
+    #[test]
+    fn liveness_wide_cfg_exceeds_default_reduce_cache() {
+        // hi_sparse_bitset uses FixedCache<32> by default. A CFG with more than
+        // 32 successors exercises liveness reductions whose fan-in exceeds that
+        // fixed cache capacity.
+        const FANOUT: usize = 33;
+
+        let ctx = &mut Context::new();
+        let (func, entry) = new_test_func(ctx, "wide_cfg");
+
+        let successors = (0..FANOUT)
+            .map(|_| append_block(ctx, &func))
+            .collect::<Vec<_>>();
+
+        insert_br(ctx, entry, successors);
+
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
     }
 }
