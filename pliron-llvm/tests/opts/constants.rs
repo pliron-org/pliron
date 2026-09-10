@@ -1511,6 +1511,291 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.fptosi
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fptosi_truncates_positive_fraction_toward_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 3.75> : builtin.fp32;
+        c = llvm.fptosi a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.integer <3: i8>"));
+    Ok(())
+}
+
+#[test]
+fn fptosi_truncates_negative_fraction_toward_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double -123.75> : builtin.fp64;
+        c = llvm.fptosi a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    // -123 is represented by the i8 bit pattern 133.
+    assert!(after.contains("builtin.integer <133: i8>"));
+    Ok(())
+}
+
+#[test]
+fn fptosi_folds_fraction_at_signed_lower_boundary() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double -128.9> : builtin.fp64;
+        c = llvm.fptosi a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    // -128 is represented by the i8 bit pattern 128.
+    assert!(after.contains("builtin.integer <128: i8>"));
+    Ok(())
+}
+
+#[test]
+fn fptosi_does_not_fold_out_of_range_value() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 128> : builtin.fp32;
+        c = llvm.fptosi a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptosi_does_not_fold_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        c = llvm.fptosi a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptosi_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double +Inf> : builtin.fp64;
+        c = llvm.fptosi a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptosi_folds_to_i1() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 0.75> : builtin.fp32;
+        c = llvm.fptosi a to builtin.integer i1;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.integer <0: i1>"));
+    Ok(())
+}
+
+#[test]
+fn fptosi_does_not_fold_integer_wider_than_128_bits() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i129 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 1> : builtin.fp64;
+        c = llvm.fptosi a to builtin.integer i129;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptosi_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        c = llvm.fptosi x to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fptoui
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fptoui_folds_positive_constant() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.half 42> : builtin.fp16;
+        c = llvm.fptoui a to builtin.integer i16;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.integer <42: i16>"));
+    Ok(())
+}
+
+#[test]
+fn fptoui_truncates_fraction_toward_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 255.9> : builtin.fp64;
+        c = llvm.fptoui a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.integer <255: i8>"));
+    Ok(())
+}
+
+#[test]
+fn fptoui_folds_negative_fraction_to_zero() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double -0.999> : builtin.fp64;
+        c = llvm.fptoui a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.integer <0: i32>"));
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_negative_one() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single -1> : builtin.fp32;
+        c = llvm.fptoui a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_out_of_range_value() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 256> : builtin.fp32;
+        c = llvm.fptoui a to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double NaN> : builtin.fp64;
+        c = llvm.fptoui a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fptoui a to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_integer_wider_than_128_bits() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i129 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 1> : builtin.fp64;
+        c = llvm.fptoui a to builtin.integer i129;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptoui_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        c = llvm.fptoui x to builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
