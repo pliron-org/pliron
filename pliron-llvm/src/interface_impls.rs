@@ -29,7 +29,11 @@ use pliron::{
         },
     },
     result::Result,
-    utils::apint::{APInt, bw},
+    r#type::TypeHandle,
+    utils::{
+        apfloat::Round,
+        apint::{APInt, bw},
+    },
     value::Value,
 };
 
@@ -315,6 +319,73 @@ fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -
     let flags = flags.0;
     (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
         || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+// rustc_apfloat::Status::INVALID_OP. `Status` is not re-exported by Pliron,
+// while `StatusAnd` exposes its bitset through `bits()`.
+const APFLOAT_INVALID_OP: u8 = 0x01;
+
+/// Constant fold a scalar floating-point-to-integer cast.
+///
+/// LLVM rounds `fptosi` and `fptoui` toward zero. A conversion that cannot be
+/// represented in the destination integer type produces poison, so an
+/// `INVALID_OP` result from rustc_apfloat must not be materialized. Integer
+/// destinations wider than 128 bits are left unfolded because rustc_apfloat's
+/// integer conversion entry points return at most 128 bits.
+fn check_fold_float_to_int(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    signed: bool,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        return vec![None];
+    };
+    let Some(value) = attr_cast::<dyn FloatAttr>(&**operand) else {
+        return vec![None];
+    };
+
+    let result_ty = result_ty.deref(ctx);
+    let Some(int_ty) = result_ty.downcast_ref::<IntegerType>() else {
+        return vec![None];
+    };
+    let dest_width = int_ty.width() as usize;
+    if dest_width > 128 {
+        return vec![None];
+    }
+
+    let mut is_exact = false;
+    let converted = if signed {
+        // rustc_apfloat implements signed conversion in terms of an unsigned
+        // conversion with one fewer value bit. For i1 that would request an
+        // unsupported zero-bit unsigned conversion, so use i2 temporarily and
+        // then enforce the signed i1 range {-1, 0} explicitly.
+        let conversion_width = dest_width.max(2);
+        let converted = value.to_i128_r(conversion_width, Round::TowardZero, &mut is_exact);
+        if (converted.status.bits() & APFLOAT_INVALID_OP) != 0
+            || (dest_width == 1 && converted.value != -1 && converted.value != 0)
+        {
+            return vec![None];
+        }
+        APInt::from_i128(
+            converted.value,
+            NonZero::new(dest_width).expect("result has zero bitwidth"),
+        )
+    } else {
+        let converted = value.to_u128_r(dest_width, Round::TowardZero, &mut is_exact);
+        if (converted.status.bits() & APFLOAT_INVALID_OP) != 0 {
+            return vec![None];
+        }
+        APInt::from_u128(
+            converted.value,
+            NonZero::new(dest_width).expect("result has zero bitwidth"),
+        )
+    };
+
+    let dest_ty = IntegerType::get(ctx, int_ty.width(), Signedness::Signless);
+    vec![Some(
+        Box::new(IntegerAttr::new(dest_ty, converted)) as AttrObj
+    )]
 }
 
 /// Constant fold a binary floating-point operation into a singleton vector
@@ -736,6 +807,38 @@ impl ConstFoldInterface for ZExtOp {
         let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
         vec![Some(res)]
     }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FPToSIOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_to_int(ctx, ops, self.result_type(ctx), true)
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FPToUIOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_float_to_int(ctx, ops, self.result_type(ctx), false)
+    }
+
     fn fold_in_place(
         &self,
         ctx: &mut Context,
