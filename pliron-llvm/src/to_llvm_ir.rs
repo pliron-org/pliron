@@ -1088,8 +1088,11 @@ impl ToLLVMValue for InlineAsmOp {
                 .expect("inline asm missing constraints"))
             .clone(),
         );
-        // `has_side_effects` is set unconditionally: this op does not model a
-        // side-effects flag, and side-effecting asm is the safe default.
+        let side_effects = bool::from(
+            self.get_attr_llvm_inline_asm_side_effects(ctx)
+                .expect("inline asm missing side-effects flag")
+                .clone(),
+        );
         // NOTE: the op's `llvm_inline_asm_convergent` attribute is not applied here.
         // `convergent` is an LLVM call-site attribute (not part of the inline-asm
         // value), so converting to LLVM IR drops the convergent flag.
@@ -1097,7 +1100,7 @@ impl ToLLVMValue for InlineAsmOp {
             fn_ty,
             &asm,
             &constraints,
-            true,
+            side_effects,
             false,
             LLVMInlineAsmDialect::LLVMInlineAsmDialectATT,
             false,

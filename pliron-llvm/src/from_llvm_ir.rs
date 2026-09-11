@@ -62,14 +62,14 @@ use crate::{
         llvm_get_fast_math_flags, llvm_get_fcmp_predicate, llvm_get_gep_no_wrap_flags,
         llvm_get_gep_source_element_type, llvm_get_icmp_predicate, llvm_get_indices,
         llvm_get_initializer, llvm_get_inline_asm_asm_string,
-        llvm_get_inline_asm_constraint_string, llvm_get_instruction_opcode,
-        llvm_get_instruction_parent, llvm_get_int_type_width, llvm_get_linkage,
-        llvm_get_mask_value, llvm_get_module_identifier, llvm_get_nneg, llvm_get_nsw,
-        llvm_get_num_arg_operands, llvm_get_num_mask_elements, llvm_get_num_operands, llvm_get_nuw,
-        llvm_get_operand, llvm_get_ordering, llvm_get_param_types, llvm_get_pointer_address_space,
-        llvm_get_return_type, llvm_get_struct_element_types, llvm_get_struct_name,
-        llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind, llvm_get_value_name,
-        llvm_get_vector_size, llvm_get_volatile, llvm_global_get_value_type,
+        llvm_get_inline_asm_constraint_string, llvm_get_inline_asm_has_side_effects,
+        llvm_get_instruction_opcode, llvm_get_instruction_parent, llvm_get_int_type_width,
+        llvm_get_linkage, llvm_get_mask_value, llvm_get_module_identifier, llvm_get_nneg,
+        llvm_get_nsw, llvm_get_num_arg_operands, llvm_get_num_mask_elements, llvm_get_num_operands,
+        llvm_get_nuw, llvm_get_operand, llvm_get_ordering, llvm_get_param_types,
+        llvm_get_pointer_address_space, llvm_get_return_type, llvm_get_struct_element_types,
+        llvm_get_struct_name, llvm_get_switch_case_value, llvm_get_type_kind, llvm_get_value_kind,
+        llvm_get_value_name, llvm_get_vector_size, llvm_get_volatile, llvm_global_get_value_type,
         llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_is_a, llvm_is_declaration,
         llvm_is_function_type_var_arg, llvm_is_global_constant, llvm_is_opaque_struct,
         llvm_is_packed_struct, llvm_lookup_intrinsic_id, llvm_print_type_to_string,
@@ -1074,11 +1074,19 @@ fn convert_call(
     if llvm_get_value_kind(callee) == LLVMValueKind::LLVMInlineAsmValueKind {
         let asm = llvm_get_inline_asm_asm_string(callee);
         let constraints = llvm_get_inline_asm_constraint_string(callee);
+        let side_effects = llvm_get_inline_asm_has_side_effects(callee);
         let result_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
-        // `convergent` is a call-site attribute, not recoverable through LLVM-C here.
-        return Ok(
-            InlineAsmOp::new(ctx, result_ty, args, &asm, &constraints, false).get_operation(),
-        );
+        // `convergent` is a call-site attribute, not recovered here.
+        return Ok(InlineAsmOp::new_with_side_effects(
+            ctx,
+            result_ty,
+            args,
+            &asm,
+            &constraints,
+            false,
+            side_effects,
+        )
+        .get_operation());
     }
 
     enum Callee {
