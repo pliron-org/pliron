@@ -12,7 +12,7 @@ use pliron::{
     attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::FloatAttr,
+        attr_interfaces::{FloatAttr, TypedAttrInterface},
         attributes::IntegerAttr,
         op_interfaces::{BranchOpInterface, OneResultInterface},
         types::{IntegerType, Signedness},
@@ -34,7 +34,10 @@ use pliron::{
 };
 
 use crate::{
-    attributes::{FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr},
+    attributes::{
+        AggregateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
+        IntegerOverflowFlagsAttr, SplatAttr,
+    },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ConstantOp,
@@ -315,6 +318,106 @@ fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -
     let flags = flags.0;
     (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
         || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+/// Return a constant vector index when `index` is in bounds.
+///
+/// LLVM interprets extractelement/insertelement indices as unsigned integers.
+/// The small-bitwidth case avoids truncating `length` when constructing an APInt
+/// with the index's bitwidth.
+fn constant_vector_index(index: &IntegerAttr, length: usize) -> Option<usize> {
+    let value = index.value();
+    let width = value.bw();
+    let length = u64::try_from(length).ok()?;
+
+    if width < 64 && length >= (1_u64 << width) {
+        return Some(value.to_u128() as usize);
+    }
+
+    let width = NonZero::new(width).expect("index has zero bitwidth");
+    let bound = APInt::from_u64(length, width);
+    value.ult(&bound).then(|| value.to_u128() as usize)
+}
+
+/// Materialize an LLVM constant attribute and replace `old_value` with it.
+///
+/// This is used for vector folds because LLVM aggregate and splat attributes are
+/// valid llvm.constant payloads even though they do not implement the generic
+/// MaterializableAttr interface on this branch.
+fn materialize_llvm_constant_attr(
+    ctx: &mut Context,
+    attr: AttrObj,
+    old_value: Value,
+    rw: &mut dyn Rewriter,
+) -> IRStatus {
+    let Some(typed_attr) = attr_cast::<dyn TypedAttrInterface>(&*attr) else {
+        return IRStatus::Unchanged;
+    };
+    let constant = ConstantOp::new(ctx, pliron::dyn_clone::clone_box(typed_attr));
+    rw.append_operation(ctx, constant.get_operation());
+    rw.replace_value_uses_with(ctx, old_value, constant.get_result(ctx));
+    IRStatus::Changed
+}
+
+/// Extract a scalar constant from a fixed-length vector constant.
+fn extract_vector_element(
+    ctx: &Context,
+    vector: &dyn Attribute,
+    index: &IntegerAttr,
+) -> Option<AttrObj> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let index = constant_vector_index(index, aggregate.elements().len())?;
+        return Some(pliron::dyn_clone::clone_box(
+            &*aggregate.elements()[index] as &dyn Attribute,
+        ));
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let vector_ty = splat.ty();
+    let vector_ty = vector_ty.deref(ctx);
+    if vector_ty.is_scalable() {
+        return None;
+    }
+    constant_vector_index(index, vector_ty.num_elements() as usize)?;
+    Some(pliron::dyn_clone::clone_box(
+        splat.element() as &dyn Attribute
+    ))
+}
+
+/// Insert a scalar constant into a fixed-length vector constant.
+fn insert_vector_element(
+    ctx: &Context,
+    vector: &dyn Attribute,
+    element: &dyn TypedAttrInterface,
+    index: &IntegerAttr,
+) -> Option<AttrObj> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let index = constant_vector_index(index, aggregate.elements().len())?;
+        let mut elements: Vec<Box<dyn TypedAttrInterface>> = aggregate
+            .elements()
+            .iter()
+            .map(|element| pliron::dyn_clone::clone_box(&**element))
+            .collect();
+        elements[index] = pliron::dyn_clone::clone_box(element);
+        return Some(Box::new(AggregateAttr::new(elements, aggregate.get_type(ctx))) as AttrObj);
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let vector_ty = splat.ty();
+    let length = {
+        let vector_ty = vector_ty.deref(ctx);
+        if vector_ty.is_scalable() {
+            return None;
+        }
+        vector_ty.num_elements() as usize
+    };
+    let index = constant_vector_index(index, length)?;
+
+    let mut elements: Vec<Box<dyn TypedAttrInterface>> = (0..length)
+        .map(|_| pliron::dyn_clone::clone_box(splat.element()))
+        .collect();
+    elements[index] = pliron::dyn_clone::clone_box(element);
+    Some(Box::new(AggregateAttr::new(elements, vector_ty.into())) as AttrObj)
 }
 
 /// Constant fold a binary floating-point operation into a singleton vector
@@ -743,6 +846,58 @@ impl ConstFoldInterface for ZExtOp {
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ExtractElementOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(vector), Some(index)] = ops else {
+            return vec![None];
+        };
+        let Some(index) = index.downcast_ref::<IntegerAttr>() else {
+            return vec![None];
+        };
+
+        vec![extract_vector_element(ctx, &**vector, index)]
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for InsertElementOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(vector), Some(element), Some(index)] = ops else {
+            return vec![None];
+        };
+        let Some(element) = attr_cast::<dyn TypedAttrInterface>(&**element) else {
+            return vec![None];
+        };
+        let Some(index) = index.downcast_ref::<IntegerAttr>() else {
+            return vec![None];
+        };
+
+        vec![insert_vector_element(ctx, &**vector, element, index)]
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let Some(attr) = self.check_fold(ctx, ops).into_iter().next().flatten() else {
+            return IRStatus::Unchanged;
+        };
+        materialize_llvm_constant_attr(ctx, attr, self.get_result(ctx), rw)
     }
 }
 
