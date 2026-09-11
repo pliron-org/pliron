@@ -12,7 +12,7 @@ use pliron::{
     attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::FloatAttr,
+        attr_interfaces::{FloatAttr, TypedAttrInterface},
         attributes::IntegerAttr,
         op_interfaces::{BranchOpInterface, OneResultInterface},
         types::{IntegerType, Signedness},
@@ -29,12 +29,16 @@ use pliron::{
         },
     },
     result::Result,
+    r#type::{TypeHandle, Typed},
     utils::apint::{APInt, bw},
     value::Value,
 };
 
 use crate::{
-    attributes::{FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr},
+    attributes::{
+        AggregateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
+        IntegerOverflowFlagsAttr, SplatAttr,
+    },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ConstantOp,
@@ -44,6 +48,7 @@ use crate::{
         PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp,
         SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
     },
+    types::VectorType,
 };
 
 #[derive(Error, Debug)]
@@ -743,6 +748,124 @@ impl ConstFoldInterface for ZExtOp {
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+/// Return the number of elements in a fixed-length vector constant.
+fn fixed_vector_constant_len(ctx: &Context, vector: &dyn Attribute) -> Option<usize> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let ty = aggregate.get_type(ctx);
+        let ty = ty.deref(ctx);
+        let vector_ty = ty.downcast_ref::<VectorType>()?;
+        if vector_ty.is_scalable() {
+            return None;
+        }
+        return Some(aggregate.elements().len());
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let ty = splat.ty();
+    let ty = ty.deref(ctx);
+    if ty.is_scalable() {
+        return None;
+    }
+    Some(ty.num_elements() as usize)
+}
+
+/// Clone one element from a fixed-length vector constant.
+fn fixed_vector_constant_element(
+    ctx: &Context,
+    vector: &dyn Attribute,
+    index: usize,
+) -> Option<Box<dyn TypedAttrInterface>> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let ty = aggregate.get_type(ctx);
+        let ty = ty.deref(ctx);
+        let vector_ty = ty.downcast_ref::<VectorType>()?;
+        if vector_ty.is_scalable() {
+            return None;
+        }
+        return aggregate
+            .elements()
+            .get(index)
+            .map(|element| pliron::dyn_clone::clone_box(&**element));
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let ty = splat.ty();
+    let ty = ty.deref(ctx);
+    if ty.is_scalable() || index >= ty.num_elements() as usize {
+        return None;
+    }
+    Some(pliron::dyn_clone::clone_box(splat.element()))
+}
+
+/// Fold a shuffle of two fixed-length vector constants.
+///
+/// Negative mask entries represent poison lanes in LLVM. This helper leaves
+/// those shuffles unfolded rather than materializing a partially-poisoned
+/// aggregate constant.
+fn fold_shuffle_vector(
+    ctx: &Context,
+    lhs: &dyn Attribute,
+    rhs: &dyn Attribute,
+    mask: &[i32],
+    result_ty: TypeHandle,
+) -> Option<AttrObj> {
+    let lhs_len = fixed_vector_constant_len(ctx, lhs)?;
+    let rhs_len = fixed_vector_constant_len(ctx, rhs)?;
+    if lhs_len != rhs_len {
+        return None;
+    }
+    let total_len = lhs_len.checked_add(rhs_len)?;
+
+    let mut elements: Vec<Box<dyn TypedAttrInterface>> = Vec::with_capacity(mask.len());
+    for &mask_index in mask {
+        let index = usize::try_from(mask_index).ok()?;
+        if index >= total_len {
+            return None;
+        }
+        let element = if index < lhs_len {
+            fixed_vector_constant_element(ctx, lhs, index)?
+        } else {
+            fixed_vector_constant_element(ctx, rhs, index - lhs_len)?
+        };
+        elements.push(element);
+    }
+
+    Some(Box::new(AggregateAttr::new(elements, result_ty)) as AttrObj)
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ShuffleVectorOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(lhs), Some(rhs)] = ops else {
+            return vec![None];
+        };
+        let Some(mask) = self.get_attr_llvm_shuffle_vector_mask(ctx) else {
+            return vec![None];
+        };
+        let result_ty = self.get_result(ctx).get_type(ctx);
+        vec![fold_shuffle_vector(ctx, &**lhs, &**rhs, &mask.0, result_ty)]
+    }
+
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let Some(attr) = self.check_fold(ctx, ops).into_iter().next().flatten() else {
+            return IRStatus::Unchanged;
+        };
+        let Some(aggregate) = attr.downcast_ref::<AggregateAttr>() else {
+            return IRStatus::Unchanged;
+        };
+
+        let constant = ConstantOp::new(ctx, Box::new(aggregate.clone()));
+        rw.append_operation(ctx, constant.get_operation());
+        rw.replace_value_uses_with(ctx, self.get_result(ctx), constant.get_result(ctx));
+        IRStatus::Changed
     }
 }
 

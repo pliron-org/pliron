@@ -1514,6 +1514,132 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// llvm.shuffle_vector
+// ---------------------------------------------------------------------------
+
+#[test]
+fn shuffle_vector_folds_two_aggregate_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>, builtin.integer <40: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [0, 5, 2, 7] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains(
+        "llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <20: i32>, builtin.integer <3: i32>, builtin.integer <40: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>"
+    ));
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_selects_second_vector_indices() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>, builtin.integer <40: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [7, 6, 5, 4] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains(
+        "llvm.aggregate <[builtin.integer <40: i32>, builtin.integer <30: i32>, builtin.integer <20: i32>, builtin.integer <10: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>"
+    ));
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_folds_aggregate_and_splat_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        b = builtin.constant <llvm.splat <builtin.integer <9: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [4, 1, 6, 3] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains(
+        "llvm.aggregate <[builtin.integer <9: i32>, builtin.integer <2: i32>, builtin.integer <9: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>"
+    ));
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_folds_two_splat_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        b = builtin.constant <llvm.splat <builtin.integer <9: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [0, 4, 1, 5] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains(
+        "llvm.aggregate <[builtin.integer <7: i32>, builtin.integer <9: i32>, builtin.integer <7: i32>, builtin.integer <9: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>"
+    ));
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_does_not_fold_poison_mask_lane() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>, builtin.integer <40: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [0, -1, 2, 7] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_does_not_fold_with_non_constant_lhs() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(a: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>, builtin.integer <40: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [0, 5, 2, 7] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn shuffle_vector_does_not_fold_with_non_constant_rhs() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(b: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>> : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        c = llvm.shuffle_vector a, b, [0, 5, 2, 7] : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
 #[test]
 fn fneg_folds_constant() -> Result<()> {
     let input = r#"
