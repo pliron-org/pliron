@@ -4,13 +4,14 @@
 //! Wrapper LLVM functions to get the type sizes and alignment for a target.
 
 use pliron::{
-    arg_error_noloc, builtin::ops::ModuleOp, context::Context, result::Result, r#type::TypeHandle,
+    arg_err_noloc, arg_error_noloc, builtin::ops::ModuleOp, context::Context, printable::Printable,
+    result::Result, r#type::TypeHandle,
 };
 
 use crate::{
     attributes::get_data_layout,
     llvm_sys::{
-        core::{LLVMContext, LLVMType},
+        core::{LLVMContext, LLVMType, llvm_type_is_sized},
         target::LLVMTargetData,
     },
     to_llvm_ir::{TypeConversionContext, convert_type},
@@ -20,6 +21,8 @@ use crate::{
 pub enum DataLayoutErr {
     #[error("Cannot get the data layout of the host: {0}")]
     NoHostLayout(String),
+    #[error("Type {0} has no size, and thus no layout")]
+    UnsizedType(String),
 }
 
 /// Target specific data layout provided by LLVM.
@@ -31,6 +34,8 @@ pub struct DataLayout {
 
 impl DataLayout {
     /// Build [DataLayout] as described by `layout`.
+    ///
+    /// **Warning**: Aborts if `layout` is not a valid data layout string.
     pub fn new(layout: &str) -> Self {
         Self {
             llvm_ctx: LLVMContext::default(),
@@ -98,7 +103,11 @@ impl DataLayout {
 
     /// Get the LLVM type of `ty`, building it if the cache does not hold it.
     fn llvm_type(&mut self, ctx: &Context, ty: TypeHandle) -> Result<LLVMType> {
-        convert_type(ctx, &self.llvm_ctx, &mut self.types, ty)
+        let llvm_ty = convert_type(ctx, &self.llvm_ctx, &mut self.types, ty)?;
+        if !llvm_type_is_sized(llvm_ty) {
+            return arg_err_noloc!(DataLayoutErr::UnsizedType(ty.disp(ctx).to_string()));
+        }
+        Ok(llvm_ty)
     }
 }
 
@@ -110,7 +119,10 @@ mod tests {
         result::ExpectOk,
     };
 
-    use crate::{data_layout::DataLayout, types::ArrayType};
+    use crate::{
+        data_layout::DataLayout,
+        types::{ArrayType, StructType},
+    };
 
     /// A layout of x86-64, so that the answers do not depend on the host.
     const X86_64: &str =
@@ -121,13 +133,19 @@ mod tests {
         let ctx = &mut Context::new();
         let mut layout = DataLayout::new(X86_64);
 
-        // An i24 stores in 3 bytes, but an array gives it 4.
+        // An i24 stores in 3 bytes, but has an alloc size
+        // (the space it takes when used in an array) of 4 bytes.
         let i24 = IntegerType::get(ctx, 24, Signedness::Signless).into();
         assert_eq!(layout.type_size_in_bits(ctx, i24).expect_ok(ctx), 24);
         assert_eq!(layout.type_store_size(ctx, i24).expect_ok(ctx), 3);
         assert_eq!(layout.type_alloc_size(ctx, i24).expect_ok(ctx), 4);
         assert_eq!(layout.abi_type_align(ctx, i24).expect_ok(ctx), 4);
         assert!(!layout.packs_exactly(ctx, i24).expect_ok(ctx));
+
+        // Build an array and validate the difference in store size and alloc size.
+        let array = ArrayType::get(ctx, i24, 3).into();
+        assert_eq!(layout.type_store_size(ctx, array).expect_ok(ctx), 12);
+        assert_eq!(layout.type_alloc_size(ctx, array).expect_ok(ctx), 12);
 
         // The common widths have no padding.
         for ty in [
@@ -146,15 +164,18 @@ mod tests {
     }
 
     #[test]
-    fn size_of_array_holds_the_padding() {
+    fn unsized_type_is_an_error() {
         let ctx = &mut Context::new();
         let mut layout = DataLayout::new(X86_64);
 
-        // Three i24 elements of 4 bytes each, and not the 9 bytes of their data.
-        let i24 = IntegerType::get(ctx, 24, Signedness::Signless);
-        let array = ArrayType::get(ctx, i24.into(), 3).into();
-        assert_eq!(layout.type_store_size(ctx, array).expect_ok(ctx), 12);
-        assert_eq!(layout.type_alloc_size(ctx, array).expect_ok(ctx), 12);
+        let opaque = StructType::get_named(ctx, "opaque".try_into().unwrap(), None)
+            .expect_ok(ctx)
+            .into();
+        assert!(layout.type_size_in_bits(ctx, opaque).is_err());
+        assert!(layout.type_store_size(ctx, opaque).is_err());
+        assert!(layout.type_alloc_size(ctx, opaque).is_err());
+        assert!(layout.abi_type_align(ctx, opaque).is_err());
+        assert!(layout.packs_exactly(ctx, opaque).is_err());
     }
 
     #[test]

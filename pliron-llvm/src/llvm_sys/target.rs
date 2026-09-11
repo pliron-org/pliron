@@ -155,6 +155,8 @@ mod llvm_target_data {
 
     impl LLVMTargetData {
         /// LLVMCreateTargetData
+        ///
+        /// **Note**: `layout` is not validated (the C-API gives no way to do that).
         pub fn new(layout: &str) -> Self {
             LLVMTargetData(unsafe { LLVMCreateTargetData(to_c_str(layout).as_ptr()) })
         }
