@@ -18,7 +18,11 @@ use crate::{
         stream::position::SourcePosition,
         token,
     },
-    context::Context,
+    context::{Context, Ptr},
+    graph::{
+        walkers,
+        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD},
+    },
     impl_clone_into_context_for_clone, impl_printable_for_display,
     irbuild::decontext::{
         CloneIntoContext as CloneIntoContextTrait, StableHash as StableHashTrait,
@@ -27,6 +31,7 @@ use crate::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
         printers::list_with_sep,
     },
+    operation::Operation,
     parsable::Parsable,
     printable::{self, Printable},
     std_deps::path::PathBuf,
@@ -375,6 +380,26 @@ impl Parsable for Location {
 pub trait Located {
     fn loc(&self) -> Location;
     fn set_loc(&mut self, loc: Location);
+}
+
+/// Recursively set the [Location] of every operation and block
+/// nested within `op` to [Location::Unknown].
+pub fn erase_locations(ctx: &Context, op: Ptr<Operation>) {
+    walkers::uninterruptible::immutable::walk_op(
+        ctx,
+        &mut (),
+        &WALKCONFIG_PREORDER_FORWARD,
+        op,
+        |ctx: &Context, _state: &mut (), node: IRNode| match node {
+            IRNode::Operation(op) => {
+                op.deref_mut(ctx).set_loc(Location::Unknown);
+            }
+            IRNode::BasicBlock(block) => {
+                block.deref_mut(ctx).set_loc(Location::Unknown);
+            }
+            IRNode::Region(_) => {}
+        },
+    );
 }
 
 #[cfg(test)]

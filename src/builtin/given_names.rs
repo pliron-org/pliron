@@ -199,13 +199,13 @@ pub fn get_block_arg_name(
 
 /// Recursively erase every [given_name](crate::common_traits::Named::given_name)
 /// nested within `op`: Op results, block arguments and block labels.
-pub fn erase_given_names(ctx: &mut Context, op: Ptr<Operation>) {
-    walkers::uninterruptible::mutable::walk_op(
+pub fn erase_given_names(ctx: &Context, op: Ptr<Operation>) {
+    walkers::uninterruptible::immutable::walk_op(
         ctx,
         &mut (),
         &WALKCONFIG_PREORDER_FORWARD,
         op,
-        |ctx: &mut Context, _state: &mut (), node: IRNode| match node {
+        |ctx: &Context, _state: &mut (), node: IRNode| match node {
             IRNode::Operation(op) => {
                 let num_results = op.deref(ctx).get_num_results();
                 for res_idx in 0..num_results {
