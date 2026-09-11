@@ -596,6 +596,26 @@ impl APInt {
         self.to_string_unsigned(10)
     }
 
+    /// Build an APInt of `width` bits from the little-endian bytes in `buf`.
+    /// Zero extends value if `width` is more than the bits of `buf`.
+    /// Truncates value if `width` is less than the bits of `buf`.
+    ///
+    /// The byte order does not change with the target architecture.
+    pub fn from_u8_slice(buf: &[u8], width: NonZero<usize>) -> APInt {
+        let mut awi_value = Awi::zero_with_capacity(width, width);
+        awi_value.u8_slice_(buf);
+        APInt { value: awi_value }
+    }
+
+    /// Write the bits of this APInt into `buf` in little-endian byte order.
+    /// Zeroes the bits of `buf` beyond the width of this APInt.
+    /// Bits of this APInt beyond `buf`'s length are dropped.
+    ///
+    /// The byte order does not change with the target architecture.
+    pub fn to_u8_slice(&self, buf: &mut [u8]) {
+        self.value.to_u8_slice(buf);
+    }
+
     /// Build APInt from u8.
     /// Zero extends value if width > 8.
     /// Truncates value if width < 8.
@@ -784,6 +804,37 @@ mod tests {
         let width = bw(4);
         let apint = APInt::zero(width);
         assert!(apint.is_zero());
+    }
+
+    #[test]
+    fn test_u8_slice() {
+        // The bytes are little-endian, whatever the target architecture is.
+        let apint = APInt::from_u8_slice(&[0x78, 0x56, 0x34, 0x12], bw(32));
+        assert_eq!(apint.to_u32(), 0x1234_5678);
+        let mut buf = [0u8; 4];
+        apint.to_u8_slice(&mut buf);
+        assert_eq!(buf, [0x78, 0x56, 0x34, 0x12]);
+
+        // A width of more bits than the buffer holds zero extends the value.
+        let apint = APInt::from_u8_slice(&[0xFF], bw(16));
+        assert_eq!(apint.to_u16(), 0x00FF);
+
+        // A width of less bits than the buffer holds truncates the value.
+        let apint = APInt::from_u8_slice(&[0xFF, 0xFF], bw(12));
+        assert_eq!(apint.to_u16(), 0x0FFF);
+        assert_eq!(apint.to_i16(), -1);
+
+        // The bits of the buffer beyond the width are zero.
+        let mut buf = [0xAAu8; 2];
+        apint.to_u8_slice(&mut buf);
+        assert_eq!(buf, [0xFF, 0x0F]);
+
+        // A width of more than one digit round-trips.
+        let bytes = [0u8, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15];
+        let apint = APInt::from_u8_slice(&bytes, bw(128));
+        let mut buf = [0u8; 16];
+        apint.to_u8_slice(&mut buf);
+        assert_eq!(buf, bytes);
     }
 
     #[test]

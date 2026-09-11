@@ -9,17 +9,13 @@ use crate::{
         attr_interfaces::{FloatAttr, OutlinedAttr},
         types::{FP16Type, FP32Type, FP64Type},
     },
-    combine::{
-        Parser, attempt, between, many1,
-        parser::char::{char, digit, spaces},
-        sep_by, token,
-    },
+    combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
     common_traits::Verify,
     context::{Context, Ptr},
     identifier::Identifier,
     input_err,
     irfmt::{
-        parsers::{quoted_string_parser, spaced},
+        parsers::{number_as_string_parser, quoted_string_parser, spaced},
         printers::quoted,
     },
     location::Located,
@@ -248,7 +244,7 @@ impl Parsable for IntegerAttr {
             token('<'),
             token('>'),
             spaces()
-                .with(many1::<String, _, _>(digit().or(char('-').or(char('+')))))
+                .with(number_as_string_parser())
                 .skip(spaced(token(':')))
                 .and(IntegerType::parser(())),
         )
@@ -782,6 +778,45 @@ mod tests {
             Parse error at line: 1, column: 21
             Unexpected `b`
             Expected whitespaces, si, ui, i or whitespace
+        "#]];
+        expected_err_msg.assert_eq(&parse_err.to_string());
+    }
+
+    #[test]
+    fn test_integer_attribute_sign_position() {
+        let mut ctx = Context::new();
+
+        // A leading sign is optional, and does not change the printed value.
+        for input in ["builtin.integer <42: si64>", "builtin.integer <+42: si64>"] {
+            let attr = parse_from_str(attr_parser(), &mut ctx, input).expect_ok(&ctx);
+            assert_eq!(attr.disp(&ctx).to_string(), "builtin.integer <42: si64>");
+        }
+
+        let attr =
+            parse_from_str(attr_parser(), &mut ctx, "builtin.integer <-42: si64>").expect_ok(&ctx);
+        assert_eq!(attr.disp(&ctx).to_string(), "builtin.integer <-42: si64>");
+
+        // A sign that is not at the front is an error.
+        let parse_err = parse_from_str(attr_parser(), &mut ctx, "builtin.integer <1-2: si64>")
+            .err()
+            .unwrap();
+        let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 19
+            Unexpected `-`
+            Expected whitespaces or `:`
+        "#]];
+        expected_err_msg.assert_eq(&parse_err.to_string());
+
+        // Only one sign is allowed.
+        let parse_err = parse_from_str(attr_parser(), &mut ctx, "builtin.integer <++4: si64>")
+            .err()
+            .unwrap();
+        let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 19
+            Unexpected `+`
+            Expected digit
         "#]];
         expected_err_msg.assert_eq(&parse_err.to_string());
     }
