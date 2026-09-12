@@ -912,7 +912,7 @@ pub fn print_dbg(
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
     let state = printable::State::default();
-    state.set_max_region_depth_printed(printable::MaxRegionDepthPrinted::Depth(0));
+    state.set_region_print_depth_limit(printable::RegionPrintDepthLimit::Max(0));
     // `Operation::printable` prints outlined attributes, which we don't want here.
     // So call the `Op` printer directly
     Operation::get_op_dyn(opr, ctx).fmt(ctx, &state, f)

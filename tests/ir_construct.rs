@@ -1727,7 +1727,7 @@ fn erase_given_names_roundtrip() -> Result<()> {
 fn print_region_depth_limit() -> Result<()> {
     use pliron::{
         operation::OpDbg,
-        printable::{MaxRegionDepthPrinted, State},
+        printable::{RegionPrintDepthLimit, State},
     };
 
     let ctx = &mut Context::new();
@@ -1747,7 +1747,7 @@ fn print_region_depth_limit() -> Result<()> {
         }"#]];
     expected_full.assert_eq(&full);
 
-    state.set_max_region_depth_printed(MaxRegionDepthPrinted::Depth(0));
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(0));
     let expected_shallow = expect![["builtin.module @bar {..}"]];
     expected_shallow.assert_eq(&module.print(ctx, &state).to_string());
     let dbg = OpDbg {
@@ -1757,7 +1757,7 @@ fn print_region_depth_limit() -> Result<()> {
     expected_shallow.assert_eq(&format!("{dbg}"));
     expected_shallow.assert_eq(&format!("{dbg:?}"));
 
-    state.set_max_region_depth_printed(MaxRegionDepthPrinted::Depth(1));
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(1));
     let expected_one_level = expect![[r#"
         builtin.module @bar 
         {
@@ -1768,9 +1768,9 @@ fn print_region_depth_limit() -> Result<()> {
     // Printing restores the region depth, so reusing the state should produce identical output.
     expected_one_level.assert_eq(&module.print(ctx, &state).to_string());
 
-    state.set_max_region_depth_printed(MaxRegionDepthPrinted::Depth(2));
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(2));
     expected_full.assert_eq(&module.print(ctx, &state).to_string());
-    state.set_max_region_depth_printed(MaxRegionDepthPrinted::None);
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Unlimited);
     expect![[r#"
         builtin.module @bar 
         {

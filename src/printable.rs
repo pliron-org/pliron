@@ -14,12 +14,12 @@ use crate::{common_traits::RcShare, context::Context, identifier::Identifier, ut
 
 /// Maximum number of nested region levels to print.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
-pub enum MaxRegionDepthPrinted {
+pub enum RegionPrintDepthLimit {
     /// Print all regions without a depth limit.
     #[default]
-    None,
+    Unlimited,
     /// Print at most this many region levels; zero elides every region.
-    Depth(u32),
+    Max(u32),
 }
 
 struct StateInner {
@@ -27,10 +27,8 @@ struct StateInner {
     indent_width: u16,
     // Current indentation
     cur_indent: u16,
-    // Maximum number of nested region levels to print
-    max_region_depth_printed: MaxRegionDepthPrinted,
-    // Current region nesting depth
-    cur_region_depth: u32,
+    // Maximum number of nested region levels to print.
+    region_print_depth_limit: RegionPrintDepthLimit,
     // Arbitrary state data that different printers may want to use.
     aux_data: HMap<Identifier, Box<dyn Any>>,
 }
@@ -41,8 +39,7 @@ impl Default for StateInner {
             indent_width: 2,
             cur_indent: 0,
             aux_data: HMap::default(),
-            max_region_depth_printed: MaxRegionDepthPrinted::None,
-            cur_region_depth: 0,
+            region_print_depth_limit: RegionPrintDepthLimit::Unlimited,
         }
     }
 }
@@ -86,27 +83,31 @@ impl State {
     }
 
     /// Set the maximum number of nested region levels to print.
-    pub fn set_max_region_depth_printed(&self, depth: MaxRegionDepthPrinted) {
-        self.0.borrow_mut().max_region_depth_printed = depth;
+    pub fn set_region_print_depth_limit(&self, limit: RegionPrintDepthLimit) {
+        self.0.borrow_mut().region_print_depth_limit = limit;
     }
 
-    /// Enter a region if the depth limit permits it.
-    /// Returns false without changing the depth when the region must be elided.
+    /// Enter a region if the remaining depth limit permits it.
+    /// Returns false without changing the limit when the region must be elided.
     /// Every successful push must be paired with [Self::pop_region_depth].
     pub fn push_region_depth(&self) -> bool {
         let mut inner = self.0.borrow_mut();
-        if let MaxRegionDepthPrinted::Depth(max) = inner.max_region_depth_printed
-            && inner.cur_region_depth >= max
-        {
-            return false;
+        match &mut inner.region_print_depth_limit {
+            RegionPrintDepthLimit::Unlimited => true,
+            RegionPrintDepthLimit::Max(0) => false,
+            RegionPrintDepthLimit::Max(remaining) => {
+                *remaining -= 1;
+                true
+            }
         }
-        inner.cur_region_depth += 1;
-        true
     }
 
     /// Leave a region previously entered by [Self::push_region_depth].
     pub fn pop_region_depth(&self) {
-        self.0.borrow_mut().cur_region_depth -= 1;
+        let mut inner = self.0.borrow_mut();
+        if let RegionPrintDepthLimit::Max(remaining) = &mut inner.region_print_depth_limit {
+            *remaining += 1;
+        }
     }
 
     /// Get a reference to the aux data table. The returned [Ref] is borrowed
