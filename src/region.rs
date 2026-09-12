@@ -10,7 +10,7 @@ use crate::{
     combine::{Parser, parser::char::spaces, token},
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
-    dict_key, indented_block,
+    indented_block,
     linked_list::{ContainsLinkedList, private},
     location::Located,
     op::op_cast,
@@ -167,8 +167,6 @@ impl Verify for Region {
     }
 }
 
-dict_key!(PRINTABLE_FLAG_SKIP_REGIONS, "printable_skip_regions");
-
 impl Printable for Region {
     fn fmt(
         &self,
@@ -176,16 +174,9 @@ impl Printable for Region {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        let skip_regions = || {
-            let data = state.aux_data_ref();
-            let Some(entry) = data.get(&PRINTABLE_FLAG_SKIP_REGIONS) else {
-                return false;
-            };
-            entry.downcast_ref().copied().unwrap_or(false)
-        };
-
-        if skip_regions() {
-            return f.write_str("{ .. }");
+        if !state.push_region_depth() {
+            // We want this to fail to parse.
+            return f.write_str("{..}");
         }
 
         fmt_indented_newline(state, f)?;
@@ -204,6 +195,7 @@ impl Printable for Region {
 
         fmt_indented_newline(state, f)?;
         write!(f, "}}")?;
+        state.pop_region_depth();
         Ok(())
     }
 }
