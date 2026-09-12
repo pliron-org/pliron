@@ -236,6 +236,99 @@ impl Parsable for GepNoWrapFlagsAttr {
     }
 }
 
+bitflags! {
+    /// LLVM enum/unit attributes attached at the function index of a function or call site.
+    ///
+    /// This intentionally models only attributes whose payload is the attribute kind itself.
+    /// Integer-, type-, string-, return-, and parameter-valued attributes are separate concerns.
+    #[derive(PartialEq, Eq, Clone, Debug, Hash, Copy)]
+    pub struct FunctionAttributes: u64 {
+        const NORETURN = 1;
+        const NOUNWIND = 2;
+        const WILLRETURN = 4;
+        const CONVERGENT = 8;
+    }
+}
+
+/// LLVM spelling for every function-index enum attribute currently modeled by
+/// [FunctionAttributes]. LLVM attribute kind ids are deliberately not persisted:
+/// the C API documents those ids as unstable across LLVM versions.
+#[cfg(feature = "llvm-sys")]
+pub(crate) const FUNCTION_ATTRIBUTE_LLVM_NAMES: [(FunctionAttributes, &str); 4] = [
+    (FunctionAttributes::NORETURN, "noreturn"),
+    (FunctionAttributes::NOUNWIND, "nounwind"),
+    (FunctionAttributes::WILLRETURN, "willreturn"),
+    (FunctionAttributes::CONVERGENT, "convergent"),
+];
+
+#[pliron_attr(name = "llvm.function_attributes", verifier = "succ")]
+#[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
+pub struct FunctionAttributesAttr(pub FunctionAttributes);
+
+impl Default for FunctionAttributesAttr {
+    fn default() -> Self {
+        Self(FunctionAttributes::empty())
+    }
+}
+
+impl From<FunctionAttributes> for FunctionAttributesAttr {
+    fn from(value: FunctionAttributes) -> Self {
+        Self(value)
+    }
+}
+
+impl From<FunctionAttributesAttr> for FunctionAttributes {
+    fn from(attr: FunctionAttributesAttr) -> Self {
+        attr.0
+    }
+}
+
+impl Display for FunctionAttributesAttr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "[")?;
+        bitflags::parser::to_writer(&self.0, &mut *f)?;
+        write!(f, "]")
+    }
+}
+
+impl_printable_for_display!(FunctionAttributesAttr);
+
+#[derive(Debug, Error)]
+#[error("Error parsing LLVM function attributes: {0}")]
+pub struct FunctionAttributesParseErr(pub bitflags::parser::ParseError);
+
+impl Parsable for FunctionAttributesAttr {
+    type Arg = ();
+    type Parsed = Self;
+
+    fn parse<'a>(
+        state_stream: &mut pliron::parsable::StateStream<'a>,
+        _arg: Self::Arg,
+    ) -> pliron::parsable::ParseResult<'a, Self::Parsed> {
+        let pos = state_stream.loc();
+        let allowed_chars = combine::choice!(
+            combine::parser::char::space().map(|c| c.to_string()),
+            combine::parser::char::alpha_num().map(|c| c.to_string()),
+            combine::parser::char::char('|').map(|c: char| c.to_string())
+        );
+
+        let (parsed, _): (Vec<String>, _) = combine::between(
+            combine::parser::char::char('[').with(spaces()),
+            spaces().with(combine::parser::char::char(']')),
+            combine::many(allowed_chars),
+        )
+        .parse_stream(state_stream)
+        .into_result()?;
+        let parsed_string = parsed.concat();
+
+        let (attributes, _) = bitflags::parser::from_str::<FunctionAttributes>(&parsed_string)
+            .map_err(|e| input_error!(pos.clone(), FunctionAttributesParseErr(e)))
+            .into_parse_result()?;
+
+        Ok(FunctionAttributesAttr(attributes)).into_parse_result()
+    }
+}
+
 #[pliron_attr(name = "llvm.icmp_predicate", verifier = "succ", format)]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub enum ICmpPredicateAttr {
@@ -847,6 +940,41 @@ mod tests {
             Compilation error: invalid input program.
             Parse error at line: 1, column: 1
             Error parsing GEP no-wrap flags: unrecognized named flag `INVALIDFLAG`
+        "#]]
+        .assert_eq(&err.to_string());
+    }
+
+    #[test]
+    fn test_function_attributes_attr_fmt() {
+        let ctx = &Context::default();
+        let attrs: FunctionAttributesAttr =
+            (FunctionAttributes::NORETURN | FunctionAttributes::NOUNWIND).into();
+        expect!["[NORETURN | NOUNWIND]"].assert_eq(&attrs.disp(ctx).to_string());
+    }
+
+    #[test]
+    fn test_function_attributes_attr_parse_valid() {
+        let ctx = &mut Context::default();
+        let parsed = parse_from_str(
+            FunctionAttributesAttr::parser(()),
+            ctx,
+            "[NORETURN | WILLRETURN]",
+        )
+        .expect_ok(ctx);
+        assert!(parsed.0.contains(FunctionAttributes::NORETURN));
+        assert!(parsed.0.contains(FunctionAttributes::WILLRETURN));
+        assert!(!parsed.0.contains(FunctionAttributes::NOUNWIND));
+    }
+
+    #[test]
+    fn test_function_attributes_attr_parse_invalid() {
+        let ctx = &mut Context::default();
+        let err = parse_from_str(FunctionAttributesAttr::parser(()), ctx, "[INVALID]")
+            .expect_err("invalid LLVM function attribute must fail to parse");
+        expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 1
+            Error parsing LLVM function attributes: unrecognized named flag `INVALID`
         "#]]
         .assert_eq(&err.to_string());
     }

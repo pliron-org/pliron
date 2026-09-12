@@ -184,6 +184,90 @@ fn int_select_with_fastmath_flags_is_rejected() {
     assert!(matches!(err, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr));
 }
 
+#[test]
+fn llvm_function_and_call_attributes_roundtrip() -> Result<()> {
+    init_env_logger_for_tests!();
+    let input = r#"
+        declare void @die() noreturn nounwind
+        declare i32 @worker(i32) willreturn
+
+        define void @caller(i32 %x) convergent {
+        entry:
+          call void @die() noreturn nounwind
+          %v = call i32 @worker(i32 %x) willreturn
+          ret void
+        }
+    "#;
+
+    let llvm_ctx = LLVMContext::default();
+    let ctx = &mut Context::new();
+    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "function_attributes")?;
+
+    fn function_text<'a>(printed: &'a str, name: &str) -> &'a str {
+        let marker = format!("llvm.func @{name}:");
+        let start = printed
+            .find(&marker)
+            .unwrap_or_else(|| panic!("Missing function @{name}\n{printed}"));
+
+        let rest = &printed[start..];
+        let after_header = &rest[marker.len()..];
+        let end = after_header
+            .find("llvm.func @")
+            .map(|offset| marker.len() + offset)
+            .unwrap_or(rest.len());
+
+        &rest[..end]
+    }
+
+    let assert_attributes = |printed: &str| {
+        let die = function_text(printed, "die");
+        let worker = function_text(printed, "worker");
+        let caller = function_text(printed, "caller");
+
+        assert!(
+            die.contains(
+                "llvm_function_attributes: llvm.function_attributes [NORETURN | NOUNWIND]"
+            ),
+            "Incorrect attributes for @die:\n{die}"
+        );
+
+        assert!(
+            worker.contains("llvm_function_attributes: llvm.function_attributes [WILLRETURN]"),
+            "Incorrect attributes for @worker:\n{worker}"
+        );
+
+        assert!(
+            caller.contains("llvm_function_attributes: llvm.function_attributes [CONVERGENT]"),
+            "Incorrect attributes for @caller:\n{caller}"
+        );
+
+        assert!(
+            caller.contains("llvm.call @die [NORETURN | NOUNWIND]"),
+            "Missing attributes on call to @die:\n{caller}"
+        );
+
+        assert!(
+            caller.contains("llvm.call @worker [WILLRETURN]"),
+            "Missing attributes on call to @worker:\n{caller}"
+        );
+    };
+
+    let (printed, reparsed) = common::print_parse_verify(ctx, module_op)?;
+    assert_attributes(&printed);
+
+    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, reparsed)?;
+
+    // Re-import the generated LLVM IR and verify that every attribute is still
+    // attached to the same function or call site, not merely present somewhere
+    // in the module text.
+    let roundtrip_ctx = &mut Context::new();
+    let roundtrip_module = from_llvm_ir::convert_module(roundtrip_ctx, &llvm_mod)?;
+    let (roundtrip_printed, _) = common::print_parse_verify(roundtrip_ctx, roundtrip_module)?;
+    assert_attributes(&roundtrip_printed);
+
+    Ok(())
+}
+
 /// LLVM-IR -> pliron -> pliron text -> pliron -> LLVM-IR:
 ///
 /// Details such as flags and attributes that `compile_run.rs` can't test easily.
