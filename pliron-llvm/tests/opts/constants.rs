@@ -1511,6 +1511,216 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.fpext
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fpext_folds_fp16_to_fp32() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.half 1.5> : builtin.fp16;
+        c = llvm.fpext <> a to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.single 1.5"));
+    Ok(())
+}
+
+#[test]
+fn fpext_folds_fp16_to_fp64() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.half 1.5> : builtin.fp16;
+        c = llvm.fpext <> a to builtin.fp64;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.double 1.5"));
+    Ok(())
+}
+
+#[test]
+fn fpext_folds_fp32_to_fp64() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        c = llvm.fpext <> a to builtin.fp64;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.double 2.5"));
+    Ok(())
+}
+
+#[test]
+fn fpext_nnan_does_not_fold_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single NaN> : builtin.fp32;
+        c = llvm.fpext <NNAN> a to builtin.fp64;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fpext_ninf_does_not_fold_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        c = llvm.fpext <NINF> a to builtin.fp64;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fpext_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        c = llvm.fpext <> x to builtin.fp64;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fptrunc
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fptrunc_folds_fp64_to_fp32() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 2.5> : builtin.fp64;
+        c = llvm.fptrunc <> a to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.single 2.5"));
+    Ok(())
+}
+
+#[test]
+fn fptrunc_folds_fp64_to_fp16() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 1.5> : builtin.fp64;
+        c = llvm.fptrunc <> a to builtin.fp16;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.half 1.5"));
+    Ok(())
+}
+
+#[test]
+fn fptrunc_folds_fp32_to_fp16() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp16 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 3.25> : builtin.fp32;
+        c = llvm.fptrunc <> a to builtin.fp16;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.half 3.25"));
+    Ok(())
+}
+
+#[test]
+fn fptrunc_rounds_to_destination_precision() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 1.0000000001> : builtin.fp64;
+        c = llvm.fptrunc <> a to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("builtin.single 1"));
+    Ok(())
+}
+
+#[test]
+fn fptrunc_nnan_does_not_fold_nan() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double NaN> : builtin.fp64;
+        c = llvm.fptrunc <NNAN> a to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// A finite fp64 value can overflow to infinity when truncated to fp32. With
+/// `ninf`, that result is poison and must not be folded to a concrete value.
+#[test]
+fn fptrunc_ninf_does_not_fold_overflow_to_infinity() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.double 1e300> : builtin.fp64;
+        c = llvm.fptrunc <NINF> a to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+#[test]
+fn fptrunc_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.fp64) variadic = false> [] {
+        ^entry(x: builtin.fp64):
+        c = llvm.fptrunc <> x to builtin.fp32;
+        llvm.return c
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
