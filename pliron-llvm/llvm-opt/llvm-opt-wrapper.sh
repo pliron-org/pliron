@@ -13,6 +13,7 @@ set -euo pipefail
 # Optional overrides:
 #   CLANG=/path/to/clang
 #   LLVM_OPT=/path/to/llvm-opt
+#   PLIRON_LIVENESS_BENCH_DIR=/path/to/corpus
 #
 # Direct invocation (clang-compatible arguments):
 #   ./llvm-opt-wrapper.sh -O2 -g -c foo.c -o foo.o
@@ -150,6 +151,12 @@ for idx in "${!source_files[@]}"; do
     # Step 1: C -> LLVM IR
     "$CLANG_BIN" "${emit_args[@]}" "$src" -S -emit-llvm -O0 -o "$input_ll"
     
+    # Optionally preserve the unoptimized LLVM module for liveness benchmarks.
+    if [[ -n "${PLIRON_LIVENESS_BENCH_DIR:-}" ]]; then
+        mkdir -p "$PLIRON_LIVENESS_BENCH_DIR"
+        cp "$input_ll" "$PLIRON_LIVENESS_BENCH_DIR/${base}.ll"
+    fi
+
     # Step 2: Optimize with llvm-opt
     "$LLVM_OPT_BIN" -S -i "$input_ll" -o "$opt_ll" --opts o1
     

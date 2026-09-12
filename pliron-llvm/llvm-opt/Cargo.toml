@@ -26,3 +26,7 @@ tempfile.workspace = true
 assert_cmd.workspace = true
 cargo-manifest.workspace = true
 which.workspace = true
+
+[[bench]]
+name = "liveness"
+harness = false
