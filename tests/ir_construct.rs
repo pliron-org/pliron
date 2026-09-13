@@ -1721,3 +1721,67 @@ fn erase_given_names_roundtrip() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn print_region_depth_limit() -> Result<()> {
+    use pliron::{
+        operation::OpDbg,
+        printable::{RegionPrintDepthLimit, State},
+    };
+
+    let ctx = &mut Context::new();
+    let (module, _, _, _) = const_ret_in_mod(ctx)?;
+    let state = State::default();
+    let full = module.disp(ctx).to_string();
+    let expected_full = expect![[r#"
+        builtin.module @bar 
+        {
+          ^block1v1():
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
+            {
+              ^entry_block2v1():
+                c0_v0 = test.constant builtin.integer <0: si64> !0;
+                test.return c0_v0
+            }
+        }"#]];
+    expected_full.assert_eq(&full);
+
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(0));
+    let expected_shallow = expect![["builtin.module @bar {..}"]];
+    expected_shallow.assert_eq(&module.print(ctx, &state).to_string());
+    let dbg = OpDbg {
+        op: module.get_operation(),
+        ctx,
+    };
+    expected_shallow.assert_eq(&format!("{dbg}"));
+    expected_shallow.assert_eq(&format!("{dbg:?}"));
+
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(1));
+    let expected_one_level = expect![[r#"
+        builtin.module @bar 
+        {
+          ^block1v1():
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> {..}
+        }"#]];
+    expected_one_level.assert_eq(&module.print(ctx, &state).to_string());
+    // Printing restores the region depth, so reusing the state should produce identical output.
+    expected_one_level.assert_eq(&module.print(ctx, &state).to_string());
+
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(2));
+    expected_full.assert_eq(&module.print(ctx, &state).to_string());
+    state.set_region_print_depth_limit(RegionPrintDepthLimit::Unlimited);
+    expect![[r#"
+        builtin.module @bar 
+        {
+          ^block1v1():
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
+            {
+              ^entry_block2v1():
+                c0_v0 = test.constant builtin.integer <0: si64> !1;
+                test.return c0_v0
+            }
+        }"#]]
+    .assert_eq(&module.print(ctx, &state).to_string());
+    Ok(())
+}

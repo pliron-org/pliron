@@ -174,6 +174,11 @@ impl Printable for Region {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
+        if !state.push_region_depth() {
+            // We want this to fail to parse.
+            return f.write_str("{..}");
+        }
+
         fmt_indented_newline(state, f)?;
         write!(f, "{{")?;
 
@@ -190,6 +195,7 @@ impl Printable for Region {
 
         fmt_indented_newline(state, f)?;
         write!(f, "}}")?;
+        state.pop_region_depth();
         Ok(())
     }
 }
