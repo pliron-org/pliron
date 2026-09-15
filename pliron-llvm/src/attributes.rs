@@ -17,7 +17,7 @@ use thiserror::Error;
 use pliron::{
     attribute::verify_attr,
     builtin::{
-        attr_interfaces::TypedAttrInterface,
+        attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
         attributes::{IntegerAttr, StringAttr},
         ops::ModuleOp,
         types::{IntegerType, Signedness},
@@ -435,6 +435,9 @@ impl TypedAttrInterface for BytesAttr {
     }
 }
 
+impl OutlinedAttr for BytesAttr {}
+impl PrintOnceAttr for BytesAttr {}
+
 /// A vector constant all of whose elements are `element`: LLVM's `splat (...)`
 #[pliron_attr(name = "llvm.splat", format = "`<` $element ` : ` $ty `>`")]
 #[derive(Clone, Debug)]
@@ -582,6 +585,9 @@ impl TypedAttrInterface for AggregateAttr {
         self.ty
     }
 }
+
+impl OutlinedAttr for AggregateAttr {}
+impl PrintOnceAttr for AggregateAttr {}
 
 #[derive(Debug, Error)]
 pub enum ConstAggregateVerifyErr {
