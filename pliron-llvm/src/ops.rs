@@ -14,7 +14,7 @@ use core::{cell::Ref, num::NonZero};
 
 use pliron::{
     arg_err_noloc,
-    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
+    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls, attr_should_outline},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
@@ -38,6 +38,7 @@ use pliron::{
     indented_block, input_err,
     irfmt::{
         self,
+        outlined::{OUTLINED_ATTR_MARKER, outlined_marker_or},
         parsers::{
             attr_parser, block_opd_parser, delimited_list_parser, process_parsed_ssa_defs, spaced,
             ssa_opd_parser, type_parser,
@@ -2858,7 +2859,11 @@ impl Printable for GlobalOp {
         });
 
         if let Some(init_value) = self.get_initializer_value(ctx) {
-            write!(f, " = {}", init_value.print(ctx, state))?;
+            if attr_should_outline(&*init_value) {
+                write!(f, " = {OUTLINED_ATTR_MARKER}")?;
+            } else {
+                write!(f, " = {}", init_value.print(ctx, state))?;
+            }
         }
 
         if let Some(init_region) = self.get_initializer_region(ctx) {
@@ -2898,12 +2903,12 @@ impl Parsable for GlobalOp {
             .extend(attr_dict.0);
 
         enum Initializer {
-            Value(AttrObj),
+            Value(Option<AttrObj>),
             Region(Ptr<Region>),
         }
         // Parse optional initializer value or region.
         let initializer_parser = combine::token('=').skip(spaces()).with(
-            attr_parser()
+            outlined_marker_or(attr_parser())
                 .map(Initializer::Value)
                 .or(Region::parser(op.get_operation()).map(Initializer::Region)),
         );
@@ -2915,7 +2920,10 @@ impl Parsable for GlobalOp {
 
         if let Some(initializer) = initializer.0 {
             match initializer {
-                Initializer::Value(v) => op.set_initializer_value(state_stream.state.ctx, v),
+                Initializer::Value(Some(v)) => op.set_initializer_value(state_stream.state.ctx, v),
+                Initializer::Value(None) => {
+                    // The value is outlined; it is restored from the outline entry.
+                }
                 Initializer::Region(_r) => {
                     // Nothing to do since the region is already added to the operation during parsing.
                 }

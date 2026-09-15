@@ -3,13 +3,18 @@
 
 //! Test format derive for `Op`s.
 
-use expect_test::expect;
+use expect_test::{Expect, expect};
 use pliron::{
-    builtin::op_interfaces::{
-        IsTerminatorInterface, IsolatedFromAboveInterface, NOpdsInterface, NRegionsInterface,
-        NResultsInterface, OneOpdInterface, OneRegionInterface, OneResultInterface,
+    builtin::{
+        attributes::GivenNamesAttr,
+        op_interfaces::{
+            IsTerminatorInterface, IsolatedFromAboveInterface, NOpdsInterface, NRegionsInterface,
+            NResultsInterface, OneOpdInterface, OneRegionInterface, OneResultInterface,
+        },
     },
     context::Context,
+    ident,
+    location::erase_locations,
     op::Op,
     operation::{Operation, verify_operation},
     parsable::parse_from_str,
@@ -1137,4 +1142,81 @@ fn multiple_regions4_op() {
 
     Operation::erase(res, ctx);
     assert!(ctx.is_ir_empty());
+}
+
+#[format_op("`<` $outlined `>`")]
+#[def_op("test.outlined_named_attr")]
+#[verify_succ]
+struct OutlinedNamedAttrOp;
+
+#[format_op("attr($outlined, `pliron::builtin::attributes::GivenNamesAttr`)")]
+#[def_op("test.outlined_attr_directive")]
+#[verify_succ]
+struct OutlinedAttrDirectiveOp;
+
+#[format_op("opt_attr($outlined, `pliron::builtin::attributes::GivenNamesAttr`)")]
+#[def_op("test.outlined_opt_attr_directive")]
+#[verify_succ]
+struct OutlinedOptAttrDirectiveOp;
+
+#[format_op("attr_dict")]
+#[def_op("test.outlined_attr_dict")]
+#[verify_succ]
+struct OutlinedAttrDictOp;
+
+#[test]
+fn outlined_attributes_in_op_formats() {
+    /// Print an op with an outlined attribute, then parse what was printed
+    /// and compare the two.
+    fn check<T: Op>(ctx: &mut Context, expected: Expect) {
+        let op = Operation::new(ctx, T::get_concrete_op_info(), vec![], vec![], vec![], 0);
+        op.deref_mut(ctx)
+            .attributes
+            .set(ident!("outlined"), GivenNamesAttr::default());
+
+        let printed = op.disp(ctx).to_string();
+        expected.assert_eq(&printed);
+
+        let reparsed = parse_from_str(Operation::top_level_parser(), ctx, &printed).expect_ok(ctx);
+        erase_locations(ctx, reparsed);
+        expected.assert_eq(&reparsed.disp(ctx).to_string());
+    }
+
+    let ctx = &mut Context::new();
+    check::<OutlinedNamedAttrOp>(
+        ctx,
+        expect![[r#"
+        test.outlined_named_attr <!outlined> !0
+
+        outlined_attributes:
+        !0 = [outlined = builtin.given_names []]
+    "#]],
+    );
+    check::<OutlinedAttrDirectiveOp>(
+        ctx,
+        expect![[r#"
+        test.outlined_attr_directive !outlined !0
+
+        outlined_attributes:
+        !0 = [outlined = builtin.given_names []]
+    "#]],
+    );
+    check::<OutlinedOptAttrDirectiveOp>(
+        ctx,
+        expect![[r#"
+        test.outlined_opt_attr_directive !outlined !0
+
+        outlined_attributes:
+        !0 = [outlined = builtin.given_names []]
+    "#]],
+    );
+    check::<OutlinedAttrDictOp>(
+        ctx,
+        expect![[r#"
+        test.outlined_attr_dict [] !0
+
+        outlined_attributes:
+        !0 = [outlined = builtin.given_names []]
+    "#]],
+    );
 }

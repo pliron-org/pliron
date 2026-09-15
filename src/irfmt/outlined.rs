@@ -11,7 +11,7 @@ use crate::{
     attribute::{AttrObj, AttributeDict, attr_impls, attr_should_outline},
     basic_block::BasicBlock,
     builtin::attr_interfaces::PrintOnceAttr,
-    combine::{Parser, between, optional, parser::char::spaces, token},
+    combine::{self, Parser, between, optional, parser::char::spaces, token},
     context::{Context, Ptr},
     dict_key,
     identifier::Identifier,
@@ -44,6 +44,25 @@ struct OutlinePrintState {
 }
 
 dict_key!(OUTLINED_STATE, "outlined_state");
+
+/// Printed in place of an [OutlinedAttr](crate::builtin::attr_interfaces::OutlinedAttr)
+/// when [attr_should_outline] return `true`.
+///
+/// The attribute itself is printed in the outlined attributes section.
+pub const OUTLINED_ATTR_MARKER: &str = "!outlined";
+
+/// Parse [OUTLINED_ATTR_MARKER] (returning `None`), or,
+/// if it is absent, an attribute with `parser`.
+pub fn outlined_marker_or<'a, P>(
+    parser: P,
+) -> impl Parser<StateStream<'a>, Output = Option<P::Output>>
+where
+    P: Parser<StateStream<'a>>,
+{
+    combine::attempt(spaces().with(combine::parser::char::string(OUTLINED_ATTR_MARKER)))
+        .map(|_| None)
+        .or(parser.map(Some))
+}
 
 /// An [Operation] was just printed, and we now print a future reference to the
 /// outlined attributes (if any) or location (if any) that will be printed later.

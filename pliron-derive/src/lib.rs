@@ -19,9 +19,6 @@ use derive_format::DeriveIRObject;
 /// A hash map with a fast, non-cryptographic hasher and deterministic iteration order.
 type IMap<K, V> = indexmap::IndexMap<K, V, rustc_hash::FxBuildHasher>;
 
-/// A hash set with a fast, non-cryptographic hasher and deterministic iteration order.
-type ISet<T> = indexmap::IndexSet<T, rustc_hash::FxBuildHasher>;
-
 /// `#[def_attribute(...)]`: Annotate a Rust struct as a new IR attribute.
 ///
 /// *Note*: It is suggested to use the [pliron_attr] macro instead of using this macro directly.
@@ -527,6 +524,11 @@ pub fn format(args: TokenStream, input: TokenStream) -> TokenStream {
 ///  15. The <a name="opt_attr"></a> "opt_attr" directive specifies an optional attribute on an `Op`.
 ///      It takes two or more arguments, which are same as those of the [attr](#attr) directive.
 ///      This cannot be combined with the [attr_dict](#attr_dict) directive.
+///
+/// Named attributes, `attr` and `opt_attr` print the marker
+/// [`!outlined`](../pliron/irfmt/outlined/constant.OUTLINED_ATTR_MARKER.html) instead of an
+/// attribute that [attr_should_outline](../pliron/attribute/fn.attr_should_outline.html).
+/// `attr_dict` drops the whole entry.
 ///
 /// Examples:
 /// 1. Derive for a struct, with no format string (default format):

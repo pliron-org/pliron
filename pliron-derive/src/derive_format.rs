@@ -6,7 +6,7 @@ use quote::{ToTokens, format_ident, quote};
 use syn::{Data, DeriveInput, Generics, LitStr, Result, spanned::Spanned};
 
 use crate::{
-    IMap, ISet,
+    IMap,
     irfmt::{
         Directive, Elem, FieldIdent, FmtData, Format, Lit, UnnamedVar, Var,
         canonical_format_for_enums, canonical_format_for_structs, canonical_op_format,
@@ -408,7 +408,11 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 let name = ::pliron::ident!(#attr_name);
                 let self_op = self.get_operation().deref(ctx);
                 let attr = self_op.attributes.0.get(&name).expect(&#missing_attr_err);
-                ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
+                if ::pliron::attribute::attr_should_outline(&**attr) {
+                    write!(fmt, "{}", ::pliron::irfmt::outlined::OUTLINED_ATTR_MARKER)?;
+                } else {
+                    ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
+                }
             }
         })
     }
@@ -507,7 +511,11 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 );
                 if let Some(attr) = attr {
                     write!(fmt, "{}{}", #starting_delimiter, #label)?;
-                    ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
+                    if ::pliron::attribute::attr_should_outline(attr) {
+                        write!(fmt, "{}", ::pliron::irfmt::outlined::OUTLINED_ATTR_MARKER)?;
+                    } else {
+                        ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
+                    }
                     write!(fmt, "{}", #ending_delimiter)?;
                 }
             });
@@ -655,7 +663,8 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
         } else if d.name == "attr_dict" {
             Ok(quote! {
                 let self_op = self.get_operation().deref(ctx);
-                ::pliron::printable::Printable::fmt(&self_op.attributes, ctx, state, fmt)?;
+                let attrs = self_op.attributes.clone_skip_outlined();
+                ::pliron::printable::Printable::fmt(&attrs, ctx, state, fmt)?;
             })
         } else {
             unimplemented!("Unknown directive {}", d.name)
@@ -1093,8 +1102,7 @@ struct OpParserState {
     successors: ElementSpec<usize>,
     operand_types: ElementSpec<usize>,
     result_types: ElementSpec<usize>,
-    // The second element specifies attribtues that are specified as optional.
-    attributes: (ElementSpec<String>, ISet<String>),
+    attributes: ElementSpec<String>,
     regions: ElementSpec<usize>,
 }
 
@@ -1242,28 +1250,18 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
         });
 
         let mut attribute_sets = quote! {};
-        match &state.attributes.0 {
+        match &state.attributes {
             ElementSpec::Individual(attributes) => {
                 for (attr_name, attr_ident) in attributes {
-                    let set_attr = if state.attributes.1.contains(attr_name) {
-                        // This is an optional attribute.
-                        quote! {
-                            if let Some(#attr_ident) = #attr_ident {
-                                op.deref_mut(state_stream.state.ctx).attributes.0.insert(
-                                    ::pliron::ident!(#attr_name),
-                                    ::pliron::alloc::boxed::Box::new(#attr_ident),
-                                );
-                            }
-                        }
-                    } else {
-                        quote! {
+                    attribute_sets.extend(quote! {
+                        // `None` is either an `opt_attr` or an outlined attribute.
+                        if let Some(#attr_ident) = #attr_ident {
                             op.deref_mut(state_stream.state.ctx).attributes.0.insert(
                                 ::pliron::ident!(#attr_name),
                                 #attr_ident,
                             );
                         }
-                    };
-                    attribute_sets.extend(set_attr);
+                    });
                 }
             }
             ElementSpec::All(attr_sets_name) => {
@@ -1328,7 +1326,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
         let attr_name = attr_name.to_string();
         let attr_name_ident = format_ident!("{}", attr_name);
 
-        match state.attributes.0 {
+        match state.attributes {
             ElementSpec::Individual(ref mut attributes) => {
                 attributes.insert(attr_name.clone(), attr_name_ident.clone());
             }
@@ -1341,7 +1339,9 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
         }
 
         Ok(quote! {
-            let #attr_name_ident = ::pliron::irfmt::parsers::attr_parse(state_stream)?.0;
+            let #attr_name_ident = ::pliron::irfmt::outlined::outlined_marker_or(
+                ::pliron::irfmt::parsers::attr_parser()
+            ).parse_stream(state_stream).into_result()?.0;
         })
     }
 
@@ -1477,13 +1477,10 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             let attr_name_ident = format_ident!("{}", attr_dict_key);
 
             match &mut state.attributes {
-                (ElementSpec::Individual(attributes), optionals) => {
+                ElementSpec::Individual(attributes) => {
                     attributes.insert(attr_dict_key.clone(), attr_name_ident.clone());
-                    if d.name == "opt_attr" {
-                        optionals.insert(attr_dict_key.clone());
-                    }
                 }
-                (ElementSpec::All(_), _optionals) => {
+                ElementSpec::All(_) => {
                     return Err(syn::Error::new_spanned(
                         input.ident.clone(),
                         "Cannot mix attributes directive with named attributes".to_string(),
@@ -1492,7 +1489,11 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
 
             let attr_parser = quote! {
-                #attr_type::parser(())
+                ::pliron::irfmt::outlined::outlined_marker_or(
+                    #attr_type::parser(()).map(|attr| -> ::pliron::attribute::AttrObj {
+                        ::pliron::alloc::boxed::Box::new(attr)
+                    })
+                )
             };
             let labelled_parser = if let Some(label) = &label_opt {
                 quote! {
@@ -1518,13 +1519,12 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 Ok(quote! {
                     let #attr_name_ident = ::pliron::combine::parser::choice::optional
                         (::pliron::combine::attempt(#delimited_labelled_parser))
-                        .parse_stream(state_stream).into_result()?.0;
+                        .parse_stream(state_stream).into_result()?.0.flatten();
                 })
             } else {
                 Ok(quote! {
-                    let parsed = #delimited_labelled_parser
+                    let #attr_name_ident = #delimited_labelled_parser
                         .parse_stream(state_stream).into_result()?.0;
-                    let #attr_name_ident = ::pliron::alloc::boxed::Box::new(parsed);
                 })
             }
         } else if d.name == "succ" {
@@ -1701,14 +1701,14 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             })
         } else if d.name == "attr_dict" {
             let attr_sets_name = format_ident!("attr_sets");
-            if matches!(&state.attributes.0, ElementSpec::Individual(attributes) if !attributes.is_empty())
+            if matches!(&state.attributes, ElementSpec::Individual(attributes) if !attributes.is_empty())
             {
                 return Err(syn::Error::new_spanned(
                     input.ident.clone(),
                     "Cannot mix attributes directive with named attributes".to_string(),
                 ));
             }
-            state.attributes.0 = ElementSpec::All(attr_sets_name.clone());
+            state.attributes = ElementSpec::All(attr_sets_name.clone());
             Ok(quote! {
                 let #attr_sets_name =
                     ::pliron::attribute::AttributeDict::parse(state_stream, ())?.0;
