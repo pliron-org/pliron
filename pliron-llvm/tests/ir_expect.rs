@@ -453,7 +453,7 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
                                              { i32, i32 } { i32 3, i32 4 }]
         @vtable = global [2 x ptr] [ptr @g, ptr @f]
         @addr = global ptr @g_const
-        @string = global [6 x i8] c"hello\00"
+        @string = global [9 x i8] c"longtext\00"
         @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
         @splat = global <4 x i32> splat (i32 7)
 
@@ -489,7 +489,7 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
             llvm.global @g_const : builtin.integer i32
               [llvm_global_linkage: llvm.linkage ExternalLinkage, llvm_global_constant: builtin.bool true] = builtin.integer <1: i32>;
             llvm.global @array : llvm.array [4 x builtin.integer i32]
-              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>;
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]> !0;
             llvm.global @struct : llvm.struct <{ builtin.integer i32, builtin.fp32 , llvm.ptr (0) } : Unpacked>
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.single 2, llvm.symbol_addr <@g : llvm.ptr (0)>] : llvm.struct <{ builtin.integer i32, builtin.fp32 , llvm.ptr (0) } : Unpacked>>;
             llvm.global @nested : llvm.array [2 x llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>]
@@ -498,17 +498,17 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[llvm.symbol_addr <@g : llvm.ptr (0)>, llvm.symbol_addr <@f : llvm.ptr (0)>] : llvm.array [2 x llvm.ptr (0)]>;
             llvm.global @addr : llvm.ptr (0)
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.symbol_addr <@g_const : llvm.ptr (0)>;
-            llvm.global @string : llvm.array [6 x builtin.integer i8]
-              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.bytes [104, 101, 108, 108, 111, 0];
+            llvm.global @string : llvm.array [9 x builtin.integer i8]
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.bytes [108, 111, 110, 103, 116, 101, 120, 116, 0] !1;
             llvm.global @vector : llvm.vector <Fixed x 4 x builtin.integer i32>
-              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>;
+              [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>> !2;
             llvm.global @splat : llvm.vector <Fixed x 4 x builtin.integer i32>
               [llvm_global_linkage: llvm.linkage ExternalLinkage] = llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 4 x builtin.integer i32>>;
             llvm.func @f: llvm.func <llvm.void (llvm.ptr (0)) variadic = false>
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
               ^entry_block2v1(v0: llvm.ptr (0)):
-                v1 = llvm.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>> : llvm.array [4 x builtin.integer i32];
+                v1 = llvm.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>> : llvm.array [4 x builtin.integer i32] !3;
                 v2 = llvm.constant <llvm.aggregate <[builtin.integer <5: i32>, llvm.symbol_addr <@g : llvm.ptr (0)>] : llvm.struct <{ builtin.integer i32, llvm.ptr (0) } : Unpacked>>> : llvm.struct <{ builtin.integer i32, llvm.ptr (0) } : Unpacked>;
                 v3 = llvm.constant <llvm.bytes [104, 101, 108, 108, 111, 0]> : llvm.array [6 x builtin.integer i8];
                 llvm.store *v0 <- v1 [align : 4];
@@ -530,7 +530,17 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
                 v5 = llvm.constant <llvm.splat <builtin.single 2.5 : llvm.vector <Fixed x 4 x builtin.fp32 >>> : llvm.vector <Fixed x 4 x builtin.fp32 >;
                 llvm.return v5
             }
-        }"#]].assert_eq(&printed);
+        }
+
+        outlined_attributes:
+        !0 = [llvm_global_initializer = !4]
+        !1 = [llvm_global_initializer = !5]
+        !2 = [llvm_global_initializer = !6]
+        !3 = [llvm_constant_value = !4]
+        !4 = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.array [4 x builtin.integer i32]>
+        !5 = llvm.bytes [108, 111, 110, 103, 116, 101, 120, 116, 0]
+        !6 = llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>, builtin.integer <4: i32>] : llvm.vector <Fixed x 4 x builtin.integer i32>>
+    "#]].assert_eq(&printed);
 
     let out_llvm_ctx = LLVMContext::default();
     let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, reparsed)?;
@@ -545,7 +555,7 @@ fn constant_aggregates_and_splats_roundtrip() -> Result<()> {
         @nested = global [2 x { i32, i32 }] [{ i32, i32 } { i32 1, i32 2 }, { i32, i32 } { i32 3, i32 4 }]
         @vtable = global [2 x ptr] [ptr @g, ptr @f]
         @addr = global ptr @g_const
-        @string = global [6 x i8] c"hello\00"
+        @string = global [9 x i8] c"longtext\00"
         @vector = global <4 x i32> <i32 1, i32 2, i32 3, i32 4>
         @splat = global <4 x i32> splat (i32 7)
 

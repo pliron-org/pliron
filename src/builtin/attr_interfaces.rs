@@ -37,6 +37,11 @@ pub trait TypedAttrInterface {
 /// printed nevertheless while printing all outline attributes.
 #[attr_interface]
 pub trait OutlinedAttr {
+    /// Whether this attribute instance should be printed in the outlined attributes section.
+    fn outline(&self) -> bool {
+        true
+    }
+
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where
         Self: Sized,

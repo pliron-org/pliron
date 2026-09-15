@@ -401,6 +401,9 @@ impl TypedAttrInterface for PoisonAttr {
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BytesAttr(Vec<u8>);
 
+/// Byte attributes smaller than this remain inline.
+pub const BYTES_ATTR_OUTLINE_THRESHOLD: usize = 8;
+
 impl BytesAttr {
     /// Create a new [BytesAttr].
     pub fn new(bytes: Vec<u8>) -> Self {
@@ -435,7 +438,14 @@ impl TypedAttrInterface for BytesAttr {
     }
 }
 
-impl OutlinedAttr for BytesAttr {}
+#[attr_interface_impl]
+impl OutlinedAttr for BytesAttr {
+    fn outline(&self) -> bool {
+        self.0.len() >= BYTES_ATTR_OUTLINE_THRESHOLD
+    }
+}
+
+#[attr_interface_impl]
 impl PrintOnceAttr for BytesAttr {}
 
 /// A vector constant all of whose elements are `element`: LLVM's `splat (...)`
@@ -562,6 +572,9 @@ pub struct AggregateAttr {
     ty: TypeHandle,
 }
 
+/// Aggregate attributes with fewer elements than this remain inline.
+pub const AGGREGATE_ATTR_OUTLINE_THRESHOLD: usize = 4;
+
 impl AggregateAttr {
     /// A constant aggregate of type `ty`, with one constant attribute per element.
     pub fn new(elements: Vec<Box<dyn TypedAttrInterface>>, ty: TypeHandle) -> Self {
@@ -586,7 +599,14 @@ impl TypedAttrInterface for AggregateAttr {
     }
 }
 
-impl OutlinedAttr for AggregateAttr {}
+#[attr_interface_impl]
+impl OutlinedAttr for AggregateAttr {
+    fn outline(&self) -> bool {
+        self.elements.len() >= AGGREGATE_ATTR_OUTLINE_THRESHOLD
+    }
+}
+
+#[attr_interface_impl]
 impl PrintOnceAttr for AggregateAttr {}
 
 #[derive(Debug, Error)]

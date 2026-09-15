@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Printer and parser for [outlined](OutlinedAttr) attributes.
+//! Printer and parser for [outlined](crate::builtin::attr_interfaces::OutlinedAttr) attributes.
 //! Outlined attributes are printed in a separate section of the
 //! IR, after the top level operation is printed.
 
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    attribute::{AttrObj, AttributeDict, attr_impls},
+    attribute::{AttrObj, AttributeDict, attr_impls, attr_should_outline},
     basic_block::BasicBlock,
-    builtin::attr_interfaces::{OutlinedAttr, PrintOnceAttr},
+    builtin::attr_interfaces::PrintOnceAttr,
     combine::{Parser, between, optional, parser::char::spaces, token},
     context::{Context, Ptr},
     dict_key,
@@ -73,7 +73,7 @@ pub(crate) fn preprint_outline_operation(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_impls::<dyn OutlinedAttr>(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr))
     {
         let outindex = print_state.outlined_items.push_back(OutlinedItem::Op(opr));
         return write!(f, " !{outindex}");
@@ -112,7 +112,7 @@ pub(crate) fn preprint_outline_block(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_impls::<dyn OutlinedAttr>(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr))
     {
         let outindex = print_state
             .outlined_items
@@ -161,7 +161,7 @@ pub(crate) fn print_outlines(
         write!(f, "[")?;
         let mut first = true;
         for (attr_name, attr) in attributes.0.iter() {
-            if attr_impls::<dyn OutlinedAttr>(&**attr) {
+            if attr_should_outline(&**attr) {
                 if !first {
                     write!(f, ", ")?;
                 }
