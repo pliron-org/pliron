@@ -25,6 +25,7 @@ use pliron::{
         attr_interface, attr_interface_impl, op_interface, op_interface_impl, pliron_attr,
         pliron_op, pliron_type, type_interface, type_interface_impl,
     },
+    ident,
     identifier::Identifier,
     location::{Located, Location, Source},
     op::{Op, OpObj, op_cast, verify_op},
@@ -966,7 +967,7 @@ fn test_outline_attr() -> Result<()> {
         .deref_mut(ctx)
         .attributes
         .0
-        .insert("test_attr".try_into().unwrap(), Box::new(attr));
+        .insert(ident!("test_attr"), Box::new(attr));
 
     // Print the op
     let printed = op.get_operation().deref(ctx).disp(ctx).to_string();
@@ -1014,15 +1015,16 @@ fn test_outline_printonce_attr() -> Result<()> {
     let op42 = ConstantOp::new(ctx, 42);
     op42.get_operation().deref_mut(ctx).set_loc(loc1);
     let op44 = ConstantOp::new(ctx, 44);
-    op42.get_operation().deref_mut(ctx).attributes.0.insert(
-        "test_print_once_attr".try_into().unwrap(),
-        Box::new(attr.clone()),
-    );
+    op42.get_operation()
+        .deref_mut(ctx)
+        .attributes
+        .0
+        .insert(ident!("test_print_once_attr"), Box::new(attr.clone()));
     op44.get_operation()
         .deref_mut(ctx)
         .attributes
         .0
-        .insert("test_print_once_attr".try_into().unwrap(), Box::new(attr));
+        .insert(ident!("test_print_once_attr"), Box::new(attr));
 
     // Put them both in a function.
     let (module_op, _, _, ret_op) = const_ret_in_mod(ctx).unwrap();
@@ -1115,7 +1117,7 @@ fn test_outline_attr_canonical_op() -> Result<()> {
         .deref_mut(ctx)
         .attributes
         .0
-        .insert("test_attr".try_into().unwrap(), Box::new(attr));
+        .insert(ident!("test_attr"), Box::new(attr));
 
     // Print the op
     let printed = op.get_operation().deref(ctx).disp(ctx).to_string();
@@ -1151,7 +1153,7 @@ fn test_outline_attr_on_block() -> Result<()> {
         .deref_mut(ctx)
         .attributes
         .0
-        .insert("test_attr".try_into().unwrap(), Box::new(attr));
+        .insert(ident!("test_attr"), Box::new(attr));
 
     // The outlined attr should NOT appear inline; the block gets an outline index.
     let printed = module_op.get_operation().deref(ctx).disp(ctx).to_string();

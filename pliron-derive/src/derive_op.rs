@@ -160,8 +160,8 @@ impl ToTokens for ImplOp {
 
                 fn get_opid_static() -> ::pliron::op::OpId {
                     ::pliron::op::OpId {
-                        name: ::pliron::op::OpName::try_new(#op_name).expect("Invalid Identifier for OpName"),
-                        dialect: ::pliron::dialect::DialectName::try_new(#dialect).expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!(#op_name).into(),
+                        dialect: ::pliron::ident!(#dialect).into(),
                     }
                 }
 
@@ -278,7 +278,7 @@ pub(crate) fn derive_attr_get_set(
                     -> Option<::core::cell::Ref<'a, #ty>>
                 {
                     ::core::cell::Ref::filter_map(self.op.deref(ctx), |op|
-                        op.attributes.get::<#ty>(&*#module_name::#attr_name_const)).ok()
+                        op.attributes.get::<#ty>(&#module_name::#attr_name_const)).ok()
                 }
 
                 #[doc = #fn_comment_set]
@@ -294,7 +294,7 @@ pub(crate) fn derive_attr_get_set(
                     -> Option<::core::cell::Ref<'a, ::pliron::attribute::AttrObj>>
                 {
                     ::core::cell::Ref::filter_map(self.op.deref(ctx), |op|
-                        op.attributes.0.get(&*#module_name::#attr_name_const)).ok()
+                        op.attributes.0.get(&#module_name::#attr_name_const)).ok()
                 }
 
                 #[doc = #fn_comment_set]
@@ -505,10 +505,8 @@ mod tests {
                 }
                 fn get_opid_static() -> ::pliron::op::OpId {
                     ::pliron::op::OpId {
-                        name: ::pliron::op::OpName::try_new("testop")
-                            .expect("Invalid Identifier for OpName"),
-                        dialect: ::pliron::dialect::DialectName::try_new("testing")
-                            .expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!("testop").into(),
+                        dialect: ::pliron::ident!("testing").into(),
                     }
                 }
                 fn verify_interfaces(

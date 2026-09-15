@@ -6,7 +6,7 @@
 use pliron::{
     builtin::{op_interfaces::SingleBlockRegionInterface, ops::ModuleOp},
     context::Context,
-    input_error_noloc,
+    ident, input_error_noloc,
     op::Op,
     operation::verify_operation,
     result::Result,
@@ -30,7 +30,7 @@ fn lower_to_llvm_ir(src: &str, llvm_ctx: &LLVMContext) -> Result<LLVMModule> {
     let funcs =
         parse_program(src).map_err(|e| input_error_noloc!("Failed to parse program: {}", e))?;
     let ctx = &mut Context::new();
-    let module = ModuleOp::new(ctx, "test".try_into().expect("valid module name"));
+    let module = ModuleOp::new(ctx, ident!("test"));
     for func in &funcs {
         let func_op = lower_function(ctx, func)?;
         module.append_operation(ctx, func_op.get_operation(), 0);

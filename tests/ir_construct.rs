@@ -22,6 +22,7 @@ use pliron::{
         WALKCONFIG_PREORDER_FORWARD,
         interruptible::{self, walk_advance, walk_break},
     },
+    ident,
     irfmt::parsers::spaced,
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
@@ -74,9 +75,7 @@ fn replace_c0_with_c1() -> Result<()> {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    const1_op
-        .get_result(ctx)
-        .set_name(ctx, Some("c1".try_into().unwrap()));
+    const1_op.get_result(ctx).set_name(ctx, Some(ident!("c1")));
     let const0_val = const_op.get_result(ctx);
     const0_val.replace_some_uses_with(ctx, |_, _| true, &const1_op.get_result(ctx));
 
@@ -101,9 +100,7 @@ fn replace_c0_with_c1_operand() -> Result<()> {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    const1_op
-        .get_result(ctx)
-        .set_name(ctx, Some("c1".try_into().unwrap()));
+    const1_op.get_result(ctx).set_name(ctx, Some(ident!("c1")));
 
     let printed = format!("{}", module_op.get_operation().disp(ctx));
     expect![[r#"
@@ -398,22 +395,16 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     let r0 = op.deref(ctx).get_result(0);
     let r1 = op.deref(ctx).get_result(1);
 
-    r0.set_name(ctx, Some("r0".try_into().unwrap()));
-    r1.set_name(ctx, Some("r1".try_into().unwrap()));
+    r0.set_name(ctx, Some(ident!("r0")));
+    r1.set_name(ctx, Some(ident!("r1")));
 
     assert_eq!(op.deref(ctx).get_num_results(), 2);
     assert_eq!(r0.find_index(ctx), 0);
     assert_eq!(r1.find_index(ctx), 1);
     assert_eq!(op.deref(ctx).get_type(0), i64_ty);
     assert_eq!(op.deref(ctx).get_type(1), i64_ty);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 0),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 0), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r1")));
 
     // Push a new i32 result at the end.
     let pushed_idx = Operation::push_result(op, ctx, i32_ty);
@@ -432,14 +423,8 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     assert_eq!(op.deref(ctx).get_num_results(), 2);
     assert_eq!(r0.find_index(ctx), 0);
     assert_eq!(r1.find_index(ctx), 1);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 0),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 0), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r1")));
 
     // Insert an i32 result at index 0, shifting r0 -> 1 and r1 -> 2.
     Operation::insert_result(op, ctx, 0, i32_ty);
@@ -448,28 +433,16 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     assert_eq!(r0.find_index(ctx), 1);
     assert_eq!(r1.find_index(ctx), 2);
     assert_eq!(get_operation_result_name(ctx, op, 0), None);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 2),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 2), Some(ident!("r1")));
 
     // Remove index 0 (the freshly inserted i32, which has no uses).
     Operation::remove_result(op, ctx, 0);
     assert_eq!(op.deref(ctx).get_num_results(), 2);
     assert_eq!(r0.find_index(ctx), 0);
     assert_eq!(r1.find_index(ctx), 1);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 0),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 0), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r1")));
 
     // Insert an i32 result at index 1 (between r0 and r1), shifting r1 -> 2.
     Operation::insert_result(op, ctx, 1, i32_ty);
@@ -490,14 +463,8 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     assert_eq!(r0.find_index(ctx), 0);
     assert_eq!(r1.find_index(ctx), 1);
     assert_eq!(op.deref(ctx).get_type(2), i32_ty);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 0),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 0), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r1")));
     assert_eq!(get_operation_result_name(ctx, op, 2), None);
 
     // Remove from the end.
@@ -505,14 +472,8 @@ fn test_result_push_pop_insert_remove() -> Result<()> {
     assert_eq!(op.deref(ctx).get_num_results(), 2);
     assert_eq!(r0.find_index(ctx), 0);
     assert_eq!(r1.find_index(ctx), 1);
-    assert_eq!(
-        get_operation_result_name(ctx, op, 0),
-        Some("r0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_operation_result_name(ctx, op, 1),
-        Some("r1".try_into().unwrap())
-    );
+    assert_eq!(get_operation_result_name(ctx, op, 0), Some(ident!("r0")));
+    assert_eq!(get_operation_result_name(ctx, op, 1), Some(ident!("r1")));
 
     Ok(())
 }
@@ -531,20 +492,14 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     let a0 = block.deref(ctx).get_argument(0);
     let a1 = block.deref(ctx).get_argument(1);
 
-    a0.set_name(ctx, Some("a0".try_into().unwrap()));
-    a1.set_name(ctx, Some("a1".try_into().unwrap()));
+    a0.set_name(ctx, Some(ident!("a0")));
+    a1.set_name(ctx, Some(ident!("a1")));
 
     assert_eq!(block.deref(ctx).get_num_arguments(), 2);
     assert_eq!(a0.find_index(ctx), 0);
     assert_eq!(a1.find_index(ctx), 1);
-    assert_eq!(
-        get_block_arg_name(ctx, block, 0),
-        Some("a0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_block_arg_name(ctx, block, 1),
-        Some("a1".try_into().unwrap())
-    );
+    assert_eq!(get_block_arg_name(ctx, block, 0), Some(ident!("a0")));
+    assert_eq!(get_block_arg_name(ctx, block, 1), Some(ident!("a1")));
 
     // Push a new i32 argument at the end.
     let pushed_idx = BasicBlock::push_argument(block, ctx, i32_ty);
@@ -569,28 +524,16 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     assert_eq!(a0.find_index(ctx), 1);
     assert_eq!(a1.find_index(ctx), 2);
     assert_eq!(get_block_arg_name(ctx, block, 0), None);
-    assert_eq!(
-        get_block_arg_name(ctx, block, 1),
-        Some("a0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_block_arg_name(ctx, block, 2),
-        Some("a1".try_into().unwrap())
-    );
+    assert_eq!(get_block_arg_name(ctx, block, 1), Some(ident!("a0")));
+    assert_eq!(get_block_arg_name(ctx, block, 2), Some(ident!("a1")));
 
     // Remove index 0 (no uses), restoring a0 -> 0 and a1 -> 1.
     BasicBlock::remove_argument(block, ctx, 0);
     assert_eq!(block.deref(ctx).get_num_arguments(), 2);
     assert_eq!(a0.find_index(ctx), 0);
     assert_eq!(a1.find_index(ctx), 1);
-    assert_eq!(
-        get_block_arg_name(ctx, block, 0),
-        Some("a0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_block_arg_name(ctx, block, 1),
-        Some("a1".try_into().unwrap())
-    );
+    assert_eq!(get_block_arg_name(ctx, block, 0), Some(ident!("a0")));
+    assert_eq!(get_block_arg_name(ctx, block, 1), Some(ident!("a1")));
 
     // Insert an i32 argument at index 1 (between a0 and a1), shifting a1 -> 2.
     BasicBlock::insert_argument(block, ctx, 1, i32_ty);
@@ -609,14 +552,8 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     assert_eq!(block.deref(ctx).get_num_arguments(), 3);
     assert_eq!(a0.find_index(ctx), 0);
     assert_eq!(a1.find_index(ctx), 1);
-    assert_eq!(
-        get_block_arg_name(ctx, block, 0),
-        Some("a0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_block_arg_name(ctx, block, 1),
-        Some("a1".try_into().unwrap())
-    );
+    assert_eq!(get_block_arg_name(ctx, block, 0), Some(ident!("a0")));
+    assert_eq!(get_block_arg_name(ctx, block, 1), Some(ident!("a1")));
     assert_eq!(get_block_arg_name(ctx, block, 2), None);
 
     // Remove from the end.
@@ -624,14 +561,8 @@ fn test_block_arg_push_pop_insert_remove() -> Result<()> {
     assert_eq!(block.deref(ctx).get_num_arguments(), 2);
     assert_eq!(a0.find_index(ctx), 0);
     assert_eq!(a1.find_index(ctx), 1);
-    assert_eq!(
-        get_block_arg_name(ctx, block, 0),
-        Some("a0".try_into().unwrap())
-    );
-    assert_eq!(
-        get_block_arg_name(ctx, block, 1),
-        Some("a1".try_into().unwrap())
-    );
+    assert_eq!(get_block_arg_name(ctx, block, 0), Some(ident!("a0")));
+    assert_eq!(get_block_arg_name(ctx, block, 1), Some(ident!("a1")));
 
     Ok(())
 }
@@ -1354,9 +1285,7 @@ fn test_walker_find_op() {
     const1_op
         .get_operation()
         .insert_after(ctx, const_op.get_operation());
-    const1_op
-        .get_result(ctx)
-        .set_name(ctx, Some("c1".try_into().unwrap()));
+    const1_op.get_result(ctx).set_name(ctx, Some(ident!("c1")));
 
     // A function to breaks the walk when a [ConstantOp] is found.
     fn finder(ctx: &Context, _: &mut (), node: IRNode) -> interruptible::WalkResult<ConstantOp> {
@@ -1437,8 +1366,8 @@ fn test_verify_operation_fails_on_undominated_op_result_use() {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
     let func_ty = pliron::builtin::types::FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let module = pliron::builtin::ops::ModuleOp::new(ctx, "bar".try_into().unwrap());
-    let func = pliron::builtin::ops::FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let module = pliron::builtin::ops::ModuleOp::new(ctx, ident!("bar"));
+    let func = pliron::builtin::ops::FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
 
     let entry = func.get_entry_block(ctx);
@@ -1480,8 +1409,8 @@ fn test_verify_operation_fails_on_undominated_block_argument_use() {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
     let func_ty = pliron::builtin::types::FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let module = pliron::builtin::ops::ModuleOp::new(ctx, "bar".try_into().unwrap());
-    let func = pliron::builtin::ops::FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let module = pliron::builtin::ops::ModuleOp::new(ctx, ident!("bar"));
+    let func = pliron::builtin::ops::FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
 
     let entry = func.get_entry_block(ctx);
@@ -1584,14 +1513,14 @@ fn block_multiple_inline_attrs() -> Result<()> {
     let func_entry_block = func_op.get_entry_block(ctx);
 
     // Set multiple inline attributes on the function's entry block
-    func_entry_block.deref_mut(ctx).attributes.set(
-        "attr1".try_into().unwrap(),
-        StringAttr::new("value1".into()),
-    );
-    func_entry_block.deref_mut(ctx).attributes.set(
-        "attr2".try_into().unwrap(),
-        StringAttr::new("value2".into()),
-    );
+    func_entry_block
+        .deref_mut(ctx)
+        .attributes
+        .set(ident!("attr1"), StringAttr::new("value1".into()));
+    func_entry_block
+        .deref_mut(ctx)
+        .attributes
+        .set(ident!("attr2"), StringAttr::new("value2".into()));
 
     let printed = format!("{}", module_op.disp(ctx));
     expect![[r#"

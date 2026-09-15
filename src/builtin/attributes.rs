@@ -731,6 +731,7 @@ mod tests {
             types::{IntegerType, Signedness},
         },
         context::Context,
+        ident,
         identifier::Identifier,
         irfmt::parsers::attr_parser,
         parsable::parse_from_str,
@@ -887,8 +888,8 @@ mod tests {
         let hello_attr: AttrObj = StringAttr::new("hello".to_string()).into();
         let world_attr: AttrObj = StringAttr::new("world".to_string()).into();
 
-        let hello_id: Identifier = "hello".try_into().unwrap();
-        let world_id: Identifier = "world".try_into().unwrap();
+        let hello_id: Identifier = ident!("hello");
+        let world_id: Identifier = ident!("world");
 
         let mut dict1: AttrObj = DictAttr::new(vec![
             (hello_id.clone(), hello_attr.clone()),
@@ -912,11 +913,7 @@ mod tests {
         let dict2_attr = dict2.as_mut().downcast_mut::<DictAttr>().unwrap();
         assert!(dict1_attr.lookup(&hello_id).unwrap() == &hello_attr);
         assert!(dict1_attr.lookup(&world_id).unwrap() == &world_attr);
-        assert!(
-            dict1_attr
-                .lookup(&"hello_world".try_into().unwrap())
-                .is_none()
-        );
+        assert!(dict1_attr.lookup(&ident!("hello_world")).is_none());
         dict2_attr.insert(&world_id, world_attr);
         assert!(dict1_attr == dict2_attr);
 

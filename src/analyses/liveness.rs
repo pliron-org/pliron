@@ -697,6 +697,7 @@ mod tests {
         context::{Context, Ptr},
         derive::pliron_op,
         graph::dominance::DomInfo,
+        ident,
         irbuild::inserter::OpInsertionPoint,
         op::Op,
         operation::Operation,
@@ -717,7 +718,7 @@ mod tests {
     struct BrOp;
 
     fn new_test_func(ctx: &mut Context, name: &str) -> (FuncOp, Ptr<BasicBlock>) {
-        let module = ModuleOp::new(ctx, "test_liveness_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_liveness_mod"));
         let func_ty = FunctionType::get(ctx, vec![], vec![]);
         let func = FuncOp::new(ctx, name.try_into().unwrap(), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);

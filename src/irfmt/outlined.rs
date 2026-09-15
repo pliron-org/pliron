@@ -130,7 +130,7 @@ pub(crate) fn print_outlines(
     state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
-    let Some(outline_state) = state.aux_data_mut().remove(&*OUTLINED_STATE) else {
+    let Some(outline_state) = state.aux_data_mut().remove(&OUTLINED_STATE) else {
         return Ok(());
     };
 
@@ -316,7 +316,7 @@ pub(crate) fn register_block_for_outline(
 
 /// Parse the outlined attributes and locations.
 pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
-    let Some(parse_state) = state_stream.state.aux_data.remove(&*OUTLINED_STATE) else {
+    let Some(parse_state) = state_stream.state.aux_data.remove(&OUTLINED_STATE) else {
         return Ok(());
     };
 

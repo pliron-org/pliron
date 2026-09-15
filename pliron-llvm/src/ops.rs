@@ -33,6 +33,7 @@ use pliron::{
     common_traits::{Named, Verify},
     context::{Context, Ptr},
     graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
+    ident,
     identifier::Identifier,
     indented_block, input_err,
     irfmt::{
@@ -2760,7 +2761,7 @@ impl GlobalOp {
             "Attempt to create an initializer region when there already is an initializer value"
         );
         let region = Operation::add_region(self.get_operation(), ctx);
-        let entry = BasicBlock::new(ctx, Some("entry".try_into().unwrap()), vec![]);
+        let entry = BasicBlock::new(ctx, Some(ident!("entry")), vec![]);
         entry.insert_at_front(region, ctx);
 
         region
@@ -2843,9 +2844,9 @@ impl Printable for GlobalOp {
         let mut attributes_to_print_separately =
             self.op.deref(ctx).attributes.clone_skip_outlined();
         attributes_to_print_separately.0.retain(|key, _| {
-            key != &*ATTR_KEY_LLVM_GLOBAL_TYPE
-                && key != &*ATTR_KEY_SYM_NAME
-                && key != &*ATTR_KEY_LLVM_GLOBAL_INITIALIZER
+            key != &ATTR_KEY_LLVM_GLOBAL_TYPE
+                && key != &ATTR_KEY_SYM_NAME
+                && key != &ATTR_KEY_LLVM_GLOBAL_INITIALIZER
         });
         indented_block!(state, {
             write!(
@@ -4734,7 +4735,7 @@ impl FuncOp {
         );
         let region = Operation::add_region(self.op, ctx);
         let arg_types = self.get_type(ctx).deref(ctx).arg_types().clone();
-        let body = BasicBlock::new(ctx, Some("entry".try_into().unwrap()), arg_types);
+        let body = BasicBlock::new(ctx, Some(ident!("entry")), arg_types);
         body.insert_at_front(region, ctx);
         body
     }
@@ -4760,7 +4761,7 @@ impl Printable for FuncOp {
             self.op.deref(ctx).attributes.clone_skip_outlined();
         attributes_to_print_separately
             .0
-            .retain(|key, _| key != &*ATTR_KEY_LLVM_FUNC_TYPE && key != &*ATTR_KEY_SYM_NAME);
+            .retain(|key, _| key != &ATTR_KEY_LLVM_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);
         indented_block!(state, {
             write!(
                 f,

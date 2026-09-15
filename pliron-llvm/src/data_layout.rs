@@ -116,6 +116,7 @@ mod tests {
     use pliron::{
         builtin::types::{FP16Type, FP64Type, IntegerType, Signedness},
         context::Context,
+        ident,
         result::ExpectOk,
     };
 
@@ -168,7 +169,7 @@ mod tests {
         let ctx = &mut Context::new();
         let mut layout = DataLayout::new(X86_64);
 
-        let opaque = StructType::get_named(ctx, "opaque".try_into().unwrap(), None)
+        let opaque = StructType::get_named(ctx, ident!("opaque"), None)
             .expect_ok(ctx)
             .into();
         assert!(layout.type_size_in_bits(ctx, opaque).is_err());
