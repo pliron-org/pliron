@@ -408,7 +408,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 let name = ::pliron::ident!(#attr_name);
                 let self_op = self.get_operation().deref(ctx);
                 let attr = self_op.attributes.0.get(&name).expect(&#missing_attr_err);
-                if ::pliron::attribute::attr_should_outline(&**attr) {
+                if ::pliron::attribute::attr_should_outline(&**attr, ctx) {
                     write!(fmt, "{}", ::pliron::irfmt::outlined::OUTLINED_ATTR_MARKER)?;
                 } else {
                     ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
@@ -511,7 +511,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
                 );
                 if let Some(attr) = attr {
                     write!(fmt, "{}{}", #starting_delimiter, #label)?;
-                    if ::pliron::attribute::attr_should_outline(attr) {
+                    if ::pliron::attribute::attr_should_outline(attr, ctx) {
                         write!(fmt, "{}", ::pliron::irfmt::outlined::OUTLINED_ATTR_MARKER)?;
                     } else {
                         ::pliron::printable::Printable::fmt(attr, ctx, state, fmt)?;
@@ -663,7 +663,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
         } else if d.name == "attr_dict" {
             Ok(quote! {
                 let self_op = self.get_operation().deref(ctx);
-                let attrs = self_op.attributes.clone_skip_outlined();
+                let attrs = self_op.attributes.clone_skip_outlined(ctx);
                 ::pliron::printable::Printable::fmt(&attrs, ctx, state, fmt)?;
             })
         } else {

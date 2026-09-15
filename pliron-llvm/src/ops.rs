@@ -2843,7 +2843,7 @@ impl Printable for GlobalOp {
 
         // Print attributes except for type, initializer and symbol name.
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately.0.retain(|key, _| {
             key != &ATTR_KEY_LLVM_GLOBAL_TYPE
                 && key != &ATTR_KEY_SYM_NAME
@@ -2859,7 +2859,7 @@ impl Printable for GlobalOp {
         });
 
         if let Some(init_value) = self.get_initializer_value(ctx) {
-            if attr_should_outline(&*init_value) {
+            if attr_should_outline(&*init_value, ctx) {
                 write!(f, " = {OUTLINED_ATTR_MARKER}")?;
             } else {
                 write!(f, " = {}", init_value.print(ctx, state))?;
@@ -4766,7 +4766,7 @@ impl Printable for FuncOp {
 
         // Print attributes except for function type and symbol name.
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
             .retain(|key, _| key != &ATTR_KEY_LLVM_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);

@@ -45,7 +45,7 @@ pub trait TypedAttrInterface {
 #[attr_interface]
 pub trait OutlinedAttr {
     /// Whether this attribute instance should be printed in the outlined attributes section.
-    fn outline(&self) -> bool {
+    fn outline(&self, _ctx: &Context) -> bool {
         true
     }
 

@@ -94,7 +94,7 @@ impl Printable for ModuleOp {
         symb_op_header(self).fmt(ctx, state, f)?;
         write!(f, " ")?;
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
             .retain(|key, _| key != &ATTR_KEY_SYM_NAME);
@@ -230,7 +230,7 @@ impl Printable for FuncOp {
         typed_symb_op_header(self).fmt(ctx, state, f)?;
         write!(f, " ")?;
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
             .retain(|key, _| key != &ATTR_KEY_BUILTIN_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);

@@ -92,7 +92,7 @@ pub(crate) fn preprint_outline_operation(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_should_outline(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr, ctx))
     {
         let outindex = print_state.outlined_items.push_back(OutlinedItem::Op(opr));
         return write!(f, " !{outindex}");
@@ -131,7 +131,7 @@ pub(crate) fn preprint_outline_block(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_should_outline(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr, ctx))
     {
         let outindex = print_state
             .outlined_items
@@ -180,7 +180,7 @@ pub(crate) fn print_outlines(
         write!(f, "[")?;
         let mut first = true;
         for (attr_name, attr) in attributes.0.iter() {
-            if attr_should_outline(&**attr) {
+            if attr_should_outline(&**attr, ctx) {
                 if !first {
                     write!(f, ", ")?;
                 }

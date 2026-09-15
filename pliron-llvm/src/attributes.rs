@@ -440,7 +440,7 @@ impl TypedAttrInterface for BytesAttr {
 
 #[attr_interface_impl]
 impl OutlinedAttr for BytesAttr {
-    fn outline(&self) -> bool {
+    fn outline(&self, _ctx: &Context) -> bool {
         self.0.len() >= BYTES_ATTR_OUTLINE_THRESHOLD
     }
 }
@@ -601,7 +601,7 @@ impl TypedAttrInterface for AggregateAttr {
 
 #[attr_interface_impl]
 impl OutlinedAttr for AggregateAttr {
-    fn outline(&self) -> bool {
+    fn outline(&self, _ctx: &Context) -> bool {
         self.elements.len() >= AGGREGATE_ATTR_OUTLINE_THRESHOLD
     }
 }
