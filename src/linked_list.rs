@@ -342,7 +342,7 @@ pub(crate) mod tests {
 
     impl ArenaObj for LLNode {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            let index = ctx.aux_data_map[&LINKED_LIST_TEST_STORE];
             &ctx.aux_data[index]
                 .downcast_ref::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")
@@ -350,7 +350,7 @@ pub(crate) mod tests {
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            let index = ctx.aux_data_map[&LINKED_LIST_TEST_STORE];
             &mut ctx.aux_data[index]
                 .downcast_mut::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")
@@ -426,7 +426,7 @@ pub(crate) mod tests {
 
     impl ArenaObj for LLRoot {
         fn get_arena(ctx: &Context) -> &Arena<Self> {
-            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            let index = ctx.aux_data_map[&LINKED_LIST_TEST_STORE];
             &ctx.aux_data[index]
                 .downcast_ref::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")
@@ -434,7 +434,7 @@ pub(crate) mod tests {
         }
 
         fn get_arena_mut(ctx: &mut Context) -> &mut Arena<Self> {
-            let index = ctx.aux_data_map[&*LINKED_LIST_TEST_STORE];
+            let index = ctx.aux_data_map[&LINKED_LIST_TEST_STORE];
             &mut ctx.aux_data[index]
                 .downcast_mut::<LinkedListTestArena>()
                 .expect("linked_list_store is not LinkedListTestArena")

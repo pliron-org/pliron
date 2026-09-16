@@ -237,11 +237,11 @@ fn generic_enum() {
     let res = parse_from_str(GenericEnum::<u64>::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 
-    let named_variant = GenericEnum::Named { value: 7_u64 };
+    let named_variant = GenericEnum::Named { value: -7_i64 };
     let printed = named_variant.disp(ctx).to_string();
-    assert_eq!("Named<7>", &printed);
+    assert_eq!("Named<-7>", &printed);
 
-    let res = parse_from_str(GenericEnum::<u64>::parser(()), ctx, &printed).expect_ok(ctx);
+    let res = parse_from_str(GenericEnum::<i64>::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 

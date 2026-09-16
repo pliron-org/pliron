@@ -23,6 +23,7 @@ use pliron::{
     common_traits::Named,
     context::{Context, Ptr},
     derive::pliron_op,
+    ident,
     identifier::Identifier,
     irbuild::{
         cloning::{IrMapping, clone_blocks_into, clone_operation},
@@ -67,7 +68,7 @@ fn branch_and_return_fn(
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
     let module = ModuleOp::new(ctx, mod_name.try_into().unwrap());
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
@@ -209,9 +210,9 @@ fn clone_blocks_remaps_branches_and_block_args() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
 
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
@@ -283,9 +284,9 @@ fn clone_blocks_resolves_back_edge() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
 
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
@@ -341,9 +342,9 @@ fn clone_blocks_resolves_op_result_forward_ref_in_any_order() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
 
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
@@ -425,9 +426,9 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
 
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
@@ -488,18 +489,18 @@ fn clone_blocks_copies_block_label_and_attributes() -> Result<()> {
     let ctx = &mut Context::new();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
 
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 
     // Give the source block a label and an attribute (a stand-in for block
     // debug info).
     let src = func.get_entry_block(ctx);
-    let label: Identifier = "myblock".try_into().unwrap();
+    let label: Identifier = ident!("myblock");
     src.deref_mut(ctx).set_label(Some(label.clone()));
-    let key: Identifier = "test_block_attr".try_into().unwrap();
+    let key: Identifier = ident!("test_block_attr");
     src.deref_mut(ctx).attributes.set(
         key.clone(),
         IntegerAttr::new(i64_ty, APInt::from_u64(42, bw(64))),
@@ -1089,9 +1090,9 @@ fn eq_mapped_prefers_existing_mapping_operand() -> Result<()> {
 #[test]
 fn eq_mapped_prefers_existing_mapping_successor() -> Result<()> {
     let ctx = &mut Context::new();
-    let module = ModuleOp::new(ctx, "m".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("m"));
     let func_ty = FunctionType::get(ctx, vec![], vec![]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let region = func.get_region(ctx);
 

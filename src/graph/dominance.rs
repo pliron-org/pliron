@@ -876,6 +876,7 @@ mod tests {
         },
         context::{Context, Ptr},
         derive::pliron_op,
+        ident,
         linked_list::ContainsLinkedList,
         op::Op,
         operation::Operation,
@@ -919,8 +920,8 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
 
         let bb = func.get_entry_block(ctx);
@@ -957,11 +958,11 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func_a = FuncOp::new(ctx, "a".try_into().unwrap(), func_ty);
+        let func_a = FuncOp::new(ctx, ident!("a"), func_ty);
         module.append_operation(ctx, func_a.get_operation(), 0);
-        let func_b = FuncOp::new(ctx, "b".try_into().unwrap(), func_ty);
+        let func_b = FuncOp::new(ctx, ident!("b"), func_ty);
         module.append_operation(ctx, func_b.get_operation(), 0);
 
         let mut dom_info = super::DomInfo::default();
@@ -978,12 +979,12 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let outer_func = FuncOp::new(ctx, "outer".try_into().unwrap(), func_ty);
+        let outer_func = FuncOp::new(ctx, ident!("outer"), func_ty);
         module.append_operation(ctx, outer_func.get_operation(), 0);
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         func.get_operation()
             .insert_at_back(outer_func.get_entry_block(ctx), ctx);
 
@@ -1007,9 +1008,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
 
         let inner_op = Operation::new(
@@ -1032,9 +1033,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
 
         let mut dom_info = super::DomInfo::default();
@@ -1047,9 +1048,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
 
         let mut dom_info = super::DomInfo::default();
@@ -1061,7 +1062,7 @@ mod tests {
     #[test]
     fn block_dominates_self_in_graph_region() {
         let ctx = &mut Context::new();
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
         let module_entry = module.get_region(ctx).deref(ctx).get_head().unwrap();
 
         let mut dom_info = super::DomInfo::default();
@@ -1074,9 +1075,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
         let bb = func.get_entry_block(ctx);
 
@@ -1120,9 +1121,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
         let func_region = func.get_region(ctx);
         let entry = func.get_entry_block(ctx);
@@ -1194,9 +1195,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
         let bb = func.get_entry_block(ctx);
 
@@ -1232,9 +1233,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
         let func_region = func.get_region(ctx);
         let entry = func.get_entry_block(ctx);
@@ -1274,9 +1275,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let module = ModuleOp::new(ctx, "test_mod".try_into().unwrap());
+        let module = ModuleOp::new(ctx, ident!("test_mod"));
 
-        let func = FuncOp::new(ctx, "f".try_into().unwrap(), func_ty);
+        let func = FuncOp::new(ctx, ident!("f"), func_ty);
         module.append_operation(ctx, func.get_operation(), 0);
         let entry = func.get_entry_block(ctx);
 
@@ -1299,8 +1300,8 @@ mod tests {
     #[test]
     fn nearest_common_dominator_different_modules_none() {
         let ctx = &mut Context::new();
-        let module1 = ModuleOp::new(ctx, "mod1".try_into().unwrap());
-        let module2 = ModuleOp::new(ctx, "mod2".try_into().unwrap());
+        let module1 = ModuleOp::new(ctx, ident!("mod1"));
+        let module2 = ModuleOp::new(ctx, ident!("mod2"));
 
         let b1 = module1.get_region(ctx).deref(ctx).get_head().unwrap();
         let b2 = module2.get_region(ctx).deref(ctx).get_head().unwrap();

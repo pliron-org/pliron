@@ -15,7 +15,7 @@ use expect_test::expect;
 use pliron::{
     builtin::{op_interfaces::SymbolTableInterface, ops::ModuleOp},
     context::{Context, Ptr},
-    dict_key,
+    dict_key, ident,
     identifier::Identifier,
     init_env_logger_for_tests,
     irbuild::IRStatus,
@@ -169,9 +169,7 @@ impl Pass for CountingPass {
 /// so that tests can verify caching/invalidation of analyses.
 struct CountingAnalysis(u32);
 
-fn counting_analysis_computed_key() -> Identifier {
-    "counting_analysis_computed".try_into().unwrap()
-}
+dict_key!(COUNTING_ANALYSIS_COMPUTED_KEY, "counting_analysis_computed");
 
 impl Analysis for CountingAnalysis {
     fn name(&self) -> &str {
@@ -182,11 +180,10 @@ impl Analysis for CountingAnalysis {
     where
         Self: Sized,
     {
-        let key = counting_analysis_computed_key();
         let state = analyses.pm_data_mut().state_mut();
         let counter = state
             .custom_state
-            .entry(key)
+            .entry(COUNTING_ANALYSIS_COMPUTED_KEY.clone())
             .or_insert_with(|| Box::new(0u32));
         let counter = counter.downcast_mut::<u32>().unwrap();
         *counter += 1;
@@ -199,7 +196,7 @@ fn compute_count(analyses: &AnalysisManager) -> u32 {
         .pm_data()
         .state()
         .custom_state
-        .get(&counting_analysis_computed_key())
+        .get(&COUNTING_ANALYSIS_COMPUTED_KEY)
         .map(|b| *b.downcast_ref::<u32>().unwrap())
         .unwrap_or(0)
 }
@@ -749,7 +746,7 @@ impl Pass for ConfigReaderPass {
         _ctx: &mut Context,
         analyses: &mut AnalysisManager,
     ) -> Result<PassResult> {
-        let key: Identifier = "multiplier".try_into().unwrap();
+        let key: Identifier = ident!("multiplier");
         let multiplier = analyses
             .pm_data()
             .config()
@@ -759,7 +756,7 @@ impl Pass for ConfigReaderPass {
             .copied()
             .unwrap_or(0);
 
-        let result_key: Identifier = "result".try_into().unwrap();
+        let result_key: Identifier = ident!("result");
         analyses
             .pm_data_mut()
             .state_mut()
@@ -776,7 +773,7 @@ fn custom_config_and_custom_state_round_trip() -> Result<()> {
     let op = parse(ctx, SIMPLE_FUNC);
 
     let mut config = PMConfig::default();
-    let multiplier_key: Identifier = "multiplier".try_into().unwrap();
+    let multiplier_key: Identifier = ident!("multiplier");
     config.custom_config.insert(multiplier_key, Box::new(21u32));
 
     let mut analyses = AnalysisManager::default();
@@ -786,7 +783,7 @@ fn custom_config_and_custom_state_round_trip() -> Result<()> {
     passes.add_pass(ConfigReaderPass);
     passes.run(op, ctx, &mut analyses)?;
 
-    let result_key: Identifier = "result".try_into().unwrap();
+    let result_key: Identifier = ident!("result");
     let result = analyses
         .pm_data()
         .state()

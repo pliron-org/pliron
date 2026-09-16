@@ -172,6 +172,8 @@ pub enum OperandSegmentInterfaceVerifyErr {
     OperandSegmentSizesTotalMismatchErr(u32, u32),
 }
 
+/// Interface for operations whose operands are grouped into segments.
+///
 /// In the case of variadic operands, sometimes it makes sense to group
 /// contiguous operands together into a segment. This interface aids doing that.
 /// MLIR achieves this by having ODS (tablegen)' `AttrSizedOperandSegments` generate
@@ -1033,6 +1035,44 @@ pub trait OperandNOfType<const N: usize, T: Type> {
                     opd_n_ty.get_type_id().disp(ctx).to_string()
                 )
             );
+        }
+
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum SegmentNOfTypeError {
+    #[error("Op does not have operand segment at index {0}")]
+    SegmentNotFound(usize),
+    #[error("Expected operand segment type {0}, but found {1}")]
+    UnexpectedType(String, String),
+}
+
+/// An [Op] whose N-th operand segment (0-indexed) has the specified type.
+#[op_interface]
+pub trait SegmentNOfType<const N: usize, T: Type>: OperandSegmentInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let segmented_op = op_cast::<dyn OperandSegmentInterface>(op)
+            .expect("Op must impl OperandSegmentInterface");
+        if N >= segmented_op.num_segments(ctx) {
+            return verify_err!(op.loc(ctx), SegmentNOfTypeError::SegmentNotFound(N));
+        }
+
+        for operand in segmented_op.get_segment(ctx, N) {
+            let operand_ty = &*operand.get_type(ctx).deref(ctx);
+            if !operand_ty.as_any().is::<T>() {
+                return verify_err!(
+                    op.loc(ctx),
+                    SegmentNOfTypeError::UnexpectedType(
+                        T::get_type_id_static().disp(ctx).to_string(),
+                        operand_ty.disp(ctx).to_string()
+                    )
+                );
+            }
         }
 
         Ok(())

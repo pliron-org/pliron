@@ -15,11 +15,14 @@ use alloc::{
 };
 use core::hash::Hash;
 
+use dyn_clone::{DynClone, clone_box};
+
 use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
     context::{Context, Ptr},
     linked_list::{ContainsLinkedList, LinkedList},
+    op::{Op, OpInterfaceMarker, op_cast},
     operation::Operation,
     region::Region,
 };
@@ -137,6 +140,34 @@ pub fn find_ancestor_op_of_op_in_region(
             return Some(op);
         }
         op = ancestor_region.deref(ctx).get_parent_op();
+    }
+    None
+}
+
+/// Returns the closest strict ancestor of `op` that is of the concrete [Op] type `T`
+pub fn find_ancestor_of_op_type<T: Op>(ctx: &Context, op: Ptr<Operation>) -> Option<T> {
+    let mut cur = op;
+    while let Some(parent_op) = cur.deref(ctx).get_parent_op(ctx) {
+        if let Some(parent_op) = Operation::get_op::<T>(parent_op, ctx) {
+            return Some(parent_op);
+        }
+        cur = parent_op;
+    }
+    None
+}
+
+/// Returns the closest strict ancestor of `op` that implements the [Op] interface `I`
+pub fn find_ancestor_of_op_interface<I: ?Sized + OpInterfaceMarker + DynClone + 'static>(
+    ctx: &Context,
+    op: Ptr<Operation>,
+) -> Option<Box<I>> {
+    let mut cur = op;
+    while let Some(parent_op) = cur.deref(ctx).get_parent_op(ctx) {
+        let parent_op_dyn = Operation::get_op_dyn(parent_op, ctx);
+        if let Some(parent_op) = op_cast::<I>(parent_op_dyn.as_ref()) {
+            return Some(clone_box(parent_op));
+        }
+        cur = parent_op;
     }
     None
 }

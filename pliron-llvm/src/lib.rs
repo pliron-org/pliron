@@ -42,6 +42,8 @@ pub mod ops;
 pub mod types;
 
 #[cfg(feature = "llvm-sys")]
+pub mod data_layout;
+#[cfg(feature = "llvm-sys")]
 pub mod from_llvm_ir;
 #[cfg(feature = "llvm-sys")]
 pub mod llvm_sys;

@@ -5,17 +5,14 @@
 //! The general idea is similar to MLIR's
 //! [Operation](https://mlir.llvm.org/docs/LangRef/#operations)
 
-use alloc::{format, string::ToString, vec, vec::Vec};
+use alloc::{string::ToString, vec, vec::Vec};
 use core::marker::PhantomData;
 use thiserror::Error;
 
 use crate::{
     attribute::{AttributeDict, verify_attr},
     basic_block::{BasicBlock, BasicBlockVerifyErr},
-    builtin::{
-        given_names,
-        op_interfaces::{IsTerminatorInterface, SymbolOpInterface},
-    },
+    builtin::{given_names, op_interfaces::IsTerminatorInterface},
     combine::{Parser, attempt, parser::char::spaces, token},
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
@@ -32,11 +29,10 @@ use crate::{
     irfmt::{
         outlined::{self, parse_outlines, postparse_outline},
         parsers::{list_parser, location, spaced},
-        printers::iter_with_sep,
     },
     linked_list::{LinkedList, private},
     location::{Located, Location},
-    op::{ConcreteOpInfo, Op, OpId, OpObj, op_cast, op_impls},
+    op::{ConcreteOpInfo, Op, OpId, OpObj, op_impls},
     parsable::{self, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
     region::Region,
@@ -909,57 +905,17 @@ impl Parsable for Operation {
     }
 }
 
-/// Print basic [Operation] information, mainly for logging / debugging.
-///
-/// Includes the operation's unique identifier, its operands, and its successors.
-/// Does not include attributes or regions, and is not meant to be a user-facing print.
+/// Print an [Operation] using its normal printer with all regions elided.
 pub fn print_dbg(
     ctx: &Context,
     opr: Ptr<Operation>,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
-    let sep = printable::ListSeparator::CharSpace(',');
-
-    let op = Operation::get_op_dyn(opr, ctx);
-    let opid = op.get_opid();
-    let opr = opr.deref(ctx);
-    let operands = iter_with_sep(opr.operands(), sep);
-
-    let symbol_opt = match op_cast::<dyn SymbolOpInterface>(&*op) {
-        Some(sym_op) => " @".to_string() + &sym_op.get_symbol_name(ctx).disp(ctx).to_string(),
-        None => "".to_string(),
-    };
-
-    // Print [Ptr] representing this operation.
-    write!(f, "[{:?}] ", opr.get_self_ptr(ctx))?;
-
-    if opr.get_num_results() > 0 {
-        let results = iter_with_sep(opr.results(), sep);
-        write!(f, "{} = ", results.disp(ctx))?;
-    }
-
-    write!(
-        f,
-        "{}{} ({})",
-        opid.disp(ctx),
-        symbol_opt,
-        operands.disp(ctx)
-    )?;
-
-    if opr.get_num_successors() > 0 {
-        let successors = iter_with_sep(
-            opr.successors()
-                .map(|succ| format!("^{}", succ.unique_name(ctx))),
-            sep,
-        );
-        write!(f, " [{}]", successors.disp(ctx))?;
-    }
-
-    if !op.loc(ctx).is_unknown() {
-        write!(f, " [@{}]", op.loc(ctx).disp(ctx))?;
-    }
-
-    Ok(())
+    let state = printable::State::default();
+    state.set_region_print_depth_limit(printable::RegionPrintDepthLimit::Max(0));
+    // `Operation::printable` prints outlined attributes, which we don't want here.
+    // So call the `Op` printer directly
+    Operation::get_op_dyn(opr, ctx).fmt(ctx, &state, f)
 }
 
 /// A helper type that implements [Display](core::fmt::Display) and [Debug](core::fmt::Debug)
