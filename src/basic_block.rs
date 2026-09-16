@@ -471,7 +471,7 @@ impl Printable for BasicBlock {
         )?;
 
         // Print non-outlined attributes inline.
-        let inline_attrs = self.attributes.clone_skip_outlined();
+        let inline_attrs = self.attributes.clone_skip_outlined(ctx);
         if !inline_attrs.0.is_empty() {
             write!(f, " ")?;
             inline_attrs.fmt(ctx, state, f)?;

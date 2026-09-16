@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Printer and parser for [outlined](OutlinedAttr) attributes.
+//! Printer and parser for [outlined](crate::builtin::attr_interfaces::OutlinedAttr) attributes.
 //! Outlined attributes are printed in a separate section of the
 //! IR, after the top level operation is printed.
 
 use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
-    attribute::{AttrObj, AttributeDict, attr_impls},
+    attribute::{AttrObj, AttributeDict, attr_impls, attr_should_outline},
     basic_block::BasicBlock,
-    builtin::attr_interfaces::{OutlinedAttr, PrintOnceAttr},
-    combine::{Parser, between, optional, parser::char::spaces, token},
+    builtin::attr_interfaces::PrintOnceAttr,
+    combine::{self, Parser, between, optional, parser::char::spaces, token},
     context::{Context, Ptr},
     dict_key,
     identifier::Identifier,
@@ -45,6 +45,25 @@ struct OutlinePrintState {
 
 dict_key!(OUTLINED_STATE, "outlined_state");
 
+/// Printed in place of an [OutlinedAttr](crate::builtin::attr_interfaces::OutlinedAttr)
+/// when [attr_should_outline] return `true`.
+///
+/// The attribute itself is printed in the outlined attributes section.
+pub const OUTLINED_ATTR_MARKER: &str = "!outlined";
+
+/// Parse [OUTLINED_ATTR_MARKER] (returning `None`), or,
+/// if it is absent, an attribute with `parser`.
+pub fn outlined_marker_or<'a, P>(
+    parser: P,
+) -> impl Parser<StateStream<'a>, Output = Option<P::Output>>
+where
+    P: Parser<StateStream<'a>>,
+{
+    combine::attempt(spaces().with(combine::parser::char::string(OUTLINED_ATTR_MARKER)))
+        .map(|_| None)
+        .or(parser.map(Some))
+}
+
 /// An [Operation] was just printed, and we now print a future reference to the
 /// outlined attributes (if any) or location (if any) that will be printed later.
 pub(crate) fn preprint_outline_operation(
@@ -73,7 +92,7 @@ pub(crate) fn preprint_outline_operation(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_impls::<dyn OutlinedAttr>(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr, ctx))
     {
         let outindex = print_state.outlined_items.push_back(OutlinedItem::Op(opr));
         return write!(f, " !{outindex}");
@@ -112,7 +131,7 @@ pub(crate) fn preprint_outline_block(
         .attributes
         .0
         .iter()
-        .any(|(_, attr)| attr_impls::<dyn OutlinedAttr>(&**attr))
+        .any(|(_, attr)| attr_should_outline(&**attr, ctx))
     {
         let outindex = print_state
             .outlined_items
@@ -130,7 +149,7 @@ pub(crate) fn print_outlines(
     state: printable::State,
     f: &mut core::fmt::Formatter<'_>,
 ) -> core::fmt::Result {
-    let Some(outline_state) = state.aux_data_mut().remove(&*OUTLINED_STATE) else {
+    let Some(outline_state) = state.aux_data_mut().remove(&OUTLINED_STATE) else {
         return Ok(());
     };
 
@@ -161,7 +180,7 @@ pub(crate) fn print_outlines(
         write!(f, "[")?;
         let mut first = true;
         for (attr_name, attr) in attributes.0.iter() {
-            if attr_impls::<dyn OutlinedAttr>(&**attr) {
+            if attr_should_outline(&**attr, ctx) {
                 if !first {
                     write!(f, ", ")?;
                 }
@@ -316,7 +335,7 @@ pub(crate) fn register_block_for_outline(
 
 /// Parse the outlined attributes and locations.
 pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
-    let Some(parse_state) = state_stream.state.aux_data.remove(&*OUTLINED_STATE) else {
+    let Some(parse_state) = state_stream.state.aux_data.remove(&OUTLINED_STATE) else {
         return Ok(());
     };
 

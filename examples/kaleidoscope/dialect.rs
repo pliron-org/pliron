@@ -460,6 +460,7 @@ mod tests {
                 ops::{FuncOp, ModuleOp},
                 types::FunctionType,
             },
+            ident,
             irbuild::{
                 inserter::{IRInserter, Inserter},
                 listener::DummyListener,
@@ -474,13 +475,9 @@ mod tests {
         let ctx = &mut Context::new();
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signless);
 
-        let module = ModuleOp::new(ctx, "fib_test".try_into().expect("valid module name"));
+        let module = ModuleOp::new(ctx, ident!("fib_test"));
         let main_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-        let main_fn = FuncOp::new(
-            ctx,
-            "main".try_into().expect("valid function name"),
-            main_ty,
-        );
+        let main_fn = FuncOp::new(ctx, ident!("main"), main_ty);
         module.append_operation(ctx, main_fn.get_operation(), 0);
 
         let entry = main_fn.get_entry_block(ctx);
@@ -490,35 +487,25 @@ mod tests {
         // ANCHOR: fib_build_slots
         // Mutable slots: a, b, tmp, i, and the iteration limit n.
         let slot_a = DeclOp::new(ctx, i64_ty.into());
-        slot_a
-            .get_result(ctx)
-            .set_name(ctx, Some("a".try_into().unwrap()));
+        slot_a.get_result(ctx).set_name(ctx, Some(ident!("a")));
         ins.append_op(ctx, &slot_a);
         let slot_b = DeclOp::new(ctx, i64_ty.into());
-        slot_b
-            .get_result(ctx)
-            .set_name(ctx, Some("b".try_into().unwrap()));
+        slot_b.get_result(ctx).set_name(ctx, Some(ident!("b")));
         ins.append_op(ctx, &slot_b);
         let slot_tmp = DeclOp::new(ctx, i64_ty.into());
-        slot_tmp
-            .get_result(ctx)
-            .set_name(ctx, Some("tmp".try_into().unwrap()));
+        slot_tmp.get_result(ctx).set_name(ctx, Some(ident!("tmp")));
         ins.append_op(ctx, &slot_tmp);
         let slot_i = DeclOp::new(ctx, i64_ty.into());
-        slot_i
-            .get_result(ctx)
-            .set_name(ctx, Some("i".try_into().unwrap()));
+        slot_i.get_result(ctx).set_name(ctx, Some(ident!("i")));
         ins.append_op(ctx, &slot_i);
         let slot_n = DeclOp::new(ctx, i64_ty.into());
-        slot_n
-            .get_result(ctx)
-            .set_name(ctx, Some("n".try_into().unwrap()));
+        slot_n.get_result(ctx).set_name(ctx, Some(ident!("n")));
         ins.append_op(ctx, &slot_n);
         // A mutable slot for the loop condition (while cond_ptr do ...).
         let slot_cond_ptr = DeclOp::new(ctx, i64_ty.into());
         slot_cond_ptr
             .get_result(ctx)
-            .set_name(ctx, Some("cond_ptr".try_into().unwrap()));
+            .set_name(ctx, Some(ident!("cond_ptr")));
         ins.append_op(ctx, &slot_cond_ptr);
         // ANCHOR_END: fib_build_slots
 
@@ -561,11 +548,7 @@ mod tests {
 
         // ANCHOR: fib_build_while_body
         let while_region = while_op.body_region(ctx);
-        let while_block = BasicBlock::new(
-            ctx,
-            Some("while_body".try_into().expect("valid block name")),
-            vec![],
-        );
+        let while_block = BasicBlock::new(ctx, Some(ident!("while_body")), vec![]);
         while_block.insert_at_front(while_region, ctx);
         let mut while_ins = OpInserter::new_at_block_end(while_block);
 

@@ -80,7 +80,7 @@ fn add_wraps_on_overflow() -> Result<()> {
           ^entry_block1v1() !0:
             a_v0 = builtin.constant <builtin.integer <127: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
-            sum_v3 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !3;
+            sum_v3 = builtin.constant <builtin.integer <-128: i8>> : builtin.integer i8 !3;
             sum_v2 = llvm.add a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
             llvm.return sum_v3 !5
         }"#]]
@@ -221,7 +221,7 @@ fn sub_wraps_on_overflow() -> Result<()> {
           ^entry_block1v1() !0:
             a_v0 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
-            diff_v3 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !3;
+            diff_v3 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !3;
             diff_v2 = llvm.sub a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
             llvm.return diff_v3 !5
         }"#]]
@@ -512,7 +512,7 @@ fn shl_wraps_on_overflow() -> Result<()> {
           ^entry_block1v1() !0:
             a_v0 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <7: i8>> : builtin.integer i8 !2;
-            shifted_v3 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !3;
+            shifted_v3 = builtin.constant <builtin.integer <-128: i8>> : builtin.integer i8 !3;
             shifted_v2 = llvm.shl a_v0, b_v1 <{nsw=false,nuw=false}>: builtin.integer i8 !4;
             llvm.return shifted_v3 !5
         }"#]]
@@ -1081,7 +1081,7 @@ fn lshr_folds_two_constants() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !1;
+            a_v0 = builtin.constant <builtin.integer <-128: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
             c_v3 = builtin.constant <builtin.integer <64: i8>> : builtin.integer i8 !3;
             c_v2 = llvm.lshr a_v0, b_v1 : builtin.integer i8 !4;
@@ -1146,9 +1146,9 @@ fn ashr_folds_two_constants() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <128: i8>> : builtin.integer i8 !1;
+            a_v0 = builtin.constant <builtin.integer <-128: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <1: i8>> : builtin.integer i8 !2;
-            c_v3 = builtin.constant <builtin.integer <192: i8>> : builtin.integer i8 !3;
+            c_v3 = builtin.constant <builtin.integer <-64: i8>> : builtin.integer i8 !3;
             c_v2 = llvm.ashr a_v0, b_v1 : builtin.integer i8 !4;
             llvm.return c_v3 !5
         }"#]]
@@ -1266,7 +1266,7 @@ fn icmp_signed_predicate_treats_high_bit_as_negative() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            a_v0 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !2;
             c_v3 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
             c_v2 = llvm.icmp a_v0 <SLT> b_v1 : builtin.integer i1 !4;
@@ -1296,7 +1296,7 @@ fn icmp_unsigned_predicate_treats_high_bit_as_large() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            a_v0 = llvm.constant <builtin.integer <-1: i8>> : builtin.integer i8 !1;
             b_v1 = builtin.constant <builtin.integer <0: i8>> : builtin.integer i8 !2;
             c_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !3;
             c_v2 = llvm.icmp a_v0 <ULT> b_v1 : builtin.integer i1 !4;
@@ -1370,8 +1370,8 @@ fn sext_folds_negative_constant() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = llvm.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
-            c_v2 = builtin.constant <builtin.integer <65535: i16>> : builtin.integer i16 !2;
+            a_v0 = llvm.constant <builtin.integer <-1: i8>> : builtin.integer i8 !1;
+            c_v2 = builtin.constant <builtin.integer <-1: i16>> : builtin.integer i16 !2;
             c_v1 = llvm.sext a_v0 to builtin.integer i16 !3;
             llvm.return c_v2 !4
         }"#]]
@@ -1443,7 +1443,7 @@ fn zext_folds_high_bit_set_constant() -> Result<()> {
           [] 
         {
           ^entry_block1v1() !0:
-            a_v0 = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8 !1;
+            a_v0 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !1;
             c_v2 = builtin.constant <builtin.integer <255: i16>> : builtin.integer i16 !2;
             c_v1 = llvm.zext <nneg=false> a_v0 to builtin.integer i16 !3;
             llvm.return c_v2 !4

@@ -37,6 +37,7 @@ use pliron::{
     },
     context::{Context, Ptr},
     derive::op_interface_impl,
+    ident,
     irbuild::{
         IRStatus,
         dialect_conversion::{
@@ -398,7 +399,7 @@ impl ToLLVMDialect for KalIfOp {
             ctx,
             pre_if_block,
             OpInsertionPoint::BeforeOperation(self.get_operation()),
-            Some("if_merge".try_into().unwrap()),
+            Some(ident!("if_merge")),
         );
 
         // Emit conditional branch in pre_if_block.
@@ -475,14 +476,14 @@ impl ToLLVMDialect for KalWhileOp {
             ctx,
             pre_while_block,
             OpInsertionPoint::BeforeOperation(self.get_operation()),
-            Some("while_exit".try_into().unwrap()),
+            Some(ident!("while_exit")),
         );
 
         // Create the header block.
         let header_block = rewriter.create_block(
             ctx,
             BlockInsertionPoint::AfterBlock(pre_while_block),
-            Some("while_header".try_into().unwrap()),
+            Some(ident!("while_header")),
             vec![],
         );
 
@@ -588,6 +589,7 @@ mod tests {
     use pliron::{
         builtin::{op_interfaces::SingleBlockRegionInterface, ops::ModuleOp},
         context::Context,
+        ident,
         op::Op,
         operation::verify_operation,
         printable::Printable,
@@ -601,7 +603,7 @@ mod tests {
     fn lower_to_llvm(src: &str) -> String {
         let funcs = parse_program(src).expect("parse error");
         let ctx = &mut Context::new();
-        let module = ModuleOp::new(ctx, "test".try_into().expect("valid module name"));
+        let module = ModuleOp::new(ctx, ident!("test"));
         for func in &funcs {
             let func_op = lower_function(ctx, func).expect("kaleidoscope lowering failed");
             module.append_operation(ctx, func_op.get_operation(), 0);

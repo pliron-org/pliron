@@ -3,11 +3,7 @@
 
 //! Utility traits such as [Named], [Verify] etc.
 
-use crate::{
-    context::Context,
-    identifier::{Identifier, underscore},
-    result::Result,
-};
+use crate::{context::Context, ident, identifier::Identifier, result::Result};
 
 /// Check and ensure correctness.
 pub trait Verify {
@@ -48,7 +44,7 @@ pub trait Named {
     /// A unique name; concatenation of name and id.
     fn unique_name(&self, ctx: &Context) -> Identifier {
         match self.given_name(ctx) {
-            Some(given_name) => given_name + underscore() + self.id(ctx),
+            Some(given_name) => given_name + ident!("_") + self.id(ctx),
             None => self.id(ctx),
         }
     }

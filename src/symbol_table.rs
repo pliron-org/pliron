@@ -306,7 +306,7 @@ mod tests {
             types::FunctionType,
         },
         context::Context,
-        identifier::Identifier,
+        ident,
         op::Op,
     };
     use alloc::vec;
@@ -314,20 +314,20 @@ mod tests {
     #[test]
     fn test_symbol_table() -> Result<()> {
         let ctx = &mut Context::new();
-        let module_op = ModuleOp::new(ctx, Identifier::try_from("module").unwrap());
+        let module_op = ModuleOp::new(ctx, ident!("module"));
         let mut symbol_table = SymbolTable::new(ctx, Box::new(module_op));
 
         let fty = FunctionType::get(ctx, vec![], vec![]);
-        let f1 = FuncOp::new(ctx, "f1".try_into().unwrap(), fty);
+        let f1 = FuncOp::new(ctx, ident!("f1"), fty);
 
         symbol_table.insert(ctx, Box::new(f1), None)?;
         assert!(
             f1.get_operation().deref(ctx).get_parent_op(ctx) == Some(module_op.get_operation())
         );
-        let f1_lookedup = symbol_table.lookup(&"f1".try_into().unwrap()).unwrap();
+        let f1_lookedup = symbol_table.lookup(&ident!("f1")).unwrap();
         assert!(f1_lookedup.get_operation() == f1.get_operation());
 
-        let f2 = FuncOp::new(ctx, "f2".try_into().unwrap(), fty);
+        let f2 = FuncOp::new(ctx, ident!("f2"), fty);
         symbol_table.insert(
             ctx,
             Box::new(f2),
@@ -336,11 +336,11 @@ mod tests {
         assert!(
             f2.get_operation().deref(ctx).get_parent_op(ctx) == Some(module_op.get_operation())
         );
-        let f2_lookedup = symbol_table.lookup(&"f2".try_into().unwrap()).unwrap();
+        let f2_lookedup = symbol_table.lookup(&ident!("f2")).unwrap();
         assert!(f2_lookedup.get_operation() == f2.get_operation());
 
         symbol_table.remove(ctx, Box::new(f1))?;
-        assert!(symbol_table.lookup(&"f1".try_into().unwrap()).is_none());
+        assert!(symbol_table.lookup(&ident!("f1")).is_none());
         assert!(f1.get_operation().deref(ctx).get_parent_op(ctx).is_none());
 
         Ok(())
@@ -350,17 +350,17 @@ mod tests {
     #[should_panic(expected = "Dangling Ptr deref")]
     fn test_symbol_table_erase() {
         let ctx = &mut Context::new();
-        let module_op = ModuleOp::new(ctx, Identifier::try_from("module").unwrap());
+        let module_op = ModuleOp::new(ctx, ident!("module"));
         let mut symbol_table = SymbolTable::new(ctx, Box::new(module_op));
 
         let fty = FunctionType::get(ctx, vec![], vec![]);
-        let f1 = FuncOp::new(ctx, "f1".try_into().unwrap(), fty);
+        let f1 = FuncOp::new(ctx, ident!("f1"), fty);
 
         symbol_table.insert(ctx, Box::new(f1), None).unwrap();
         assert!(
             f1.get_operation().deref(ctx).get_parent_op(ctx) == Some(module_op.get_operation())
         );
-        let f1_lookedup = symbol_table.lookup(&"f1".try_into().unwrap()).unwrap();
+        let f1_lookedup = symbol_table.lookup(&ident!("f1")).unwrap();
         assert!(f1_lookedup.get_operation() == f1.get_operation());
 
         symbol_table.erase(ctx, Box::new(f1)).unwrap();
@@ -371,29 +371,29 @@ mod tests {
     fn test_symbol_table_collection() -> Result<()> {
         let ctx = &mut Context::new();
 
-        let module_op = ModuleOp::new(ctx, Identifier::try_from("module").unwrap());
-        let nested_module_op = ModuleOp::new(ctx, Identifier::try_from("nested_module").unwrap());
+        let module_op = ModuleOp::new(ctx, ident!("module"));
+        let nested_module_op = ModuleOp::new(ctx, ident!("nested_module"));
         let mut symbol_table_collection = SymbolTableCollection::new();
 
         let fty = FunctionType::get(ctx, vec![], vec![]);
-        let f1 = FuncOp::new(ctx, "f1".try_into().unwrap(), fty);
+        let f1 = FuncOp::new(ctx, ident!("f1"), fty);
 
         symbol_table_collection
             .get_symbol_table(ctx, Box::new(module_op))
             .insert(ctx, Box::new(f1), None)?;
 
         let f1_lookedup = symbol_table_collection
-            .lookup_symbol_in_table(ctx, Box::new(module_op), &"f1".try_into().unwrap())
+            .lookup_symbol_in_table(ctx, Box::new(module_op), &ident!("f1"))
             .unwrap();
         assert!(f1_lookedup.get_operation() == f1.get_operation());
 
-        let f2 = FuncOp::new(ctx, "f2".try_into().unwrap(), fty);
+        let f2 = FuncOp::new(ctx, ident!("f2"), fty);
         symbol_table_collection
             .get_symbol_table(ctx, Box::new(nested_module_op))
             .insert(ctx, Box::new(f2), None)?;
 
         let f2_lookedup = symbol_table_collection
-            .lookup_symbol_in_table(ctx, Box::new(nested_module_op), &"f2".try_into().unwrap())
+            .lookup_symbol_in_table(ctx, Box::new(nested_module_op), &ident!("f2"))
             .unwrap();
 
         assert!(f2_lookedup.get_operation() == f2.get_operation());
@@ -403,16 +403,12 @@ mod tests {
             .insert(ctx, Box::new(nested_module_op), None)?;
 
         let nested_module_lookedup = symbol_table_collection
-            .lookup_symbol_in_nearest_table(
-                ctx,
-                f1.get_operation(),
-                &"nested_module".try_into().unwrap(),
-            )
+            .lookup_symbol_in_nearest_table(ctx, f1.get_operation(), &ident!("nested_module"))
             .unwrap();
         assert!(nested_module_lookedup.get_operation() == nested_module_op.get_operation());
 
         let f1_lookedup = symbol_table_collection
-            .lookup_symbol_in_nearest_table(ctx, f1.get_operation(), &"f1".try_into().unwrap())
+            .lookup_symbol_in_nearest_table(ctx, f1.get_operation(), &ident!("f1"))
             .unwrap();
         assert!(f1_lookedup.get_operation() == f1.get_operation());
 

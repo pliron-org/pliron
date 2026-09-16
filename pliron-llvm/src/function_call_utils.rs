@@ -12,6 +12,7 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::Context,
+    ident,
     identifier::Identifier,
     irbuild::inserter::Inserter,
     result::Result,
@@ -84,7 +85,7 @@ pub fn lookup_or_create_malloc_fn(
         ctx,
         symbol_table_collection,
         symbol_table_op,
-        "malloc".try_into().unwrap(),
+        ident!("malloc"),
         ret_ty,
         vec![size_ty],
         false,
@@ -103,7 +104,7 @@ pub fn lookup_or_create_free_fn(
         ctx,
         symbol_table_collection,
         symbol_table_op,
-        "free".try_into().unwrap(),
+        ident!("free"),
         VoidType::get(ctx).into(),
         vec![ptr_ty],
         false,
@@ -148,7 +149,7 @@ mod tests {
             types::FP64Type,
         },
         context::Context,
-        init_env_logger_for_tests,
+        ident, init_env_logger_for_tests,
         irbuild::{
             inserter::{IRInserter, Inserter, OpInsertionPoint},
             listener::DummyListener,
@@ -175,7 +176,7 @@ mod tests {
         let mut symbol_table_collection = pliron::symbol_table::SymbolTableCollection::new();
 
         // Create a module
-        let module = ModuleOp::new(&mut ctx, "test_module".try_into().unwrap());
+        let module = ModuleOp::new(&mut ctx, ident!("test_module"));
         let module_box = Box::new(module);
 
         // Get malloc function
@@ -189,11 +190,8 @@ mod tests {
                 .expect("Failed to create free function");
 
         // Verify both functions were created
-        assert_eq!(
-            malloc_fn.get_symbol_name(&ctx),
-            "malloc".try_into().unwrap()
-        );
-        assert_eq!(free_fn.get_symbol_name(&ctx), "free".try_into().unwrap());
+        assert_eq!(malloc_fn.get_symbol_name(&ctx), ident!("malloc"));
+        assert_eq!(free_fn.get_symbol_name(&ctx), ident!("free"));
 
         // Verify calling them again returns the same functions
         let malloc_fn_2 =
@@ -208,7 +206,7 @@ mod tests {
         // Create a main function
         let return_type = get_size_type(&mut ctx);
         let func_ty = FuncType::get(&ctx, return_type, vec![], false);
-        let main_fn = FuncOp::new(&mut ctx, "main".try_into().unwrap(), func_ty);
+        let main_fn = FuncOp::new(&mut ctx, ident!("main"), func_ty);
         main_fn
             .get_operation()
             .insert_at_front(module.get_body(&ctx, 0), &ctx);

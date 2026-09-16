@@ -225,7 +225,7 @@ fn struct_type_start_printing(state: &printable::State, name: &Identifier) -> bo
 fn struct_type_done_printing(state: &printable::State, name: &Identifier) {
     let mut aux_data = state.aux_data_mut();
     let in_printing = aux_data
-        .get_mut(&*STRUCT_TYPE_IN_PRINTING)
+        .get_mut(&STRUCT_TYPE_IN_PRINTING)
         .expect("struct-type-in-printing state must have been created by now")
         .downcast_mut::<Vec<Identifier>>()
         .expect("failed to downcast struct-type-in-printing state");
@@ -490,6 +490,7 @@ mod tests {
         combine::{self, Parser, eof, token},
         context::Context,
         derive::{pliron_type, verify_succ},
+        ident,
         identifier::Identifier,
         irfmt::parsers::{spaced, type_parser},
         parsable::{Parsable, ParseResult, StateStream, parse_from_str},
@@ -502,7 +503,7 @@ mod tests {
     fn test_struct() -> Result<()> {
         let ctx = Context::new();
         let int64 = IntegerType::get(&ctx, 64, Signedness::Signless).into();
-        let linked_list_id: Identifier = "LinkedList".try_into().unwrap();
+        let linked_list_id: Identifier = ident!("LinkedList");
 
         // Create an opaque struct since we want a recursive type.
         let list_struct: TypeHandle =

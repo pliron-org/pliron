@@ -102,8 +102,8 @@ impl ToTokens for ImplType {
 
                 fn get_type_id_static() -> ::pliron::r#type::TypeId {
                     ::pliron::r#type::TypeId {
-                        name: ::pliron::r#type::TypeName::try_new(#type_name).expect("Invalid Identifier for TypeName"),
-                        dialect: ::pliron::dialect::DialectName::try_new(#dialect).expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!(#type_name).into(),
+                        dialect: ::pliron::ident!(#dialect).into(),
                     }
                 }
 
@@ -300,10 +300,8 @@ mod tests {
                 }
                 fn get_type_id_static() -> ::pliron::r#type::TypeId {
                     ::pliron::r#type::TypeId {
-                        name: ::pliron::r#type::TypeName::try_new("simple_type")
-                            .expect("Invalid Identifier for TypeName"),
-                        dialect: ::pliron::dialect::DialectName::try_new("testing")
-                            .expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!("simple_type").into(),
+                        dialect: ::pliron::ident!("testing").into(),
                     }
                 }
                 fn verify_interfaces(
@@ -357,10 +355,8 @@ mod tests {
                 }
                 fn get_type_id_static() -> ::pliron::r#type::TypeId {
                     ::pliron::r#type::TypeId {
-                        name: ::pliron::r#type::TypeName::try_new("compound_type")
-                            .expect("Invalid Identifier for TypeName"),
-                        dialect: ::pliron::dialect::DialectName::try_new("testing")
-                            .expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!("compound_type").into(),
+                        dialect: ::pliron::ident!("testing").into(),
                     }
                 }
                 fn verify_interfaces(
@@ -413,10 +409,8 @@ mod tests {
                 }
                 fn get_type_id_static() -> ::pliron::r#type::TypeId {
                     ::pliron::r#type::TypeId {
-                        name: ::pliron::r#type::TypeName::try_new("enum_type")
-                            .expect("Invalid Identifier for TypeName"),
-                        dialect: ::pliron::dialect::DialectName::try_new("testing")
-                            .expect("Invalid Identifier for DialectName"),
+                        name: ::pliron::ident!("enum_type").into(),
+                        dialect: ::pliron::ident!("testing").into(),
                     }
                 }
                 fn verify_interfaces(

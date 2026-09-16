@@ -425,12 +425,12 @@ impl<L: InsertionListener> Inserter for IRInserter<L> {
 /// On drop, it restores the previous insertion point.
 /// Implements [Inserter] by forwarding calls to the wrapped inserter.
 /// ```rust
-/// # use pliron::{context::Context,
+/// # use pliron::{ident, context::Context,
 /// #   builtin::{ops::ModuleOp, op_interfaces::SingleBlockRegionInterface}};
 /// # use pliron::irbuild::{listener::DummyListener,
 /// #   inserter::{Inserter, IRInserter, ScopedInserter, OpInsertionPoint}};
 /// let ctx = &mut Context::new();
-/// let module = ModuleOp::new(ctx, "test_module".try_into().unwrap());
+/// let module = ModuleOp::new(ctx, ident!("test_module"));
 /// let mut inserter = IRInserter::<DummyListener>::default();
 /// inserter.set_insertion_point(OpInsertionPoint::AtBlockEnd(module.get_body(ctx, 0)));
 /// {
