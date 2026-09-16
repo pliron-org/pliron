@@ -24,8 +24,8 @@ use pliron::{
             BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
             IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
             OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
-            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
-            SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
+            OperandsMNOfType, OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType,
+            SameResultsType, SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
         types::{IntegerType, Signedness},
@@ -1482,8 +1482,8 @@ pub enum GetElementPtrOpErr {
 #[pliron_op(
     name = "llvm.gep",
     format = "`<` attr($llvm_gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($llvm_gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($llvm_gep_indices, $GepIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface],
-    operands = (src_ptr, dynamic_indices),
+    interfaces = [OneResultInterface, OperandsMNOfType<1, {-1}, IntegerType>],
+    operands = (src_ptr: PointerType, dynamic_indices),
     results = (_: PointerType),
     attributes = (
         llvm_gep_src_elem_type: TypeAttr,
