@@ -305,7 +305,7 @@ impl BasicBlock {
         }
         if let Some(op) = ptr.deref(ctx).iter(ctx).find(|op| op.deref(ctx).has_use()) {
             panic!(
-                "Attemping to erase block {} which contains {} with use outside the block",
+                "Attempting to erase block {} which contains {} with use outside the block",
                 ptr.deref(ctx).unique_name(ctx),
                 OpDbg { op, ctx }
             );

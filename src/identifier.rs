@@ -2,6 +2,7 @@
 // Copyright (c) The pliron contributors
 
 //! [Identifier]s are strings used to name entities in programming languages.
+//! In pliron, they must satisfy the regex `[a-zA-Z_][a-zA-Z0-9_]*`.
 
 use alloc::{
     borrow::Cow,
@@ -22,8 +23,7 @@ use crate::{
 };
 
 #[derive(Clone, Hash, PartialEq, Eq, Debug, PartialOrd, Ord)]
-/// An [Identifier] must satisfy the regex `[a-zA-Z_][a-zA-Z0-9_]*`.
-/// Also see [module description](module@crate::identifier).
+/// An [Identifier] is a string that must satisfy the regex `[a-zA-Z_][a-zA-Z0-9_]*`.
 pub struct Identifier(Cow<'static, str>);
 
 impl Identifier {
