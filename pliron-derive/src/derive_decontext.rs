@@ -686,7 +686,9 @@ mod tests {
                     (::pliron::attribute::AttrInterfaceAllVerifiers),
                 ) = (
                     ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
+                    &[
+                        <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
+                    ],
                 );
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
@@ -744,7 +746,7 @@ mod tests {
                     (::pliron::r#type::TypeInterfaceAllVerifiers),
                 ) = (
                     ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
+                    &[<Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers],
                 );
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
