@@ -1032,3 +1032,35 @@ fn mem2reg_alloca_inside_loop_body() -> Result<()> {
         }"#]].assert_eq(&after);
     Ok(())
 }
+
+#[test]
+fn mem2reg_unreachable_multi_pred_block() -> Result<()> {
+    // Test that mem2reg succeeds on a valid function containing an unreachable
+    // block with multiple predecessors (which previously caused DomFrontierMap::new
+    // to panic).
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+      ^entry():
+      size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
+      stored_val = builtin.constant <builtin.integer <42: i64>> : builtin.integer i64;
+      llvm.store *alloc <- stored_val;
+      loaded_val = llvm.load alloc : builtin.integer i64;
+      llvm.return loaded_val
+
+      ^dead_a():
+      llvm.br ^dead_join()
+
+      ^dead_b():
+      llvm.br ^dead_join()
+
+      ^dead_join():
+      c = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
+      llvm.return c
+    }
+  "#;
+
+    let (status, _after) = run_mem2reg(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    Ok(())
+}
