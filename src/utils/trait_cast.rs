@@ -115,7 +115,7 @@ pub mod statics {
     ::pliron::inventory::collect!(InventoryWrapper<TraitCasterInfos>);
 
     pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfos> {
-        ::pliron::inventory::iter::<InventoryWrapper<TraitCasterInfos>>().map(|llw| llw.0)
+        ::pliron::inventory::iter::<InventoryWrapper<TraitCasterInfos>>().map(|llw| &llw.0)
     }
 }
 
@@ -188,7 +188,7 @@ macro_rules! type_to_trait {
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                &CAST_TO_TRAIT
+                ::pliron::InventoryWrapper(&CAST_TO_TRAIT)
             }
 
 
