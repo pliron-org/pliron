@@ -110,11 +110,12 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
+    use crate::InventoryWrapper;
 
-    ::pliron::inventory::collect!(&'static TraitCasterInfos);
+    ::pliron::inventory::collect!(InventoryWrapper<TraitCasterInfos>);
 
     pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfos> {
-        ::pliron::inventory::iter::<&'static TraitCasterInfos>()
+        ::pliron::inventory::iter::<InventoryWrapper<TraitCasterInfos>>().map(|llw| llw.0)
     }
 }
 
