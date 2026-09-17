@@ -801,7 +801,7 @@ impl<I: ?Sized + TypeInterfaceMarker + 'static> Verify for TypeInterfaceHandle<I
 /// Every type interface must have a function named `verify` with this type.
 pub type TypeInterfaceVerifier = fn(&dyn Type, &Context) -> Result<()>;
 /// Function returns the list of super verifiers, followed by a self verifier, for an interface.
-pub type TypeInterfaceAllVerifiers = fn() -> Vec<TypeInterfaceVerifier>;
+pub type TypeInterfaceAllVerifiers = &'static [fn() -> Vec<TypeInterfaceVerifier>];
 
 #[doc(hidden)]
 /// A [Type] paired with an interface it implements

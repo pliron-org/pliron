@@ -5,7 +5,7 @@
 
 use quote::{ToTokens, quote};
 use syn::{
-    DeriveInput, ItemImpl, ItemTrait, Path, Result, Token, TypeParamBound, parse::Parse,
+    DeriveInput, ItemImpl, ItemTrait, Path, Result, Token, Type, TypeParamBound, parse::Parse,
     parse_quote, punctuated::Punctuated,
 };
 
@@ -194,8 +194,7 @@ pub(crate) fn interface_impl(
     register_boxed_cast: RegisterBoxedCast,
     impls_marker_trait: ImplsMarkerTrait,
 ) -> Result<proc_macro2::TokenStream> {
-    let r#impl = syn::parse2::<ItemImpl>(input)?;
-
+    let r#impl = syn::parse2::<ItemImpl>(input.clone())?;
     let Some((intr_name, _)) = r#impl.trait_.clone() else {
         return Err(syn::Error::new_spanned(
             r#impl,
@@ -210,20 +209,39 @@ pub(crate) fn interface_impl(
         ));
     }
 
-    let rust_ty = (*r#impl.self_ty).clone();
+    interface_impl_inner(
+        &r#impl.self_ty,
+        [input],
+        &[intr_name],
+        interface_verifiers_slice,
+        all_verifiers_fn_type,
+        register_boxed_cast,
+        impls_marker_trait,
+    )
+}
+
+pub(crate) fn interface_impl_inner(
+    rust_ty: &Type,
+    impls: impl IntoIterator<Item = proc_macro2::TokenStream>,
+    interface_names: &[Path],
+    interface_verifiers_slice: Path,
+    all_verifiers_fn_type: Path,
+    register_boxed_cast: RegisterBoxedCast,
+    impls_marker_trait: ImplsMarkerTrait,
+) -> Result<proc_macro2::TokenStream> {
     let mut trait_cast = quote! {
-        ::pliron::type_to_trait!(#rust_ty, #intr_name);
+        ::pliron::type_to_trait!(#rust_ty, #(#interface_names),*);
     };
     if matches!(register_boxed_cast, RegisterBoxedCast::Register) {
         trait_cast.extend(quote! {
-            ::pliron::boxed_type_to_trait!(#rust_ty, #intr_name);
+            #(::pliron::boxed_type_to_trait!(#rust_ty, #interface_names);)*
         });
     }
     let verifiers_entry = quote! {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]
             static INTERFACE_VERIFIER: (::core::any::TypeId, (#all_verifiers_fn_type)) =
-                    (::core::any::TypeId::of::<#rust_ty>(), <#rust_ty as #intr_name>::__all_verifiers);
+                    (::core::any::TypeId::of::<#rust_ty>(), &[#(<#rust_ty as #interface_names>::__all_verifiers),*]);
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
                 ::pliron::InventoryWrapper(&INTERFACE_VERIFIER)
@@ -231,12 +249,15 @@ pub(crate) fn interface_impl(
         };
     };
 
-    let mut output = r#impl.to_token_stream();
+    let impls = impls.into_iter();
+    let mut output = quote! {
+        #(#impls)*
+    };
     output.extend(trait_cast);
     output.extend(verifiers_entry);
     if let ImplsMarkerTrait::Implement(impls_marker_trait) = impls_marker_trait {
         output.extend(quote! {
-            impl #impls_marker_trait<dyn #intr_name> for #rust_ty {}
+            #(impl #impls_marker_trait<dyn #interface_names> for #rust_ty {})*
         });
     }
 
@@ -262,22 +283,38 @@ impl Parse for PathList {
 /// impl Interface for OpStruct { }
 /// ```
 pub(crate) fn derive_op_interface_impl(
-    attr: proc_macro::TokenStream,
-    input: proc_macro::TokenStream,
+    attr: impl Into<proc_macro2::TokenStream>,
+    input: impl Into<proc_macro2::TokenStream>,
 ) -> Result<proc_macro2::TokenStream> {
     let intrs = syn::parse2::<PathList>(attr.into())?;
     let input = syn::parse2::<DeriveInput>(input.into())?;
-    let struct_name = input.ident.clone();
-
-    let impls = intrs.paths.into_iter().map(|path| {
-        quote! {
-            #[::pliron::derive::op_interface_impl]
-            impl #path for #struct_name {}
-        }
-    });
 
     let mut output = input.to_token_stream();
-    output.extend(impls);
+    output.extend(derive_op_interface_impl_inner(&intrs.paths, &input)?);
 
     Ok(output)
+}
+
+pub(crate) fn derive_op_interface_impl_inner(
+    paths: &[Path],
+    input: &DeriveInput,
+) -> Result<proc_macro2::TokenStream> {
+    let struct_name = input.ident.clone();
+    let rust_ty = parse_quote!(#struct_name);
+    let interface_verifiers_slice = parse_quote! { ::pliron::op::OP_INTERFACE_VERIFIERS };
+    let all_verifiers_fn_type = parse_quote! { ::pliron::op::OpInterfaceAllVerifiers };
+
+    let impls = paths
+        .iter()
+        .map(|path| quote![impl #path for #struct_name {}]);
+
+    interface_impl_inner(
+        &rust_ty,
+        impls,
+        paths,
+        interface_verifiers_slice,
+        all_verifiers_fn_type,
+        RegisterBoxedCast::Skip,
+        ImplsMarkerTrait::Skip,
+    )
 }

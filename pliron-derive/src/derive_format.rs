@@ -31,14 +31,13 @@ pub(crate) enum DeriveIRObject {
 
 /// enums can have a `#[format]` for its variants.
 /// Those shouldn't be in the final output, so we remove them.
-fn erase_helper_attributes(mut input: DeriveInput) -> DeriveInput {
+fn erase_helper_attributes(input: &mut DeriveInput) {
     match input.data {
-        Data::Struct(_) | Data::Union(_) => input,
+        Data::Struct(_) | Data::Union(_) => {}
         Data::Enum(ref mut data) => {
             for variant in &mut data.variants {
                 variant.attrs.retain(|attr| !attr.path().is_ident("format"));
             }
-            input
         }
     }
 }
@@ -50,8 +49,19 @@ pub(crate) fn derive(
     irobj: DeriveIRObject,
 ) -> Result<TokenStream> {
     // Parse the input to this macro.
-    let input = syn::parse2::<DeriveInput>(input.into())?;
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
+    let mut output = derive_format_inner(args, &mut input, irobj)?;
+    // We're not in a derive macro (but an attribute macro),
+    // so attach the original input back.
+    output.extend(input.into_token_stream());
+    Ok(output)
+}
 
+pub(crate) fn derive_format_inner(
+    args: impl Into<TokenStream>,
+    input: &mut DeriveInput,
+    irobj: DeriveIRObject,
+) -> Result<TokenStream> {
     // Prepare the format description.
     let args = Into::<TokenStream>::into(args);
     let format_data = FmtData::try_from(input.clone())?;
@@ -83,11 +93,9 @@ pub(crate) fn derive(
         format,
     };
 
-    let mut derived = derive_from_parsed(format_input, irobj)?;
+    let derived = derive_from_parsed(format_input, irobj)?;
+    erase_helper_attributes(input);
 
-    // We're not in a derive macro (but an attribute macro),
-    // so attach the original input back.
-    derived.extend(erase_helper_attributes(input).into_token_stream());
     Ok(derived)
 }
 

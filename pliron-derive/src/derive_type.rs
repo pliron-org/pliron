@@ -5,26 +5,24 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{DeriveInput, LitStr, Result};
 
-const PROC_MACRO_NAME: &str = "def_type";
-
 pub(crate) fn def_type(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let name = syn::parse2::<LitStr>(args.into())?;
     let input = syn::parse2::<DeriveInput>(input.into())?;
-    let p = DefType::derive(name, input)?;
+    let p = DefType::derive(&name, &input)?;
     Ok(p.into_token_stream())
 }
 
 /// Input for the `#[def_type]` proc macro.
-struct DefType {
-    input: DeriveInput,
+pub(crate) struct DefType<'a> {
+    input: &'a DeriveInput,
     impl_type: ImplType,
 }
 
-impl DefType {
-    fn derive(name: LitStr, input: DeriveInput) -> Result<Self> {
+impl<'a> DefType<'a> {
+    pub(crate) fn derive(name: &LitStr, input: &'a DeriveInput) -> Result<Self> {
         let name_str = name.value();
         let Some((dialect_name, type_name)) = name_str.split_once('.') else {
             return Err(syn::Error::new_spanned(
@@ -35,18 +33,10 @@ impl DefType {
 
         if !input.generics.params.is_empty() {
             return Err(syn::Error::new_spanned(
-                &input,
+                input,
                 "Type cannot be derived for generic structs or enums",
             ));
         }
-
-        let attrs = input
-            .attrs
-            .into_iter()
-            .filter(|attr| !attr.path().is_ident(PROC_MACRO_NAME))
-            .collect();
-
-        let input = DeriveInput { attrs, ..input };
 
         let impl_type = ImplType {
             ident: input.ident.clone(),
@@ -57,7 +47,7 @@ impl DefType {
     }
 }
 
-impl ToTokens for DefType {
+impl ToTokens for DefType<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let def_struct = &self.input;
         let impl_type = &self.impl_type;
@@ -137,24 +127,26 @@ pub(crate) fn derive_type_get(
     }
 
     let input = syn::parse2::<DeriveInput>(input.into())?;
-    let p = DeriveTypeGet::derive(input)?;
-    Ok(p.into_token_stream())
+    let p = DeriveTypeGet::derive(&input)?.into_token_stream();
+    Ok(quote! {
+        #input
+        #p
+    })
 }
 
 /// Input for the `#[derive(DeriveTypeGet)]` proc macro.
-struct DeriveTypeGet {
-    input: DeriveInput,
+pub(crate) struct DeriveTypeGet {
     ident: syn::Ident,
     fields: syn::Fields,
 }
 
 impl DeriveTypeGet {
-    fn derive(input: DeriveInput) -> Result<Self> {
+    pub(crate) fn derive(input: &DeriveInput) -> Result<Self> {
         let fields = match input.data {
             syn::Data::Struct(ref data_struct) => data_struct.fields.clone(),
             _ => {
                 return Err(syn::Error::new_spanned(
-                    &input,
+                    input,
                     "DeriveTypeGet can only be derived for structs",
                 ));
             }
@@ -162,14 +154,13 @@ impl DeriveTypeGet {
 
         if !input.generics.params.is_empty() {
             return Err(syn::Error::new_spanned(
-                &input,
+                input,
                 "DeriveTypeGet cannot be derived for generic structs",
             ));
         }
 
         Ok(Self {
             ident: input.ident.clone(),
-            input,
             fields,
         })
     }
@@ -177,11 +168,8 @@ impl DeriveTypeGet {
 
 impl ToTokens for DeriveTypeGet {
     fn to_tokens(&self, tokens: &mut TokenStream) {
-        let input = &self.input;
         let impl_get = derive_type_get_impl(&self.ident, &self.fields);
         tokens.extend(quote! {
-            #input
-
             #impl_get
         });
     }

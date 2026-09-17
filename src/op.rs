@@ -365,7 +365,7 @@ pub fn op_impls_static<O: Op, I: ?Sized + OpInterfaceMarker + 'static>() -> bool
 /// Every op interface must have a function named `verify` with this type.
 pub type OpInterfaceVerifier = fn(&dyn Op, &Context) -> Result<()>;
 /// Function returns the list of super verifiers, followed by a self verifier, for an interface.
-pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
+pub type OpInterfaceAllVerifiers = &'static [fn() -> Vec<OpInterfaceVerifier>];
 
 #[doc(hidden)]
 /// An [Op] paired with an interface it implements

@@ -680,7 +680,7 @@ impl Parsable for AttrId {
 /// Every attribute interface must have a function named `verify` with this type.
 pub type AttrInterfaceVerifier = fn(&dyn Attribute, &Context) -> Result<()>;
 /// Function returns the list of super verifiers, followed by a self verifier, for an interface.
-pub type AttrInterfaceAllVerifiers = fn() -> Vec<AttrInterfaceVerifier>;
+pub type AttrInterfaceAllVerifiers = &'static [fn() -> Vec<AttrInterfaceVerifier>];
 
 #[doc(hidden)]
 /// An [Attribute] paired with an interface it implements

@@ -2,11 +2,21 @@
 // Copyright (c) The pliron contributors
 
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{ToTokens, quote};
 use syn::{
-    Ident, LitStr, Token, Type,
+    DeriveInput, Ident, LitStr, Path, Token, Type,
     parse::{Parse, ParseStream},
     punctuated::Punctuated,
+};
+
+use crate::{
+    DeriveIRObject,
+    derive_attr::DefAttribute,
+    derive_format::derive_format_inner,
+    derive_op::{DefOp, derive_attr_get_set_inner, operands_inner, results_inner},
+    derive_type::{DefType, DeriveTypeGet},
+    interfaces::derive_op_interface_impl_inner,
+    verify_succ::verify_succ_impl_inner,
 };
 
 /// Attribute specification for pliron entities
@@ -97,7 +107,7 @@ enum FormatSpec {
 struct EntityConfig {
     name: Option<LitStr>,
     format: Option<FormatSpec>,
-    interfaces: Option<Vec<Type>>,
+    interfaces: Option<Vec<Path>>,
     attributes: Option<Vec<AttributeSpec>>,
     operands: Option<Vec<OperandSpec>>,
     results: Option<Vec<ResultSpec>>,
@@ -132,8 +142,8 @@ impl Parse for EntityConfig {
                         "interfaces" => {
                             let content;
                             syn::bracketed!(content in input);
-                            let interfaces: Punctuated<Type, Token![,]> =
-                                content.parse_terminated(Type::parse, Token![,])?;
+                            let interfaces: Punctuated<Path, Token![,]> =
+                                content.parse_terminated(Path::parse, Token![,])?;
                             config.interfaces = Some(interfaces.into_iter().collect());
                         }
                         "attributes" => {
@@ -204,21 +214,15 @@ impl Parse for EntityConfig {
 
 /// Helper function to add verifier implementation for structs and enums
 fn add_verifier_impl(
-    expanded: TokenStream,
+    mut expanded: TokenStream,
     verifier: &Option<LitStr>,
-    input: TokenStream,
+    input: &DeriveInput,
 ) -> syn::Result<TokenStream> {
     if let Some(verifier) = verifier
         && verifier.value() == "succ"
     {
-        let item: syn::Item = syn::parse2(input)?;
-        match item {
-            syn::Item::Struct(_) | syn::Item::Enum(_) => Ok(quote! {
-                #[::pliron::derive::verify_succ]
-                #expanded
-            }),
-            _ => Ok(expanded),
-        }
+        expanded.extend(verify_succ_impl_inner(quote! {}, input.to_token_stream()));
+        Ok(expanded)
     } else {
         Ok(expanded)
     }
@@ -230,9 +234,8 @@ pub(crate) fn pliron_type(
     input: impl Into<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let args = args.into();
-    let input = input.into();
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
     let config = syn::parse2::<EntityConfig>(args)?;
-    let input_tokens = input.clone();
 
     // Validate that attributes is not specified for types
     if config.attributes.is_some() {
@@ -264,43 +267,34 @@ pub(crate) fn pliron_type(
         ));
     }
 
-    let mut expanded = quote! { #input_tokens };
+    let mut expanded = quote! {};
 
     // Add derive_type_get if requested
     if let Some(true) = config.generate_get {
-        expanded = quote! {
-            #[::pliron::derive::derive_type_get]
-            #expanded
-        };
+        expanded.extend(DeriveTypeGet::derive(&input)?.to_token_stream());
     }
 
     // Add format_type attribute
     match &config.format {
         Some(FormatSpec::Custom(format_str)) => {
-            expanded = quote! {
-                #[::pliron::derive::format_type(#format_str)]
-                #expanded
-            };
+            let fmt =
+                derive_format_inner(quote! { #format_str }, &mut input, DeriveIRObject::Type)?;
+            expanded.extend(fmt);
         }
         Some(FormatSpec::Default) => {
-            expanded = quote! {
-                #[::pliron::derive::format_type]
-                #expanded
-            };
+            let fmt = derive_format_inner(quote! {}, &mut input, DeriveIRObject::Type)?;
+            expanded.extend(fmt);
         }
         _ => {}
     }
 
     // Add def_type attribute
     if let Some(name) = &config.name {
-        expanded = quote! {
-            #[::pliron::derive::def_type(#name)]
-            #expanded
-        };
+        expanded.extend(DefType::derive(name, &input)?.into_token_stream());
     }
 
     // Add verifier implementation
-    expanded = add_verifier_impl(expanded, &config.verifier, input)?;
+    expanded = add_verifier_impl(expanded, &config.verifier, &input)?;
 
     Ok(expanded)
 }
@@ -311,9 +305,8 @@ pub(crate) fn pliron_attr(
     input: impl Into<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let args = args.into();
-    let input = input.into();
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
     let config = syn::parse2::<EntityConfig>(args)?;
-    let input_tokens = input.clone();
 
     // Validate that generate_get is not specified for attributes
     if config.generate_get.is_some() {
@@ -353,35 +346,32 @@ pub(crate) fn pliron_attr(
         ));
     }
 
-    let mut expanded = quote! { #input_tokens };
+    let mut expanded = quote! {};
 
     // Add format_attribute attribute
     match &config.format {
         Some(FormatSpec::Custom(format_str)) => {
-            expanded = quote! {
-                #[::pliron::derive::format_attribute(#format_str)]
-                #expanded
-            };
+            let fmt = derive_format_inner(
+                quote! { #format_str },
+                &mut input,
+                DeriveIRObject::Attribute,
+            )?;
+            expanded.extend(fmt);
         }
         Some(FormatSpec::Default) => {
-            expanded = quote! {
-                #[::pliron::derive::format_attribute]
-                #expanded
-            };
+            let fmt = derive_format_inner(quote! {}, &mut input, DeriveIRObject::Attribute)?;
+            expanded.extend(fmt)
         }
         _ => {}
     }
 
     // Add def_attribute attribute
     if let Some(name) = &config.name {
-        expanded = quote! {
-            #[::pliron::derive::def_attribute(#name)]
-            #expanded
-        };
+        expanded.extend(DefAttribute::derive(name, &input)?.into_token_stream());
     }
 
     // Add verifier implementation
-    expanded = add_verifier_impl(expanded, &config.verifier, input)?;
+    expanded = add_verifier_impl(expanded, &config.verifier, &input)?;
 
     Ok(expanded)
 }
@@ -392,9 +382,8 @@ pub(crate) fn pliron_op(
     input: impl Into<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let args = args.into();
-    let input = input.into();
+    let mut input = syn::parse2::<DeriveInput>(input.into())?;
     let config = syn::parse2::<EntityConfig>(args)?;
-    let input_tokens = input.clone();
 
     // Validate that generate_get is not specified for operations
     if config.generate_get.is_some() {
@@ -404,18 +393,8 @@ pub(crate) fn pliron_op(
         ));
     }
 
-    let mut expanded = quote! { #input_tokens };
-
-    // Add interface implementations if specified
-    if let Some(interfaces) = &config.interfaces
-        && !interfaces.is_empty()
-    {
-        let interface_list = quote! { #(#interfaces),* };
-        expanded = quote! {
-            #[::pliron::derive::derive_op_interface_impl(#interface_list)]
-            #expanded
-        };
-    }
+    let mut interfaces = config.interfaces.unwrap_or_default();
+    let mut expanded = quote! {};
 
     // Add attributes if specified (only for operations)
     if let Some(attributes) = &config.attributes
@@ -429,10 +408,10 @@ pub(crate) fn pliron_op(
                 quote! { #name }
             }
         });
-        expanded = quote! {
-            #[::pliron::derive::derive_attr_get_set(#(#attr_list),*)]
-            #expanded
-        };
+        expanded.extend(derive_attr_get_set_inner(
+            quote! { #(#attr_list),* },
+            &mut input,
+        ));
     }
 
     // Add operands if specified.
@@ -448,10 +427,9 @@ pub(crate) fn pliron_op(
                 (None, None) => quote! { _ },
             }
         });
-        expanded = quote! {
-            #[::pliron::derive::operands(#(#operand_list),*)]
-            #expanded
-        };
+        let (operands, opd_interfaces) = operands_inner(quote! { #(#operand_list),* }, &mut input)?;
+        interfaces.extend(opd_interfaces);
+        expanded.extend(operands);
     }
 
     // Add results if specified.
@@ -467,39 +445,36 @@ pub(crate) fn pliron_op(
                 (None, None) => quote! { _ },
             }
         });
-        expanded = quote! {
-            #[::pliron::derive::results(#(#result_list),*)]
-            #expanded
-        };
+        let (results, res_interfaces) = results_inner(quote! { #(#result_list),* }, &mut input)?;
+        interfaces.extend(res_interfaces);
+        expanded.extend(results);
+    }
+
+    // Add interface implementations if specified
+    if !interfaces.is_empty() {
+        expanded.extend(derive_op_interface_impl_inner(&interfaces, &input)?);
     }
 
     // Add format_op attribute
     match &config.format {
         Some(FormatSpec::Custom(format_str)) => {
-            expanded = quote! {
-                #[::pliron::derive::format_op(#format_str)]
-                #expanded
-            };
+            let fmt = derive_format_inner(quote! { #format_str }, &mut input, DeriveIRObject::Op)?;
+            expanded.extend(fmt);
         }
         Some(FormatSpec::Default) => {
-            expanded = quote! {
-                #[::pliron::derive::format_op]
-                #expanded
-            };
+            let fmt = derive_format_inner(quote! {}, &mut input, DeriveIRObject::Op)?;
+            expanded.extend(fmt);
         }
         _ => {}
     }
 
     // Add def_op attribute
     if let Some(name) = &config.name {
-        expanded = quote! {
-            #[::pliron::derive::def_op(#name)]
-            #expanded
-        };
+        expanded.extend(DefOp::derive(name, &input)?.into_token_stream());
     }
 
     // Add verifier implementation
-    expanded = add_verifier_impl(expanded, &config.verifier, input)?;
+    expanded = add_verifier_impl(expanded, &config.verifier, &input)?;
 
     Ok(expanded)
 }
