@@ -1829,6 +1829,145 @@ fn uitofp_does_not_fold() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.fptosi
+// ---------------------------------------------------------------------------
+
+/// Conversion rounds toward zero, in both directions. The signed i1 range is
+/// {-1, 0}, so 0.75 folds to 0.
+#[test]
+fn fptosi_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        positive = builtin.constant <builtin.single 3.75> : builtin.fp32;
+        fraction = builtin.constant <builtin.single 0.75> : builtin.fp32;
+        boundary = builtin.constant <builtin.double -128.9> : builtin.fp64;
+        negative = builtin.constant <builtin.double -123.75> : builtin.fp64;
+        toward_zero = llvm.fptosi positive to builtin.integer i8;
+        to_i1 = llvm.fptosi fraction to builtin.integer i1;
+        at_lower_boundary = llvm.fptosi boundary to builtin.integer i8;
+        negative_toward_zero = llvm.fptosi negative to builtin.integer i8;
+        llvm.return negative_toward_zero
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            positive_v0 = builtin.constant <builtin.single 3.75> : builtin.fp32  !1;
+            fraction_v1 = builtin.constant <builtin.single 0.75> : builtin.fp32  !2;
+            boundary_v2 = builtin.constant <builtin.double -128.90000000000001> : builtin.fp64  !3;
+            negative_v3 = builtin.constant <builtin.double -123.75> : builtin.fp64  !4;
+            toward_zero_v8 = builtin.constant <builtin.integer <3: i8>> : builtin.integer i8 !5;
+            toward_zero_v4 = llvm.fptosi positive_v0 to builtin.integer i8 !6;
+            to_i1_v9 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !7;
+            to_i1_v5 = llvm.fptosi fraction_v1 to builtin.integer i1 !8;
+            at_lower_boundary_v10 = builtin.constant <builtin.integer <-128: i8>> : builtin.integer i8 !9;
+            at_lower_boundary_v6 = llvm.fptosi boundary_v2 to builtin.integer i8 !10;
+            negative_toward_zero_v11 = builtin.constant <builtin.integer <-123: i8>> : builtin.integer i8 !11;
+            negative_toward_zero_v7 = llvm.fptosi negative_v3 to builtin.integer i8 !12;
+            llvm.return negative_toward_zero_v11 !13
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// A value the destination cannot hold is poison, as is any NaN or infinity.
+#[test]
+fn fptosi_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        too_large = builtin.constant <builtin.single 128> : builtin.fp32;
+        nan = builtin.constant <builtin.single NaN> : builtin.fp32;
+        inf = builtin.constant <builtin.double +Inf> : builtin.fp64;
+        one = builtin.constant <builtin.double 1> : builtin.fp64;
+        out_of_range = llvm.fptosi too_large to builtin.integer i8;
+        not_a_number = llvm.fptosi nan to builtin.integer i32;
+        infinity = llvm.fptosi inf to builtin.integer i32;
+        wider_than_128_bits = llvm.fptosi one to builtin.integer i129;
+        non_constant = llvm.fptosi x to builtin.integer i32;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fptoui
+// ---------------------------------------------------------------------------
+
+/// 255.9 truncates to 255, whose i8 bit pattern prints as -1, and a negative
+/// fraction truncates to zero rather than going out of range.
+#[test]
+fn fptoui_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        positive = builtin.constant <builtin.half 42> : builtin.fp16;
+        negative_fraction = builtin.constant <builtin.double -0.999> : builtin.fp64;
+        fraction = builtin.constant <builtin.double 255.9> : builtin.fp64;
+        whole = llvm.fptoui positive to builtin.integer i16;
+        toward_zero_from_below = llvm.fptoui negative_fraction to builtin.integer i32;
+        toward_zero = llvm.fptoui fraction to builtin.integer i8;
+        llvm.return toward_zero
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            positive_v0 = builtin.constant <builtin.half 42> : builtin.fp16  !1;
+            negative_fraction_v1 = builtin.constant <builtin.double -0.99899999999999999> : builtin.fp64  !2;
+            fraction_v2 = builtin.constant <builtin.double 255.90000000000001> : builtin.fp64  !3;
+            whole_v6 = builtin.constant <builtin.integer <42: i16>> : builtin.integer i16 !4;
+            whole_v3 = llvm.fptoui positive_v0 to builtin.integer i16 !5;
+            toward_zero_from_below_v7 = builtin.constant <builtin.integer <0: i32>> : builtin.integer i32 !6;
+            toward_zero_from_below_v4 = llvm.fptoui negative_fraction_v1 to builtin.integer i32 !7;
+            toward_zero_v8 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !8;
+            toward_zero_v5 = llvm.fptoui fraction_v2 to builtin.integer i8 !9;
+            llvm.return toward_zero_v8 !10
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// -1 is out of the unsigned range, unlike a fraction that truncates to zero.
+#[test]
+fn fptoui_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        negative = builtin.constant <builtin.single -1> : builtin.fp32;
+        too_large = builtin.constant <builtin.single 256> : builtin.fp32;
+        nan = builtin.constant <builtin.double NaN> : builtin.fp64;
+        inf = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        one = builtin.constant <builtin.double 1> : builtin.fp64;
+        negative_one = llvm.fptoui negative to builtin.integer i32;
+        out_of_range = llvm.fptoui too_large to builtin.integer i8;
+        not_a_number = llvm.fptoui nan to builtin.integer i32;
+        infinity = llvm.fptoui inf to builtin.integer i32;
+        wider_than_128_bits = llvm.fptoui one to builtin.integer i129;
+        non_constant = llvm.fptoui x to builtin.integer i32;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 

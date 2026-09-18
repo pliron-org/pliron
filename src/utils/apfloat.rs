@@ -37,7 +37,7 @@ use rustc_apfloat::ieee::{self, IeeeFloat, NonfiniteBehavior};
 use thiserror::Error;
 
 pub use rustc_apfloat::{
-    Category, ExpInt, Float, FloatConvert, Round, StatusAnd,
+    Category, ExpInt, Float, FloatConvert, Round, Status, StatusAnd,
     ieee::{BFloat, Double, Float8E4M3FN, Float8E5M2, Half, Quad, Single, X87DoubleExtended},
 };
 
