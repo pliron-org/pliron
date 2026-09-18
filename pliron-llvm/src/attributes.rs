@@ -17,7 +17,7 @@ use thiserror::Error;
 use pliron::{
     attribute::verify_attr,
     builtin::{
-        attr_interfaces::TypedAttrInterface,
+        attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
         attributes::{IntegerAttr, StringAttr},
         ops::ModuleOp,
         types::{IntegerType, Signedness},
@@ -494,6 +494,9 @@ impl TypedAttrInterface for PoisonAttr {
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
 pub struct BytesAttr(Vec<u8>);
 
+/// Byte attributes smaller than this remain inline.
+pub const BYTES_ATTR_OUTLINE_THRESHOLD: usize = 8;
+
 impl BytesAttr {
     /// Create a new [BytesAttr].
     pub fn new(bytes: Vec<u8>) -> Self {
@@ -527,6 +530,16 @@ impl TypedAttrInterface for BytesAttr {
         ArrayType::get(ctx, i8_ty.into(), self.0.len() as u64).into()
     }
 }
+
+#[attr_interface_impl]
+impl OutlinedAttr for BytesAttr {
+    fn outline(&self, _ctx: &Context) -> bool {
+        self.0.len() >= BYTES_ATTR_OUTLINE_THRESHOLD
+    }
+}
+
+#[attr_interface_impl]
+impl PrintOnceAttr for BytesAttr {}
 
 /// A vector constant all of whose elements are `element`: LLVM's `splat (...)`
 #[pliron_attr(name = "llvm.splat", format = "`<` $element ` : ` $ty `>`")]
@@ -652,6 +665,9 @@ pub struct AggregateAttr {
     ty: TypeHandle,
 }
 
+/// Aggregate attributes with fewer elements than this remain inline.
+pub const AGGREGATE_ATTR_OUTLINE_THRESHOLD: usize = 4;
+
 impl AggregateAttr {
     /// A constant aggregate of type `ty`, with one constant attribute per element.
     pub fn new(elements: Vec<Box<dyn TypedAttrInterface>>, ty: TypeHandle) -> Self {
@@ -675,6 +691,16 @@ impl TypedAttrInterface for AggregateAttr {
         self.ty
     }
 }
+
+#[attr_interface_impl]
+impl OutlinedAttr for AggregateAttr {
+    fn outline(&self, _ctx: &Context) -> bool {
+        self.elements.len() >= AGGREGATE_ATTR_OUTLINE_THRESHOLD
+    }
+}
+
+#[attr_interface_impl]
+impl PrintOnceAttr for AggregateAttr {}
 
 #[derive(Debug, Error)]
 pub enum ConstAggregateVerifyErr {

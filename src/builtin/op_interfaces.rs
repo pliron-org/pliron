@@ -19,9 +19,9 @@ use crate::{
     operation::Operation,
     printable::Printable,
     region::Region,
-    result::Result,
+    result::{AnyError, Result},
     symbol_table::{SymbolTableCollection, walk_symbol_table},
-    r#type::{Type, TypeHandle, Typed, type_impls},
+    r#type::{Type, TypeHandle, TypeInterfaceMarker, Typed, type_impls},
     utils::{const_bound_n::LessThanN, table::HMap},
     value::Value,
     verify_err, verify_error,
@@ -172,6 +172,8 @@ pub enum OperandSegmentInterfaceVerifyErr {
     OperandSegmentSizesTotalMismatchErr(u32, u32),
 }
 
+/// Interface for operations whose operands are grouped into segments.
+///
 /// In the case of variadic operands, sometimes it makes sense to group
 /// contiguous operands together into a segment. This interface aids doing that.
 /// MLIR achieves this by having ODS (tablegen)' `AttrSizedOperandSegments` generate
@@ -997,6 +999,50 @@ pub trait AllOperandsOfType<T: Type> {
     }
 }
 
+/// Error from an [Op] interface that checks operand types
+/// against a [type interface](TypeInterfaceMarker).
+#[derive(Error, Debug)]
+pub enum TypeInterfaceImplsErr {
+    #[error("Expected operand {0} to implement {1}, but {2} does not")]
+    Operand(usize, String, String),
+    #[error("Expected result {0} to implement {1}, but {2} does not")]
+    Result(usize, String, String),
+    #[error("Expected operand segment {0} to implement {1}, but {2} does not")]
+    Segment(usize, String, String),
+}
+
+/// Name of the [type interface](TypeInterfaceMarker) `I`, for error messages.
+fn interface_name<I: ?Sized + TypeInterfaceMarker + 'static>() -> String {
+    core::any::type_name::<I>().to_string()
+}
+
+/// An [Op] with all operands implementing the specified [type interface](TypeInterfaceMarker).
+#[op_interface]
+pub trait AllOperandsImplsTy<I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let op = op.get_operation().deref(ctx);
+
+        for (idx, opd) in op.operands().enumerate() {
+            let opd_ty = &*opd.get_type(ctx).deref(ctx);
+            if !type_impls::<I>(opd_ty) {
+                return verify_err!(
+                    op.loc(),
+                    TypeInterfaceImplsErr::Operand(
+                        idx,
+                        interface_name::<I>(),
+                        opd_ty.get_type_id().disp(ctx).to_string()
+                    )
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("Op has only {0} operands, but expected at least {1}")]
 pub struct NotEnoughOperandsErr(pub usize, pub usize);
@@ -1033,6 +1079,260 @@ pub trait OperandNOfType<const N: usize, T: Type> {
                     opd_n_ty.get_type_id().disp(ctx).to_string()
                 )
             );
+        }
+
+        Ok(())
+    }
+}
+
+/// An [Op] whose N-th operand (0-indexed) implements the specified
+/// [type interface](TypeInterfaceMarker).
+#[op_interface]
+pub trait OperandNImplsTy<const N: usize, I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let opd_n = verify_get_operand_n::<N>(op.get_operation(), ctx)?;
+        let opd_n_ty = &*opd_n.get_type(ctx).deref(ctx);
+        if !type_impls::<I>(opd_n_ty) {
+            return verify_err!(
+                op.loc(ctx),
+                TypeInterfaceImplsErr::Operand(
+                    N,
+                    interface_name::<I>(),
+                    opd_n_ty.get_type_id().disp(ctx).to_string()
+                )
+            );
+        }
+
+        Ok(())
+    }
+}
+
+/// Outcome of [resolve_index_range].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum IndexRange {
+    /// Indices `start` to `end`, both inclusive.
+    Range { start: usize, end: usize },
+    /// No index is in the range.
+    Empty,
+    /// The list must have at least this many entities.
+    TooFewEntities(usize),
+}
+
+/// Resolve the inclusive index range `[m, n]` over a list of `len` entities.
+///   - A negative `n` counts backwards: `-1` is the last entity.
+///   - [IndexRange::Empty]: `n` is negative and the list is too short.
+///   - [IndexRange::TooFewEntities]: `n` is not negative and the list has no index `n`.
+fn resolve_index_range(m: u32, n: i32, len: usize) -> IndexRange {
+    let end = if n >= 0 {
+        let end = n as usize;
+        if len <= end {
+            return IndexRange::TooFewEntities(end + 1);
+        }
+        end
+    } else {
+        let from_end = n.unsigned_abs() as usize;
+        if from_end > len {
+            return IndexRange::Empty;
+        }
+        len - from_end
+    };
+
+    let start = m as usize;
+    if start > end {
+        return IndexRange::Empty;
+    }
+    IndexRange::Range { start, end }
+}
+
+/// Verify the type of every entity of `entities` that is in the inclusive index `range`,
+/// which is `(m, n)` as in [resolve_index_range].
+///
+///   - `check`: Check if the type matches a requirement.
+///   - `too_few`: Build an error for when the list is too short.
+///     Gets the length of the list, and the length that is required.
+///   - `mismatch`: Build an error for the first entity that fails `check`.
+///     Gets the index of that entity, and its type.
+fn verify_index_range_types<E1: AnyError, E2: AnyError>(
+    ctx: &Context,
+    loc: Location,
+    entities: impl Iterator<Item = Value> + Clone,
+    range: (u32, i32),
+    check: impl Fn(&dyn Type) -> bool,
+    too_few: impl FnOnce(usize, usize) -> E1,
+    mismatch: impl FnOnce(usize, &dyn Type) -> E2,
+) -> Result<()> {
+    let (m, n) = range;
+    let num_entities = entities.clone().count();
+    let (start, end) = match resolve_index_range(m, n, num_entities) {
+        IndexRange::Range { start, end } => (start, end),
+        IndexRange::Empty => return Ok(()),
+        IndexRange::TooFewEntities(required) => {
+            return verify_err!(loc, too_few(num_entities, required));
+        }
+    };
+
+    for (idx, entity) in entities.enumerate().skip(start).take(end - start + 1) {
+        let ty = &*entity.get_type(ctx).deref(ctx);
+        if !check(ty) {
+            return verify_err!(loc, mismatch(idx, ty));
+        }
+    }
+
+    Ok(())
+}
+
+#[derive(Error, Debug)]
+pub enum OperandsMNOfTypeError {
+    #[error("Op has only {0} operands, but expected at least {1}")]
+    NotEnoughOperands(usize, usize),
+    #[error("Expected operand {0} to be of type {1}, but found {2}")]
+    UnexpectedType(usize, String, String),
+}
+
+/// An [Op] whose operands in the inclusive index range `[M, N]` (0-indexed) are of type `T`.
+///
+///   - `N < 0`: `N` counts backwards from the end. `-1` is the last operand. For example,
+///     `OperandsMNOfType<1, -1, T>` specifies that every operand after the first is a `T`.
+///   - `N >= 0`: The [Op] must have an operand at index `N`.
+#[op_interface]
+pub trait OperandsMNOfType<const M: u32, const N: i32, T: Type> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        const {
+            assert!(
+                N < 0 || N as u32 >= M,
+                "OperandsMNOfType: M must not be greater than N"
+            );
+        }
+
+        let self_op = op.get_operation().deref(ctx);
+        verify_index_range_types(
+            ctx,
+            self_op.loc(),
+            self_op.operands(),
+            (M, N),
+            |ty| ty.as_any().is::<T>(),
+            OperandsMNOfTypeError::NotEnoughOperands,
+            |idx, ty| {
+                OperandsMNOfTypeError::UnexpectedType(
+                    idx,
+                    T::get_type_id_static().disp(ctx).to_string(),
+                    ty.get_type_id().disp(ctx).to_string(),
+                )
+            },
+        )
+    }
+}
+
+/// An [Op] whose operands in the inclusive index range `[M, N]` (0-indexed) implement
+/// the specified [type interface](TypeInterfaceMarker).
+///
+///   - `N < 0`: `N` counts backwards from the end. `-1` is the last operand. For example,
+///     `OperandsMNImplsTy<1, -1, I>` specifies that every operand after the first implements `I`.
+///   - `N >= 0`: The [Op] must have an operand at index `N`.
+#[op_interface]
+pub trait OperandsMNImplsTy<const M: u32, const N: i32, I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        const {
+            assert!(
+                N < 0 || N as u32 >= M,
+                "OperandsMNImplsTy: M must not be greater than N"
+            );
+        }
+
+        let self_op = op.get_operation().deref(ctx);
+        verify_index_range_types(
+            ctx,
+            self_op.loc(),
+            self_op.operands(),
+            (M, N),
+            type_impls::<I>,
+            NotEnoughOperandsErr,
+            |idx, ty| {
+                TypeInterfaceImplsErr::Operand(
+                    idx,
+                    interface_name::<I>(),
+                    ty.get_type_id().disp(ctx).to_string(),
+                )
+            },
+        )
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum SegmentNOfTypeError {
+    #[error("Op does not have operand segment at index {0}")]
+    SegmentNotFound(usize),
+    #[error("Expected operand segment type {0}, but found {1}")]
+    UnexpectedType(String, String),
+}
+
+/// An [Op] whose N-th operand segment (0-indexed) has the specified type.
+#[op_interface]
+pub trait SegmentNOfType<const N: usize, T: Type>: OperandSegmentInterface {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let segmented_op = op_cast::<dyn OperandSegmentInterface>(op)
+            .expect("Op must impl OperandSegmentInterface");
+        if N >= segmented_op.num_segments(ctx) {
+            return verify_err!(op.loc(ctx), SegmentNOfTypeError::SegmentNotFound(N));
+        }
+
+        for operand in segmented_op.get_segment(ctx, N) {
+            let operand_ty = &*operand.get_type(ctx).deref(ctx);
+            if !operand_ty.as_any().is::<T>() {
+                return verify_err!(
+                    op.loc(ctx),
+                    SegmentNOfTypeError::UnexpectedType(
+                        T::get_type_id_static().disp(ctx).to_string(),
+                        operand_ty.disp(ctx).to_string()
+                    )
+                );
+            }
+        }
+
+        Ok(())
+    }
+}
+
+/// An [Op] whose N-th operand segment (0-indexed) implements the specified
+/// [type interface](TypeInterfaceMarker).
+#[op_interface]
+pub trait SegmentNImplsTy<const N: usize, I: ?Sized + TypeInterfaceMarker + 'static>:
+    OperandSegmentInterface
+{
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let segmented_op = op_cast::<dyn OperandSegmentInterface>(op)
+            .expect("Op must impl OperandSegmentInterface");
+        if N >= segmented_op.num_segments(ctx) {
+            return verify_err!(op.loc(ctx), SegmentNOfTypeError::SegmentNotFound(N));
+        }
+
+        for operand in segmented_op.get_segment(ctx, N) {
+            let operand_ty = &*operand.get_type(ctx).deref(ctx);
+            if !type_impls::<I>(operand_ty) {
+                return verify_err!(
+                    op.loc(ctx),
+                    TypeInterfaceImplsErr::Segment(
+                        N,
+                        interface_name::<I>(),
+                        operand_ty.get_type_id().disp(ctx).to_string()
+                    )
+                );
+            }
         }
 
         Ok(())
@@ -1099,6 +1399,31 @@ pub trait AllResultsOfType<T: Type> {
     }
 }
 
+/// An [Op] with all results implementing the specified [type interface](TypeInterfaceMarker).
+#[op_interface]
+pub trait AllResultsImplsTy<I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let op = op.get_operation().deref(ctx);
+        for (idx, res) in op.results().enumerate() {
+            let res_ty = &*res.get_type(ctx).deref(ctx);
+            if !type_impls::<I>(res_ty) {
+                return verify_err!(
+                    op.loc(),
+                    TypeInterfaceImplsErr::Result(
+                        idx,
+                        interface_name::<I>(),
+                        res_ty.get_type_id().disp(ctx).to_string()
+                    )
+                );
+            }
+        }
+        Ok(())
+    }
+}
+
 #[derive(Error, Debug)]
 #[error("Op has only {0} results, but expected at least {1}")]
 pub struct NotEnoughResultsErr(pub usize, pub usize);
@@ -1137,6 +1462,113 @@ pub trait ResultNOfType<const N: usize, T: Type> {
             );
         }
         Ok(())
+    }
+}
+
+/// An [Op] whose N-th result (0-indexed) implements the specified
+/// [type interface](TypeInterfaceMarker).
+#[op_interface]
+pub trait ResultNImplsTy<const N: usize, I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let res_n = verify_get_result_n::<N>(op.get_operation(), ctx)?;
+        let res_n_ty = &*res_n.get_type(ctx).deref(ctx);
+        if !type_impls::<I>(res_n_ty) {
+            return verify_err!(
+                op.loc(ctx),
+                TypeInterfaceImplsErr::Result(
+                    N,
+                    interface_name::<I>(),
+                    res_n_ty.get_type_id().disp(ctx).to_string()
+                )
+            );
+        }
+        Ok(())
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum ResultsMNOfTypeError {
+    #[error("Op has only {0} results, but expected at least {1}")]
+    NotEnoughResults(usize, usize),
+    #[error("Expected result {0} to be of type {1}, but found {2}")]
+    UnexpectedType(usize, String, String),
+}
+
+/// An [Op] whose results in the inclusive index range `[M, N]` (0-indexed) are of type `T`.
+///
+///   - `N < 0`: `N` counts backwards from the end. `-1` is the last result. For example,
+///     `ResultsMNOfType<1, -1, T>` specifies that every result after the first is a `T`.
+///   - `N >= 0`: The [Op] must have a result at index `N`.
+#[op_interface]
+pub trait ResultsMNOfType<const M: u32, const N: i32, T: Type> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        const {
+            assert!(
+                N < 0 || N as u32 >= M,
+                "ResultsMNOfType: M must not be greater than N"
+            );
+        }
+
+        let self_op = op.get_operation().deref(ctx);
+        verify_index_range_types(
+            ctx,
+            self_op.loc(),
+            self_op.results(),
+            (M, N),
+            |ty| ty.as_any().is::<T>(),
+            ResultsMNOfTypeError::NotEnoughResults,
+            |idx, ty| {
+                ResultsMNOfTypeError::UnexpectedType(
+                    idx,
+                    T::get_type_id_static().disp(ctx).to_string(),
+                    ty.get_type_id().disp(ctx).to_string(),
+                )
+            },
+        )
+    }
+}
+
+/// An [Op] whose results in the inclusive index range `[M, N]` (0-indexed) implement
+/// the specified [type interface](TypeInterfaceMarker).
+///
+///   - `N < 0`: `N` counts backwards from the end. `-1` is the last result. For example,
+///     `ResultsMNImplsTy<1, -1, I>` specifies that every result after the first implements `I`.
+///   - `N >= 0`: The [Op] must have a result at index `N`.
+#[op_interface]
+pub trait ResultsMNImplsTy<const M: u32, const N: i32, I: ?Sized + TypeInterfaceMarker + 'static> {
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        const {
+            assert!(
+                N < 0 || N as u32 >= M,
+                "ResultsMNImplsTy: M must not be greater than N"
+            );
+        }
+
+        let self_op = op.get_operation().deref(ctx);
+        verify_index_range_types(
+            ctx,
+            self_op.loc(),
+            self_op.results(),
+            (M, N),
+            type_impls::<I>,
+            NotEnoughResultsErr,
+            |idx, ty| {
+                TypeInterfaceImplsErr::Result(
+                    idx,
+                    interface_name::<I>(),
+                    ty.get_type_id().disp(ctx).to_string(),
+                )
+            },
+        )
     }
 }
 
@@ -1242,5 +1674,45 @@ pub trait CallOpInterface {
         self_op
             .attributes
             .set(ATTR_KEY_CALLEE_TYPE.clone(), ty_attr);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IndexRange, resolve_index_range};
+
+    #[test]
+    fn test_resolve_index_range() {
+        // A non negative `n` is an index.
+        assert_eq!(
+            resolve_index_range(1, 2, 4),
+            IndexRange::Range { start: 1, end: 2 }
+        );
+        assert_eq!(
+            resolve_index_range(0, 0, 1),
+            IndexRange::Range { start: 0, end: 0 }
+        );
+        // The list must reach a non negative `n`.
+        assert_eq!(resolve_index_range(0, 2, 2), IndexRange::TooFewEntities(3));
+        assert_eq!(resolve_index_range(0, 0, 0), IndexRange::TooFewEntities(1));
+
+        // A negative `n` counts backwards.
+        assert_eq!(
+            resolve_index_range(1, -1, 3),
+            IndexRange::Range { start: 1, end: 2 }
+        );
+        assert_eq!(
+            resolve_index_range(0, -2, 3),
+            IndexRange::Range { start: 0, end: 1 }
+        );
+        assert_eq!(
+            resolve_index_range(2, -1, 3),
+            IndexRange::Range { start: 2, end: 2 }
+        );
+
+        // A short list with a negative `n` gives an empty range.
+        assert_eq!(resolve_index_range(1, -1, 1), IndexRange::Empty);
+        assert_eq!(resolve_index_range(0, -1, 0), IndexRange::Empty);
+        assert_eq!(resolve_index_range(0, -2, 1), IndexRange::Empty);
     }
 }

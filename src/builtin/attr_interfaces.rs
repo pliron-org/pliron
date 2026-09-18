@@ -31,12 +31,24 @@ pub trait TypedAttrInterface {
     }
 }
 
-/// [Attribute]s that should be printed after the top level [Operation](crate::operation::Operation)
-/// is printed. An [Op](crate::op::Op) may choose to print such an attribute as part of its
-/// syntax specification. This will be unknown to the outline attributes printer and will be
-/// printed nevertheless while printing all outline attributes.
+/// A marker interface to print an [Attribute] in the outlined attributes section.
+///
+/// - When printing a top-level [Operation], the printer prints all [attr_should_outline]
+///   attributes in a separate section at the end.
+/// - The `Op` formatting macros in `pliron-derive` print [OUTLINED_ATTR_MARKER]
+///   in place of the value whenever an [attr_should_outline] attribute is encountered.
+/// - Custom [Printable](crate::printable::Printable) implementations may do the same
+///   to prevent such attributes from being printed inline.
+///
+/// [attr_should_outline]: crate::attribute::attr_should_outline
+/// [OUTLINED_ATTR_MARKER]: crate::irfmt::outlined::OUTLINED_ATTR_MARKER
 #[attr_interface]
 pub trait OutlinedAttr {
+    /// Whether this attribute instance should be printed in the outlined attributes section.
+    fn outline(&self, _ctx: &Context) -> bool {
+        true
+    }
+
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where
         Self: Sized,

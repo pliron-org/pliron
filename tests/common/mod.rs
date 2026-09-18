@@ -15,6 +15,7 @@ use pliron::{
     },
     context::Context,
     derive::pliron_op,
+    ident,
     identifier::Identifier,
     init_env_logger_for_tests, input_err,
     irfmt::parsers::{attr_parser, process_parsed_ssa_defs},
@@ -83,7 +84,7 @@ impl ConstantOp {
         let op = self.get_operation().deref(ctx);
         op.attributes
             .0
-            .get(&*constant_op::ATTR_KEY_VALUE)
+            .get(&constant_op::ATTR_KEY_VALUE)
             .unwrap()
             .clone()
     }
@@ -140,19 +141,17 @@ impl Parsable for ConstantOp {
 pub fn const_ret_in_mod(ctx: &mut Context) -> Result<(ModuleOp, FuncOp, ConstantOp, ReturnOp)> {
     init_env_logger_for_tests!();
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
-    let module = ModuleOp::new(ctx, "bar".try_into().unwrap());
+    let module = ModuleOp::new(ctx, ident!("bar"));
     // Our function is going to have type () -> ().
     let func_ty = FunctionType::get(ctx, vec![], vec![i64_ty.into()]);
-    let func = FuncOp::new(ctx, "foo".try_into().unwrap(), func_ty);
+    let func = FuncOp::new(ctx, ident!("foo"), func_ty);
     module.append_operation(ctx, func.get_operation(), 0);
     let bb = func.get_entry_block(ctx);
 
     // Create a `const 0` op and add it to bb.
     let const_op = ConstantOp::new(ctx, 0);
     const_op.get_operation().insert_at_front(bb, ctx);
-    const_op
-        .get_result(ctx)
-        .set_name(ctx, Some("c0".try_into().unwrap()));
+    const_op.get_result(ctx).set_name(ctx, Some(ident!("c0")));
 
     // Return the constant.
     let ret_op = ReturnOp::new(ctx, const_op.get_result(ctx));

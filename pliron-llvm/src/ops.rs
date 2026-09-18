@@ -14,7 +14,7 @@ use core::{cell::Ref, num::NonZero};
 
 use pliron::{
     arg_err_noloc,
-    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls},
+    attribute::{AttrObj, Attribute, AttributeDict, attr_cast, attr_impls, attr_should_outline},
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
@@ -24,8 +24,8 @@ use pliron::{
             BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
             IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
             OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
-            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
-            SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
+            OperandsMNOfType, OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType,
+            SameResultsType, SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
         types::{IntegerType, Signedness},
@@ -33,10 +33,12 @@ use pliron::{
     common_traits::{Named, Verify},
     context::{Context, Ptr},
     graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
+    ident,
     identifier::Identifier,
     indented_block, input_err,
     irfmt::{
         self,
+        outlined::{OUTLINED_ATTR_MARKER, outlined_marker_or},
         parsers::{
             attr_parser, block_opd_parser, delimited_list_parser, process_parsed_ssa_defs, spaced,
             ssa_opd_parser, type_parser,
@@ -1480,8 +1482,8 @@ pub enum GetElementPtrOpErr {
 #[pliron_op(
     name = "llvm.gep",
     format = "`<` attr($llvm_gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($llvm_gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($llvm_gep_indices, $GepIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface],
-    operands = (src_ptr, dynamic_indices),
+    interfaces = [OneResultInterface, OperandsMNOfType<1, {-1}, IntegerType>],
+    operands = (src_ptr: PointerType, dynamic_indices),
     results = (_: PointerType),
     attributes = (
         llvm_gep_src_elem_type: TypeAttr,
@@ -2789,7 +2791,7 @@ impl GlobalOp {
             "Attempt to create an initializer region when there already is an initializer value"
         );
         let region = Operation::add_region(self.get_operation(), ctx);
-        let entry = BasicBlock::new(ctx, Some("entry".try_into().unwrap()), vec![]);
+        let entry = BasicBlock::new(ctx, Some(ident!("entry")), vec![]);
         entry.insert_at_front(region, ctx);
 
         region
@@ -2870,11 +2872,11 @@ impl Printable for GlobalOp {
 
         // Print attributes except for type, initializer and symbol name.
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately.0.retain(|key, _| {
-            key != &*ATTR_KEY_LLVM_GLOBAL_TYPE
-                && key != &*ATTR_KEY_SYM_NAME
-                && key != &*ATTR_KEY_LLVM_GLOBAL_INITIALIZER
+            key != &ATTR_KEY_LLVM_GLOBAL_TYPE
+                && key != &ATTR_KEY_SYM_NAME
+                && key != &ATTR_KEY_LLVM_GLOBAL_INITIALIZER
         });
         indented_block!(state, {
             write!(
@@ -2886,7 +2888,11 @@ impl Printable for GlobalOp {
         });
 
         if let Some(init_value) = self.get_initializer_value(ctx) {
-            write!(f, " = {}", init_value.print(ctx, state))?;
+            if attr_should_outline(&*init_value, ctx) {
+                write!(f, " = {OUTLINED_ATTR_MARKER}")?;
+            } else {
+                write!(f, " = {}", init_value.print(ctx, state))?;
+            }
         }
 
         if let Some(init_region) = self.get_initializer_region(ctx) {
@@ -2926,12 +2932,12 @@ impl Parsable for GlobalOp {
             .extend(attr_dict.0);
 
         enum Initializer {
-            Value(AttrObj),
+            Value(Option<AttrObj>),
             Region(Ptr<Region>),
         }
         // Parse optional initializer value or region.
         let initializer_parser = combine::token('=').skip(spaces()).with(
-            attr_parser()
+            outlined_marker_or(attr_parser())
                 .map(Initializer::Value)
                 .or(Region::parser(op.get_operation()).map(Initializer::Region)),
         );
@@ -2943,7 +2949,10 @@ impl Parsable for GlobalOp {
 
         if let Some(initializer) = initializer.0 {
             match initializer {
-                Initializer::Value(v) => op.set_initializer_value(state_stream.state.ctx, v),
+                Initializer::Value(Some(v)) => op.set_initializer_value(state_stream.state.ctx, v),
+                Initializer::Value(None) => {
+                    // The value is outlined; it is restored from the outline entry.
+                }
                 Initializer::Region(_r) => {
                     // Nothing to do since the region is already added to the operation during parsing.
                 }
@@ -4779,7 +4788,7 @@ impl FuncOp {
         );
         let region = Operation::add_region(self.op, ctx);
         let arg_types = self.get_type(ctx).deref(ctx).arg_types().clone();
-        let body = BasicBlock::new(ctx, Some("entry".try_into().unwrap()), arg_types);
+        let body = BasicBlock::new(ctx, Some(ident!("entry")), arg_types);
         body.insert_at_front(region, ctx);
         body
     }
@@ -4802,10 +4811,10 @@ impl Printable for FuncOp {
 
         // Print attributes except for function type and symbol name.
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
-            .retain(|key, _| key != &*ATTR_KEY_LLVM_FUNC_TYPE && key != &*ATTR_KEY_SYM_NAME);
+            .retain(|key, _| key != &ATTR_KEY_LLVM_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);
         indented_block!(state, {
             write!(
                 f,

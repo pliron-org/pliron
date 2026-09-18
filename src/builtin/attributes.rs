@@ -9,17 +9,13 @@ use crate::{
         attr_interfaces::{FloatAttr, OutlinedAttr},
         types::{FP16Type, FP32Type, FP64Type},
     },
-    combine::{
-        Parser, attempt, between, many1,
-        parser::char::{char, digit, spaces},
-        sep_by, token,
-    },
+    combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
     common_traits::Verify,
     context::{Context, Ptr},
     identifier::Identifier,
     input_err,
     irfmt::{
-        parsers::{quoted_string_parser, spaced},
+        parsers::{number_as_string_parser, quoted_string_parser, spaced},
         printers::quoted,
     },
     location::Located,
@@ -47,7 +43,7 @@ use thiserror::Error;
 use super::{
     attr_interfaces::{MaterializableAttr, TypedAttrInterface},
     ops::ConstantOp,
-    types::{IntegerType, Signedness},
+    types::IntegerType,
 };
 use crate::{op::Op, operation::Operation};
 
@@ -193,8 +189,7 @@ impl Printable for IntegerAttr {
         write!(
             f,
             "<{}: {}>",
-            self.val
-                .to_string_decimal(ty.signedness() == Signedness::Signed),
+            self.val.to_string_decimal(ty.prints_as_signed()),
             ty.print(ctx, state)
         )
     }
@@ -248,7 +243,7 @@ impl Parsable for IntegerAttr {
             token('<'),
             token('>'),
             spaces()
-                .with(many1::<String, _, _>(digit().or(char('-').or(char('+')))))
+                .with(number_as_string_parser())
                 .skip(spaced(token(':')))
                 .and(IntegerType::parser(())),
         )
@@ -721,7 +716,7 @@ impl Parsable for GivenNamesAttr {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, string::ToString, vec};
+    use alloc::{string::ToString, vec};
 
     use awint::bw;
     use expect_test::expect;
@@ -736,6 +731,7 @@ mod tests {
             types::{IntegerType, Signedness},
         },
         context::Context,
+        ident,
         identifier::Identifier,
         irfmt::parsers::attr_parser,
         parsable::parse_from_str,
@@ -745,6 +741,20 @@ mod tests {
     };
 
     use super::*;
+
+    /// Parse `input` as an attribute, then print it back.
+    fn parse_print(ctx: &mut Context, input: &str) -> String {
+        let attr = parse_from_str(attr_parser(), ctx, input).expect_ok(ctx);
+        attr.disp(ctx).to_string()
+    }
+
+    /// Parse `input` as an attribute, then get the error message.
+    fn parse_error(ctx: &mut Context, input: &str) -> String {
+        parse_from_str(attr_parser(), ctx, input)
+            .err()
+            .unwrap()
+            .to_string()
+    }
 
     #[test]
     fn test_integer_attributes() {
@@ -772,18 +782,68 @@ mod tests {
                 )) == 15
         );
 
-        let attr_input = "builtin.integer <0: builtin.unit>";
-
-        let parse_err = parse_from_str(attr_parser(), &mut ctx, attr_input)
-            .err()
-            .unwrap();
+        let err_msg = parse_error(&mut ctx, "builtin.integer <0: builtin.unit>");
         let expected_err_msg = expect![[r#"
             Compilation error: invalid input program.
             Parse error at line: 1, column: 21
             Unexpected `b`
             Expected whitespaces, si, ui, i or whitespace
         "#]];
-        expected_err_msg.assert_eq(&parse_err.to_string());
+        expected_err_msg.assert_eq(&err_msg);
+    }
+
+    #[test]
+    fn test_integer_attribute_signs() {
+        let mut ctx = Context::new();
+
+        // A signless value prints as signed. Both literals name the same bits.
+        for input in [
+            "builtin.integer <-1: i64>",
+            "builtin.integer <18446744073709551615: i64>",
+        ] {
+            assert_eq!(parse_print(&mut ctx, input), "builtin.integer <-1: i64>");
+        }
+
+        // An unsigned value prints as unsigned.
+        assert_eq!(
+            parse_print(&mut ctx, "builtin.integer <255: ui8>"),
+            "builtin.integer <255: ui8>"
+        );
+
+        // A signless value of one bit holds a boolean. It prints as unsigned.
+        assert_eq!(
+            parse_print(&mut ctx, "builtin.integer <1: i1>"),
+            "builtin.integer <1: i1>"
+        );
+
+        // A leading sign is optional, and does not change the printed value.
+        for input in ["builtin.integer <42: si64>", "builtin.integer <+42: si64>"] {
+            assert_eq!(parse_print(&mut ctx, input), "builtin.integer <42: si64>");
+        }
+        assert_eq!(
+            parse_print(&mut ctx, "builtin.integer <-42: si64>"),
+            "builtin.integer <-42: si64>"
+        );
+
+        // A sign that is not at the front is an error.
+        let err_msg = parse_error(&mut ctx, "builtin.integer <1-2: si64>");
+        let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 19
+            Unexpected `-`
+            Expected whitespaces or `:`
+        "#]];
+        expected_err_msg.assert_eq(&err_msg);
+
+        // Only one sign is allowed.
+        let err_msg = parse_error(&mut ctx, "builtin.integer <++4: si64>");
+        let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 19
+            Unexpected `+`
+            Expected digit
+        "#]];
+        expected_err_msg.assert_eq(&err_msg);
     }
 
     #[test]
@@ -806,19 +866,15 @@ mod tests {
             "world"
         );
 
-        let attr_input = "builtin.string \"hello\"";
-        let attr = parse_from_str(attr_parser(), &mut ctx, attr_input).expect_ok(&ctx);
-        assert_eq!(attr.disp(&ctx).to_string(), attr_input);
-
-        let attr_input = "builtin.string \"hello \\\"world\\\"\"";
-        let attr_parsed = parse_from_str(attr_parser(), &mut ctx, attr_input).expect_ok(&ctx);
-        assert_eq!(attr_parsed.disp(&ctx).to_string(), attr_input,);
+        for attr_input in [
+            "builtin.string \"hello\"",
+            "builtin.string \"hello \\\"world\\\"\"",
+        ] {
+            assert_eq!(parse_print(&mut ctx, attr_input), attr_input);
+        }
 
         // Unsupported escaped character.
-        let err_msg = format!(
-            "{}",
-            parse_from_str(attr_parser(), &mut ctx, "builtin.string \"hello \\k \"").unwrap_err()
-        );
+        let err_msg = parse_error(&mut ctx, "builtin.string \"hello \\k \"");
         let expected_err_msg = expect![[r#"
             Compilation error: invalid input program.
             Parse error at line: 1, column: 23
@@ -832,8 +888,8 @@ mod tests {
         let hello_attr: AttrObj = StringAttr::new("hello".to_string()).into();
         let world_attr: AttrObj = StringAttr::new("world".to_string()).into();
 
-        let hello_id: Identifier = "hello".try_into().unwrap();
-        let world_id: Identifier = "world".try_into().unwrap();
+        let hello_id: Identifier = ident!("hello");
+        let world_id: Identifier = ident!("world");
 
         let mut dict1: AttrObj = DictAttr::new(vec![
             (hello_id.clone(), hello_attr.clone()),
@@ -857,11 +913,7 @@ mod tests {
         let dict2_attr = dict2.as_mut().downcast_mut::<DictAttr>().unwrap();
         assert!(dict1_attr.lookup(&hello_id).unwrap() == &hello_attr);
         assert!(dict1_attr.lookup(&world_id).unwrap() == &world_attr);
-        assert!(
-            dict1_attr
-                .lookup(&"hello_world".try_into().unwrap())
-                .is_none()
-        );
+        assert!(dict1_attr.lookup(&ident!("hello_world")).is_none());
         dict2_attr.insert(&world_id, world_attr);
         assert!(dict1_attr == dict2_attr);
 
@@ -891,8 +943,7 @@ mod tests {
         assert!(ty_interface.get_type(&ctx) == ty);
 
         let ty_attr = ty_attr.disp(&ctx).to_string();
-        let ty_attr_parsed = parse_from_str(attr_parser(), &mut ctx, &ty_attr).expect_ok(&ctx);
-        assert_eq!(ty_attr_parsed.disp(&ctx).to_string(), ty_attr);
+        assert_eq!(parse_print(&mut ctx, &ty_attr), ty_attr);
     }
 
     #[test]

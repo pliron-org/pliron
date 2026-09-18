@@ -296,9 +296,16 @@ impl BasicBlock {
             ptr.deref(ctx).unique_name(ctx),
             ptr.preds(ctx).first().unwrap().deref(ctx).unique_name(ctx)
         );
+        if let Some(arg) = ptr.deref(ctx).arguments().find(|arg| arg.is_used(ctx)) {
+            panic!(
+                "Attempting to erase block {} whose argument {} has use outside the block",
+                ptr.deref(ctx).unique_name(ctx),
+                arg.unique_name(ctx)
+            );
+        }
         if let Some(op) = ptr.deref(ctx).iter(ctx).find(|op| op.deref(ctx).has_use()) {
             panic!(
-                "Attemping to erase block {} which contains {} with use outside the block",
+                "Attempting to erase block {} which contains {} with use outside the block",
                 ptr.deref(ctx).unique_name(ctx),
                 OpDbg { op, ctx }
             );
@@ -464,7 +471,7 @@ impl Printable for BasicBlock {
         )?;
 
         // Print non-outlined attributes inline.
-        let inline_attrs = self.attributes.clone_skip_outlined();
+        let inline_attrs = self.attributes.clone_skip_outlined(ctx);
         if !inline_attrs.0.is_empty() {
             write!(f, " ")?;
             inline_attrs.fmt(ctx, state, f)?;

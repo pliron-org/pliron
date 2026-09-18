@@ -58,6 +58,17 @@ impl IntegerType {
     pub fn is_signless(&self) -> bool {
         matches!(self.signedness, Signedness::Signless)
     }
+
+    /// Does a value of this type print as a signed decimal?
+    /// A signless integer of more than one bit prints as signed.
+    /// A signless integer of one bit prints as unsigned.
+    pub fn prints_as_signed(&self) -> bool {
+        match self.signedness {
+            Signedness::Signed => true,
+            Signedness::Unsigned => false,
+            Signedness::Signless => self.width > 1,
+        }
+    }
 }
 
 impl Parsable for IntegerType {

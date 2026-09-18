@@ -26,6 +26,7 @@ use crate::{
     combine::{Parser, optional, token},
     common_traits::{Named, Verify},
     context::{Context, Ptr},
+    ident,
     identifier::Identifier,
     indented_block, input_err,
     irfmt::{
@@ -93,10 +94,10 @@ impl Printable for ModuleOp {
         symb_op_header(self).fmt(ctx, state, f)?;
         write!(f, " ")?;
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
-            .retain(|key, _| key != &*ATTR_KEY_SYM_NAME);
+            .retain(|key, _| key != &ATTR_KEY_SYM_NAME);
         if !attributes_to_print_separately.0.is_empty() {
             indented_block!(state, {
                 write!(f, "{}", indented_nl(state))?;
@@ -190,7 +191,7 @@ impl FuncOp {
         // Create an empty entry block.
         let arg_types = ty.deref(ctx).arg_types().clone();
         let region = op.deref_mut(ctx).get_region(0);
-        let body = BasicBlock::new(ctx, Some("entry".try_into().unwrap()), arg_types);
+        let body = BasicBlock::new(ctx, Some(ident!("entry")), arg_types);
         body.insert_at_front(region, ctx);
 
         let opop = FuncOp { op };
@@ -229,10 +230,10 @@ impl Printable for FuncOp {
         typed_symb_op_header(self).fmt(ctx, state, f)?;
         write!(f, " ")?;
         let mut attributes_to_print_separately =
-            self.op.deref(ctx).attributes.clone_skip_outlined();
+            self.op.deref(ctx).attributes.clone_skip_outlined(ctx);
         attributes_to_print_separately
             .0
-            .retain(|key, _| key != &*ATTR_KEY_BUILTIN_FUNC_TYPE && key != &*ATTR_KEY_SYM_NAME);
+            .retain(|key, _| key != &ATTR_KEY_BUILTIN_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);
         if !attributes_to_print_separately.0.is_empty() {
             indented_block!(state, {
                 write!(f, "{}", indented_nl(state))?;

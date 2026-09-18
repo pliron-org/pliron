@@ -444,7 +444,7 @@ pub fn canonical_syntax_print(
         opid.print(ctx, state),
         operands.print(ctx, state),
         successors.print(ctx, state),
-        op.attributes.clone_skip_outlined().print(ctx, state),
+        op.attributes.clone_skip_outlined(ctx).print(ctx, state),
         op_type.print(ctx, state),
     )?;
 

@@ -10,7 +10,8 @@ use crate::{
     common_traits::Named,
     context::{Context, Ptr},
     graph::traversals::region::post_order,
-    identifier::{Identifier, underscore},
+    ident,
+    identifier::Identifier,
     irbuild::{
         inserter::{BlockInsertionPoint, IRInserter, Inserter, OpInsertionPoint},
         listener::RewriteListener,
@@ -362,7 +363,7 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
             block
                 .deref(ctx)
                 .given_name(ctx)
-                .map(|label| label + underscore() + "split".try_into().unwrap())
+                .map(|label| label + ident!("_split"))
         });
 
         let new_block =
@@ -430,13 +431,13 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
 /// On drop, it restores the previous insertion point and configuration.
 /// Implements [Inserter] and [Rewriter] by forwarding calls to the wrapped rewriter.
 /// ```rust
-/// # use pliron::{context::Context,
+/// # use pliron::{ident, context::Context,
 /// #   builtin::{ops::ModuleOp, op_interfaces::SingleBlockRegionInterface}};
 /// # use pliron::irbuild::{rewriter::{IRRewriter, ScopedRewriter},
 /// #   listener::DummyListener,
 /// #   inserter::{Inserter, OpInsertionPoint}};
 /// let ctx = &mut Context::new();
-/// let module = ModuleOp::new(ctx, "test_module".try_into().unwrap());
+/// let module = ModuleOp::new(ctx, ident!("test_module"));
 /// let mut rewriter = IRRewriter::<DummyListener>::default();
 /// rewriter.set_insertion_point(OpInsertionPoint::AtBlockEnd(module.get_body(ctx, 0)));
 /// {
