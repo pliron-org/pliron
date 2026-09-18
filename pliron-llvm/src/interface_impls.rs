@@ -41,7 +41,7 @@ use pliron::{
 use crate::{
     attributes::{
         AggregateAttr, FCmpPredicateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
-        IntegerOverflowFlagsAttr,
+        IntegerOverflowFlagsAttr, SplatAttr,
     },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
@@ -52,6 +52,7 @@ use crate::{
         PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp,
         SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
     },
+    types::VectorType,
 };
 
 #[derive(Error, Debug)]
@@ -380,6 +381,61 @@ fn insert_into_aggregate_attr(
     };
 
     replace_aggregate_element(aggregate, index, replacement)
+}
+
+/// The type and element count of a fixed-length vector constant, which is either an
+/// [AggregateAttr] or a [SplatAttr]. Returns `None` for anything else, including a
+/// scalable vector, whose length is not known at compile time.
+fn fixed_vector_shape(ctx: &Context, vector: &dyn Attribute) -> Option<(TypeHandle, usize)> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let ty = aggregate.ty();
+        if ty.deref(ctx).downcast_ref::<VectorType>()?.is_scalable() {
+            return None;
+        }
+        return Some((ty, aggregate.elements().len()));
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let ty = splat.ty();
+    let vector_ty = ty.deref(ctx);
+    if vector_ty.is_scalable() {
+        return None;
+    }
+    Some((ty.into(), vector_ty.num_elements() as usize))
+}
+
+/// Clone element `index` out of a fixed-length vector constant. `index` must be
+/// within the length that [fixed_vector_shape] reports for `vector`.
+fn fixed_vector_element(vector: &dyn Attribute, index: usize) -> Box<dyn TypedAttrInterface> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        return pliron::dyn_clone::clone_box(&*aggregate.elements()[index]);
+    }
+    let splat = vector
+        .downcast_ref::<SplatAttr>()
+        .expect("not a fixed-length vector constant");
+    pliron::dyn_clone::clone_box(splat.element())
+}
+
+/// Spell a fixed-length vector constant out as an [AggregateAttr], so that one of its
+/// elements can be replaced. A [SplatAttr] has no per-element representation of its own.
+fn fixed_vector_as_aggregate(ctx: &Context, vector: &dyn Attribute) -> Option<AggregateAttr> {
+    let (ty, length) = fixed_vector_shape(ctx, vector)?;
+    let elements = (0..length)
+        .map(|index| fixed_vector_element(vector, index))
+        .collect();
+    Some(AggregateAttr::new(elements, ty))
+}
+
+/// The element `index` selects in a vector of `length` elements, or `None` when it is
+/// out of bounds. LLVM reads `extractelement` and `insertelement` indices as unsigned.
+fn constant_vector_index(index: &IntegerAttr, length: usize) -> Option<usize> {
+    let value = index.value();
+    // A wider index cannot be read out exactly, and no vector is that long anyway.
+    if value.bw() > 128 {
+        return None;
+    }
+    let index = value.to_u128();
+    (index < length as u128).then_some(index as usize)
 }
 
 /// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
@@ -964,6 +1020,66 @@ impl ConstFoldInterface for ICmpOp {
         };
         let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
         vec![Some(bool_attr(ctx, result))]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ExtractElementOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(vector), Some(index)] = ops else {
+            return vec![None];
+        };
+        let index = index
+            .downcast_ref::<IntegerAttr>()
+            .expect("invalid operand type: typecheck before optimizing");
+        let folded = fixed_vector_shape(ctx, &**vector)
+            .and_then(|(_, length)| constant_vector_index(index, length))
+            .map(|index| {
+                pliron::dyn_clone::clone_box(
+                    &*fixed_vector_element(&**vector, index) as &dyn Attribute
+                )
+            });
+        vec![folded]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for InsertElementOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(vector), Some(element), Some(index)] = ops else {
+            return vec![None];
+        };
+        let element = attr_cast::<dyn TypedAttrInterface>(&**element)
+            .expect("invalid operand type: typecheck before optimizing");
+        let index = index
+            .downcast_ref::<IntegerAttr>()
+            .expect("invalid operand type: typecheck before optimizing");
+        let folded = fixed_vector_as_aggregate(ctx, &**vector).and_then(|aggregate| {
+            let index = constant_vector_index(index, aggregate.elements().len())?;
+            let updated = replace_aggregate_element(
+                &aggregate,
+                index,
+                pliron::dyn_clone::clone_box(element),
+            )?;
+            Some(Box::new(updated) as AttrObj)
+        });
+        vec![folded]
     }
     fn fold_in_place(
         &self,

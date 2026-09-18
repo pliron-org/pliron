@@ -2087,6 +2087,142 @@ fn insert_value_does_not_fold() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.extractelement
+// ---------------------------------------------------------------------------
+
+/// An index narrower than the vector length is still read as unsigned: the i1
+/// index 1 selects element 1.
+#[test]
+fn extract_element_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        agg = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        splat = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        two = builtin.constant <builtin.integer <2: i32>> : builtin.integer i32;
+        two_i16 = builtin.constant <builtin.integer <2: i16>> : builtin.integer i16;
+        one_i1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        from_aggregate = llvm.extractelement agg, two : builtin.integer i32;
+        from_splat = llvm.extractelement splat, two_i16 : builtin.integer i32;
+        narrow_index = llvm.extractelement agg, one_i1 : builtin.integer i32;
+        llvm.return narrow_index
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            agg_v0 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !1;
+            splat_v1 = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !2;
+            two_v2 = builtin.constant <builtin.integer <2: i32>> : builtin.integer i32 !3;
+            two_i16_v3 = builtin.constant <builtin.integer <2: i16>> : builtin.integer i16 !4;
+            one_i1_v4 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !5;
+            from_aggregate_v8 = builtin.constant <builtin.integer <30: i32>> : builtin.integer i32 !6;
+            from_aggregate_v5 = llvm.extractelement agg_v0, two_v2 : builtin.integer i32 !7;
+            from_splat_v9 = builtin.constant <builtin.integer <7: i32>> : builtin.integer i32 !8;
+            from_splat_v6 = llvm.extractelement splat_v1, two_i16_v3 : builtin.integer i32 !9;
+            narrow_index_v10 = builtin.constant <builtin.integer <20: i32>> : builtin.integer i32 !10;
+            narrow_index_v7 = llvm.extractelement agg_v0, one_i1_v4 : builtin.integer i32 !11;
+            llvm.return narrow_index_v10 !12
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// An out-of-bounds index is poison. 255 as an i8 is out of bounds because the
+/// index is unsigned; read as signed it would be -1.
+#[test]
+fn extract_element_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (llvm.vector <Fixed x 3 x builtin.integer i32>, builtin.integer i32) variadic = false> [] {
+        ^entry(v: llvm.vector <Fixed x 3 x builtin.integer i32>, i: builtin.integer i32):
+        agg = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        three = builtin.constant <builtin.integer <3: i32>> : builtin.integer i32;
+        high_bit = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        one = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32;
+        out_of_bounds = llvm.extractelement agg, three : builtin.integer i32;
+        unsigned_index = llvm.extractelement agg, high_bit : builtin.integer i32;
+        non_constant_vector = llvm.extractelement v, one : builtin.integer i32;
+        non_constant_index = llvm.extractelement agg, i : builtin.integer i32;
+        llvm.return non_constant_index
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.insertelement
+// ---------------------------------------------------------------------------
+
+/// Inserting into a splat spells the whole vector out as an aggregate.
+#[test]
+fn insert_element_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        agg = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        splat = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        e99 = builtin.constant <builtin.integer <99: i32>> : builtin.integer i32;
+        e11 = builtin.constant <builtin.integer <11: i32>> : builtin.integer i32;
+        one = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32;
+        two = builtin.constant <builtin.integer <2: i32>> : builtin.integer i32;
+        into_splat = llvm.insertelement splat, e11, two : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        into_aggregate = llvm.insertelement agg, e99, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        llvm.return into_aggregate
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32>() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            agg_v0 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !1;
+            splat_v1 = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !2;
+            e99_v2 = builtin.constant <builtin.integer <99: i32>> : builtin.integer i32 !3;
+            e11_v3 = builtin.constant <builtin.integer <11: i32>> : builtin.integer i32 !4;
+            one_v4 = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32 !5;
+            two_v5 = builtin.constant <builtin.integer <2: i32>> : builtin.integer i32 !6;
+            into_splat_v8 = llvm.constant <llvm.aggregate <[builtin.integer <7: i32>, builtin.integer <7: i32>, builtin.integer <11: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !7;
+            into_splat_v6 = llvm.insertelement splat_v1, e11_v3, two_v5 : llvm.vector <Fixed x 3 x builtin.integer i32> !8;
+            into_aggregate_v9 = llvm.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <99: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !9;
+            into_aggregate_v7 = llvm.insertelement agg_v0, e99_v2, one_v4 : llvm.vector <Fixed x 3 x builtin.integer i32> !10;
+            llvm.return into_aggregate_v9 !11
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn insert_element_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32> (llvm.vector <Fixed x 3 x builtin.integer i32>, builtin.integer i32, builtin.integer i32) variadic = false> [] {
+        ^entry(v: llvm.vector <Fixed x 3 x builtin.integer i32>, e: builtin.integer i32, i: builtin.integer i32):
+        agg = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        e99 = builtin.constant <builtin.integer <99: i32>> : builtin.integer i32;
+        three = builtin.constant <builtin.integer <3: i32>> : builtin.integer i32;
+        one = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32;
+        out_of_bounds = llvm.insertelement agg, e99, three : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        non_constant_vector = llvm.insertelement v, e99, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        non_constant_element = llvm.insertelement agg, e, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        non_constant_index = llvm.insertelement agg, e99, i : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        llvm.return non_constant_index
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
