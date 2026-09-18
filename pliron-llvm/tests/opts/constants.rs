@@ -1698,6 +1698,137 @@ fn fptrunc_does_not_fold() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.sitofp
+// ---------------------------------------------------------------------------
+
+/// The i8 operand has its high bit set, so it reads as -1; and 16777217 is not
+/// representable as a single, so it rounds to 16777216.
+#[test]
+fn sitofp_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        small = builtin.constant <builtin.integer <42: i16>> : builtin.integer i16;
+        mid = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32;
+        high_bit = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        inexact = builtin.constant <builtin.integer <16777217: i32>> : builtin.integer i32;
+        to_half = llvm.sitofp small to builtin.fp16;
+        to_single = llvm.sitofp mid to builtin.fp32;
+        negative = llvm.sitofp high_bit to builtin.fp64;
+        rounded = llvm.sitofp inexact to builtin.fp32;
+        llvm.return rounded
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            small_v0 = builtin.constant <builtin.integer <42: i16>> : builtin.integer i16 !1;
+            mid_v1 = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32 !2;
+            high_bit_v2 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !3;
+            inexact_v3 = builtin.constant <builtin.integer <16777217: i32>> : builtin.integer i32 !4;
+            to_half_v8 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
+            to_half_v4 = llvm.sitofp small_v0 to builtin.fp16  !6;
+            to_single_v9 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
+            to_single_v5 = llvm.sitofp mid_v1 to builtin.fp32  !8;
+            negative_v10 = builtin.constant <builtin.double -1> : builtin.fp64  !9;
+            negative_v6 = llvm.sitofp high_bit_v2 to builtin.fp64  !10;
+            rounded_v11 = builtin.constant <builtin.single 16777216> : builtin.fp32  !11;
+            rounded_v7 = llvm.sitofp inexact_v3 to builtin.fp32  !12;
+            llvm.return rounded_v11 !13
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn sitofp_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.integer i32) variadic = false> [] {
+        ^entry(x: builtin.integer i32):
+        wide = builtin.constant <builtin.integer <1: i129>> : builtin.integer i129;
+        wider_than_128_bits = llvm.sitofp wide to builtin.fp64;
+        non_constant = llvm.sitofp x to builtin.fp32;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.uitofp
+// ---------------------------------------------------------------------------
+
+/// The i8 operand has its high bit set, and reads as 255 rather than -1.
+#[test]
+fn uitofp_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        small = builtin.constant <builtin.integer <42: i16>> : builtin.integer i16;
+        mid = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32;
+        high_bit = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        non_negative = builtin.constant <builtin.integer <42: i8>> : builtin.integer i8;
+        to_half = llvm.uitofp <nneg=false> small to builtin.fp16;
+        to_single = llvm.uitofp <nneg=false> mid to builtin.fp32;
+        unsigned = llvm.uitofp <nneg=false> high_bit to builtin.fp64;
+        nneg = llvm.uitofp <nneg=true> non_negative to builtin.fp64;
+        llvm.return nneg
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp64 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            small_v0 = builtin.constant <builtin.integer <42: i16>> : builtin.integer i16 !1;
+            mid_v1 = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32 !2;
+            high_bit_v2 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !3;
+            non_negative_v3 = builtin.constant <builtin.integer <42: i8>> : builtin.integer i8 !4;
+            to_half_v8 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
+            to_half_v4 = llvm.uitofp <nneg=false> small_v0 to builtin.fp16  !6;
+            to_single_v9 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
+            to_single_v5 = llvm.uitofp <nneg=false> mid_v1 to builtin.fp32  !8;
+            unsigned_v10 = builtin.constant <builtin.double 255> : builtin.fp64  !9;
+            unsigned_v6 = llvm.uitofp <nneg=false> high_bit_v2 to builtin.fp64  !10;
+            nneg_v11 = builtin.constant <builtin.double 42> : builtin.fp64  !11;
+            nneg_v7 = llvm.uitofp <nneg=true> non_negative_v3 to builtin.fp64  !12;
+            llvm.return nneg_v11 !13
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// `uitofp nneg` on an operand whose bit pattern is negative is poison.
+#[test]
+fn uitofp_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.integer i32) variadic = false> [] {
+        ^entry(x: builtin.integer i32):
+        negative = builtin.constant <builtin.integer <255: i8>> : builtin.integer i8;
+        wide = builtin.constant <builtin.integer <1: i129>> : builtin.integer i129;
+        nneg_negative = llvm.uitofp <nneg=true> negative to builtin.fp64;
+        wider_than_128_bits = llvm.uitofp <nneg=false> wide to builtin.fp64;
+        non_constant = llvm.uitofp <nneg=false> x to builtin.fp32;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 

@@ -31,7 +31,7 @@ use pliron::{
     result::Result,
     r#type::TypeHandle,
     utils::{
-        apfloat::{Double, FloatConvert, Half, Single},
+        apfloat::{Double, Float, FloatConvert, Half, Single},
         apint::{APInt, bw},
     },
     value::Value,
@@ -405,6 +405,61 @@ fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -
 
 /// Convert a scalar floating-point attribute to `result_ty`. The verifier guarantees
 /// that the source and destination are different floating-point types.
+/// A zero-valued attribute of the builtin floating-point type `ty`.
+///
+/// The `FloatAttr::build_from_*` constructors take the semantics to build at from
+/// their receiver and ignore its value, so this serves as a prototype for building
+/// a result of the type an `llvm` cast op produces.
+fn zero_float_attr(ctx: &Context, ty: TypeHandle) -> Box<dyn FloatAttr> {
+    let ty = ty.deref(ctx);
+    if ty.is::<FP16Type>() {
+        Box::new(FPHalfAttr(Half::ZERO))
+    } else if ty.is::<FP32Type>() {
+        Box::new(FPSingleAttr(Single::ZERO))
+    } else if ty.is::<FP64Type>() {
+        Box::new(FPDoubleAttr(Double::ZERO))
+    } else {
+        panic!("not a builtin floating-point type: typecheck before optimizing")
+    }
+}
+
+/// Constant fold a scalar integer-to-floating-point cast.
+///
+/// `signed` selects how the operand bit pattern is read. Integers wider than 128
+/// bits are left unfolded, because rustc_apfloat's integer conversion entry
+/// points accept at most 128 bits.
+fn check_fold_int_to_float(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    signed: bool,
+    nneg: bool,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        return vec![None];
+    };
+    let value = operand
+        .downcast_ref::<IntegerAttr>()
+        .expect("invalid operand type: typecheck before optimizing")
+        .value();
+
+    // `uitofp nneg` asserts the operand is non-negative; if it isn't, the result
+    // is poison, so we must not fold it to a concrete value.
+    if value.bw() > 128 || (nneg && value.is_negative()) {
+        return vec![None];
+    }
+
+    let result = zero_float_attr(ctx, result_ty);
+    let result = if signed {
+        result.build_from_i128(value.to_i128())
+    } else {
+        result.build_from_u128(value.to_u128())
+    };
+    vec![Some(pliron::dyn_clone::clone_box(
+        &*result.value as &dyn Attribute,
+    ))]
+}
+
 fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -> AttrObj {
     /// Convert `value` to whichever builtin float type `result_ty` is, rounding
     /// to nearest-even.
@@ -849,6 +904,36 @@ impl ConstFoldInterface for ZExtOp {
 impl ConstFoldInterface for TruncOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::trunc)
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SIToFPOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_to_float(ctx, ops, self.result_type(ctx), true, false)
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for UIToFPOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_to_float(ctx, ops, self.result_type(ctx), false, self.nneg(ctx))
     }
     fn fold_in_place(
         &self,
