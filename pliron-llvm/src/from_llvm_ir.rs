@@ -1076,8 +1076,8 @@ fn convert_call(
         let constraints = llvm_get_inline_asm_constraint_string(callee);
         let side_effects = llvm_get_inline_asm_has_side_effects(callee);
         let result_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
-        // `convergent` is a call-site attribute, not recovered here.
-        return Ok(InlineAsmOp::new_with_side_effects(
+        // `convergent` is a call-site attribute, not recoverable through LLVM-C here.
+        return Ok(InlineAsmOp::new(
             ctx,
             result_ty,
             args,

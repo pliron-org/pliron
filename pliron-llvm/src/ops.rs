@@ -2074,10 +2074,7 @@ impl AtomicStoreOp {
     }
 }
 
-/// Equivalent to LLVM's inline assembly call. The template and constraint
-/// strings follow LLVM's inline-asm syntax; `side_effects` marks asm that may
-/// have effects beyond its operands, and `convergent` marks asm that must not be
-/// reordered across divergent control flow (e.g. warp-synchronous PTX).
+/// Equivalent to LLVM's inline assembly call.
 ///
 /// ### Operands
 /// | operand | description |
@@ -2097,36 +2094,46 @@ impl AtomicStoreOp {
         llvm_inline_asm_constraints: StringAttr,
         llvm_inline_asm_side_effects: BoolAttr,
         llvm_inline_asm_convergent: BoolAttr
-    ),
-    verifier = "succ"
+    )
 )]
 pub struct InlineAsmOp;
 
-impl InlineAsmOp {
-    /// Create a new [InlineAsmOp]. Use a void result type for asm with no
-    /// result value. Inline asm is side-effecting by default for backwards
-    /// compatibility and as the conservative choice.
-    pub fn new(
-        ctx: &mut Context,
-        result_ty: TypeHandle,
-        inputs: Vec<Value>,
-        asm_template: &str,
-        constraints: &str,
-        convergent: bool,
-    ) -> Self {
-        Self::new_with_side_effects(
-            ctx,
-            result_ty,
-            inputs,
-            asm_template,
-            constraints,
-            convergent,
-            true,
-        )
-    }
+#[derive(Error, Debug)]
+enum InlineAsmOpVerifyErr {
+    #[error("Missing or incorrect inline asm template attribute")]
+    TemplateAttr,
+    #[error("Missing or incorrect inline asm constraints attribute")]
+    ConstraintsAttr,
+    #[error("Missing or incorrect inline asm side-effects attribute")]
+    SideEffectsAttr,
+    #[error("Missing or incorrect inline asm convergent attribute")]
+    ConvergentAttr,
+}
 
-    /// Create a new [InlineAsmOp] with an explicit side-effects flag.
-    pub fn new_with_side_effects(
+impl Verify for InlineAsmOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        if self.get_attr_llvm_inline_asm_template(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::TemplateAttr);
+        }
+        if self.get_attr_llvm_inline_asm_constraints(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::ConstraintsAttr);
+        }
+        if self.get_attr_llvm_inline_asm_side_effects(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::SideEffectsAttr);
+        }
+        if self.get_attr_llvm_inline_asm_convergent(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::ConvergentAttr);
+        }
+        Ok(())
+    }
+}
+
+impl InlineAsmOp {
+    /// Create a new [InlineAsmOp].
+    ///
+    /// Use a void result type for asm with no result value.
+    pub fn new(
         ctx: &mut Context,
         result_ty: TypeHandle,
         inputs: Vec<Value>,

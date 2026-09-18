@@ -231,6 +231,16 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
           store i32 %plain, ptr %p, align 4
           ret i32 %v
         }
+
+        define i32 @inline_asm(i32 %a, i32 %b, ptr %p) {
+        entry:
+          call void asm sideeffect "nop", ""()
+          call void asm "nop", ""()
+          %r = call i32 asm "add $1, $2, $0", "=r,r,r"(i32 %a, i32 %b)
+          %pair = call { i32, i32 } asm "nop", "=r,=r,r"(i32 %r)
+          call void asm sideeffect "str $0, [$1]", "r,r"(i32 %r, ptr %p)
+          ret i32 %r
+        }
     "#;
 
     let llvm_ctx = LLVMContext::default();
@@ -287,6 +297,17 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
                 plain_v20 = llvm.load v17 [align : 4] : builtin.integer i32 !9;
                 llvm.store *v17 <- plain_v20 [align : 4];
                 llvm.return v_v19
+            };
+            llvm.func @inline_asm: llvm.func <builtin.integer i32(builtin.integer i32, builtin.integer i32, llvm.ptr (0)) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block7v1(v21: builtin.integer i32, v22: builtin.integer i32, v23: llvm.ptr (0)):
+                v24 = llvm.inline_asm "nop", "" side_effects = true convergent = false () : llvm.void ;
+                v25 = llvm.inline_asm "nop", "" side_effects = false convergent = false () : llvm.void ;
+                r_v26 = llvm.inline_asm "add $1, $2, $0", "=r,r,r" side_effects = false convergent = false (v21, v22) : builtin.integer i32 !10;
+                pair_v27 = llvm.inline_asm "nop", "=r,=r,r" side_effects = false convergent = false (r_v26) : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !11;
+                v28 = llvm.inline_asm "str $0, [$1]", "r,r" side_effects = true convergent = false (r_v26, v23) : llvm.void ;
+                llvm.return r_v26
             }
         }
 
@@ -301,6 +322,8 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
         !7 = [builtin_given_names = builtin.given_names [v]]
         !8 = [builtin_given_names = builtin.given_names [v]]
         !9 = [builtin_given_names = builtin.given_names [plain]]
+        !10 = [builtin_given_names = builtin.given_names [r]]
+        !11 = [builtin_given_names = builtin.given_names [pair]]
     "#]].assert_eq(&printed);
 
     let out_llvm_ctx = LLVMContext::default();
@@ -310,82 +333,57 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
         source_filename = "instruction_flags"
 
         define float @choose(i1 %0, float %1, float %2) {
-        entry_block2v1_block8v1:
-          %r_v24 = select nnan nsz i1 %0, float %1, float %2
-          ret float %r_v24
+        entry_block2v1_block9v1:
+          %r_v32 = select nnan nsz i1 %0, float %1, float %2
+          ret float %r_v32
         }
 
         define float @choose_plain(i1 %0, float %1, float %2) {
-        entry_block3v1_block9v1:
-          %r_v28 = select i1 %0, float %1, float %2
-          ret float %r_v28
+        entry_block3v1_block10v1:
+          %r_v36 = select i1 %0, float %1, float %2
+          ret float %r_v36
         }
 
         define ptr @gep_flags(ptr %0, i64 %1) {
-        entry_block4v1_block10v1:
-          %plain_v31 = getelementptr i8, ptr %0, i64 %1
-          %nusw_v32 = getelementptr nusw i8, ptr %0, i64 %1
-          %nuw_v33 = getelementptr nuw i8, ptr %0, i64 %1
-          %inbounds_v34 = getelementptr inbounds i8, ptr %0, i64 %1
-          %both_v35 = getelementptr inbounds nuw i8, ptr %0, i64 %1
-          ret ptr %both_v35
+        entry_block4v1_block11v1:
+          %plain_v39 = getelementptr i8, ptr %0, i64 %1
+          %nusw_v40 = getelementptr nusw i8, ptr %0, i64 %1
+          %nuw_v41 = getelementptr nuw i8, ptr %0, i64 %1
+          %inbounds_v42 = getelementptr inbounds i8, ptr %0, i64 %1
+          %both_v43 = getelementptr inbounds nuw i8, ptr %0, i64 %1
+          ret ptr %both_v43
         }
 
         define void @syncscopes(ptr %0) {
-        entry_block5v1_block11v1:
+        entry_block5v1_block12v1:
           fence syncscope("device") seq_cst
           fence syncscope("singlethread") seq_cst
           fence seq_cst
-          %v_v37 = load atomic i32, ptr %0 syncscope("agent") seq_cst, align 4
-          store atomic i32 %v_v37, ptr %0 syncscope("block") seq_cst, align 4
+          %v_v45 = load atomic i32, ptr %0 syncscope("agent") seq_cst, align 4
+          store atomic i32 %v_v45, ptr %0 syncscope("block") seq_cst, align 4
           ret void
         }
 
         define i32 @volatile_rw(ptr %0, i32 %1) {
-        entry_block6v1_block12v1:
-          %v_v40 = load volatile i32, ptr %0, align 4
+        entry_block6v1_block13v1:
+          %v_v48 = load volatile i32, ptr %0, align 4
           store volatile i32 %1, ptr %0, align 4
-          %plain_v41 = load i32, ptr %0, align 4
-          store i32 %plain_v41, ptr %0, align 4
-          ret i32 %v_v40
+          %plain_v49 = load i32, ptr %0, align 4
+          store i32 %plain_v49, ptr %0, align 4
+          ret i32 %v_v48
+        }
+
+        define i32 @inline_asm(i32 %0, i32 %1, ptr %2) {
+        entry_block7v1_block14v1:
+          call void asm sideeffect "nop", ""()
+          call void asm "nop", ""()
+          %r_v55 = call i32 asm "add $1, $2, $0", "=r,r,r"(i32 %0, i32 %1)
+          %pair_v56 = call { i32, i32 } asm "nop", "=r,=r,r"(i32 %r_v55)
+          call void asm sideeffect "str $0, [$1]", "r,r"(i32 %r_v55, ptr %2)
+          ret i32 %r_v55
         }
     "#]]
     .assert_eq(&out_mod.to_string());
-
-    Ok(())
-}
-
-#[test]
-fn inline_asm_side_effects_roundtrip() -> Result<()> {
-    init_env_logger_for_tests!();
-    let input = r#"
-        define void @asm_side_effects() {
-        entry:
-          call void asm sideeffect "nop", ""()
-          call void asm "nop", ""()
-          ret void
-        }
-    "#;
-
-    let llvm_ctx = LLVMContext::default();
-    let ctx = &mut Context::new();
-    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "inline_asm_side_effects")?;
-
-    // Exercise the pliron printer/parser as part of the round trip and verify that
-    // the two LLVM inline-asm side-effect states remain distinct in the dialect.
-    let (printed, reparsed) = common::print_parse_verify(ctx, module_op)?;
-    assert!(printed.contains("side_effects = true"), "{printed}");
-    assert!(printed.contains("side_effects = false"), "{printed}");
-
-    let out_llvm_ctx = LLVMContext::default();
-    let out_mod = common::to_llvm_ir_verify(ctx, &out_llvm_ctx, reparsed)?;
-    let out = out_mod.to_string();
-    assert_eq!(out.matches("asm sideeffect").count(), 1, "{out}");
-    assert!(
-        out.contains("call void asm sideeffect \"nop\", \"\"()"),
-        "{out}"
-    );
-    assert!(out.contains("call void asm \"nop\", \"\"()"), "{out}");
 
     Ok(())
 }
