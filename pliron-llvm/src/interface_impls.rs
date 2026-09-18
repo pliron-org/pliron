@@ -30,7 +30,7 @@ use pliron::{
         },
     },
     result::Result,
-    r#type::{TypeHandle, TypedHandle},
+    r#type::{TypeHandle, Typed, TypedHandle},
     utils::{
         apfloat::{Double, Float, FloatConvert, Half, Round, Single, Status},
         apint::{APInt, bw},
@@ -424,6 +424,38 @@ fn fixed_vector_as_aggregate(ctx: &Context, vector: &dyn Attribute) -> Option<Ag
         .map(|index| fixed_vector_element(vector, index))
         .collect();
     Some(AggregateAttr::new(elements, ty))
+}
+
+/// Fold a shuffle of two fixed-length vector constants into `result_ty`.
+///
+/// A negative mask entry is a poison lane in LLVM. Rather than materialize a
+/// partially-poisoned constant, such a shuffle is left unfolded.
+fn fold_shuffle_vector(
+    ctx: &Context,
+    lhs: &dyn Attribute,
+    rhs: &dyn Attribute,
+    mask: &[i32],
+    result_ty: TypeHandle,
+) -> Option<AttrObj> {
+    let (_, lhs_len) = fixed_vector_shape(ctx, lhs)?;
+    let (_, rhs_len) = fixed_vector_shape(ctx, rhs)?;
+
+    // The mask indexes the concatenation of the two operands, which the verifier
+    // guarantees have the same length.
+    let mut elements: Vec<Box<dyn TypedAttrInterface>> = Vec::with_capacity(mask.len());
+    for &mask_index in mask {
+        let index = usize::try_from(mask_index).ok()?;
+        let element = if index < lhs_len {
+            fixed_vector_element(lhs, index)
+        } else if index - lhs_len < rhs_len {
+            fixed_vector_element(rhs, index - lhs_len)
+        } else {
+            return None;
+        };
+        elements.push(element);
+    }
+
+    Some(Box::new(AggregateAttr::new(elements, result_ty)) as AttrObj)
 }
 
 /// The element `index` selects in a vector of `length` elements, or `None` when it is
@@ -1020,6 +1052,28 @@ impl ConstFoldInterface for ICmpOp {
         };
         let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
         vec![Some(bool_attr(ctx, result))]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ShuffleVectorOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(lhs), Some(rhs)] = ops else {
+            return vec![None];
+        };
+        let mask = self
+            .get_attr_llvm_shuffle_vector_mask(ctx)
+            .expect("ShuffleVectorOp missing mask attribute");
+        let result_ty = self.get_result(ctx).get_type(ctx);
+        vec![fold_shuffle_vector(ctx, &**lhs, &**rhs, &mask.0, result_ty)]
     }
     fn fold_in_place(
         &self,

@@ -2223,6 +2223,73 @@ fn insert_element_does_not_fold() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.shuffle_vector
+// ---------------------------------------------------------------------------
+
+/// The mask indexes the concatenation of the two operands, so 0..2 select from
+/// the first and 3..5 from the second.
+#[test]
+fn shuffle_vector_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32> () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        splat7 = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        splat9 = builtin.constant <llvm.splat <builtin.integer <9: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        interleaved = llvm.shuffle_vector a, b, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        reversed = llvm.shuffle_vector a, b, [5, 4, 3] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        with_splat = llvm.shuffle_vector a, splat9, [3, 1, 5] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        two_splats = llvm.shuffle_vector splat7, splat9, [0, 3, 1] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        llvm.return two_splats
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32>() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !1;
+            b_v1 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !2;
+            splat7_v2 = builtin.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !3;
+            splat9_v3 = builtin.constant <llvm.splat <builtin.integer <9: i32> : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !4;
+            interleaved_v8 = llvm.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <20: i32>, builtin.integer <3: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !5;
+            interleaved_v4 = llvm.shuffle_vector a_v0, b_v1, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32> !6;
+            reversed_v9 = llvm.constant <llvm.aggregate <[builtin.integer <30: i32>, builtin.integer <20: i32>, builtin.integer <10: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !7;
+            reversed_v5 = llvm.shuffle_vector a_v0, b_v1, [5, 4, 3] : llvm.vector <Fixed x 3 x builtin.integer i32> !8;
+            with_splat_v10 = llvm.constant <llvm.aggregate <[builtin.integer <9: i32>, builtin.integer <2: i32>, builtin.integer <9: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !9;
+            with_splat_v6 = llvm.shuffle_vector a_v0, splat9_v3, [3, 1, 5] : llvm.vector <Fixed x 3 x builtin.integer i32> !10;
+            two_splats_v11 = llvm.constant <llvm.aggregate <[builtin.integer <7: i32>, builtin.integer <9: i32>, builtin.integer <7: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32> !11;
+            two_splats_v7 = llvm.shuffle_vector splat7_v2, splat9_v3, [0, 3, 1] : llvm.vector <Fixed x 3 x builtin.integer i32> !12;
+            llvm.return two_splats_v11 !13
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// A negative mask entry is a poison lane, so the whole shuffle stays.
+#[test]
+fn shuffle_vector_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 3 x builtin.integer i32> (llvm.vector <Fixed x 3 x builtin.integer i32>, llvm.vector <Fixed x 3 x builtin.integer i32>) variadic = false> [] {
+        ^entry(x: llvm.vector <Fixed x 3 x builtin.integer i32>, y: llvm.vector <Fixed x 3 x builtin.integer i32>):
+        a = builtin.constant <llvm.aggregate <[builtin.integer <1: i32>, builtin.integer <2: i32>, builtin.integer <3: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        b = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>, builtin.integer <30: i32>] : llvm.vector <Fixed x 3 x builtin.integer i32>>> : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        poison_lane = llvm.shuffle_vector a, b, [0, -1, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        non_constant_lhs = llvm.shuffle_vector x, b, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        non_constant_rhs = llvm.shuffle_vector a, y, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        llvm.return non_constant_rhs
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
