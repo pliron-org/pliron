@@ -109,10 +109,6 @@ use crate::llvm_sys::{
     ToBool, c_array_to_vec, cstr_to_string, sized_cstr_to_string, to_c_str, uninitialized_vec,
 };
 
-/// `LLVMAttributeReturnIndex`, `LLVMAttributeFunctionIndex`,
-/// or a parameter number from 1 to N.
-pub use llvm_sys::LLVMAttributeIndex;
-
 use crate::attributes::{FastmathFlags, GepNoWrapFlags};
 
 /// Opaque wrapper around LLVMValueRef to hide the raw pointer
@@ -2788,6 +2784,10 @@ impl From<LLVMAttribute> for LLVMAttributeRef {
         value.0
     }
 }
+
+/// `LLVMAttributeReturnIndex`, `LLVMAttributeFunctionIndex`,
+/// or a parameter number from 1 to N.
+pub use llvm_sys::LLVMAttributeIndex;
 
 /// The attribute index of a function.
 pub const LLVM_ATTRIBUTE_FUNCTION_INDEX: LLVMAttributeIndex =
