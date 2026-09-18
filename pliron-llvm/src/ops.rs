@@ -2101,29 +2101,29 @@ pub struct InlineAsmOp;
 #[derive(Error, Debug)]
 enum InlineAsmOpVerifyErr {
     #[error("Missing or incorrect inline asm template attribute")]
-    TemplateAttr,
+    Template,
     #[error("Missing or incorrect inline asm constraints attribute")]
-    ConstraintsAttr,
+    Constraints,
     #[error("Missing or incorrect inline asm side-effects attribute")]
-    SideEffectsAttr,
+    SideEffects,
     #[error("Missing or incorrect inline asm convergent attribute")]
-    ConvergentAttr,
+    Convergent,
 }
 
 impl Verify for InlineAsmOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
         if self.get_attr_llvm_inline_asm_template(ctx).is_none() {
-            return verify_err!(loc, InlineAsmOpVerifyErr::TemplateAttr);
+            return verify_err!(loc, InlineAsmOpVerifyErr::Template);
         }
         if self.get_attr_llvm_inline_asm_constraints(ctx).is_none() {
-            return verify_err!(loc, InlineAsmOpVerifyErr::ConstraintsAttr);
+            return verify_err!(loc, InlineAsmOpVerifyErr::Constraints);
         }
         if self.get_attr_llvm_inline_asm_side_effects(ctx).is_none() {
-            return verify_err!(loc, InlineAsmOpVerifyErr::SideEffectsAttr);
+            return verify_err!(loc, InlineAsmOpVerifyErr::SideEffects);
         }
         if self.get_attr_llvm_inline_asm_convergent(ctx).is_none() {
-            return verify_err!(loc, InlineAsmOpVerifyErr::ConvergentAttr);
+            return verify_err!(loc, InlineAsmOpVerifyErr::Convergent);
         }
         Ok(())
     }
