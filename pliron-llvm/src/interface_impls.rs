@@ -866,7 +866,7 @@ impl BranchOpFoldInterface for BrOp {
     fn fold_in_place(
         &self,
         _ctx: &mut Context,
-        _ops: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
         _rw: &mut dyn Rewriter,
     ) -> IRStatus {
         IRStatus::Unchanged
@@ -874,6 +874,7 @@ impl BranchOpFoldInterface for BrOp {
 }
 
 impl CondBrOp {
+    /// Returns the possible successor indices based on the condition operand.
     fn possible_successor_indices(
         &self,
         ctx: &Context,
@@ -906,10 +907,10 @@ impl BranchOpFoldInterface for CondBrOp {
     fn fold_in_place(
         &self,
         ctx: &mut Context,
-        ops: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
-        let possible_successor_indices = self.possible_successor_indices(ctx, ops);
+        let possible_successor_indices = self.possible_successor_indices(ctx, operand_attrs);
         if possible_successor_indices.len() != 1 {
             return IRStatus::Unchanged;
         };
@@ -957,10 +958,10 @@ impl BranchOpFoldInterface for SwitchOp {
     fn fold_in_place(
         &self,
         ctx: &mut Context,
-        ops: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
-        let Some(cond_attr) = ops.first().unwrap().as_ref() else {
+        let Some(cond_attr) = operand_attrs.first().unwrap().as_ref() else {
             return IRStatus::Unchanged;
         };
         let cond_int = cond_attr
