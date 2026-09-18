@@ -1968,6 +1968,125 @@ fn fptoui_does_not_fold() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.extract_value
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extract_value_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        s = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        arr = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16];
+        nested = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>;
+        field = llvm.extract_value s [1] : builtin.integer i32;
+        element = llvm.extract_value arr [2] : builtin.integer i16;
+        deep = llvm.extract_value nested [0, 1] : builtin.integer i32;
+        llvm.return deep
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            s_v0 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !1;
+            arr_v1 = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16] !2;
+            nested_v2 = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked> !3;
+            field_v6 = builtin.constant <builtin.integer <20: i32>> : builtin.integer i32 !4;
+            field_v3 = llvm.extract_value s_v0[1] : builtin.integer i32 !5;
+            element_v7 = builtin.constant <builtin.integer <3: i16>> : builtin.integer i16 !6;
+            element_v4 = llvm.extract_value arr_v1[2] : builtin.integer i16 !7;
+            deep_v8 = builtin.constant <builtin.integer <9: i32>> : builtin.integer i32 !8;
+            deep_v5 = llvm.extract_value nested_v2[0, 1] : builtin.integer i32 !9;
+            llvm.return deep_v8 !10
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn extract_value_does_not_fold_with_non_constant_aggregate() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>) variadic = false> [] {
+        ^entry(a: llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>):
+        c = llvm.extract_value a [0] : builtin.integer i32;
+        llvm.return c
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.insert_value
+// ---------------------------------------------------------------------------
+
+#[test]
+fn insert_value_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> () variadic = false> [] {
+        ^entry():
+        s = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        arr = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16];
+        nested = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>;
+        v16 = builtin.constant <builtin.integer <8: i16>> : builtin.integer i16;
+        v32 = builtin.constant <builtin.integer <11: i32>> : builtin.integer i32;
+        v99 = builtin.constant <builtin.integer <99: i32>> : builtin.integer i32;
+        element = llvm.insert_value arr [1], v16 : llvm.array [3 x builtin.integer i16];
+        deep = llvm.insert_value nested [0, 1], v32 : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>;
+        field = llvm.insert_value s [0], v99 : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        llvm.return field
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            s_v0 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !1;
+            arr_v1 = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16] !2;
+            nested_v2 = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked> !3;
+            v16_v3 = builtin.constant <builtin.integer <8: i16>> : builtin.integer i16 !4;
+            v32_v4 = builtin.constant <builtin.integer <11: i32>> : builtin.integer i32 !5;
+            v99_v5 = builtin.constant <builtin.integer <99: i32>> : builtin.integer i32 !6;
+            element_v9 = llvm.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <8: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16] !7;
+            element_v6 = llvm.insert_value arr_v1[1], v16_v3 : llvm.array [3 x builtin.integer i16] !8;
+            deep_v10 = llvm.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <11: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked> !9;
+            deep_v7 = llvm.insert_value nested_v2[0, 1], v32_v4 : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked> !10;
+            field_v11 = llvm.constant <llvm.aggregate <[builtin.integer <99: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !11;
+            field_v8 = llvm.insert_value s_v0[0], v99_v5 : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !12;
+            llvm.return field_v11 !13
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn insert_value_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> (llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>, builtin.integer i32) variadic = false> [] {
+        ^entry(a: llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>, v: builtin.integer i32):
+        s = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        v5 = builtin.constant <builtin.integer <5: i32>> : builtin.integer i32;
+        non_constant_aggregate = llvm.insert_value a [1], v5 : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        non_constant_value = llvm.insert_value s [1], v : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        llvm.return non_constant_value
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 

@@ -12,15 +12,16 @@ use pliron::{
     attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::FloatAttr,
+        attr_interfaces::{FloatAttr, MaterializableAttr, TypedAttrInterface},
         attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{BranchOpInterface, OneResultInterface},
         types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    derive::op_interface_impl,
+    derive::{attr_interface_impl, op_interface_impl},
     irbuild::{IRStatus, inserter::Inserter, rewriter::Rewriter},
     op::Op,
+    operation::Operation,
     opts::{
         constants::{BranchOpFoldInterface, ConstFoldInterface},
         dce::{BlockArgRemoval, SideEffects},
@@ -39,7 +40,7 @@ use pliron::{
 
 use crate::{
     attributes::{
-        FCmpPredicateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
+        AggregateAttr, FCmpPredicateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
         IntegerOverflowFlagsAttr,
     },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
@@ -323,6 +324,62 @@ fn eval_fcmp(pred: &FCmpPredicateAttr, lhs: &dyn FloatAttr, rhs: &dyn FloatAttr)
         FCmpPredicateAttr::ULE => ord != Some(Ordering::Greater),
         FCmpPredicateAttr::UNE => ord != Some(Ordering::Equal),
     }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for AggregateAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        ConstantOp::new(ctx, Box::new(self.clone())).get_operation()
+    }
+}
+
+/// A copy of `aggregate` with the element at `index` replaced by `element`.
+/// Returns `None` if `index` is out of bounds.
+fn replace_aggregate_element(
+    aggregate: &AggregateAttr,
+    index: usize,
+    element: Box<dyn TypedAttrInterface>,
+) -> Option<AggregateAttr> {
+    let mut elements: Vec<Box<dyn TypedAttrInterface>> = aggregate
+        .elements()
+        .iter()
+        .map(|element| pliron::dyn_clone::clone_box(&**element))
+        .collect();
+    *elements.get_mut(index)? = element;
+    Some(AggregateAttr::new(elements, aggregate.ty()))
+}
+
+/// Extract a constant element from an aggregate attribute by following `indices`.
+fn extract_from_aggregate_attr(aggregate: &AggregateAttr, indices: &[u32]) -> Option<AttrObj> {
+    let (&index, rest) = indices.split_first()?;
+    let element = aggregate.elements().get(index as usize)?;
+
+    if rest.is_empty() {
+        return Some(pliron::dyn_clone::clone_box(&**element as &dyn Attribute));
+    }
+
+    let nested = (&**element as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
+    extract_from_aggregate_attr(nested, rest)
+}
+
+/// Insert a constant value into an aggregate attribute by following `indices`.
+fn insert_into_aggregate_attr(
+    aggregate: &AggregateAttr,
+    value: &dyn TypedAttrInterface,
+    indices: &[u32],
+) -> Option<AggregateAttr> {
+    let (&index, rest) = indices.split_first()?;
+    let index = index as usize;
+
+    let replacement: Box<dyn TypedAttrInterface> = if rest.is_empty() {
+        pliron::dyn_clone::clone_box(value)
+    } else {
+        let current = aggregate.elements().get(index)?;
+        let nested = (&**current as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
+        Box::new(insert_into_aggregate_attr(nested, value, rest)?)
+    };
+
+    replace_aggregate_element(aggregate, index, replacement)
 }
 
 /// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
@@ -907,6 +964,53 @@ impl ConstFoldInterface for ICmpOp {
         };
         let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
         vec![Some(bool_attr(ctx, result))]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ExtractValueOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(aggregate)] = ops else {
+            return vec![None];
+        };
+        let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
+            return vec![None];
+        };
+        vec![extract_from_aggregate_attr(aggregate, &self.indices(ctx))]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for InsertValueOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [Some(aggregate), Some(value)] = ops else {
+            return vec![None];
+        };
+        let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
+            return vec![None];
+        };
+        let value = attr_cast::<dyn TypedAttrInterface>(&**value)
+            .expect("invalid operand type: typecheck before optimizing");
+        vec![
+            insert_into_aggregate_attr(aggregate, value, &self.indices(ctx))
+                .map(|result| Box::new(result) as AttrObj),
+        ]
     }
     fn fold_in_place(
         &self,
