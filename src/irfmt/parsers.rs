@@ -72,12 +72,11 @@ pub fn type_parser<'a>()
     TypeHandle::parser(())
 }
 
-/// A parser to parse any Rust integer type.
-pub fn int_parse<'a, IntT>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseResult<'a, IntT>
-where
-    IntT: FromStr,
-    IntT::Err: core::error::Error + Send + Sync + 'static,
-{
+/// A parser to parse a decimal number: an optional `+` or `-` followed by digit(s).
+pub fn number_as_string_parse<'a>(
+    state_stream: &mut StateStream<'a>,
+    _arg: (),
+) -> ParseResult<'a, String> {
     optional(token('+').or(token('-')))
         .and(many1::<String, _, _>(digit()))
         .map(|(sign, digits): (Option<char>, String)| match sign {
@@ -89,6 +88,23 @@ where
             }
             None => digits,
         })
+        .parse_stream(state_stream)
+        .into()
+}
+
+/// A parser combinator to parse a decimal number: an optional `+` or `-` followed by digit(s).
+pub fn number_as_string_parser<'a>()
+-> Box<dyn Parser<StateStream<'a>, Output = String, PartialState = ()> + 'a> {
+    parser_combinator(number_as_string_parse, ())
+}
+
+/// A parser to parse any Rust integer type.
+pub fn int_parse<'a, IntT>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseResult<'a, IntT>
+where
+    IntT: FromStr,
+    IntT::Err: core::error::Error + Send + Sync + 'static,
+{
+    number_as_string_parser()
         .and_then(|digits| digits.parse::<IntT>())
         .parse_stream(state_stream)
         .into()
@@ -314,6 +330,30 @@ mod test {
     use crate::{
         context::Context, parsable::parse_from_str, printable::Printable, result::ExpectOk,
     };
+
+    #[test]
+    fn test_number_as_string() {
+        let mut ctx = Context::new();
+
+        // Sign is optional
+        for input in ["0", "42", "+42", "-42"] {
+            let parsed = parse_from_str(number_as_string_parser(), &mut ctx, input).expect_ok(&ctx);
+            assert_eq!(parsed, input);
+        }
+
+        // All digits must be parsed
+        let wide = "-1606938044258990275541962092341162602522202993782792835301376";
+        let parsed = parse_from_str(number_as_string_parser(), &mut ctx, wide).expect_ok(&ctx);
+        assert_eq!(parsed, wide);
+
+        // A number needs at least one digit, and a sign belongs at the front.
+        for input in ["", "-", "+", "x1"] {
+            assert!(
+                parse_from_str(number_as_string_parser(), &mut ctx, input).is_err(),
+                "{input} must fail"
+            );
+        }
+    }
 
     #[test]
     fn test_parse_type() {

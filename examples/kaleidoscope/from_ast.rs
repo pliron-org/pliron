@@ -358,6 +358,7 @@ mod tests {
     use pliron::{
         builtin::{op_interfaces::SingleBlockRegionInterface, ops::ModuleOp},
         context::Context,
+        ident,
         op::{Op, verify_op},
         printable::Printable,
     };
@@ -370,7 +371,7 @@ mod tests {
     fn lower_program(src: &str) -> String {
         let funcs = parse_program(src).expect("parse error");
         let ctx = &mut Context::new();
-        let module = ModuleOp::new(ctx, "test".try_into().expect("valid module name"));
+        let module = ModuleOp::new(ctx, ident!("test"));
         for func in &funcs {
             let func_op = lower_function(ctx, func).expect("lowering failed");
             module.append_operation(ctx, func_op.get_operation(), 0);

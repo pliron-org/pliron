@@ -326,9 +326,9 @@ pub mod statics {
 
     #[::pliron::linkme::distributed_slice]
     #[linkme(crate = ::pliron::linkme)]
-    pub static DICT_KEY_IDS: [LazyLock<DictKeyId>];
+    pub static DICT_KEY_IDS: [DictKeyId];
 
-    pub fn get_dict_key_ids() -> impl Iterator<Item = &'static LazyLock<DictKeyId>> {
+    pub fn get_dict_key_ids() -> impl Iterator<Item = &'static DictKeyId> {
         DICT_KEY_IDS.iter()
     }
 
@@ -346,10 +346,10 @@ pub mod statics {
     use super::*;
     use crate::InventoryWrapper;
 
-    ::pliron::inventory::collect!(InventoryWrapper<LazyLock<DictKeyId>>);
+    ::pliron::inventory::collect!(InventoryWrapper<DictKeyId>);
 
-    pub fn get_dict_key_ids() -> impl Iterator<Item = &'static LazyLock<DictKeyId>> {
-        ::pliron::inventory::iter::<InventoryWrapper<LazyLock<DictKeyId>>>().map(|llw| llw.0)
+    pub fn get_dict_key_ids() -> impl Iterator<Item = &'static DictKeyId> {
+        ::pliron::inventory::iter::<InventoryWrapper<DictKeyId>>().map(|llw| llw.0)
     }
 
     ::pliron::inventory::collect!(InventoryWrapper<ContextRegistration>);
@@ -443,15 +443,15 @@ pub fn verify_dict_keys() -> Result<()> {
 /// let aux_data_index = ctx.aux_data.insert(Box::new(42));
 /// ctx.aux_data_map.insert(MY_KEY.clone(), aux_data_index);
 /// assert_eq!(ctx.aux_data[aux_data_index].downcast_ref::<i32>(), Some(&42));
-/// assert_eq!(ctx.aux_data_map[&*MY_KEY], aux_data_index);
+/// assert_eq!(ctx.aux_data_map[&MY_KEY], aux_data_index);
 /// ```
 /// Here, `MY_KEY` is the name of the static variable, and `"my_key"` is the
 /// string value of the [Identifier]. The macro will create a static variable
-/// of type [`LazyLock<Identifier>`](LazyLock) with the name `MY_KEY`.
+/// of type [Identifier] with the name `MY_KEY`.
 #[macro_export]
 macro_rules! dict_key {
     (   $(#[$outer:meta])*
-        $decl:ident, $name:expr
+        $decl:ident, $name:literal
     ) => {
         // Create a static variable linked to the DICT_KEY_IDS slice
         // to ensure that all keys are unique.
@@ -459,13 +459,12 @@ macro_rules! dict_key {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"),
                 ::pliron::linkme::distributed_slice(::pliron::context::DICT_KEY_IDS), linkme(crate = ::pliron::linkme))]
-            pub static $decl: $crate::std_deps::sync::LazyLock<::pliron::context::DictKeyId> =
-                $crate::std_deps::sync::LazyLock::new(|| ::pliron::context::DictKeyId {
-                    id: $name.try_into().unwrap(),
-                    file: file!(),
-                    line: line!(),
-                    column: column!(),
-                });
+            pub static $decl: ::pliron::context::DictKeyId = ::pliron::context::DictKeyId {
+                id: $crate::ident!($name),
+                file: file!(),
+                line: line!(),
+                column: column!(),
+            };
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
@@ -474,8 +473,7 @@ macro_rules! dict_key {
         };
         $(#[$outer])*
         // Create a static variable with the provided name to access the identifier.
-        pub static $decl: $crate::std_deps::sync::LazyLock<::pliron::identifier::Identifier> =
-            $crate::std_deps::sync::LazyLock::new(|| $name.try_into().unwrap());
+        pub static $decl: ::pliron::identifier::Identifier = $crate::ident!($name);
     };
 }
 

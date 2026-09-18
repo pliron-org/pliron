@@ -199,13 +199,13 @@ pub fn get_block_arg_name(
 
 /// Recursively erase every [given_name](crate::common_traits::Named::given_name)
 /// nested within `op`: Op results, block arguments and block labels.
-pub fn erase_given_names(ctx: &mut Context, op: Ptr<Operation>) {
-    walkers::uninterruptible::mutable::walk_op(
+pub fn erase_given_names(ctx: &Context, op: Ptr<Operation>) {
+    walkers::uninterruptible::immutable::walk_op(
         ctx,
         &mut (),
         &WALKCONFIG_PREORDER_FORWARD,
         op,
-        |ctx: &mut Context, _state: &mut (), node: IRNode| match node {
+        |ctx: &Context, _state: &mut (), node: IRNode| match node {
             IRNode::Operation(op) => {
                 let num_results = op.deref(ctx).get_num_results();
                 for res_idx in 0..num_results {
@@ -238,6 +238,7 @@ mod tests {
             types::{IntegerType, Signedness},
         },
         context::Context,
+        ident,
         op::Op,
         operation::{Operation, verify_operation},
         result::Result,
@@ -273,10 +274,10 @@ mod tests {
         let mut ctx = Context::new();
         let cop = ZeroOp::new(&mut ctx);
         let op = cop.get_operation();
-        set_operation_result_name(&ctx, op, 0, Some("foo".try_into().unwrap()));
+        set_operation_result_name(&ctx, op, 0, Some(ident!("foo")));
         assert_eq!(
             get_operation_result_name(&ctx, op, 0).unwrap(),
-            "foo".try_into().unwrap()
+            ident!("foo")
         );
         verify_operation(op, &ctx)?;
         Ok(())
@@ -286,13 +287,9 @@ mod tests {
     fn test_block_arg_name() -> Result<()> {
         let mut ctx = Context::new();
         let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
-        let block = BasicBlock::new(
-            &mut ctx,
-            Some("entry".try_into().unwrap()),
-            vec![i64_ty.into()],
-        );
-        set_block_arg_name(&ctx, block, 0, Some("foo".try_into().unwrap()));
-        assert!(get_block_arg_name(&ctx, block, 0).unwrap() == "foo".try_into().unwrap());
+        let block = BasicBlock::new(&mut ctx, Some(ident!("entry")), vec![i64_ty.into()]);
+        set_block_arg_name(&ctx, block, 0, Some(ident!("foo")));
+        assert!(get_block_arg_name(&ctx, block, 0).unwrap() == ident!("foo"));
         Ok(())
     }
 
@@ -309,93 +306,45 @@ mod tests {
             0,
         );
 
-        set_operation_result_name(&ctx, op, 0, Some("r0".try_into().unwrap()));
-        set_operation_result_name(&ctx, op, 1, Some("r1".try_into().unwrap()));
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 0),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r1".try_into().unwrap())
-        );
+        set_operation_result_name(&ctx, op, 0, Some(ident!("r0")));
+        set_operation_result_name(&ctx, op, 1, Some(ident!("r1")));
+        assert_eq!(get_operation_result_name(&ctx, op, 0), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r1")));
         assert_eq!(get_operation_result_name(&ctx, op, 2), None);
 
         // Insert/remove at end should not affect earlier indices.
-        insert_operation_result_name(&ctx, op, 2, Some("tail".try_into().unwrap()));
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 0),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r1".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 2),
-            Some("tail".try_into().unwrap())
-        );
+        insert_operation_result_name(&ctx, op, 2, Some(ident!("tail")));
+        assert_eq!(get_operation_result_name(&ctx, op, 0), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r1")));
+        assert_eq!(get_operation_result_name(&ctx, op, 2), Some(ident!("tail")));
         remove_operation_result_name(&ctx, op, 2);
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 0),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r1".try_into().unwrap())
-        );
+        assert_eq!(get_operation_result_name(&ctx, op, 0), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r1")));
         assert_eq!(get_operation_result_name(&ctx, op, 2), None);
 
         // Insert a placeholder at front, shifting r0 name to index 1.
         insert_operation_result_name(&ctx, op, 0, None);
         assert_eq!(get_operation_result_name(&ctx, op, 0), None);
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 2),
-            Some("r1".try_into().unwrap())
-        );
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 2), Some(ident!("r1")));
 
         // Insert a named result at the front.
-        insert_operation_result_name(&ctx, op, 0, Some("ins".try_into().unwrap()));
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 0),
-            Some("ins".try_into().unwrap())
-        );
+        insert_operation_result_name(&ctx, op, 0, Some(ident!("ins")));
+        assert_eq!(get_operation_result_name(&ctx, op, 0), Some(ident!("ins")));
         assert_eq!(get_operation_result_name(&ctx, op, 1), None);
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 2),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 3),
-            Some("r1".try_into().unwrap())
-        );
+        assert_eq!(get_operation_result_name(&ctx, op, 2), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 3), Some(ident!("r1")));
 
         // Remove front name; prior index 1 becomes 0 and index 2 becomes 1.
         remove_operation_result_name(&ctx, op, 0);
         assert_eq!(get_operation_result_name(&ctx, op, 0), None);
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 2),
-            Some("r1".try_into().unwrap())
-        );
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 2), Some(ident!("r1")));
 
         // Remove the placeholder, moving r0 back to index 0.
         remove_operation_result_name(&ctx, op, 0);
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 0),
-            Some("r0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_operation_result_name(&ctx, op, 1),
-            Some("r1".try_into().unwrap())
-        );
+        assert_eq!(get_operation_result_name(&ctx, op, 0), Some(ident!("r0")));
+        assert_eq!(get_operation_result_name(&ctx, op, 1), Some(ident!("r1")));
     }
 
     #[test]
@@ -404,96 +353,48 @@ mod tests {
         let i64_ty = IntegerType::get(&ctx, 64, Signedness::Signed);
         let block = BasicBlock::new(
             &mut ctx,
-            Some("entry".try_into().unwrap()),
+            Some(ident!("entry")),
             vec![i64_ty.into(), i64_ty.into(), i64_ty.into()],
         );
 
-        set_block_arg_name(&ctx, block, 0, Some("a0".try_into().unwrap()));
-        set_block_arg_name(&ctx, block, 1, Some("a1".try_into().unwrap()));
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 0),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a1".try_into().unwrap())
-        );
+        set_block_arg_name(&ctx, block, 0, Some(ident!("a0")));
+        set_block_arg_name(&ctx, block, 1, Some(ident!("a1")));
+        assert_eq!(get_block_arg_name(&ctx, block, 0), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a1")));
         assert_eq!(get_block_arg_name(&ctx, block, 2), None);
 
         // Insert/remove at end should not affect earlier indices.
-        insert_block_arg_name(&ctx, block, 2, Some("tail".try_into().unwrap()));
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 0),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a1".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 2),
-            Some("tail".try_into().unwrap())
-        );
+        insert_block_arg_name(&ctx, block, 2, Some(ident!("tail")));
+        assert_eq!(get_block_arg_name(&ctx, block, 0), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a1")));
+        assert_eq!(get_block_arg_name(&ctx, block, 2), Some(ident!("tail")));
         remove_block_arg_name(&ctx, block, 2);
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 0),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a1".try_into().unwrap())
-        );
+        assert_eq!(get_block_arg_name(&ctx, block, 0), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a1")));
         assert_eq!(get_block_arg_name(&ctx, block, 2), None);
 
         // Insert a placeholder at front, shifting a0 to index 1.
         insert_block_arg_name(&ctx, block, 0, None);
         assert_eq!(get_block_arg_name(&ctx, block, 0), None);
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 2),
-            Some("a1".try_into().unwrap())
-        );
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 2), Some(ident!("a1")));
 
         // Insert a named arg at the front.
-        insert_block_arg_name(&ctx, block, 0, Some("ins".try_into().unwrap()));
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 0),
-            Some("ins".try_into().unwrap())
-        );
+        insert_block_arg_name(&ctx, block, 0, Some(ident!("ins")));
+        assert_eq!(get_block_arg_name(&ctx, block, 0), Some(ident!("ins")));
         assert_eq!(get_block_arg_name(&ctx, block, 1), None);
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 2),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 3),
-            Some("a1".try_into().unwrap())
-        );
+        assert_eq!(get_block_arg_name(&ctx, block, 2), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 3), Some(ident!("a1")));
 
         // Remove front name; prior index 1 becomes 0 and index 2 becomes 1.
         remove_block_arg_name(&ctx, block, 0);
         assert_eq!(get_block_arg_name(&ctx, block, 0), None);
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 2),
-            Some("a1".try_into().unwrap())
-        );
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 2), Some(ident!("a1")));
 
         // Remove placeholder, moving a0 back to index 0.
         remove_block_arg_name(&ctx, block, 0);
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 0),
-            Some("a0".try_into().unwrap())
-        );
-        assert_eq!(
-            get_block_arg_name(&ctx, block, 1),
-            Some("a1".try_into().unwrap())
-        );
+        assert_eq!(get_block_arg_name(&ctx, block, 0), Some(ident!("a0")));
+        assert_eq!(get_block_arg_name(&ctx, block, 1), Some(ident!("a1")));
     }
 }

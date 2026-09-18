@@ -184,11 +184,11 @@ impl AttributeDict {
     }
 
     /// Clone, but skip [Outlined](OutlinedAttr) attributes.
-    pub fn clone_skip_outlined(&self) -> Self {
+    pub fn clone_skip_outlined(&self, ctx: &Context) -> Self {
         self.0
             .iter()
             .filter_map(|(k, v)| {
-                if attr_impls::<dyn OutlinedAttr>(&**v) {
+                if attr_should_outline(&**v, ctx) {
                     None
                 } else {
                     Some((k.clone(), dyn_clone::clone_box(&**v)))
@@ -471,6 +471,11 @@ pub fn attr_cast<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute
 /// ```
 pub fn attr_impls<T: ?Sized + AttrInterfaceMarker + 'static>(attr: &dyn Attribute) -> bool {
     attr_cast::<T>(attr).is_some()
+}
+
+/// Should `attr` be printed outlined?
+pub fn attr_should_outline(attr: &dyn Attribute, ctx: &Context) -> bool {
+    attr_cast::<dyn OutlinedAttr>(attr).is_some_and(|attr| OutlinedAttr::outline(attr, ctx))
 }
 
 /// Does [Attribute] `A` implement interface `I`?

@@ -2,7 +2,7 @@
 // Copyright (c) The pliron contributors
 
 use alloc::{format, string::String};
-use core::fmt::Display;
+use core::fmt::{Display, Write as _};
 use pliron::{
     basic_block::BasicBlock,
     common_traits::Named,
@@ -48,6 +48,25 @@ pub fn visualize_region(ctx: &Context, region: Ptr<Region>) -> impl Display + '_
 struct Visualizer<'a> {
     graph_component: IRNode,
     ctx: &'a Context,
+}
+
+/// A string escaped for use as a quoted DOT label.
+struct DotLabel<'a>(&'a str);
+
+impl Display for DotLabel<'_> {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("\"")?;
+        for ch in self.0.chars() {
+            match ch {
+                '\\' => f.write_str("\\\\")?,
+                '"' => f.write_str("\\\"")?,
+                '\n' => f.write_str("\\n")?,
+                '\r' => f.write_str("\\r")?,
+                _ => f.write_char(ch)?,
+            }
+        }
+        f.write_str("\"")
+    }
 }
 
 impl core::fmt::Display for Visualizer<'_> {
@@ -191,16 +210,16 @@ fn graphviz_callback(
                 if let Some(parent_block_identifier) = op.deref(ctx).get_parent_block() {
                     format!("{}", parent_block_identifier.deref(ctx).unique_name(ctx))
                 } else {
+                    let label = format!("{}", operation::OpDbg { op, ctx });
                     write!(
                         graph_state.f,
                         " operation_{} [
-                    shape=record,
-                    style=filled, fillcolor=lightgreen, label=\"",
-                        oper_index
+                    shape=box,
+                    style=filled, fillcolor=lightgreen, label={}];\n",
+                        oper_index,
+                        DotLabel(&label),
                     )
                     .to_walk_result()?;
-                    operation::print_dbg(ctx, op, graph_state.f).to_walk_result()?;
-                    writeln!(graph_state.f, "\"];").to_walk_result()?;
                     format!("operation_{}", oper_index)
                 };
 
@@ -222,20 +241,20 @@ fn graphviz_callback(
         }
         IRNode::BasicBlock(block) => {
             let block_identifier: String = block.deref(ctx).unique_name(ctx).into();
+            let mut label = format!("^{block_identifier} :\n");
+            for oper in block.deref(ctx).iter(ctx) {
+                writeln!(&mut label, "{}", operation::OpDbg { op: oper, ctx })
+                    .expect("writing to a String cannot fail");
+            }
             write!(
                 graph_state.f,
                 "{} [
-            shape=record,
-            style=filled, fillcolor=lightgreen, label=\"",
-                block_identifier
+            shape=box,
+            style=filled, fillcolor=lightgreen, label={}];\n",
+                block_identifier,
+                DotLabel(&label),
             )
             .to_walk_result()?;
-            write!(graph_state.f, "{} : \\n", block_identifier).to_walk_result()?;
-            for oper in block.deref(ctx).iter(ctx) {
-                operation::print_dbg(ctx, oper, graph_state.f).to_walk_result()?;
-                write!(graph_state.f, "\\n").to_walk_result()?;
-            }
-            writeln!(graph_state.f, "\"];").to_walk_result()?;
             for succ in block.deref(ctx).succs(ctx) {
                 let succ_identifier: String = succ.deref(ctx).unique_name(ctx).into();
                 writeln!(graph_state.f, "{}->{};", block_identifier, succ_identifier)
@@ -261,13 +280,32 @@ fn graphviz_callback(
                 .unwrap();
             let op_id = Operation::get_op_dyn(parent_op, ctx).get_opid();
             let parent_op_label = &op_id.name;
+            let label = format!("parent_op : {parent_op_label}, region_idx : {region_idx}");
             write!(
                 graph_state.f,
-                "subgraph cluster_region_{0}_{1}{{ \n style=dotted;\n label=\"parent_op : {2}, region_idx : {1}\";\n",
-                oper_index, region_idx, parent_op_label,
-            ).to_walk_result()?;
+                "subgraph cluster_region_{0}_{1}{{ \n style=dotted;\n label={2};\n",
+                oper_index,
+                region_idx,
+                DotLabel(&label),
+            )
+            .to_walk_result()?;
         }
     }
 
     walk_advance()
+}
+
+#[cfg(test)]
+mod tests {
+    use alloc::format;
+
+    use super::DotLabel;
+
+    #[test]
+    fn dot_label_escapes_quoted_string_syntax() {
+        assert_eq!(
+            format!("{}", DotLabel("quotes: \"; slash: \\;\nnext line\r")),
+            "\"quotes: \\\"; slash: \\\\;\\nnext line\\r\""
+        );
+    }
 }

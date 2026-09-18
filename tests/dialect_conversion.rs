@@ -14,8 +14,7 @@ use pliron::{
         types::{FunctionType, IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    identifier::Identifier,
-    init_env_logger_for_tests,
+    ident, init_env_logger_for_tests,
     irbuild::{
         dialect_conversion::{
             DialectConversion, DialectConversionRewriter, OperandsInfo, apply_dialect_conversion,
@@ -207,16 +206,9 @@ fn dialect_conversion_defs_before_uses() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
 
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dialect_conversion_test").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("dialect_conversion_test"));
     let func_type = FunctionType::get(ctx, vec![], vec![]);
-    let func = FuncOp::new(
-        ctx,
-        Identifier::try_from("defs_before_uses").unwrap(),
-        func_type,
-    );
+    let func = FuncOp::new(ctx, ident!("defs_before_uses"), func_type);
     func.get_operation()
         .insert_at_back(module.get_body(ctx, 0), ctx);
     let body = func.get_entry_block(ctx);
@@ -311,16 +303,9 @@ impl DialectConversion for WidthConversionViaValueReplacement {
 fn dialect_conversion_value_replacement_preserves_type_history() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dialect_conversion_value_replacement_test").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("dialect_conversion_value_replacement_test"));
     let func_type = FunctionType::get(ctx, vec![], vec![]);
-    let func = FuncOp::new(
-        ctx,
-        Identifier::try_from("value_replacement").unwrap(),
-        func_type,
-    );
+    let func = FuncOp::new(ctx, ident!("value_replacement"), func_type);
     func.get_operation()
         .insert_at_back(module.get_body(ctx, 0), ctx);
     let body = func.get_entry_block(ctx);
@@ -395,10 +380,7 @@ fn value_width(ctx: &Context, value: Value) -> u32 {
 #[test]
 fn dialect_conversion_handles_mutually_referential_graph_ops() -> Result<()> {
     let ctx = &mut Context::new();
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dialect_conversion_graph_cycle_test").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("dialect_conversion_graph_cycle_test"));
     let body = module.get_body(ctx, 0);
 
     let a = CycleOp::new_unconnected(ctx, 64);
@@ -436,10 +418,7 @@ fn dialect_conversion_handles_mutually_referential_graph_ops() -> Result<()> {
 #[test]
 fn dialect_conversion_handles_self_referential_graph_op() -> Result<()> {
     let ctx = &mut Context::new();
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dialect_conversion_graph_self_cycle_test").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("dialect_conversion_graph_self_cycle_test"));
     let body = module.get_body(ctx, 0);
 
     let cycle = CycleOp::new_unconnected(ctx, 64);
@@ -571,10 +550,7 @@ fn dialect_conversion_block_arg_type_conversion() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
 
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("block_arg_type_conversion").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("block_arg_type_conversion"));
     let body = module.get_body(ctx, 0);
     let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed).into();
     let arg_idx = BasicBlock::push_argument(body, ctx, i64_ty);
@@ -595,10 +571,7 @@ fn dialect_conversion_dead_block_arg_type_conversion() -> Result<()> {
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
 
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("dead_block_arg_type_conversion").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("dead_block_arg_type_conversion"));
     let body = module.get_body(ctx, 0);
     let region = body
         .deref(ctx)
@@ -610,11 +583,7 @@ fn dialect_conversion_dead_block_arg_type_conversion() -> Result<()> {
     // Neither the entry block nor the successor of any operation, and its
     // argument is never used: nothing would ever visit this block under the
     // old "convert on use / convert on successor" scheme.
-    let dead_block = BasicBlock::new(
-        ctx,
-        Some(Identifier::try_from("dead").unwrap()),
-        vec![i64_ty],
-    );
+    let dead_block = BasicBlock::new(ctx, Some(ident!("dead")), vec![i64_ty]);
     dead_block.insert_at_back(region, ctx);
 
     let mut conversion = ConsumerOnlyConversion::default();
@@ -637,10 +606,7 @@ fn dialect_conversion_successor_block_arg_type_conversion_without_uses() -> Resu
     init_env_logger_for_tests!();
     let ctx = &mut Context::new();
 
-    let module = ModuleOp::new(
-        ctx,
-        Identifier::try_from("block_arg_successor_type_conversion").unwrap(),
-    );
+    let module = ModuleOp::new(ctx, ident!("block_arg_successor_type_conversion"));
     let pred_block = module.get_body(ctx, 0);
     let region = pred_block
         .deref(ctx)
@@ -652,11 +618,7 @@ fn dialect_conversion_successor_block_arg_type_conversion_without_uses() -> Resu
     let producer = ProducerOp::new(ctx, 64);
     producer.get_operation().insert_at_back(pred_block, ctx);
 
-    let succ_block = BasicBlock::new(
-        ctx,
-        Some(Identifier::try_from("succ").unwrap()),
-        vec![i64_ty],
-    );
+    let succ_block = BasicBlock::new(ctx, Some(ident!("succ")), vec![i64_ty]);
     succ_block.insert_at_back(region, ctx);
 
     let forward = ForwardToSuccOp::new(ctx, producer.get_result(ctx), succ_block);
