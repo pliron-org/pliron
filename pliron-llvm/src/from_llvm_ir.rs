@@ -46,20 +46,20 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
-        FUNCTION_ATTRIBUTE_LLVM_NAMES, FastmathFlagsAttr, FunctionAttributes, ICmpPredicateAttr,
-        IntegerOverflowFlagsAttr, LinkageAttr, PoisonAttr, SplatAttr, SymbolAddrAttr,
-        SyncScopeAttr, UndefAttr, ZeroAttr,
+        FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr, LinkageAttr, PoisonAttr,
+        SplatAttr, SymbolAddrAttr, SyncScopeAttr, UndefAttr, ZeroAttr,
     },
+    llvm_attrs_conversions::from_llvm_ir::convert_llvm_attributes,
     llvm_sys::core::{
-        LLVMBasicBlock, LLVMModule, LLVMType, LLVMValue, basic_block_iter, function_iter,
-        global_iter, incoming_iter, instruction_iter, llvm_call_site_has_enum_attribute,
+        LLVM_ATTRIBUTE_FUNCTION_INDEX, LLVMBasicBlock, LLVMModule, LLVMType, LLVMValue,
+        basic_block_iter, function_iter, global_iter, incoming_iter, instruction_iter,
         llvm_can_value_use_fast_math_flags, llvm_const_int_get_zext_value,
-        llvm_const_real_get_double, llvm_count_struct_element_types,
-        llvm_function_has_enum_attribute, llvm_get_aggregate_element, llvm_get_alignment,
-        llvm_get_allocated_type, llvm_get_array_length2, llvm_get_as_string,
-        llvm_get_atomic_rmw_bin_op, llvm_get_atomic_sync_scope_id, llvm_get_basic_block_name,
-        llvm_get_basic_block_terminator, llvm_get_block_address_basic_block,
-        llvm_get_block_address_function, llvm_get_called_function_type, llvm_get_called_value,
+        llvm_const_real_get_double, llvm_count_struct_element_types, llvm_get_aggregate_element,
+        llvm_get_alignment, llvm_get_allocated_type, llvm_get_array_length2, llvm_get_as_string,
+        llvm_get_atomic_rmw_bin_op, llvm_get_atomic_sync_scope_id, llvm_get_attributes_at_index,
+        llvm_get_basic_block_name, llvm_get_basic_block_terminator,
+        llvm_get_block_address_basic_block, llvm_get_block_address_function,
+        llvm_get_call_site_attributes, llvm_get_called_function_type, llvm_get_called_value,
         llvm_get_cmpxchg_failure_ordering, llvm_get_cmpxchg_success_ordering,
         llvm_get_const_opcode, llvm_get_element_type, llvm_get_fast_math_flags,
         llvm_get_fcmp_predicate, llvm_get_gep_no_wrap_flags, llvm_get_gep_source_element_type,
@@ -245,7 +245,11 @@ fn const_llvm_aggregate_to_attr(
     Ok(Some(Box::new(AggregateAttr::new(elements, ty))))
 }
 
-fn convert_type(ctx: &Context, cctx: &mut ConversionContext, ty: LLVMType) -> Result<TypeHandle> {
+pub(crate) fn convert_type(
+    ctx: &Context,
+    cctx: &mut ConversionContext,
+    ty: LLVMType,
+) -> Result<TypeHandle> {
     if let Some(cached) = cctx.type_cache.get(&ty) {
         return Ok(*cached);
     }
@@ -1061,19 +1065,6 @@ fn syncscope_from_llvm(inst: LLVMValue) -> SyncScopeAttr {
     }
 }
 
-fn collect_function_attributes(
-    value: LLVMValue,
-    has_attribute: fn(LLVMValue, &str) -> bool,
-) -> FunctionAttributes {
-    let mut attributes = FunctionAttributes::empty();
-    for (attribute, llvm_name) in FUNCTION_ATTRIBUTE_LLVM_NAMES {
-        if has_attribute(value, llvm_name) {
-            attributes.insert(attribute);
-        }
-    }
-    attributes
-}
-
 fn convert_call(
     ctx: &mut Context,
     cctx: &mut ConversionContext,
@@ -1086,23 +1077,23 @@ fn convert_call(
 
     let callee = llvm_get_called_value(inst);
 
-    // Inline asm: the callee is an inline-asm value rather than a function.
+    // Gather LLVM attributes at this call site's function index.
+    let call_attrs = convert_llvm_attributes(
+        ctx,
+        cctx,
+        llvm_get_call_site_attributes(inst, LLVM_ATTRIBUTE_FUNCTION_INDEX),
+    )?;
+
     if llvm_get_value_kind(callee) == LLVMValueKind::LLVMInlineAsmValueKind {
         let asm = llvm_get_inline_asm_asm_string(callee);
         let constraints = llvm_get_inline_asm_constraint_string(callee);
         let side_effects = llvm_get_inline_asm_has_side_effects(callee);
         let result_ty = convert_type(ctx, cctx, llvm_type_of(inst))?;
-        // InlineAsmOp does not currently model function-index call-site attributes.
-        return Ok(InlineAsmOp::new(
-            ctx,
-            result_ty,
-            args,
-            &asm,
-            &constraints,
-            false,
-            side_effects,
-        )
-        .get_operation());
+        let op = InlineAsmOp::new(ctx, result_ty, args, &asm, &constraints, side_effects);
+        if !call_attrs.is_empty() {
+            op.set_attr_llvm_inline_asm_attrs(ctx, call_attrs);
+        }
+        return Ok(op.get_operation());
     }
 
     enum Callee {
@@ -1141,9 +1132,8 @@ fn convert_call(
             if let Some(fmf) = fmf {
                 op.set_attr_llvm_call_fastmath_flags(ctx, fmf);
             }
-            let attributes = collect_function_attributes(inst, llvm_call_site_has_enum_attribute);
-            if !attributes.is_empty() {
-                op.set_function_attributes(ctx, attributes);
+            if !call_attrs.is_empty() {
+                op.set_attr_llvm_call_attrs(ctx, call_attrs);
             }
             op.get_operation()
         }
@@ -1151,6 +1141,9 @@ fn convert_call(
             let op = CallIntrinsicOp::new(ctx, name.into(), callee_ty, args);
             if let Some(fmf) = fmf {
                 op.set_attr_llvm_intrinsic_fastmath_flags(ctx, fmf);
+            }
+            if !call_attrs.is_empty() {
+                op.set_attr_llvm_intrinsic_attrs(ctx, call_attrs);
             }
             op.get_operation()
         }
@@ -1767,9 +1760,13 @@ fn convert_function(
     let linkage = convert_linkage(llvm_get_linkage(function));
     m_func.set_attr_llvm_function_linkage(ctx, linkage);
 
-    let attributes = collect_function_attributes(function, llvm_function_has_enum_attribute);
-    if !attributes.is_empty() {
-        m_func.set_function_attributes(ctx, attributes);
+    let attrs = convert_llvm_attributes(
+        ctx,
+        cctx,
+        llvm_get_attributes_at_index(function, LLVM_ATTRIBUTE_FUNCTION_INDEX),
+    )?;
+    if !attrs.is_empty() {
+        m_func.set_attr_llvm_func_attrs(ctx, attrs);
     }
 
     if llvm_name != <Identifier as Into<String>>::into(name) {

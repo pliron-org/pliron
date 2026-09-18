@@ -63,10 +63,11 @@ use pliron::{
 use crate::{
     attributes::{
         AddressSpaceAttr, AggregateAttr, AlignmentAttr, AtomicOrderingAttr, AtomicRmwKindAttr,
-        BytesAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr, FunctionAttributes,
-        FunctionAttributesAttr, InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr,
-        SplatAttr, SymbolAddrAttr, SyncScopeAttr,
+        BytesAttr, CaseValuesAttr, FCmpPredicateAttr, FastmathFlagsAttr,
+        InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr, SplatAttr,
+        SymbolAddrAttr, SyncScopeAttr,
     },
+    llvm_attrs::LlvmAttributesAttr,
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
@@ -2087,13 +2088,13 @@ impl AtomicStoreOp {
 /// | `res` | the asm result (a void type when there is none) |
 #[pliron_op(
     name = "llvm.inline_asm",
-    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` side_effects = ` attr($llvm_inline_asm_side_effects, $BoolAttr) ` convergent = ` attr($llvm_inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` side_effects = ` attr($llvm_inline_asm_side_effects, $BoolAttr) ` ` opt_attr($llvm_inline_asm_attrs, $LlvmAttributesAttr, label($attrs)) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
     interfaces = [OneResultInterface],
     attributes = (
         llvm_inline_asm_template: StringAttr,
         llvm_inline_asm_constraints: StringAttr,
         llvm_inline_asm_side_effects: BoolAttr,
-        llvm_inline_asm_convergent: BoolAttr
+        llvm_inline_asm_attrs: LlvmAttributesAttr
     )
 )]
 pub struct InlineAsmOp;
@@ -2106,8 +2107,6 @@ enum InlineAsmOpVerifyErr {
     Constraints,
     #[error("Missing or incorrect inline asm side-effects attribute")]
     SideEffects,
-    #[error("Missing or incorrect inline asm convergent attribute")]
-    Convergent,
 }
 
 impl Verify for InlineAsmOp {
@@ -2121,9 +2120,6 @@ impl Verify for InlineAsmOp {
         }
         if self.get_attr_llvm_inline_asm_side_effects(ctx).is_none() {
             return verify_err!(loc, InlineAsmOpVerifyErr::SideEffects);
-        }
-        if self.get_attr_llvm_inline_asm_convergent(ctx).is_none() {
-            return verify_err!(loc, InlineAsmOpVerifyErr::Convergent);
         }
         Ok(())
     }
@@ -2139,7 +2135,6 @@ impl InlineAsmOp {
         inputs: Vec<Value>,
         asm_template: &str,
         constraints: &str,
-        convergent: bool,
         side_effects: bool,
     ) -> Self {
         let op = Operation::new(
@@ -2154,7 +2149,6 @@ impl InlineAsmOp {
         op.set_attr_llvm_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
         op.set_attr_llvm_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
         op.set_attr_llvm_inline_asm_side_effects(ctx, BoolAttr::new(side_effects));
-        op.set_attr_llvm_inline_asm_convergent(ctx, BoolAttr::new(convergent));
         op
     }
 }
@@ -2177,7 +2171,7 @@ impl InlineAsmOp {
     attributes = (
         llvm_call_callee: IdentifierAttr,
         llvm_call_fastmath_flags: FastmathFlagsAttr,
-        llvm_call_attributes: FunctionAttributesAttr
+        llvm_call_attrs: LlvmAttributesAttr
     )
 )]
 pub struct CallOp;
@@ -2220,18 +2214,6 @@ impl CallOp {
         };
         op.set_callee_type(ctx, callee_ty.into());
         op
-    }
-
-    /// Get LLVM function-index attributes attached to this call site.
-    pub fn function_attributes(&self, ctx: &Context) -> FunctionAttributes {
-        self.get_attr_llvm_call_attributes(ctx)
-            .map(|attrs| attrs.0)
-            .unwrap_or(FunctionAttributes::empty())
-    }
-
-    /// Set LLVM function-index attributes attached to this call site.
-    pub fn set_function_attributes(&self, ctx: &mut Context, attributes: FunctionAttributes) {
-        self.set_attr_llvm_call_attributes(ctx, attributes.into());
     }
 }
 
@@ -2362,12 +2344,6 @@ impl Printable for CallOp {
             write!(f, " {}", fmf.print(ctx, state))?;
         }
 
-        if let Some(attributes) = self.get_attr_llvm_call_attributes(ctx)
-            && !attributes.0.is_empty()
-        {
-            write!(f, " {}", attributes.print(ctx, state))?;
-        }
-
         let args = self.args(ctx);
         let ty = self.callee_type(ctx);
         write!(
@@ -2395,32 +2371,25 @@ impl Parsable for CallOp {
         let indirect_callee = ssa_opd_parser().map(CallOpCallable::Indirect);
         let callee_parser = direct_callee.or(indirect_callee);
         let fastmath_flags_parser = optional(FastmathFlagsAttr::parser(()));
-        let function_attributes_parser = optional(FunctionAttributesAttr::parser(()));
         let args_parser = delimited_list_parser('(', ')', ',', ssa_opd_parser());
         let ty_parser = spaced(combine::token(':')).with(TypedHandle::<FuncType>::parser(()));
 
         let mut final_parser = spaced(callee_parser)
             .and(spaced(fastmath_flags_parser))
-            .and(spaced(function_attributes_parser))
             .and(spaced(args_parser))
             .and(ty_parser)
-            .then(
-                move |((((callee, fastmath_flags), function_attributes), args), ty)| {
-                    let results = results.clone();
-                    combine::parser(move |parsable_state: &mut StateStream<'a>| {
-                        let ctx = &mut parsable_state.state.ctx;
-                        let op = CallOp::new(ctx, callee.clone(), ty, args.clone());
-                        if let Some(fmf) = &fastmath_flags {
-                            op.set_attr_llvm_call_fastmath_flags(ctx, *fmf);
-                        }
-                        if let Some(attributes) = &function_attributes {
-                            op.set_attr_llvm_call_attributes(ctx, *attributes);
-                        }
-                        process_parsed_ssa_defs(parsable_state, &results, op.get_operation())?;
-                        Ok(OpObj::new(op)).into_parse_result()
-                    })
-                },
-            );
+            .then(move |(((callee, fastmath_flags), args), ty)| {
+                let results = results.clone();
+                combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                    let ctx = &mut parsable_state.state.ctx;
+                    let op = CallOp::new(ctx, callee.clone(), ty, args.clone());
+                    if let Some(fmf) = &fastmath_flags {
+                        op.set_attr_llvm_call_fastmath_flags(ctx, *fmf);
+                    }
+                    process_parsed_ssa_defs(parsable_state, &results, op.get_operation())?;
+                    Ok(OpObj::new(op)).into_parse_result()
+                })
+            });
 
         final_parser.parse_stream(state_stream).into_result()
     }
@@ -4523,7 +4492,8 @@ pub enum FCmpOpVerifyErr {
     attributes = (
         llvm_intrinsic_name: StringAttr,
         llvm_intrinsic_type: TypeAttr,
-        llvm_intrinsic_fastmath_flags: FastmathFlagsAttr
+        llvm_intrinsic_fastmath_flags: FastmathFlagsAttr,
+        llvm_intrinsic_attrs: LlvmAttributesAttr
     )
 )]
 pub struct CallIntrinsicOp;
@@ -4761,7 +4731,7 @@ impl VAArgOp {
     attributes = (
         llvm_func_type: TypeAttr,
         llvm_function_linkage: LinkageAttr,
-        llvm_function_attributes: FunctionAttributesAttr
+        llvm_func_attrs: LlvmAttributesAttr
     )
 )]
 pub struct FuncOp;
@@ -4784,18 +4754,6 @@ impl FuncOp {
             .unwrap()
             .get_type(ctx);
         TypedHandle::from_handle(ty, ctx).unwrap()
-    }
-
-    /// Get LLVM function-index attributes attached to this function.
-    pub fn function_attributes(&self, ctx: &Context) -> FunctionAttributes {
-        self.get_attr_llvm_function_attributes(ctx)
-            .map(|attrs| attrs.0)
-            .unwrap_or(FunctionAttributes::empty())
-    }
-
-    /// Set LLVM function-index attributes attached to this function.
-    pub fn set_function_attributes(&self, ctx: &mut Context, attributes: FunctionAttributes) {
-        self.set_attr_llvm_function_attributes(ctx, attributes.into());
     }
 
     /// Get the entry block (if it exists) of this function.

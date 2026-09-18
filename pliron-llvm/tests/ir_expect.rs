@@ -184,90 +184,6 @@ fn int_select_with_fastmath_flags_is_rejected() {
     assert!(matches!(err, SelectOpVerifyErr::FastMathFlagsOnNonFloatErr));
 }
 
-#[test]
-fn llvm_function_and_call_attributes_roundtrip() -> Result<()> {
-    init_env_logger_for_tests!();
-    let input = r#"
-        declare void @die() noreturn nounwind
-        declare i32 @worker(i32) willreturn
-
-        define void @caller(i32 %x) convergent {
-        entry:
-          call void @die() noreturn nounwind
-          %v = call i32 @worker(i32 %x) willreturn
-          ret void
-        }
-    "#;
-
-    let llvm_ctx = LLVMContext::default();
-    let ctx = &mut Context::new();
-    let module_op = common::parse_llvm_ir_verify(ctx, &llvm_ctx, input, "function_attributes")?;
-
-    fn function_text<'a>(printed: &'a str, name: &str) -> &'a str {
-        let marker = format!("llvm.func @{name}:");
-        let start = printed
-            .find(&marker)
-            .unwrap_or_else(|| panic!("Missing function @{name}\n{printed}"));
-
-        let rest = &printed[start..];
-        let after_header = &rest[marker.len()..];
-        let end = after_header
-            .find("llvm.func @")
-            .map(|offset| marker.len() + offset)
-            .unwrap_or(rest.len());
-
-        &rest[..end]
-    }
-
-    let assert_attributes = |printed: &str| {
-        let die = function_text(printed, "die");
-        let worker = function_text(printed, "worker");
-        let caller = function_text(printed, "caller");
-
-        assert!(
-            die.contains(
-                "llvm_function_attributes: llvm.function_attributes [NORETURN | NOUNWIND]"
-            ),
-            "Incorrect attributes for @die:\n{die}"
-        );
-
-        assert!(
-            worker.contains("llvm_function_attributes: llvm.function_attributes [WILLRETURN]"),
-            "Incorrect attributes for @worker:\n{worker}"
-        );
-
-        assert!(
-            caller.contains("llvm_function_attributes: llvm.function_attributes [CONVERGENT]"),
-            "Incorrect attributes for @caller:\n{caller}"
-        );
-
-        assert!(
-            caller.contains("llvm.call @die [NORETURN | NOUNWIND]"),
-            "Missing attributes on call to @die:\n{caller}"
-        );
-
-        assert!(
-            caller.contains("llvm.call @worker [WILLRETURN]"),
-            "Missing attributes on call to @worker:\n{caller}"
-        );
-    };
-
-    let (printed, reparsed) = common::print_parse_verify(ctx, module_op)?;
-    assert_attributes(&printed);
-
-    let llvm_mod = common::to_llvm_ir_verify(ctx, &llvm_ctx, reparsed)?;
-
-    // Re-import the generated LLVM IR and verify that every attribute is still
-    // attached to the same function or call site, not merely present somewhere
-    // in the module text.
-    let roundtrip_ctx = &mut Context::new();
-    let roundtrip_module = from_llvm_ir::convert_module(roundtrip_ctx, &llvm_mod)?;
-    let (roundtrip_printed, _) = common::print_parse_verify(roundtrip_ctx, roundtrip_module)?;
-    assert_attributes(&roundtrip_printed);
-
-    Ok(())
-}
-
 /// LLVM-IR -> pliron -> pliron text -> pliron -> LLVM-IR:
 ///
 /// Details such as flags and attributes that `compile_run.rs` can't test easily.
@@ -316,9 +232,26 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
           ret i32 %v
         }
 
+        declare void @die() noreturn nounwind
+        declare void @llvm.trap()
+
+        define void @attributes(i32 %x) convergent alignstack(16) "no-jump-tables" "target-cpu"="x86-64" {
+        entry:
+          call void @die() noreturn nounwind
+          call void @llvm.trap() cold nounwind
+          ret void
+        }
+
+        ; `memory(none)` is an integer attribute whose value is zero. 
+        ; The shape table must tell it apart from an attribute that takes no payload.
+        define void @zero_valued_int_attr() memory(none) {
+        entry:
+          ret void
+        }
+
         define i32 @inline_asm(i32 %a, i32 %b, ptr %p) {
         entry:
-          call void asm sideeffect "nop", ""()
+          call void asm sideeffect "nop", ""() convergent nounwind
           call void asm "nop", ""()
           %r = call i32 asm "add $1, $2, $0", "=r,r,r"(i32 %a, i32 %b)
           %pair = call { i32, i32 } asm "nop", "=r,=r,r"(i32 %r)
@@ -382,16 +315,32 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
                 llvm.store *v17 <- plain_v20 [align : 4];
                 llvm.return v_v19
             };
+            llvm.func @die: llvm.func <llvm.void () variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] !10;
+            llvm.func @attributes: llvm.func <llvm.void (builtin.integer i32) variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block7v1(v21: builtin.integer i32):
+                v22 = llvm.call @die () : llvm.func <llvm.void () variadic = false> !11;
+                v23 = llvm.call_intrinsic @"llvm.trap" () : llvm.func <llvm.void () variadic = false> !12;
+                llvm.return 
+            } !13;
+            llvm.func @zero_valued_int_attr: llvm.func <llvm.void () variadic = false>
+              [llvm_function_linkage: llvm.linkage ExternalLinkage] 
+            {
+              ^entry_block8v1():
+                llvm.return 
+            } !14;
             llvm.func @inline_asm: llvm.func <builtin.integer i32(builtin.integer i32, builtin.integer i32, llvm.ptr (0)) variadic = false>
               [llvm_function_linkage: llvm.linkage ExternalLinkage] 
             {
-              ^entry_block7v1(v21: builtin.integer i32, v22: builtin.integer i32, v23: llvm.ptr (0)):
-                v24 = llvm.inline_asm "nop", "" side_effects = true convergent = false () : llvm.void ;
-                v25 = llvm.inline_asm "nop", "" side_effects = false convergent = false () : llvm.void ;
-                r_v26 = llvm.inline_asm "add $1, $2, $0", "=r,r,r" side_effects = false convergent = false (v21, v22) : builtin.integer i32 !10;
-                pair_v27 = llvm.inline_asm "nop", "=r,=r,r" side_effects = false convergent = false (r_v26) : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !11;
-                v28 = llvm.inline_asm "str $0, [$1]", "r,r" side_effects = true convergent = false (r_v26, v23) : llvm.void ;
-                llvm.return r_v26
+              ^entry_block9v1(v24: builtin.integer i32, v25: builtin.integer i32, v26: llvm.ptr (0)):
+                v27 = llvm.inline_asm "nop", "" side_effects = true attrs : !outlined () : llvm.void  !15;
+                v28 = llvm.inline_asm "nop", "" side_effects = false  () : llvm.void ;
+                r_v29 = llvm.inline_asm "add $1, $2, $0", "=r,r,r" side_effects = false  (v24, v25) : builtin.integer i32 !16;
+                pair_v30 = llvm.inline_asm "nop", "=r,=r,r" side_effects = false  (r_v29) : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !17;
+                v31 = llvm.inline_asm "str $0, [$1]", "r,r" side_effects = true  (r_v29, v26) : llvm.void ;
+                llvm.return r_v29
             }
         }
 
@@ -406,8 +355,14 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
         !7 = [builtin_given_names = builtin.given_names [v]]
         !8 = [builtin_given_names = builtin.given_names [v]]
         !9 = [builtin_given_names = builtin.given_names [plain]]
-        !10 = [builtin_given_names = builtin.given_names [r]]
-        !11 = [builtin_given_names = builtin.given_names [pair]]
+        !10 = [llvm_func_attrs = llvm.attributes ["noreturn", "nounwind"]]
+        !11 = [llvm_call_attrs = llvm.attributes ["noreturn", "nounwind"]]
+        !12 = [llvm_intrinsic_attrs = llvm.attributes ["cold", "nounwind"]]
+        !13 = [llvm_func_attrs = llvm.attributes ["convergent", "alignstack" = 16, "no-jump-tables" = "", "target-cpu" = "x86-64"]]
+        !14 = [llvm_func_attrs = llvm.attributes ["memory" = 0]]
+        !15 = [llvm_inline_asm_attrs = llvm.attributes ["convergent", "nounwind"]]
+        !16 = [builtin_given_names = builtin.given_names [r]]
+        !17 = [builtin_given_names = builtin.given_names [pair]]
     "#]].assert_eq(&printed);
 
     let out_llvm_ctx = LLVMContext::default();
@@ -417,55 +372,82 @@ fn llvm_ir_instruction_flags_roundtrip() -> Result<()> {
         source_filename = "instruction_flags"
 
         define float @choose(i1 %0, float %1, float %2) {
-        entry_block2v1_block9v1:
-          %r_v32 = select nnan nsz i1 %0, float %1, float %2
-          ret float %r_v32
+        entry_block2v1_block11v1:
+          %r_v35 = select nnan nsz i1 %0, float %1, float %2
+          ret float %r_v35
         }
 
         define float @choose_plain(i1 %0, float %1, float %2) {
-        entry_block3v1_block10v1:
-          %r_v36 = select i1 %0, float %1, float %2
-          ret float %r_v36
+        entry_block3v1_block12v1:
+          %r_v39 = select i1 %0, float %1, float %2
+          ret float %r_v39
         }
 
         define ptr @gep_flags(ptr %0, i64 %1) {
-        entry_block4v1_block11v1:
-          %plain_v39 = getelementptr i8, ptr %0, i64 %1
-          %nusw_v40 = getelementptr nusw i8, ptr %0, i64 %1
-          %nuw_v41 = getelementptr nuw i8, ptr %0, i64 %1
-          %inbounds_v42 = getelementptr inbounds i8, ptr %0, i64 %1
-          %both_v43 = getelementptr inbounds nuw i8, ptr %0, i64 %1
-          ret ptr %both_v43
+        entry_block4v1_block13v1:
+          %plain_v42 = getelementptr i8, ptr %0, i64 %1
+          %nusw_v43 = getelementptr nusw i8, ptr %0, i64 %1
+          %nuw_v44 = getelementptr nuw i8, ptr %0, i64 %1
+          %inbounds_v45 = getelementptr inbounds i8, ptr %0, i64 %1
+          %both_v46 = getelementptr inbounds nuw i8, ptr %0, i64 %1
+          ret ptr %both_v46
         }
 
         define void @syncscopes(ptr %0) {
-        entry_block5v1_block12v1:
+        entry_block5v1_block14v1:
           fence syncscope("device") seq_cst
           fence syncscope("singlethread") seq_cst
           fence seq_cst
-          %v_v45 = load atomic i32, ptr %0 syncscope("agent") seq_cst, align 4
-          store atomic i32 %v_v45, ptr %0 syncscope("block") seq_cst, align 4
+          %v_v48 = load atomic i32, ptr %0 syncscope("agent") seq_cst, align 4
+          store atomic i32 %v_v48, ptr %0 syncscope("block") seq_cst, align 4
           ret void
         }
 
         define i32 @volatile_rw(ptr %0, i32 %1) {
-        entry_block6v1_block13v1:
-          %v_v48 = load volatile i32, ptr %0, align 4
+        entry_block6v1_block15v1:
+          %v_v51 = load volatile i32, ptr %0, align 4
           store volatile i32 %1, ptr %0, align 4
-          %plain_v49 = load i32, ptr %0, align 4
-          store i32 %plain_v49, ptr %0, align 4
-          ret i32 %v_v48
+          %plain_v52 = load i32, ptr %0, align 4
+          store i32 %plain_v52, ptr %0, align 4
+          ret i32 %v_v51
+        }
+
+        ; Function Attrs: noreturn nounwind
+        declare void @die() #0
+
+        ; Function Attrs: convergent alignstack(16)
+        define void @attributes(i32 %0) #1 {
+        entry_block7v1_block16v1:
+          call void @die() #0
+          call void @llvm.trap() #4
+          ret void
+        }
+
+        ; Function Attrs: memory(none)
+        define void @zero_valued_int_attr() #2 {
+        entry_block8v1_block17v1:
+          ret void
         }
 
         define i32 @inline_asm(i32 %0, i32 %1, ptr %2) {
-        entry_block7v1_block14v1:
-          call void asm sideeffect "nop", ""()
+        entry_block9v1_block18v1:
+          call void asm sideeffect "nop", ""() #5
           call void asm "nop", ""()
-          %r_v55 = call i32 asm "add $1, $2, $0", "=r,r,r"(i32 %0, i32 %1)
-          %pair_v56 = call { i32, i32 } asm "nop", "=r,=r,r"(i32 %r_v55)
-          call void asm sideeffect "str $0, [$1]", "r,r"(i32 %r_v55, ptr %2)
-          ret i32 %r_v55
+          %r_v61 = call i32 asm "add $1, $2, $0", "=r,r,r"(i32 %0, i32 %1)
+          %pair_v62 = call { i32, i32 } asm "nop", "=r,=r,r"(i32 %r_v61)
+          call void asm sideeffect "str $0, [$1]", "r,r"(i32 %r_v61, ptr %2)
+          ret i32 %r_v61
         }
+
+        ; Function Attrs: cold noreturn nounwind memory(inaccessiblemem: write)
+        declare void @llvm.trap() #3
+
+        attributes #0 = { noreturn nounwind }
+        attributes #1 = { convergent alignstack=16 "no-jump-tables" "target-cpu"="x86-64" }
+        attributes #2 = { memory(none) }
+        attributes #3 = { cold noreturn nounwind memory(inaccessiblemem: write) }
+        attributes #4 = { cold nounwind }
+        attributes #5 = { convergent nounwind }
     "#]]
     .assert_eq(&out_mod.to_string());
 

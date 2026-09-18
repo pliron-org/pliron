@@ -48,13 +48,13 @@ use thiserror::Error;
 use crate::{
     attributes::{
         AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
-        FUNCTION_ATTRIBUTE_LLVM_NAMES, FunctionAttributes, ICmpPredicateAttr, LinkageAttr,
-        PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
+        ICmpPredicateAttr, LinkageAttr, PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
     },
+    llvm_attrs_conversions::to_llvm_ir::add_function_attributes,
     llvm_sys::core::{
         LLVMBasicBlock, LLVMBuilder, LLVMContext, LLVMModule, LLVMType, LLVMValue,
-        instruction_iter, llvm_add_call_site_enum_attribute, llvm_add_case, llvm_add_destination,
-        llvm_add_function, llvm_add_function_enum_attribute, llvm_add_global_in_address_space,
+        instruction_iter, llvm_add_attribute_at_index, llvm_add_call_site_attribute, llvm_add_case,
+        llvm_add_destination, llvm_add_function, llvm_add_global_in_address_space,
         llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2,
         llvm_block_address, llvm_build_add, llvm_build_addrspacecast, llvm_build_and,
         llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw,
@@ -104,19 +104,6 @@ use crate::{
     },
     types::{ArrayType, FuncType, PointerType, StructType, VectorType, VoidType},
 };
-
-fn add_function_attributes(
-    llvm_ctx: &LLVMContext,
-    value: LLVMValue,
-    attributes: FunctionAttributes,
-    add_attribute: fn(&LLVMContext, LLVMValue, &str),
-) {
-    for (attribute, llvm_name) in FUNCTION_ATTRIBUTE_LLVM_NAMES {
-        if attributes.contains(attribute) {
-            add_attribute(llvm_ctx, value, llvm_name);
-        }
-    }
-}
 
 /// Mapping from pliron types to [LLVMType]s.
 #[derive(Default)]
@@ -1108,9 +1095,6 @@ impl ToLLVMValue for InlineAsmOp {
                 .expect("inline asm missing side-effects flag")
                 .clone(),
         );
-        // NOTE: the op's `llvm_inline_asm_convergent` attribute is not applied here.
-        // `convergent` is an LLVM call-site attribute (not part of the inline-asm
-        // value), so converting to LLVM IR drops the convergent flag.
         let asm_val = llvm_get_inline_asm(
             fn_ty,
             &asm,
@@ -1125,13 +1109,18 @@ impl ToLLVMValue for InlineAsmOp {
         } else {
             result_val.unique_name(ctx).to_string()
         };
-        Ok(llvm_build_call2(
-            &cctx.builder,
-            fn_ty,
-            asm_val,
-            &args,
-            &name,
-        ))
+        let call_val = llvm_build_call2(&cctx.builder, fn_ty, asm_val, &args, &name);
+        if let Some(attrs) = self.get_attr_llvm_inline_asm_attrs(ctx) {
+            add_function_attributes(
+                ctx,
+                llvm_ctx,
+                &mut cctx.types,
+                call_val,
+                &attrs,
+                llvm_add_call_site_attribute,
+            )?;
+        }
+        Ok(call_val)
     }
 }
 
@@ -1394,12 +1383,16 @@ impl ToLLVMValue for CallOp {
         {
             llvm_set_fast_math_flags(call_val, (*fmf).into());
         }
-        add_function_attributes(
-            llvm_ctx,
-            call_val,
-            self.function_attributes(ctx),
-            llvm_add_call_site_enum_attribute,
-        );
+        if let Some(attrs) = self.get_attr_llvm_call_attrs(ctx) {
+            add_function_attributes(
+                ctx,
+                llvm_ctx,
+                &mut cctx.types,
+                call_val,
+                &attrs,
+                llvm_add_call_site_attribute,
+            )?;
+        }
         Ok(call_val)
     }
 }
@@ -1458,6 +1451,16 @@ impl ToLLVMValue for CallIntrinsicOp {
             && llvm_can_value_use_fast_math_flags(intrinsic_op)
         {
             llvm_set_fast_math_flags(intrinsic_op, (*fmf).into());
+        }
+        if let Some(attrs) = self.get_attr_llvm_intrinsic_attrs(ctx) {
+            add_function_attributes(
+                ctx,
+                llvm_ctx,
+                &mut cctx.types,
+                intrinsic_op,
+                &attrs,
+                llvm_add_call_site_attribute,
+            )?;
         }
 
         Ok(intrinsic_op)
@@ -2803,12 +2806,16 @@ pub fn convert_module(
             let name = func_op.get_symbol_name(ctx);
             let llvm_name = func_op.llvm_symbol_name(ctx).unwrap_or(name.clone().into());
             let func_llvm = llvm_add_function(&llvm_module, &llvm_name, fn_ty_llvm);
-            add_function_attributes(
-                llvm_ctx,
-                func_llvm,
-                func_op.function_attributes(ctx),
-                llvm_add_function_enum_attribute,
-            );
+            if let Some(attrs) = func_op.get_attr_llvm_func_attrs(ctx) {
+                add_function_attributes(
+                    ctx,
+                    llvm_ctx,
+                    &mut cctx.types,
+                    func_llvm,
+                    &attrs,
+                    llvm_add_attribute_at_index,
+                )?;
+            }
             cctx.function_map.insert(name, func_llvm);
         }
         if let Some(global_op) = Operation::get_op::<GlobalOp>(op, ctx) {
