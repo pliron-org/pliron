@@ -1570,6 +1570,134 @@ fn trunc_does_not_fold_with_non_constant_operand() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.fpext
+// ---------------------------------------------------------------------------
+
+#[test]
+fn fpext_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 () variadic = false> [] {
+        ^entry():
+        h = builtin.constant <builtin.half 1.5> : builtin.fp16;
+        s = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        h_to_s = llvm.fpext <> h to builtin.fp32;
+        h_to_d = llvm.fpext <> h to builtin.fp64;
+        s_to_d = llvm.fpext <> s to builtin.fp64;
+        llvm.return s_to_d
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp64 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            h_v0 = builtin.constant <builtin.half 1.5> : builtin.fp16  !1;
+            s_v1 = builtin.constant <builtin.single 2.5> : builtin.fp32  !2;
+            h_to_s_v5 = builtin.constant <builtin.single 1.5> : builtin.fp32  !3;
+            h_to_s_v2 = llvm.fpext <> h_v0 to builtin.fp32  !4;
+            h_to_d_v6 = builtin.constant <builtin.double 1.5> : builtin.fp64  !5;
+            h_to_d_v3 = llvm.fpext <> h_v0 to builtin.fp64  !6;
+            s_to_d_v7 = builtin.constant <builtin.double 2.5> : builtin.fp64  !7;
+            s_to_d_v4 = llvm.fpext <> s_v1 to builtin.fp64  !8;
+            llvm.return s_to_d_v7 !9
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// A `nnan` or `ninf` operand is poison, so neither may be folded to a value.
+#[test]
+fn fpext_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp64 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        nan = builtin.constant <builtin.single NaN> : builtin.fp32;
+        inf = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        nnan_nan = llvm.fpext <NNAN> nan to builtin.fp64;
+        ninf_inf = llvm.fpext <NINF> inf to builtin.fp64;
+        non_constant = llvm.fpext <> x to builtin.fp64;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fptrunc
+// ---------------------------------------------------------------------------
+
+/// The last case rounds to the destination precision: 1.0000000001 is not
+/// representable as a single.
+#[test]
+fn fptrunc_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 () variadic = false> [] {
+        ^entry():
+        d = builtin.constant <builtin.double 2.5> : builtin.fp64;
+        d_half = builtin.constant <builtin.double 1.5> : builtin.fp64;
+        s = builtin.constant <builtin.single 3.25> : builtin.fp32;
+        inexact = builtin.constant <builtin.double 1.0000000001> : builtin.fp64;
+        d_to_s = llvm.fptrunc <> d to builtin.fp32;
+        d_to_h = llvm.fptrunc <> d_half to builtin.fp16;
+        s_to_h = llvm.fptrunc <> s to builtin.fp16;
+        rounded = llvm.fptrunc <> inexact to builtin.fp32;
+        llvm.return rounded
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.fp32 () variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            d_v0 = builtin.constant <builtin.double 2.5> : builtin.fp64  !1;
+            d_half_v1 = builtin.constant <builtin.double 1.5> : builtin.fp64  !2;
+            s_v2 = builtin.constant <builtin.single 3.25> : builtin.fp32  !3;
+            inexact_v3 = builtin.constant <builtin.double 1.0000000001> : builtin.fp64  !4;
+            d_to_s_v8 = builtin.constant <builtin.single 2.5> : builtin.fp32  !5;
+            d_to_s_v4 = llvm.fptrunc <> d_v0 to builtin.fp32  !6;
+            d_to_h_v9 = builtin.constant <builtin.half 1.5> : builtin.fp16  !7;
+            d_to_h_v5 = llvm.fptrunc <> d_half_v1 to builtin.fp16  !8;
+            s_to_h_v10 = builtin.constant <builtin.half 3.25> : builtin.fp16  !9;
+            s_to_h_v6 = llvm.fptrunc <> s_v2 to builtin.fp16  !10;
+            rounded_v11 = builtin.constant <builtin.single 1> : builtin.fp32  !11;
+            rounded_v7 = llvm.fptrunc <> inexact_v3 to builtin.fp32  !12;
+            llvm.return rounded_v11 !13
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// `ninf` also rules out a result that overflows to infinity, not just an
+/// infinite operand.
+#[test]
+fn fptrunc_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.fp32 (builtin.fp64) variadic = false> [] {
+        ^entry(x: builtin.fp64):
+        nan = builtin.constant <builtin.double NaN> : builtin.fp64;
+        huge = builtin.constant <builtin.double 1e300> : builtin.fp64;
+        nnan_nan = llvm.fptrunc <NNAN> nan to builtin.fp32;
+        ninf_overflow = llvm.fptrunc <NINF> huge to builtin.fp32;
+        non_constant = llvm.fptrunc <> x to builtin.fp32;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
