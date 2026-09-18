@@ -4,7 +4,7 @@
 //! Implementation of various op interfaces for LLVM IR instructions.
 
 use alloc::{boxed::Box, vec, vec::Vec};
-use core::num::NonZero;
+use core::{cmp::Ordering, num::NonZero};
 use thiserror::Error;
 
 use pliron::{
@@ -29,12 +29,16 @@ use pliron::{
         },
     },
     result::Result,
+    r#type::TypeHandle,
     utils::apint::{APInt, bw},
     value::Value,
 };
 
 use crate::{
-    attributes::{FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr, IntegerOverflowFlagsAttr},
+    attributes::{
+        FCmpPredicateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
+        IntegerOverflowFlagsAttr,
+    },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
         AShrOp, AddOp, AddressOfOp, AllocaOp, AndOp, BitcastOp, BrOp, CondBrOp, ConstantOp,
@@ -292,6 +296,85 @@ fn eval_icmp(pred: &ICmpPredicateAttr, lhs: &APInt, rhs: &APInt) -> bool {
     }
 }
 
+/// Evaluate a floating-point comparison `lhs <pred> rhs`. `lhs` and `rhs` must
+/// have the same float type. The `O` predicates hold only when the operands
+/// are ordered (neither is NaN), while the `U` predicates also hold whenever
+/// the operands are unordered.
+fn eval_fcmp(pred: &FCmpPredicateAttr, lhs: &dyn FloatAttr, rhs: &dyn FloatAttr) -> bool {
+    let ord = lhs.partial_cmp(rhs);
+    match pred {
+        FCmpPredicateAttr::False => false,
+        FCmpPredicateAttr::True => true,
+        FCmpPredicateAttr::ORD => ord.is_some(),
+        FCmpPredicateAttr::UNO => ord.is_none(),
+        FCmpPredicateAttr::OEQ => ord == Some(Ordering::Equal),
+        FCmpPredicateAttr::OGT => ord == Some(Ordering::Greater),
+        FCmpPredicateAttr::OGE => matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
+        FCmpPredicateAttr::OLT => ord == Some(Ordering::Less),
+        FCmpPredicateAttr::OLE => matches!(ord, Some(Ordering::Less | Ordering::Equal)),
+        FCmpPredicateAttr::ONE => matches!(ord, Some(Ordering::Less | Ordering::Greater)),
+        FCmpPredicateAttr::UEQ => !matches!(ord, Some(Ordering::Less | Ordering::Greater)),
+        FCmpPredicateAttr::UGT => !matches!(ord, Some(Ordering::Less | Ordering::Equal)),
+        FCmpPredicateAttr::UGE => ord != Some(Ordering::Less),
+        FCmpPredicateAttr::ULT => !matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
+        FCmpPredicateAttr::ULE => ord != Some(Ordering::Greater),
+        FCmpPredicateAttr::UNE => ord != Some(Ordering::Equal),
+    }
+}
+
+/// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
+/// be casted to a [FloatAttr], return the casted results. Otherwise, return `None`.
+fn get_float_bin_operands(
+    operand_attrs: &[Option<AttrObj>],
+) -> Option<(&dyn FloatAttr, &dyn FloatAttr)> {
+    assert!(operand_attrs.len() == 2);
+    let [Some(lhs), Some(rhs)] = operand_attrs else {
+        return None;
+    };
+    let lhs = attr_cast::<dyn FloatAttr>(&**lhs)
+        .expect("invalid operand type: typecheck before optimizing");
+    let rhs = attr_cast::<dyn FloatAttr>(&**rhs)
+        .expect("invalid operand type: typecheck before optimizing");
+    Some((lhs, rhs))
+}
+
+/// The `i1` attribute that an `icmp` or an `fcmp` folds to.
+fn bool_attr(ctx: &Context, value: bool) -> AttrObj {
+    let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
+    Box::new(IntegerAttr::new(
+        bool_ty,
+        APInt::from_u8(value as u8, bw(1)),
+    )) as AttrObj
+}
+
+/// Constant fold a scalar integer cast whose result type `res_ty` is an
+/// [IntegerType], by applying `resize` to the operand value and the destination
+/// bitwidth.
+fn check_fold_int_cast(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    res_ty: TypeHandle,
+    resize: impl Fn(&APInt, NonZero<usize>) -> APInt,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        return vec![None];
+    };
+    let operand = operand
+        .downcast_ref::<IntegerAttr>()
+        .expect("invalid operand type: typecheck before optimizing");
+    let dest_width = res_ty
+        .deref(ctx)
+        .downcast_ref::<IntegerType>()
+        .expect("integer cast result must be an integer type")
+        .width();
+    let dest_ty = IntegerType::get(ctx, dest_width, Signedness::Signless);
+    let resized = resize(
+        &operand.value(),
+        NonZero::new(dest_width as usize).expect("result has zero bitwidth"),
+    );
+    vec![Some(Box::new(IntegerAttr::new(dest_ty, resized)) as AttrObj)]
+}
+
 /// Constant fold this binary integer operation into a singleton vector
 /// containing its result type if folding is successful, or None otherwise.
 fn check_fold_int_bin_op(
@@ -324,14 +407,9 @@ fn check_fold_float_bin_op(
     flags: FastmathFlagsAttr,
     combine: impl Fn(&dyn FloatAttr, &dyn FloatAttr) -> Box<dyn FloatAttr>,
 ) -> Vec<Option<AttrObj>> {
-    assert!(operand_attrs.len() == 2);
-    let [Some(lhs), Some(rhs)] = operand_attrs else {
+    let Some((lhs, rhs)) = get_float_bin_operands(operand_attrs) else {
         return vec![None];
     };
-    let lhs = attr_cast::<dyn FloatAttr>(&**lhs)
-        .expect("invalid operand type: typecheck before optimizing");
-    let rhs = attr_cast::<dyn FloatAttr>(&**rhs)
-        .expect("invalid operand type: typecheck before optimizing");
     let res = combine(lhs, rhs);
     if fast_math_forbids_fold(flags, &[lhs, rhs, &*res]) {
         return vec![None];
@@ -656,12 +734,7 @@ impl ConstFoldInterface for ICmpOp {
             return vec![None];
         };
         let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
-        let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
-        let res = Box::new(IntegerAttr::new(
-            bool_ty,
-            APInt::from_u8(result as u8, bw(1)),
-        )) as AttrObj;
-        vec![Some(res)]
+        vec![Some(bool_attr(ctx, result))]
     }
     fn fold_in_place(
         &self,
@@ -676,24 +749,7 @@ impl ConstFoldInterface for ICmpOp {
 #[op_interface_impl]
 impl ConstFoldInterface for SExtOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let [Some(operand)] = ops else {
-            return vec![None];
-        };
-        let operand = operand
-            .downcast_ref::<IntegerAttr>()
-            .expect("invalid operand type: typecheck before optimizing");
-        let res_ty = self.result_type(ctx);
-        let dest_width = res_ty
-            .deref(ctx)
-            .downcast_ref::<IntegerType>()
-            .expect("sext result must be an integer type")
-            .width();
-        let dest_ty = IntegerType::get(ctx, dest_width, Signedness::Signless);
-        let extended = operand
-            .value()
-            .sext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
-        let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
-        vec![Some(res)]
+        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::sext)
     }
     fn fold_in_place(
         &self,
@@ -708,33 +764,34 @@ impl ConstFoldInterface for SExtOp {
 #[op_interface_impl]
 impl ConstFoldInterface for ZExtOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let [Some(operand)] = ops else {
-            return vec![None];
-        };
-        let operand = operand
-            .downcast_ref::<IntegerAttr>()
-            .expect("invalid operand type: typecheck before optimizing");
         // `zext nneg` asserts the operand is non-negative; if it isn't, the
         // result is poison, so we must not fold it to a concrete value.
-        let value = operand.value();
         if self.nneg(ctx)
-            && value.slt(&APInt::zero(
-                NonZero::new(value.bw()).expect("operand has zero bitwidth"),
-            ))
+            && let [Some(operand)] = ops
+            && operand
+                .downcast_ref::<IntegerAttr>()
+                .expect("invalid operand type: typecheck before optimizing")
+                .value()
+                .is_negative()
         {
             return vec![None];
         }
-        let res_ty = self.result_type(ctx);
-        let dest_width = res_ty
-            .deref(ctx)
-            .downcast_ref::<IntegerType>()
-            .expect("zext result must be an integer type")
-            .width();
-        let dest_ty = IntegerType::get(ctx, dest_width, Signedness::Signless);
-        let extended =
-            value.zext(NonZero::new(dest_width as usize).expect("result has zero bitwidth"));
-        let res = Box::new(IntegerAttr::new(dest_ty, extended)) as AttrObj;
-        vec![Some(res)]
+        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::zext)
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for TruncOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::trunc)
     }
     fn fold_in_place(
         &self,
@@ -854,6 +911,85 @@ impl ConstFoldInterface for FRemOp {
         ops: &[Option<AttrObj>],
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FCmpOp {
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let Some((lhs, rhs)) = get_float_bin_operands(ops) else {
+            return vec![None];
+        };
+        // The result is an i1, so only the operands can violate the fast-math
+        // assumptions.
+        if fast_math_forbids_fold(self.fast_math_flags(ctx), &[lhs, rhs]) {
+            return vec![None];
+        }
+        let result = eval_fcmp(&self.predicate(ctx), lhs, rhs);
+        vec![Some(bool_attr(ctx, result))]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        self.fold_with_materialization(ctx, ops, rw)
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for SelectOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [cond, true_val, false_val] = ops else {
+            panic!("SelectOp must have exactly three operands");
+        };
+        match cond {
+            Some(cond_attr) => {
+                // A vector-of-i1 condition (allowed by the verifier) selects
+                // element-wise and cannot be folded here.
+                let Some(cond_int) = cond_attr.downcast_ref::<IntegerAttr>() else {
+                    return vec![None];
+                };
+                let chosen = if cond_int.value().is_zero() {
+                    false_val
+                } else {
+                    true_val
+                };
+                vec![chosen.clone()]
+            }
+            // Whichever way an unknown condition goes, equal constant operands
+            // make the result that same constant.
+            None => match (true_val, false_val) {
+                (Some(t), Some(f)) if t == f => vec![Some(t.clone())],
+                _ => vec![None],
+            },
+        }
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        // With a constant condition the select just forwards one of its
+        // operands, so it can be folded even when that operand is not itself
+        // constant.
+        if let Some(cond_attr) = &ops[0]
+            && let Some(cond_int) = cond_attr.downcast_ref::<IntegerAttr>()
+        {
+            let (chosen, result) = {
+                let op = self.get_operation().deref(ctx);
+                let chosen_idx = if cond_int.value().is_zero() { 2 } else { 1 };
+                (op.get_operand(chosen_idx), op.get_result(0))
+            };
+            if !result.is_used(ctx) {
+                return IRStatus::Unchanged;
+            }
+            rw.replace_value_uses_with(ctx, result, chosen);
+            return IRStatus::Changed;
+        }
         self.fold_with_materialization(ctx, ops, rw)
     }
 }

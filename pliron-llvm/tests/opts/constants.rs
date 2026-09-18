@@ -1511,6 +1511,65 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 }
 
 // ---------------------------------------------------------------------------
+// llvm.trunc
+// ---------------------------------------------------------------------------
+
+/// Truncation keeps only the low bits: 5 (i16) stays 5, 258 (i16, 0x102) becomes
+/// 2 (i8), and -1 (i16, 0xffff) becomes 0xff, which is -1 again at the narrower
+/// width.
+#[test]
+fn trunc_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 () variadic = false> [] {
+        ^entry():
+        fits = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16;
+        high_bits = builtin.constant <builtin.integer <258: i16>> : builtin.integer i16;
+        negative = builtin.constant <builtin.integer <65535: i16>> : builtin.integer i16;
+        a = llvm.trunc fits to builtin.integer i8;
+        b = llvm.trunc high_bits to builtin.integer i8;
+        c = llvm.trunc negative to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i8() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            fits_v0 = builtin.constant <builtin.integer <5: i16>> : builtin.integer i16 !1;
+            high_bits_v1 = builtin.constant <builtin.integer <258: i16>> : builtin.integer i16 !2;
+            negative_v2 = builtin.constant <builtin.integer <-1: i16>> : builtin.integer i16 !3;
+            a_v6 = builtin.constant <builtin.integer <5: i8>> : builtin.integer i8 !4;
+            a_v3 = llvm.trunc fits_v0 to builtin.integer i8 !5;
+            b_v7 = builtin.constant <builtin.integer <2: i8>> : builtin.integer i8 !6;
+            b_v4 = llvm.trunc high_bits_v1 to builtin.integer i8 !7;
+            c_v8 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !8;
+            c_v5 = llvm.trunc negative_v2 to builtin.integer i8 !9;
+            llvm.return c_v8 !10
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn trunc_does_not_fold_with_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i8 (builtin.integer i16) variadic = false> [] {
+        ^entry(x: builtin.integer i16):
+        c = llvm.trunc x to builtin.integer i8;
+        llvm.return c
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
 // llvm.fneg
 // ---------------------------------------------------------------------------
 
@@ -2795,5 +2854,267 @@ fn frem_nnan_still_folds_finite() -> Result<()> {
             llvm.return c_v3 !5
         }"#]]
     .assert_eq(&after);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.fcmp
+// ---------------------------------------------------------------------------
+
+/// The `O` predicates hold only when both operands are ordered, while the `U`
+/// predicates also hold when either is NaN. `True` and `False` ignore their
+/// operands, and IEEE equality makes -0.0 equal to 0.0.
+#[test]
+fn fcmp_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 () variadic = false> [] {
+        ^entry():
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        a2 = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.single 4.0> : builtin.fp32;
+        neg_zero = builtin.constant <builtin.single -0.0> : builtin.fp32;
+        pos_zero = builtin.constant <builtin.single 0.0> : builtin.fp32;
+        nan = builtin.constant <builtin.single NaN> : builtin.fp32;
+        inf = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        oeq_equal = llvm.fcmp <> a <OEQ> a2 : builtin.integer i1;
+        oeq_unequal = llvm.fcmp <> a <OEQ> b : builtin.integer i1;
+        oeq_signed_zeros = llvm.fcmp <> neg_zero <OEQ> pos_zero : builtin.integer i1;
+        ordered_with_nan = llvm.fcmp <> nan <OLT> a : builtin.integer i1;
+        unordered_with_nan = llvm.fcmp <> nan <UGT> a : builtin.integer i1;
+        ord_with_nan = llvm.fcmp <> a <ORD> nan : builtin.integer i1;
+        uno_with_nan = llvm.fcmp <> a <UNO> nan : builtin.integer i1;
+        below_infinity = llvm.fcmp <> a <OLT> inf : builtin.integer i1;
+        always_true = llvm.fcmp <> a <True> b : builtin.integer i1;
+        always_false = llvm.fcmp <> a <False> b : builtin.integer i1;
+        nnan_finite = llvm.fcmp <NNAN> a <OLT> b : builtin.integer i1;
+        llvm.return nnan_finite
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i1() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            a_v0 = builtin.constant <builtin.single 2.5> : builtin.fp32  !1;
+            a2_v1 = builtin.constant <builtin.single 2.5> : builtin.fp32  !2;
+            b_v2 = builtin.constant <builtin.single 4> : builtin.fp32  !3;
+            neg_zero_v3 = builtin.constant <builtin.single -0> : builtin.fp32  !4;
+            pos_zero_v4 = builtin.constant <builtin.single 0> : builtin.fp32  !5;
+            nan_v5 = builtin.constant <builtin.single NaN> : builtin.fp32  !6;
+            inf_v6 = builtin.constant <builtin.single +Inf> : builtin.fp32  !7;
+            oeq_equal_v18 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !8;
+            oeq_equal_v7 = llvm.fcmp <> a_v0 <OEQ> a2_v1 : builtin.integer i1 !9;
+            oeq_unequal_v19 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !10;
+            oeq_unequal_v8 = llvm.fcmp <> a_v0 <OEQ> b_v2 : builtin.integer i1 !11;
+            oeq_signed_zeros_v20 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !12;
+            oeq_signed_zeros_v9 = llvm.fcmp <> neg_zero_v3 <OEQ> pos_zero_v4 : builtin.integer i1 !13;
+            ordered_with_nan_v21 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !14;
+            ordered_with_nan_v10 = llvm.fcmp <> nan_v5 <OLT> a_v0 : builtin.integer i1 !15;
+            unordered_with_nan_v22 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !16;
+            unordered_with_nan_v11 = llvm.fcmp <> nan_v5 <UGT> a_v0 : builtin.integer i1 !17;
+            ord_with_nan_v23 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !18;
+            ord_with_nan_v12 = llvm.fcmp <> a_v0 <ORD> nan_v5 : builtin.integer i1 !19;
+            uno_with_nan_v24 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !20;
+            uno_with_nan_v13 = llvm.fcmp <> a_v0 <UNO> nan_v5 : builtin.integer i1 !21;
+            below_infinity_v25 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !22;
+            below_infinity_v14 = llvm.fcmp <> a_v0 <OLT> inf_v6 : builtin.integer i1 !23;
+            always_true_v26 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !24;
+            always_true_v15 = llvm.fcmp <> a_v0 <True> b_v2 : builtin.integer i1 !25;
+            always_false_v27 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !26;
+            always_false_v16 = llvm.fcmp <> a_v0 <False> b_v2 : builtin.integer i1 !27;
+            nnan_finite_v28 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !28;
+            nnan_finite_v17 = llvm.fcmp <NNAN> a_v0 <OLT> b_v2 : builtin.integer i1 !29;
+            llvm.return nnan_finite_v28 !30
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// `nnan` and `ninf` assert their operands are neither NaN nor infinite; when
+/// they are, the result is poison, even though the comparison itself is total.
+#[test]
+fn fcmp_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i1 (builtin.fp32) variadic = false> [] {
+        ^entry(x: builtin.fp32):
+        a = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        nan = builtin.constant <builtin.single NaN> : builtin.fp32;
+        inf = builtin.constant <builtin.single +Inf> : builtin.fp32;
+        nnan_nan = llvm.fcmp <NNAN> nan <UNO> a : builtin.integer i1;
+        ninf_inf = llvm.fcmp <NINF> inf <OGT> a : builtin.integer i1;
+        non_constant = llvm.fcmp <> x <OEQ> a : builtin.integer i1;
+        llvm.return non_constant
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.select
+// ---------------------------------------------------------------------------
+
+/// A true condition selects the first value operand: the select's result is
+/// known to be 10, so the dependent add folds to 11.
+/// A constant condition makes the select's result that of the chosen operand,
+/// so the dependent adds fold to 11 and 21 respectively.
+#[test]
+fn select_constant_condition_propagates_chosen_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 () variadic = false> [] {
+        ^entry():
+        t = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        taken = llvm.select t ? a : b : builtin.integer i64;
+        not_taken = llvm.select f ? a : b : builtin.integer i64;
+        from_true = llvm.add taken, one <{nsw=false,nuw=false}> : builtin.integer i64;
+        from_false = llvm.add not_taken, one <{nsw=false,nuw=false}> : builtin.integer i64;
+        llvm.return from_false
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            t_v0 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            f_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !2;
+            a_v2 = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64 !3;
+            b_v3 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !4;
+            one_v4 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !5;
+            taken_v5 = llvm.select  t_v0 ? a_v2 : b_v3 : builtin.integer i64 !6;
+            not_taken_v6 = llvm.select  f_v1 ? a_v2 : b_v3 : builtin.integer i64 !7;
+            from_true_v9 = builtin.constant <builtin.integer <11: i64>> : builtin.integer i64 !8;
+            from_true_v7 = llvm.add a_v2, one_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !9;
+            from_false_v10 = builtin.constant <builtin.integer <21: i64>> : builtin.integer i64 !10;
+            from_false_v8 = llvm.add b_v3, one_v4 <{nsw=false,nuw=false}>: builtin.integer i64 !11;
+            llvm.return from_false_v10 !12
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn select_constant_condition_forwards_non_constant_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+        ^entry(x: builtin.integer i64):
+        cond = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        s = llvm.select cond ? x : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            cond_v1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            b_v2 = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64 !2;
+            s_v3 = llvm.select  cond_v1 ? x_v0 : b_v2 : builtin.integer i64 !3;
+            llvm.return x_v0 !4
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// Whichever way an unknown condition goes, equal constant operands make the
+/// result that same constant.
+#[test]
+fn select_unknown_condition_folds_equal_constant_operands() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+        ^entry(cond: builtin.integer i1):
+        a = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(cond_v0: builtin.integer i1) !0:
+            a_v1 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !1;
+            b_v2 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !2;
+            s_v4 = builtin.constant <builtin.integer <7: i64>> : builtin.integer i64 !3;
+            s_v3 = llvm.select  cond_v0 ? a_v1 : b_v2 : builtin.integer i64 !4;
+            llvm.return s_v4 !5
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn select_does_not_fold_unknown_condition_with_distinct_operands() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+        ^entry(cond: builtin.integer i1):
+        a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
+        b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
+        s = llvm.select cond ? a : b : builtin.integer i64;
+        llvm.return s
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+/// Forwarding the chosen operand is type-agnostic: a scalar constant
+/// condition folds a select between whole vectors.
+#[test]
+fn select_scalar_constant_condition_forwards_vector_operand() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i32>, llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(x: llvm.vector <Fixed x 4 x builtin.integer i32>, y: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        cond = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        s = llvm.select cond ? x : y : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return s
+      }
+    "#;
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32>(llvm.vector <Fixed x 4 x builtin.integer i32>, llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: llvm.vector <Fixed x 4 x builtin.integer i32>, y_v1: llvm.vector <Fixed x 4 x builtin.integer i32>) !0:
+            cond_v2 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
+            s_v3 = llvm.select  cond_v2 ? x_v0 : y_v1 : llvm.vector <Fixed x 4 x builtin.integer i32> !2;
+            llvm.return y_v1 !3
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+/// A vector-of-i1 condition selects element-wise; there is no vector constant
+/// attribute to propagate, so SCCP must leave the op alone (and not crash).
+#[test]
+fn select_does_not_fold_with_vector_condition() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.vector <Fixed x 4 x builtin.integer i32> (llvm.vector <Fixed x 4 x builtin.integer i1>, llvm.vector <Fixed x 4 x builtin.integer i32>, llvm.vector <Fixed x 4 x builtin.integer i32>) variadic = false> [] {
+        ^entry(cond: llvm.vector <Fixed x 4 x builtin.integer i1>, x: llvm.vector <Fixed x 4 x builtin.integer i32>, y: llvm.vector <Fixed x 4 x builtin.integer i32>):
+        s = llvm.select cond ? x : y : llvm.vector <Fixed x 4 x builtin.integer i32>;
+        llvm.return s
+      }
+    "#;
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
     Ok(())
 }

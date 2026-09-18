@@ -40,6 +40,12 @@ impl APInt {
         self.value.is_zero()
     }
 
+    /// Is the sign bit set, i.e. is this value negative when read as a signed
+    /// two's complement integer?
+    pub fn is_negative(&self) -> bool {
+        self.value.msb()
+    }
+
     /// Add `self` and `rhs`. They must have the same bitwidth.
     pub fn add(&self, rhs: &APInt) -> APInt {
         assert_eq!(
@@ -247,6 +253,18 @@ impl APInt {
         let mut value = Awi::zero(width);
         value.zero_resize_(&self.value);
         APInt { value }
+    }
+
+    /// Truncate `self` to `width` bits, keeping the low bits. `width` must not
+    /// exceed the current bitwidth.
+    pub fn trunc(&self, width: NonZero<usize>) -> APInt {
+        assert!(
+            width.get() <= self.bw(),
+            "APInt::trunc: target width {} exceeds bitwidth {}",
+            width.get(),
+            self.bw()
+        );
+        self.zext(width)
     }
 
     /// Left-shift `self` by `rhs` bits, reporting whether the result
@@ -1149,6 +1167,38 @@ mod tests {
         // -3 (i4, 0b1101 == 13 unsigned) zero-extends to 13 (i8).
         let res = APInt::from_i8(-3, bw(4)).zext(bw(8));
         assert_eq!(res.to_u8(), 13);
+    }
+
+    #[test]
+    fn test_trunc() {
+        // Only the low bits are kept: 0x1_02 (i9, 258) -> 2 (i8).
+        let res = APInt::from_u64(258, bw(9)).trunc(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_u8(), 2);
+
+        // A value that fits in the target width is unchanged.
+        let res = APInt::from_u8(5, bw(8)).trunc(bw(4));
+        assert_eq!(res.to_u8(), 5);
+
+        // Truncation is bit-level, not value-level: -1 (i8, 0xff) -> 0xf (i4),
+        // which is still -1 when reinterpreted signed at the narrower width.
+        let res = APInt::from_i8(-1, bw(8)).trunc(bw(4));
+        assert_eq!(res.to_u8(), 0xf);
+        assert_eq!(res.to_i8(), -1);
+
+        // Truncating to the same width is the identity.
+        let res = APInt::from_u8(200, bw(8)).trunc(bw(8));
+        assert_eq!(res.to_u8(), 200);
+    }
+
+    #[test]
+    fn test_is_negative() {
+        assert!(APInt::from_i8(-1, bw(8)).is_negative());
+        assert!(APInt::from_i8(i8::MIN, bw(8)).is_negative());
+        assert!(!APInt::from_i8(0, bw(8)).is_negative());
+        assert!(!APInt::from_i8(i8::MAX, bw(8)).is_negative());
+        // The sign bit is read at the value's own bitwidth: 1 is negative as i1.
+        assert!(APInt::from_u8(1, bw(1)).is_negative());
     }
 
     #[test]
