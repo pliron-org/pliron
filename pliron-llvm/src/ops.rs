@@ -2074,9 +2074,7 @@ impl AtomicStoreOp {
     }
 }
 
-/// Equivalent to LLVM's inline assembly call. The template and constraint
-/// strings follow LLVM's inline-asm syntax; `convergent` marks asm that must
-/// not be reordered across divergent control flow (e.g. warp-synchronous PTX).
+/// Equivalent to LLVM's inline assembly call.
 ///
 /// ### Operands
 /// | operand | description |
@@ -2089,20 +2087,52 @@ impl AtomicStoreOp {
 /// | `res` | the asm result (a void type when there is none) |
 #[pliron_op(
     name = "llvm.inline_asm",
-    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` convergent = ` attr($llvm_inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` side_effects = ` attr($llvm_inline_asm_side_effects, $BoolAttr) ` convergent = ` attr($llvm_inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
     interfaces = [OneResultInterface],
     attributes = (
         llvm_inline_asm_template: StringAttr,
         llvm_inline_asm_constraints: StringAttr,
+        llvm_inline_asm_side_effects: BoolAttr,
         llvm_inline_asm_convergent: BoolAttr
-    ),
-    verifier = "succ"
+    )
 )]
 pub struct InlineAsmOp;
 
+#[derive(Error, Debug)]
+enum InlineAsmOpVerifyErr {
+    #[error("Missing or incorrect inline asm template attribute")]
+    Template,
+    #[error("Missing or incorrect inline asm constraints attribute")]
+    Constraints,
+    #[error("Missing or incorrect inline asm side-effects attribute")]
+    SideEffects,
+    #[error("Missing or incorrect inline asm convergent attribute")]
+    Convergent,
+}
+
+impl Verify for InlineAsmOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        if self.get_attr_llvm_inline_asm_template(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::Template);
+        }
+        if self.get_attr_llvm_inline_asm_constraints(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::Constraints);
+        }
+        if self.get_attr_llvm_inline_asm_side_effects(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::SideEffects);
+        }
+        if self.get_attr_llvm_inline_asm_convergent(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::Convergent);
+        }
+        Ok(())
+    }
+}
+
 impl InlineAsmOp {
-    /// Create a new [InlineAsmOp]. Use a void result type for asm with no
-    /// result value.
+    /// Create a new [InlineAsmOp].
+    ///
+    /// Use a void result type for asm with no result value.
     pub fn new(
         ctx: &mut Context,
         result_ty: TypeHandle,
@@ -2110,6 +2140,7 @@ impl InlineAsmOp {
         asm_template: &str,
         constraints: &str,
         convergent: bool,
+        side_effects: bool,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -2122,6 +2153,7 @@ impl InlineAsmOp {
         let op = InlineAsmOp { op };
         op.set_attr_llvm_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
         op.set_attr_llvm_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
+        op.set_attr_llvm_inline_asm_side_effects(ctx, BoolAttr::new(side_effects));
         op.set_attr_llvm_inline_asm_convergent(ctx, BoolAttr::new(convergent));
         op
     }
