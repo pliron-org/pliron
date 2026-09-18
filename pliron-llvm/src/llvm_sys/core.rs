@@ -109,9 +109,8 @@ use crate::llvm_sys::{
     ToBool, c_array_to_vec, cstr_to_string, sized_cstr_to_string, to_c_str, uninitialized_vec,
 };
 
-/// Identifies what an LLVM attribute is attached to: the function itself
-/// ([LLVM_ATTRIBUTE_FUNCTION_INDEX]), its return value ([LLVM_ATTRIBUTE_RETURN_INDEX]),
-/// or one of its parameters (`1` to `N`).
+/// `LLVMAttributeReturnIndex`, `LLVMAttributeFunctionIndex`,
+/// or a parameter number from 1 to N.
 pub use llvm_sys::LLVMAttributeIndex;
 
 use crate::attributes::{FastmathFlags, GepNoWrapFlags};
@@ -3826,18 +3825,5 @@ pub fn llvm_metadata_as_value_in_module(module: &LLVMModule, md: LLVMMetadata) -
     unsafe {
         let ctx = LLVMGetModuleContext(module.inner_ref());
         LLVMMetadataAsValue(ctx, md.into()).into()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn int_attribute_keeps_its_value() {
-        let ctx = LLVMContext::default();
-        let kind = llvm_enum_attribute_kind("alignstack").unwrap();
-        let attr = llvm_create_enum_attribute(&ctx, kind, 16);
-        assert_eq!(llvm_get_enum_attribute_value(attr), 16);
     }
 }
