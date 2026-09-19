@@ -7,6 +7,17 @@ pub(crate) fn verify_succ_impl(
     args: proc_macro2::TokenStream,
     input: proc_macro2::TokenStream,
 ) -> syn::Result<proc_macro2::TokenStream> {
+    let impl_ = verify_succ_impl_inner(args, input.clone())?;
+    Ok(quote::quote! {
+        #input
+        #impl_
+    })
+}
+
+pub(crate) fn verify_succ_impl_inner(
+    args: proc_macro2::TokenStream,
+    input: proc_macro2::TokenStream,
+) -> syn::Result<proc_macro2::TokenStream> {
     if !args.is_empty() {
         return Err(syn::Error::new_spanned(
             args,
@@ -20,8 +31,6 @@ pub(crate) fn verify_succ_impl(
             let ident = &item_struct.ident;
             let (impl_generics, ty_generics, where_clause) = item_struct.generics.split_for_impl();
             Ok(quote::quote! {
-                #item
-
                 impl #impl_generics ::pliron::common_traits::Verify for #ident #ty_generics #where_clause {
                     fn verify(&self, _ctx: &::pliron::context::Context) -> ::pliron::result::Result<()> {
                         Ok(())
@@ -33,8 +42,6 @@ pub(crate) fn verify_succ_impl(
             let ident = &item_enum.ident;
             let (impl_generics, ty_generics, where_clause) = item_enum.generics.split_for_impl();
             Ok(quote::quote! {
-                #item
-
                 impl #impl_generics ::pliron::common_traits::Verify for #ident #ty_generics #where_clause {
                     fn verify(&self, _ctx: &::pliron::context::Context) -> ::pliron::result::Result<()> {
                         Ok(())

@@ -28,7 +28,7 @@ use crate::{
     utils::table::{HMap, HSet, IMap},
     verify_err_noloc,
 };
-use alloc::{boxed::Box, format, string::ToString, vec, vec::Vec};
+use alloc::{boxed::Box, format, string::ToString, vec::Vec};
 use slotmap::{SlotMap, new_key_type};
 
 new_key_type! {
@@ -371,7 +371,7 @@ pub static DICT_KEYS_VERIFIER: LazyLock<Result<()>> = LazyLock::new(verify_dict_
 /// This helper preserves interface dependency order (as returned by each `__all_verifiers`
 /// function) while deduplicating verifier function pointers.
 pub(crate) fn collect_deduped_interface_verifiers<Id, AllVerifiers, Verifier>(
-    interface_verifiers: impl Iterator<Item = &'static (Id, AllVerifiers)>,
+    interface_verifiers: impl Iterator<Item = &'static (Id, &'static [AllVerifiers])>,
 ) -> HMap<Id, Vec<Verifier>>
 where
     Id: Eq + Hash + Clone + 'static,
@@ -384,9 +384,9 @@ where
         grouped
             .entry(id.clone())
             .and_modify(|verifiers: &mut Vec<AllVerifiers>| {
-                verifiers.push(all_verifiers_for_interface.clone())
+                verifiers.extend(all_verifiers_for_interface.iter().cloned())
             })
-            .or_insert(vec![all_verifiers_for_interface.clone()]);
+            .or_insert(all_verifiers_for_interface.to_vec());
     }
 
     // Remove duplicates (best effort as rustc may inline functions, resulting in different pointers).

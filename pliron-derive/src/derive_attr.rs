@@ -5,26 +5,24 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{DeriveInput, LitStr, Result};
 
-const PROC_MACRO_NAME: &str = "def_attribute";
-
 pub(crate) fn def_attribute(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
 ) -> syn::Result<TokenStream> {
     let name = syn::parse2::<LitStr>(args.into())?;
     let input = syn::parse2::<DeriveInput>(input.into())?;
-    let p = DefAttribute::derive(name, input)?;
+    let p = DefAttribute::derive(&name, &input)?;
     Ok(p.into_token_stream())
 }
 
 /// The derived macro body for the `#[def_attribute]` proc macro.
-struct DefAttribute {
-    input: DeriveInput,
+pub(crate) struct DefAttribute<'a> {
+    input: &'a DeriveInput,
     impl_attr: ImplAttribute,
 }
 
-impl DefAttribute {
-    fn derive(name: LitStr, input: DeriveInput) -> Result<Self> {
+impl<'a> DefAttribute<'a> {
+    pub(crate) fn derive(name: &LitStr, input: &'a DeriveInput) -> Result<Self> {
         let name_str = name.value();
         let Some((dialect_name, attr_name)) = name_str.split_once('.') else {
             return Err(syn::Error::new_spanned(
@@ -37,7 +35,7 @@ impl DefAttribute {
             syn::Data::Struct(_) | syn::Data::Enum(_) => {}
             _ => {
                 return Err(syn::Error::new_spanned(
-                    &input,
+                    input,
                     "Attribute can only be derived for structs or enums",
                 ));
             }
@@ -45,18 +43,10 @@ impl DefAttribute {
 
         if !input.generics.params.is_empty() {
             return Err(syn::Error::new_spanned(
-                &input,
+                input,
                 "Attribute cannot be derived for generic structs or enums",
             ));
         }
-
-        let attrs = input
-            .attrs
-            .into_iter()
-            .filter(|attr| !attr.path().is_ident(PROC_MACRO_NAME))
-            .collect();
-
-        let input = DeriveInput { attrs, ..input };
 
         let impl_attr = ImplAttribute {
             ident: input.ident.clone(),
@@ -68,7 +58,7 @@ impl DefAttribute {
     }
 }
 
-impl ToTokens for DefAttribute {
+impl ToTokens for DefAttribute<'_> {
     fn to_tokens(&self, tokens: &mut TokenStream) {
         let def_struct = &self.input;
         let impl_attribute_trait = &self.impl_attr;
