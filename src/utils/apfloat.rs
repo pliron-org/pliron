@@ -347,8 +347,7 @@ pub trait DynFloat: Downcast + core::fmt::Debug {
     fn to_bits(&self) -> u128;
     /// [Float::to_u128_r]
     fn to_u128_r(&self, width: usize, round: Round, is_exact: &mut bool) -> StatusAnd<u128>;
-    /// [PartialOrd::partial_cmp]: IEEE-754 comparison, `None` when the
-    /// operands are unordered (i.e., either is a NaN).
+    /// [PartialOrd::partial_cmp]
     fn partial_cmp(&self, other: &dyn DynFloat) -> Option<Ordering>;
     /// [Float::cmp_abs_normal]
     fn cmp_abs_normal(&self, other: &dyn DynFloat) -> Ordering;

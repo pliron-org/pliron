@@ -1515,8 +1515,7 @@ fn zext_does_not_fold_with_non_constant_operand() -> Result<()> {
 // ---------------------------------------------------------------------------
 
 /// Truncation keeps only the low bits: 5 (i16) stays 5, 258 (i16, 0x102) becomes
-/// 2 (i8), and -1 (i16, 0xffff) becomes 0xff, which is -1 again at the narrower
-/// width.
+/// 2 (i8), and -1 (i16, 0xffff) becomes 0xff, which is -1 at the narrower width.
 #[test]
 fn trunc_folds_constants() -> Result<()> {
     let input = r#"
@@ -1676,8 +1675,7 @@ fn fptrunc_folds_constants() -> Result<()> {
     Ok(())
 }
 
-/// `ninf` also rules out a result that overflows to infinity, not just an
-/// infinite operand.
+/// `ninf` rules out a result that overflows to infinity.
 #[test]
 fn fptrunc_does_not_fold() -> Result<()> {
     let input = r#"
@@ -1701,8 +1699,8 @@ fn fptrunc_does_not_fold() -> Result<()> {
 // llvm.sitofp
 // ---------------------------------------------------------------------------
 
-/// The i8 operand has its high bit set, so it reads as -1; and 16777217 is not
-/// representable as a single, so it rounds to 16777216.
+/// - The i8 operand has its high bit set, so it reads as -1
+/// - 16777217 is not representable as a single, so it rounds to 16777216.
 #[test]
 fn sitofp_folds_constants() -> Result<()> {
     let input = r#"
@@ -1765,7 +1763,7 @@ fn sitofp_does_not_fold() -> Result<()> {
 // llvm.uitofp
 // ---------------------------------------------------------------------------
 
-/// The i8 operand has its high bit set, and reads as 255 rather than -1.
+/// The i8 operand has its high bit set, and reads as 255 (not -1).
 #[test]
 fn uitofp_folds_constants() -> Result<()> {
     let input = r#"
@@ -1875,7 +1873,7 @@ fn fptosi_folds_constants() -> Result<()> {
     Ok(())
 }
 
-/// A value the destination cannot hold is poison, as is any NaN or infinity.
+/// A value the destination cannot hold is poison. Same for any NaN or infinity.
 #[test]
 fn fptosi_does_not_fold() -> Result<()> {
     let input = r#"
@@ -1903,7 +1901,7 @@ fn fptosi_does_not_fold() -> Result<()> {
 // llvm.fptoui
 // ---------------------------------------------------------------------------
 
-/// 255.9 truncates to 255, whose i8 bit pattern prints as -1, and a negative
+/// 255.9 truncates to 255 (printed as -1), and a negative
 /// fraction truncates to zero rather than going out of range.
 #[test]
 fn fptoui_folds_constants() -> Result<()> {
@@ -1979,9 +1977,11 @@ fn extract_value_folds_constants() -> Result<()> {
         s = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
         arr = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16];
         nested = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>;
+        vec = builtin.constant <llvm.aggregate <[llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 2 x builtin.integer i32>>] : llvm.struct <{ llvm.vector <Fixed x 2 x builtin.integer i32> } : Unpacked>>> : llvm.struct <{ llvm.vector <Fixed x 2 x builtin.integer i32> } : Unpacked>;
         field = llvm.extract_value s [1] : builtin.integer i32;
         element = llvm.extract_value arr [2] : builtin.integer i16;
         deep = llvm.extract_value nested [0, 1] : builtin.integer i32;
+        splat_field = llvm.extract_value vec [0] : llvm.vector <Fixed x 2 x builtin.integer i32>;
         llvm.return deep
       }
     "#;
@@ -1996,13 +1996,16 @@ fn extract_value_folds_constants() -> Result<()> {
             s_v0 = builtin.constant <llvm.aggregate <[builtin.integer <10: i32>, builtin.integer <20: i32>] : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>>> : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked> !1;
             arr_v1 = builtin.constant <llvm.aggregate <[builtin.integer <1: i16>, builtin.integer <2: i16>, builtin.integer <3: i16>] : llvm.array [3 x builtin.integer i16]>> : llvm.array [3 x builtin.integer i16] !2;
             nested_v2 = builtin.constant <llvm.aggregate <[llvm.aggregate <[builtin.integer <4: i32>, builtin.integer <9: i32>] : llvm.array [2 x builtin.integer i32]>, builtin.integer <7: i8>] : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked>>> : llvm.struct <{ llvm.array [2 x builtin.integer i32], builtin.integer i8 } : Unpacked> !3;
-            field_v6 = builtin.constant <builtin.integer <20: i32>> : builtin.integer i32 !4;
-            field_v3 = llvm.extract_value s_v0[1] : builtin.integer i32 !5;
-            element_v7 = builtin.constant <builtin.integer <3: i16>> : builtin.integer i16 !6;
-            element_v4 = llvm.extract_value arr_v1[2] : builtin.integer i16 !7;
-            deep_v8 = builtin.constant <builtin.integer <9: i32>> : builtin.integer i32 !8;
-            deep_v5 = llvm.extract_value nested_v2[0, 1] : builtin.integer i32 !9;
-            llvm.return deep_v8 !10
+            vec_v3 = builtin.constant <llvm.aggregate <[llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 2 x builtin.integer i32>>] : llvm.struct <{ llvm.vector <Fixed x 2 x builtin.integer i32> } : Unpacked>>> : llvm.struct <{ llvm.vector <Fixed x 2 x builtin.integer i32> } : Unpacked> !4;
+            field_v8 = builtin.constant <builtin.integer <20: i32>> : builtin.integer i32 !5;
+            field_v4 = llvm.extract_value s_v0[1] : builtin.integer i32 !6;
+            element_v9 = builtin.constant <builtin.integer <3: i16>> : builtin.integer i16 !7;
+            element_v5 = llvm.extract_value arr_v1[2] : builtin.integer i16 !8;
+            deep_v10 = builtin.constant <builtin.integer <9: i32>> : builtin.integer i32 !9;
+            deep_v6 = llvm.extract_value nested_v2[0, 1] : builtin.integer i32 !10;
+            splat_field_v11 = llvm.constant <llvm.splat <builtin.integer <7: i32> : llvm.vector <Fixed x 2 x builtin.integer i32>>> : llvm.vector <Fixed x 2 x builtin.integer i32> !11;
+            splat_field_v7 = llvm.extract_value vec_v3[0] : llvm.vector <Fixed x 2 x builtin.integer i32> !12;
+            llvm.return deep_v10 !13
         }"#]].assert_eq(&after);
     Ok(())
 }
@@ -3581,9 +3584,10 @@ fn frem_nnan_still_folds_finite() -> Result<()> {
 // llvm.fcmp
 // ---------------------------------------------------------------------------
 
-/// The `O` predicates hold only when both operands are ordered, while the `U`
-/// predicates also hold when either is NaN. `True` and `False` ignore their
-/// operands, and IEEE equality makes -0.0 equal to 0.0.
+/// - The `O` predicates hold only when neither operand is a NaN.
+/// - The `U` predicates, additionaly, also when either operand is a NaN.
+/// - `True` and `False` ignore their operands.
+/// - IEEE equality makes -0.0 equal to 0.0.
 #[test]
 fn fcmp_folds_constants() -> Result<()> {
     let input = r#"

@@ -12,16 +12,15 @@ use pliron::{
     attribute::{AttrObj, Attribute, attr_cast},
     basic_block::BasicBlock,
     builtin::{
-        attr_interfaces::{FloatAttr, MaterializableAttr, TypedAttrInterface},
+        attr_interfaces::{FloatAttr, TypedAttrInterface},
         attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{BranchOpInterface, OneResultInterface},
         types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
-    derive::{attr_interface_impl, op_interface_impl},
+    derive::op_interface_impl,
     irbuild::{IRStatus, inserter::Inserter, rewriter::Rewriter},
     op::Op,
-    operation::Operation,
     opts::{
         constants::{BranchOpFoldInterface, ConstFoldInterface},
         dce::{BlockArgRemoval, SideEffects},
@@ -228,20 +227,46 @@ impl BlockArgRemoval for FuncOp {
     }
 }
 
-/// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
-/// be casted to an [IntegerAttr], return the casted results. Otherwise, return `None`.
+/// Checks for and return two constant integer operands.
 fn get_int_bin_operands(operand_attrs: &[Option<AttrObj>]) -> Option<(IntegerAttr, IntegerAttr)> {
-    assert!(operand_attrs.len() == 2);
     let [Some(lhs), Some(rhs)] = operand_attrs else {
+        assert!(operand_attrs.len() == 2);
         return None;
     };
-    let lhs_int = lhs
-        .downcast_ref::<IntegerAttr>()
-        .expect("invalid operand type: typecheck before optimizing");
-    let rhs_int = rhs
-        .downcast_ref::<IntegerAttr>()
-        .expect("invalid operand type: typecheck before optimizing");
+    let lhs_int = lhs.downcast_ref::<IntegerAttr>()?;
+    let rhs_int = rhs.downcast_ref::<IntegerAttr>()?;
     Some((lhs_int.clone(), rhs_int.clone()))
+}
+
+/// Create an `i1` attribute.
+fn bool_attr(ctx: &Context, value: bool) -> AttrObj {
+    let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
+    Box::new(IntegerAttr::new(
+        bool_ty,
+        APInt::from_u8(value as u8, bw(1)),
+    )) as AttrObj
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for ConstantOp {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        _operand_attrs: &[Option<AttrObj>],
+    ) -> Vec<Option<AttrObj>> {
+        vec![Some(
+            pliron::dyn_clone::clone_box(&*self.get_value(ctx)) as AttrObj
+        )]
+    }
+
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _operand_attrs: &[Option<AttrObj>],
+        _rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
+    }
 }
 
 /// Constant fold this binary integer operation, taking integer overflow flags
@@ -271,490 +296,6 @@ fn check_fold_int_bin_op_with_overflow(
     }
     let res = Box::new(IntegerAttr::new(lhs.get_type(), res)) as AttrObj;
     vec![Some(res)]
-}
-
-/// Returns `true` if signed-dividing/remaindering `lhs` by `rhs` is undefined
-/// behavior in LLVM, and so must not be constant folded. The two cases are
-/// division by zero, and the signed overflow `INT_MIN / -1` (true quotient
-/// `INT_MAX + 1`, not representable), whose result LLVM leaves as poison and
-/// whose hardware behavior diverges (x86 traps, AArch64 wraps).
-fn is_signed_div_ub(lhs: &APInt, rhs: &APInt) -> bool {
-    let bw = NonZero::new(rhs.bw()).expect("operand has zero bitwidth");
-    // `-1` is the all-ones bit pattern, i.e. the unsigned max.
-    rhs.is_zero() || (*lhs == APInt::imin(bw) && *rhs == APInt::umax(bw))
-}
-
-/// Evaluate an integer comparison `lhs <pred> rhs`. `lhs` and `rhs` must have
-/// the same bitwidth.
-fn eval_icmp(pred: &ICmpPredicateAttr, lhs: &APInt, rhs: &APInt) -> bool {
-    match pred {
-        ICmpPredicateAttr::EQ => lhs == rhs,
-        ICmpPredicateAttr::NE => lhs != rhs,
-        ICmpPredicateAttr::SLT => lhs.slt(rhs),
-        ICmpPredicateAttr::SLE => lhs.sle(rhs),
-        ICmpPredicateAttr::SGT => lhs.sgt(rhs),
-        ICmpPredicateAttr::SGE => lhs.sge(rhs),
-        ICmpPredicateAttr::ULT => lhs.ult(rhs),
-        ICmpPredicateAttr::ULE => lhs.ule(rhs),
-        ICmpPredicateAttr::UGT => lhs.ugt(rhs),
-        ICmpPredicateAttr::UGE => lhs.uge(rhs),
-    }
-}
-
-/// Evaluate a floating-point comparison `lhs <pred> rhs`. `lhs` and `rhs` must
-/// have the same float type. The `O` predicates hold only when the operands
-/// are ordered (neither is NaN), while the `U` predicates also hold whenever
-/// the operands are unordered.
-fn eval_fcmp(pred: &FCmpPredicateAttr, lhs: &dyn FloatAttr, rhs: &dyn FloatAttr) -> bool {
-    let ord = lhs.partial_cmp(rhs);
-    match pred {
-        FCmpPredicateAttr::False => false,
-        FCmpPredicateAttr::True => true,
-        FCmpPredicateAttr::ORD => ord.is_some(),
-        FCmpPredicateAttr::UNO => ord.is_none(),
-        FCmpPredicateAttr::OEQ => ord == Some(Ordering::Equal),
-        FCmpPredicateAttr::OGT => ord == Some(Ordering::Greater),
-        FCmpPredicateAttr::OGE => matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
-        FCmpPredicateAttr::OLT => ord == Some(Ordering::Less),
-        FCmpPredicateAttr::OLE => matches!(ord, Some(Ordering::Less | Ordering::Equal)),
-        FCmpPredicateAttr::ONE => matches!(ord, Some(Ordering::Less | Ordering::Greater)),
-        FCmpPredicateAttr::UEQ => !matches!(ord, Some(Ordering::Less | Ordering::Greater)),
-        FCmpPredicateAttr::UGT => !matches!(ord, Some(Ordering::Less | Ordering::Equal)),
-        FCmpPredicateAttr::UGE => ord != Some(Ordering::Less),
-        FCmpPredicateAttr::ULT => !matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
-        FCmpPredicateAttr::ULE => ord != Some(Ordering::Greater),
-        FCmpPredicateAttr::UNE => ord != Some(Ordering::Equal),
-    }
-}
-
-#[attr_interface_impl]
-impl MaterializableAttr for AggregateAttr {
-    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
-        ConstantOp::new(ctx, Box::new(self.clone())).get_operation()
-    }
-}
-
-/// A copy of `aggregate` with the element at `index` replaced by `element`.
-/// Returns `None` if `index` is out of bounds.
-fn replace_aggregate_element(
-    aggregate: &AggregateAttr,
-    index: usize,
-    element: Box<dyn TypedAttrInterface>,
-) -> Option<AggregateAttr> {
-    let mut elements: Vec<Box<dyn TypedAttrInterface>> = aggregate
-        .elements()
-        .iter()
-        .map(|element| pliron::dyn_clone::clone_box(&**element))
-        .collect();
-    *elements.get_mut(index)? = element;
-    Some(AggregateAttr::new(elements, aggregate.ty()))
-}
-
-/// Extract a constant element from an aggregate attribute by following `indices`.
-fn extract_from_aggregate_attr(aggregate: &AggregateAttr, indices: &[u32]) -> Option<AttrObj> {
-    let (&index, rest) = indices.split_first()?;
-    let element = aggregate.elements().get(index as usize)?;
-
-    if rest.is_empty() {
-        return Some(pliron::dyn_clone::clone_box(&**element as &dyn Attribute));
-    }
-
-    let nested = (&**element as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
-    extract_from_aggregate_attr(nested, rest)
-}
-
-/// Insert a constant value into an aggregate attribute by following `indices`.
-fn insert_into_aggregate_attr(
-    aggregate: &AggregateAttr,
-    value: &dyn TypedAttrInterface,
-    indices: &[u32],
-) -> Option<AggregateAttr> {
-    let (&index, rest) = indices.split_first()?;
-    let index = index as usize;
-
-    let replacement: Box<dyn TypedAttrInterface> = if rest.is_empty() {
-        pliron::dyn_clone::clone_box(value)
-    } else {
-        let current = aggregate.elements().get(index)?;
-        let nested = (&**current as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
-        Box::new(insert_into_aggregate_attr(nested, value, rest)?)
-    };
-
-    replace_aggregate_element(aggregate, index, replacement)
-}
-
-/// The type and element count of a fixed-length vector constant, which is either an
-/// [AggregateAttr] or a [SplatAttr]. Returns `None` for anything else, including a
-/// scalable vector, whose length is not known at compile time.
-fn fixed_vector_shape(ctx: &Context, vector: &dyn Attribute) -> Option<(TypeHandle, usize)> {
-    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
-        let ty = aggregate.ty();
-        if ty.deref(ctx).downcast_ref::<VectorType>()?.is_scalable() {
-            return None;
-        }
-        return Some((ty, aggregate.elements().len()));
-    }
-
-    let splat = vector.downcast_ref::<SplatAttr>()?;
-    let ty = splat.ty();
-    let vector_ty = ty.deref(ctx);
-    if vector_ty.is_scalable() {
-        return None;
-    }
-    Some((ty.into(), vector_ty.num_elements() as usize))
-}
-
-/// Clone element `index` out of a fixed-length vector constant. `index` must be
-/// within the length that [fixed_vector_shape] reports for `vector`.
-fn fixed_vector_element(vector: &dyn Attribute, index: usize) -> Box<dyn TypedAttrInterface> {
-    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
-        return pliron::dyn_clone::clone_box(&*aggregate.elements()[index]);
-    }
-    let splat = vector
-        .downcast_ref::<SplatAttr>()
-        .expect("not a fixed-length vector constant");
-    pliron::dyn_clone::clone_box(splat.element())
-}
-
-/// Spell a fixed-length vector constant out as an [AggregateAttr], so that one of its
-/// elements can be replaced. A [SplatAttr] has no per-element representation of its own.
-fn fixed_vector_as_aggregate(ctx: &Context, vector: &dyn Attribute) -> Option<AggregateAttr> {
-    let (ty, length) = fixed_vector_shape(ctx, vector)?;
-    let elements = (0..length)
-        .map(|index| fixed_vector_element(vector, index))
-        .collect();
-    Some(AggregateAttr::new(elements, ty))
-}
-
-/// Fold a shuffle of two fixed-length vector constants into `result_ty`.
-///
-/// A negative mask entry is a poison lane in LLVM. Rather than materialize a
-/// partially-poisoned constant, such a shuffle is left unfolded.
-fn fold_shuffle_vector(
-    ctx: &Context,
-    lhs: &dyn Attribute,
-    rhs: &dyn Attribute,
-    mask: &[i32],
-    result_ty: TypeHandle,
-) -> Option<AttrObj> {
-    let (_, lhs_len) = fixed_vector_shape(ctx, lhs)?;
-    let (_, rhs_len) = fixed_vector_shape(ctx, rhs)?;
-
-    // The mask indexes the concatenation of the two operands, which the verifier
-    // guarantees have the same length.
-    let mut elements: Vec<Box<dyn TypedAttrInterface>> = Vec::with_capacity(mask.len());
-    for &mask_index in mask {
-        let index = usize::try_from(mask_index).ok()?;
-        let element = if index < lhs_len {
-            fixed_vector_element(lhs, index)
-        } else if index - lhs_len < rhs_len {
-            fixed_vector_element(rhs, index - lhs_len)
-        } else {
-            return None;
-        };
-        elements.push(element);
-    }
-
-    Some(Box::new(AggregateAttr::new(elements, result_ty)) as AttrObj)
-}
-
-/// The element `index` selects in a vector of `length` elements, or `None` when it is
-/// out of bounds. LLVM reads `extractelement` and `insertelement` indices as unsigned.
-fn constant_vector_index(index: &IntegerAttr, length: usize) -> Option<usize> {
-    let value = index.value();
-    // A wider index cannot be read out exactly, and no vector is that long anyway.
-    if value.bw() > 128 {
-        return None;
-    }
-    let index = value.to_u128();
-    (index < length as u128).then_some(index as usize)
-}
-
-/// Assumes `operand_attrs` has length 2. If both elements are `Some(x)` where `x` can
-/// be casted to a [FloatAttr], return the casted results. Otherwise, return `None`.
-fn get_float_bin_operands(
-    operand_attrs: &[Option<AttrObj>],
-) -> Option<(&dyn FloatAttr, &dyn FloatAttr)> {
-    assert!(operand_attrs.len() == 2);
-    let [Some(lhs), Some(rhs)] = operand_attrs else {
-        return None;
-    };
-    let lhs = attr_cast::<dyn FloatAttr>(&**lhs)
-        .expect("invalid operand type: typecheck before optimizing");
-    let rhs = attr_cast::<dyn FloatAttr>(&**rhs)
-        .expect("invalid operand type: typecheck before optimizing");
-    Some((lhs, rhs))
-}
-
-/// The `i1` attribute that an `icmp` or an `fcmp` folds to.
-fn bool_attr(ctx: &Context, value: bool) -> AttrObj {
-    let bool_ty = IntegerType::get(ctx, 1, Signedness::Signless);
-    Box::new(IntegerAttr::new(
-        bool_ty,
-        APInt::from_u8(value as u8, bw(1)),
-    )) as AttrObj
-}
-
-/// Constant fold a scalar integer cast whose result type `res_ty` is an
-/// [IntegerType], by applying `resize` to the operand value and the destination
-/// bitwidth.
-fn check_fold_int_cast(
-    ctx: &Context,
-    operand_attrs: &[Option<AttrObj>],
-    res_ty: TypeHandle,
-    resize: impl Fn(&APInt, NonZero<usize>) -> APInt,
-) -> Vec<Option<AttrObj>> {
-    let [Some(operand)] = operand_attrs else {
-        return vec![None];
-    };
-    let operand = operand
-        .downcast_ref::<IntegerAttr>()
-        .expect("invalid operand type: typecheck before optimizing");
-    let (dest_ty, dest_width) = int_cast_dest(ctx, res_ty);
-    vec![Some(Box::new(IntegerAttr::new(
-        dest_ty,
-        resize(&operand.value(), dest_width),
-    )) as AttrObj)]
-}
-
-/// The destination of a cast whose result type `res_ty` is an [IntegerType], as a
-/// signless integer type together with its bitwidth.
-fn int_cast_dest(ctx: &Context, res_ty: TypeHandle) -> (TypedHandle<IntegerType>, NonZero<usize>) {
-    let dest_width = res_ty
-        .deref(ctx)
-        .downcast_ref::<IntegerType>()
-        .expect("integer cast result must be an integer type")
-        .width();
-    (
-        IntegerType::get(ctx, dest_width, Signedness::Signless),
-        NonZero::new(dest_width as usize).expect("result has zero bitwidth"),
-    )
-}
-
-/// Constant fold this binary integer operation into a singleton vector
-/// containing its result type if folding is successful, or None otherwise.
-fn check_fold_int_bin_op(
-    operand_attrs: &[Option<AttrObj>],
-    combine: impl Fn(&APInt, &APInt) -> APInt,
-) -> Vec<Option<AttrObj>> {
-    let Some((lhs, rhs)) = get_int_bin_operands(operand_attrs) else {
-        return vec![None];
-    };
-    let res = Box::new(IntegerAttr::new(
-        lhs.get_type(),
-        combine(&lhs.value(), &rhs.value()),
-    )) as AttrObj;
-    vec![Some(res)]
-}
-
-/// Returns `true` if the fast-math `flags` make a constant fold involving
-/// `values` (the operands together with the computed result) undefined
-/// behavior, so it must not be folded to a concrete value.
-fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -> bool {
-    let flags = flags.0;
-    (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
-        || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
-}
-
-/// Convert a scalar floating-point attribute to `result_ty`. The verifier guarantees
-/// that the source and destination are different floating-point types.
-/// A zero-valued attribute of the builtin floating-point type `ty`.
-///
-/// The `FloatAttr::build_from_*` constructors take the semantics to build at from
-/// their receiver and ignore its value, so this serves as a prototype for building
-/// a result of the type an `llvm` cast op produces.
-fn zero_float_attr(ctx: &Context, ty: TypeHandle) -> Box<dyn FloatAttr> {
-    let ty = ty.deref(ctx);
-    if ty.is::<FP16Type>() {
-        Box::new(FPHalfAttr(Half::ZERO))
-    } else if ty.is::<FP32Type>() {
-        Box::new(FPSingleAttr(Single::ZERO))
-    } else if ty.is::<FP64Type>() {
-        Box::new(FPDoubleAttr(Double::ZERO))
-    } else {
-        panic!("not a builtin floating-point type: typecheck before optimizing")
-    }
-}
-
-/// Constant fold a scalar floating-point-to-integer cast.
-///
-/// LLVM rounds `fptosi` and `fptoui` toward zero. A conversion that cannot be
-/// represented in the destination integer type produces poison, so an
-/// [Status::INVALID_OP] result from rustc_apfloat must not be materialized.
-/// Integer destinations wider than 128 bits are left unfolded, because
-/// rustc_apfloat's integer conversion entry points return at most 128 bits.
-fn check_fold_float_to_int(
-    ctx: &Context,
-    operand_attrs: &[Option<AttrObj>],
-    result_ty: TypeHandle,
-    signed: bool,
-) -> Vec<Option<AttrObj>> {
-    let [Some(operand)] = operand_attrs else {
-        return vec![None];
-    };
-    let value = attr_cast::<dyn FloatAttr>(&**operand)
-        .expect("invalid operand type: typecheck before optimizing");
-
-    let (dest_ty, dest_width) = int_cast_dest(ctx, result_ty);
-    let dest_width = dest_width.get();
-    if dest_width > 128 {
-        return vec![None];
-    }
-
-    let mut is_exact = false;
-    let converted = if signed {
-        // rustc_apfloat implements signed conversion in terms of an unsigned
-        // conversion with one fewer value bit. For i1 that would request an
-        // unsupported zero-bit unsigned conversion, so use i2 temporarily and
-        // then enforce the signed i1 range {-1, 0} explicitly.
-        let conversion_width = dest_width.max(2);
-        let converted = value.to_i128_r(conversion_width, Round::TowardZero, &mut is_exact);
-        if converted.status.contains(Status::INVALID_OP)
-            || (dest_width == 1 && converted.value != -1 && converted.value != 0)
-        {
-            return vec![None];
-        }
-        APInt::from_i128(converted.value, bw(dest_width))
-    } else {
-        let converted = value.to_u128_r(dest_width, Round::TowardZero, &mut is_exact);
-        if converted.status.contains(Status::INVALID_OP) {
-            return vec![None];
-        }
-        APInt::from_u128(converted.value, bw(dest_width))
-    };
-
-    vec![Some(
-        Box::new(IntegerAttr::new(dest_ty, converted)) as AttrObj
-    )]
-}
-
-/// Constant fold a scalar integer-to-floating-point cast.
-///
-/// `signed` selects how the operand bit pattern is read. Integers wider than 128
-/// bits are left unfolded, because rustc_apfloat's integer conversion entry
-/// points accept at most 128 bits.
-fn check_fold_int_to_float(
-    ctx: &Context,
-    operand_attrs: &[Option<AttrObj>],
-    result_ty: TypeHandle,
-    signed: bool,
-    nneg: bool,
-) -> Vec<Option<AttrObj>> {
-    let [Some(operand)] = operand_attrs else {
-        return vec![None];
-    };
-    let value = operand
-        .downcast_ref::<IntegerAttr>()
-        .expect("invalid operand type: typecheck before optimizing")
-        .value();
-
-    // `uitofp nneg` asserts the operand is non-negative; if it isn't, the result
-    // is poison, so we must not fold it to a concrete value.
-    if value.bw() > 128 || (nneg && value.is_negative()) {
-        return vec![None];
-    }
-
-    let result = zero_float_attr(ctx, result_ty);
-    let result = if signed {
-        result.build_from_i128(value.to_i128())
-    } else {
-        result.build_from_u128(value.to_u128())
-    };
-    vec![Some(pliron::dyn_clone::clone_box(
-        &*result.value as &dyn Attribute,
-    ))]
-}
-
-fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -> AttrObj {
-    /// Convert `value` to whichever builtin float type `result_ty` is, rounding
-    /// to nearest-even.
-    fn convert<S>(ctx: &Context, value: S, result_ty: TypeHandle) -> AttrObj
-    where
-        S: FloatConvert<Half> + FloatConvert<Single> + FloatConvert<Double>,
-    {
-        let result_ty = result_ty.deref(ctx);
-        if result_ty.is::<FP16Type>() {
-            Box::new(FPHalfAttr(value.convert(&mut false).value)) as AttrObj
-        } else if result_ty.is::<FP32Type>() {
-            Box::new(FPSingleAttr(value.convert(&mut false).value)) as AttrObj
-        } else if result_ty.is::<FP64Type>() {
-            Box::new(FPDoubleAttr(value.convert(&mut false).value)) as AttrObj
-        } else {
-            panic!("invalid floating-point cast: typecheck before optimizing")
-        }
-    }
-
-    if let Some(operand) = operand.downcast_ref::<FPHalfAttr>() {
-        convert(ctx, operand.0, result_ty)
-    } else if let Some(operand) = operand.downcast_ref::<FPSingleAttr>() {
-        convert(ctx, operand.0, result_ty)
-    } else if let Some(operand) = operand.downcast_ref::<FPDoubleAttr>() {
-        convert(ctx, operand.0, result_ty)
-    } else {
-        panic!("invalid floating-point cast: typecheck before optimizing")
-    }
-}
-
-/// Constant fold a scalar floating-point cast.
-fn check_fold_float_cast(
-    ctx: &Context,
-    operand_attrs: &[Option<AttrObj>],
-    result_ty: TypeHandle,
-    flags: FastmathFlagsAttr,
-) -> Vec<Option<AttrObj>> {
-    let [Some(operand)] = operand_attrs else {
-        return vec![None];
-    };
-    let source = attr_cast::<dyn FloatAttr>(&**operand)
-        .expect("invalid operand type: typecheck before optimizing");
-    let result = convert_float_attr(ctx, operand, result_ty);
-    let result_float = attr_cast::<dyn FloatAttr>(&*result)
-        .expect("floating-point conversion must produce a floating-point attribute");
-
-    if fast_math_forbids_fold(flags, &[source, result_float]) {
-        return vec![None];
-    }
-    vec![Some(result)]
-}
-
-/// Constant fold a binary floating-point operation into a singleton vector
-/// containing its result if both operands are constant, or None otherwise.
-fn check_fold_float_bin_op(
-    operand_attrs: &[Option<AttrObj>],
-    flags: FastmathFlagsAttr,
-    combine: impl Fn(&dyn FloatAttr, &dyn FloatAttr) -> Box<dyn FloatAttr>,
-) -> Vec<Option<AttrObj>> {
-    let Some((lhs, rhs)) = get_float_bin_operands(operand_attrs) else {
-        return vec![None];
-    };
-    let res = combine(lhs, rhs);
-    if fast_math_forbids_fold(flags, &[lhs, rhs, &*res]) {
-        return vec![None];
-    }
-    let res = pliron::dyn_clone::clone_box(&*res as &dyn Attribute);
-    vec![Some(res)]
-}
-
-#[op_interface_impl]
-impl ConstFoldInterface for ConstantOp {
-    fn check_fold(
-        &self,
-        ctx: &Context,
-        _operand_attrs: &[Option<AttrObj>],
-    ) -> Vec<Option<AttrObj>> {
-        vec![Some(
-            pliron::dyn_clone::clone_box(&*self.get_value(ctx)) as AttrObj
-        )]
-    }
-
-    fn fold_in_place(
-        &self,
-        _ctx: &mut Context,
-        _operand_attrs: &[Option<AttrObj>],
-        _rewriter: &mut dyn Rewriter,
-    ) -> IRStatus {
-        IRStatus::Unchanged
-    }
 }
 
 #[op_interface_impl]
@@ -845,6 +386,21 @@ impl ConstFoldInterface for ShlOp {
     }
 }
 
+/// Constant fold a binary integer operation.
+fn check_fold_int_bin_op(
+    operand_attrs: &[Option<AttrObj>],
+    combine: impl Fn(&APInt, &APInt) -> APInt,
+) -> Vec<Option<AttrObj>> {
+    let Some((lhs, rhs)) = get_int_bin_operands(operand_attrs) else {
+        return vec![None];
+    };
+    let res = Box::new(IntegerAttr::new(
+        lhs.get_type(),
+        combine(&lhs.value(), &rhs.value()),
+    )) as AttrObj;
+    vec![Some(res)]
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for UDivOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
@@ -861,6 +417,13 @@ impl ConstFoldInterface for UDivOp {
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
     }
+}
+
+/// Is signed-dividing/remaindering `lhs` by `rhs` undefined behavior in LLVM?
+fn is_signed_div_ub(lhs: &APInt, rhs: &APInt) -> bool {
+    let bw = NonZero::new(rhs.bw()).expect("operand has zero bitwidth");
+    // `-1` is the all-ones bit pattern, i.e. the unsigned max.
+    rhs.is_zero() || (*lhs == APInt::imin(bw) && *rhs == APInt::umax(bw))
 }
 
 #[op_interface_impl]
@@ -922,9 +485,9 @@ impl ConstFoldInterface for AndOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         assert!(ops.len() == 2);
         for op in ops.iter().flatten() {
-            let int = op
-                .downcast_ref::<IntegerAttr>()
-                .expect("invalid operand type: typecheck before optimizing");
+            let Some(int) = op.downcast_ref::<IntegerAttr>() else {
+                return vec![None];
+            };
             if int.value().is_zero() {
                 let zero = APInt::zero(NonZero::new(int.value().bw()).expect("zero bitwidth"));
                 let res = Box::new(IntegerAttr::new(int.get_type(), zero)) as AttrObj;
@@ -949,9 +512,9 @@ impl ConstFoldInterface for OrOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         assert!(ops.len() == 2);
         for op in ops.iter().flatten() {
-            let int = op
-                .downcast_ref::<IntegerAttr>()
-                .expect("invalid operand type: typecheck before optimizing");
+            let Some(int) = op.downcast_ref::<IntegerAttr>() else {
+                return vec![None];
+            };
             let bw = NonZero::new(int.value().bw()).expect("zero bitwidth");
             if int.value() == APInt::umax(bw) {
                 let all_ones = APInt::umax(bw);
@@ -1044,6 +607,23 @@ impl ConstFoldInterface for AShrOp {
     }
 }
 
+/// Evaluate an integer comparison `lhs <pred> rhs`.
+fn eval_icmp(pred: &ICmpPredicateAttr, lhs: &APInt, rhs: &APInt) -> bool {
+    assert!(lhs.bw() == rhs.bw());
+    match pred {
+        ICmpPredicateAttr::EQ => lhs == rhs,
+        ICmpPredicateAttr::NE => lhs != rhs,
+        ICmpPredicateAttr::SLT => lhs.slt(rhs),
+        ICmpPredicateAttr::SLE => lhs.sle(rhs),
+        ICmpPredicateAttr::SGT => lhs.sgt(rhs),
+        ICmpPredicateAttr::SGE => lhs.sge(rhs),
+        ICmpPredicateAttr::ULT => lhs.ult(rhs),
+        ICmpPredicateAttr::ULE => lhs.ule(rhs),
+        ICmpPredicateAttr::UGT => lhs.ugt(rhs),
+        ICmpPredicateAttr::UGE => lhs.uge(rhs),
+    }
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for ICmpOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
@@ -1063,10 +643,70 @@ impl ConstFoldInterface for ICmpOp {
     }
 }
 
+/// Return a fixed vector constant's type and length.
+fn fixed_vector_shape(ctx: &Context, vector: &dyn Attribute) -> Option<(TypeHandle, usize)> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        let ty = aggregate.ty();
+        if ty.deref(ctx).downcast_ref::<VectorType>()?.is_scalable() {
+            return None;
+        }
+        return Some((ty, aggregate.elements().len()));
+    }
+
+    let splat = vector.downcast_ref::<SplatAttr>()?;
+    let ty = splat.ty();
+    let vector_ty = ty.deref(ctx);
+    if vector_ty.is_scalable() {
+        return None;
+    }
+    Some((ty.into(), vector_ty.num_elements() as usize))
+}
+
+/// Clone a fixed vector element. Panics if `index` is out of bounds.
+fn fixed_vector_element(vector: &dyn Attribute, index: usize) -> Box<dyn TypedAttrInterface> {
+    if let Some(aggregate) = vector.downcast_ref::<AggregateAttr>() {
+        return aggregate.elements()[index].clone();
+    }
+    let splat = vector
+        .downcast_ref::<SplatAttr>()
+        .expect("not a fixed-length vector constant");
+    pliron::dyn_clone::clone_box(splat.element())
+}
+
+/// Fold a shuffle of two fixed vector constants.
+fn fold_shuffle_vector(
+    ctx: &Context,
+    lhs: &dyn Attribute,
+    rhs: &dyn Attribute,
+    mask: &[i32],
+    result_ty: TypeHandle,
+) -> Option<AttrObj> {
+    let (_, lhs_len) = fixed_vector_shape(ctx, lhs)?;
+    let (_, rhs_len) = fixed_vector_shape(ctx, rhs)?;
+
+    // The mask indexes the concatenated inputs.
+    let mut elements: Vec<Box<dyn TypedAttrInterface>> = Vec::with_capacity(mask.len());
+    for &mask_index in mask {
+        // Negative entries are poison and remain unfolded.
+        let index = usize::try_from(mask_index).ok()?;
+        let element = if index < lhs_len {
+            fixed_vector_element(lhs, index)
+        } else if index - lhs_len < rhs_len {
+            fixed_vector_element(rhs, index - lhs_len)
+        } else {
+            return None;
+        };
+        elements.push(element);
+    }
+
+    Some(Box::new(AggregateAttr::new(elements, result_ty)) as AttrObj)
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for ShuffleVectorOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(lhs), Some(rhs)] = ops else {
+            assert!(ops.len() == 2);
             return vec![None];
         };
         let mask = self
@@ -1085,22 +725,30 @@ impl ConstFoldInterface for ShuffleVectorOp {
     }
 }
 
+/// Convert `index` to an in-bounds vector index.
+fn constant_vector_index(index: &IntegerAttr, length: usize) -> Option<usize> {
+    let value = index.value();
+    // Conversion supports at most 128 bits.
+    if value.bw() > 128 {
+        return None;
+    }
+    let index: usize = value.to_u128().try_into().ok()?;
+    (index < length).then_some(index)
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for ExtractElementOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(vector), Some(index)] = ops else {
+            assert!(ops.len() == 2);
             return vec![None];
         };
-        let index = index
-            .downcast_ref::<IntegerAttr>()
-            .expect("invalid operand type: typecheck before optimizing");
+        let Some(index) = index.downcast_ref::<IntegerAttr>() else {
+            return vec![None];
+        };
         let folded = fixed_vector_shape(ctx, &**vector)
             .and_then(|(_, length)| constant_vector_index(index, length))
-            .map(|index| {
-                pliron::dyn_clone::clone_box(
-                    &*fixed_vector_element(&**vector, index) as &dyn Attribute
-                )
-            });
+            .map(|index| fixed_vector_element(&**vector, index) as AttrObj);
         vec![folded]
     }
     fn fold_in_place(
@@ -1113,25 +761,34 @@ impl ConstFoldInterface for ExtractElementOp {
     }
 }
 
+/// Return a fixed vector constant's elements and type.
+fn fixed_vector_elements(
+    ctx: &Context,
+    vector: &dyn Attribute,
+) -> Option<(Vec<Box<dyn TypedAttrInterface>>, TypeHandle)> {
+    let (ty, length) = fixed_vector_shape(ctx, vector)?;
+    let elements = (0..length)
+        .map(|index| fixed_vector_element(vector, index))
+        .collect();
+    Some((elements, ty))
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for InsertElementOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(vector), Some(element), Some(index)] = ops else {
+            assert!(ops.len() == 3);
             return vec![None];
         };
         let element = attr_cast::<dyn TypedAttrInterface>(&**element)
             .expect("invalid operand type: typecheck before optimizing");
-        let index = index
-            .downcast_ref::<IntegerAttr>()
-            .expect("invalid operand type: typecheck before optimizing");
-        let folded = fixed_vector_as_aggregate(ctx, &**vector).and_then(|aggregate| {
-            let index = constant_vector_index(index, aggregate.elements().len())?;
-            let updated = replace_aggregate_element(
-                &aggregate,
-                index,
-                pliron::dyn_clone::clone_box(element),
-            )?;
-            Some(Box::new(updated) as AttrObj)
+        let Some(index) = index.downcast_ref::<IntegerAttr>() else {
+            return vec![None];
+        };
+        let folded = fixed_vector_elements(ctx, &**vector).and_then(|(mut elements, ty)| {
+            let index = constant_vector_index(index, elements.len())?;
+            *elements.get_mut(index)? = pliron::dyn_clone::clone_box(element);
+            Some(Box::new(AggregateAttr::new(elements, ty)) as AttrObj)
         });
         vec![folded]
     }
@@ -1145,10 +802,24 @@ impl ConstFoldInterface for InsertElementOp {
     }
 }
 
+/// Extract an element along `indices`.
+fn extract_from_aggregate_attr(aggregate: &AggregateAttr, indices: &[u32]) -> Option<AttrObj> {
+    let (&index, rest) = indices.split_first()?;
+    let element = aggregate.elements().get(index as usize)?;
+
+    if rest.is_empty() {
+        return Some(pliron::dyn_clone::clone_box(&**element as &dyn Attribute));
+    }
+
+    let nested = (&**element as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
+    extract_from_aggregate_attr(nested, rest)
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for ExtractValueOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(aggregate)] = ops else {
+            assert!(ops.len() == 1);
             return vec![None];
         };
         let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
@@ -1166,10 +837,33 @@ impl ConstFoldInterface for ExtractValueOp {
     }
 }
 
+/// Insert `value` along `indices`.
+fn insert_into_aggregate_attr(
+    aggregate: &AggregateAttr,
+    value: &dyn TypedAttrInterface,
+    indices: &[u32],
+) -> Option<AggregateAttr> {
+    let (&index, rest) = indices.split_first()?;
+    let index = index as usize;
+
+    let replacement: Box<dyn TypedAttrInterface> = if rest.is_empty() {
+        pliron::dyn_clone::clone_box(value)
+    } else {
+        let current = aggregate.elements().get(index)?;
+        let nested = (&**current as &dyn Attribute).downcast_ref::<AggregateAttr>()?;
+        Box::new(insert_into_aggregate_attr(nested, value, rest)?)
+    };
+
+    let mut elements = aggregate.elements().to_vec();
+    *elements.get_mut(index)? = replacement;
+    Some(AggregateAttr::new(elements, aggregate.ty()))
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for InsertValueOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(aggregate), Some(value)] = ops else {
+            assert!(ops.len() == 2);
             return vec![None];
         };
         let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
@@ -1190,6 +884,41 @@ impl ConstFoldInterface for InsertValueOp {
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
     }
+}
+
+/// For an integer type, return its signless integer type and its width.
+fn cast_dest_to_signless(
+    ctx: &Context,
+    res_ty: TypeHandle,
+) -> Option<(TypedHandle<IntegerType>, NonZero<usize>)> {
+    let dest_width = res_ty.deref(ctx).downcast_ref::<IntegerType>()?.width();
+    Some((
+        IntegerType::get(ctx, dest_width, Signedness::Signless),
+        NonZero::new(dest_width as usize).expect("result has zero bitwidth"),
+    ))
+}
+
+/// Fold a scalar integer cast with `resize`.
+fn check_fold_int_cast(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    res_ty: TypeHandle,
+    resize: impl Fn(&APInt, NonZero<usize>) -> APInt,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        assert!(operand_attrs.len() == 1);
+        return vec![None];
+    };
+    let Some(operand) = operand.downcast_ref::<IntegerAttr>() else {
+        return vec![None];
+    };
+    let Some((dest_ty, dest_width)) = cast_dest_to_signless(ctx, res_ty) else {
+        return vec![None];
+    };
+    vec![Some(Box::new(IntegerAttr::new(
+        dest_ty,
+        resize(&operand.value(), dest_width),
+    )) as AttrObj)]
 }
 
 #[op_interface_impl]
@@ -1214,11 +943,8 @@ impl ConstFoldInterface for ZExtOp {
         // result is poison, so we must not fold it to a concrete value.
         if self.nneg(ctx)
             && let [Some(operand)] = ops
-            && operand
-                .downcast_ref::<IntegerAttr>()
-                .expect("invalid operand type: typecheck before optimizing")
-                .value()
-                .is_negative()
+            && let Some(operand) = operand.downcast_ref::<IntegerAttr>()
+            && operand.value().is_negative()
         {
             return vec![None];
         }
@@ -1247,6 +973,53 @@ impl ConstFoldInterface for TruncOp {
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
     }
+}
+
+/// Fold a scalar float-to-integer cast, rounding toward zero.
+fn check_fold_float_to_int(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    signed: bool,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        assert!(operand_attrs.len() == 1);
+        return vec![None];
+    };
+    let Some(value) = attr_cast::<dyn FloatAttr>(&**operand) else {
+        return vec![None];
+    };
+
+    let Some((dest_ty, dest_width)) = cast_dest_to_signless(ctx, result_ty) else {
+        return vec![None];
+    };
+    let dest_width = dest_width.get();
+    if dest_width > 128 {
+        return vec![None];
+    }
+
+    let mut is_exact = false;
+    let converted = if signed {
+        // Avoid rustc_apfloat's unsupported zero-bit conversion for signed i1.
+        let conversion_width = dest_width.max(2);
+        let converted = value.to_i128_r(conversion_width, Round::TowardZero, &mut is_exact);
+        if converted.status.contains(Status::INVALID_OP)
+            || (dest_width == 1 && converted.value != -1 && converted.value != 0)
+        {
+            return vec![None];
+        }
+        APInt::from_i128(converted.value, bw(dest_width))
+    } else {
+        let converted = value.to_u128_r(dest_width, Round::TowardZero, &mut is_exact);
+        if converted.status.contains(Status::INVALID_OP) {
+            return vec![None];
+        }
+        APInt::from_u128(converted.value, bw(dest_width))
+    };
+
+    vec![Some(
+        Box::new(IntegerAttr::new(dest_ty, converted)) as AttrObj
+    )]
 }
 
 #[op_interface_impl]
@@ -1279,6 +1052,53 @@ impl ConstFoldInterface for FPToUIOp {
     }
 }
 
+/// Return zero value of a builtin float type `ty`.
+fn zero_float_attr(ctx: &Context, ty: TypeHandle) -> Option<Box<dyn FloatAttr>> {
+    let ty = ty.deref(ctx);
+    if ty.is::<FP16Type>() {
+        Some(Box::new(FPHalfAttr(Half::ZERO)))
+    } else if ty.is::<FP32Type>() {
+        Some(Box::new(FPSingleAttr(Single::ZERO)))
+    } else if ty.is::<FP64Type>() {
+        Some(Box::new(FPDoubleAttr(Double::ZERO)))
+    } else {
+        None
+    }
+}
+
+/// Fold a scalar integer-to-float cast.
+fn check_fold_int_to_float(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    signed: bool,
+    nneg: bool,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        assert!(operand_attrs.len() == 1);
+        return vec![None];
+    };
+    let Some(value) = operand.downcast_ref::<IntegerAttr>() else {
+        return vec![None];
+    };
+    let value = value.value();
+
+    // A violated `nneg` produces poison.
+    if value.bw() > 128 || (nneg && value.is_negative()) {
+        return vec![None];
+    }
+
+    let Some(result) = zero_float_attr(ctx, result_ty) else {
+        return vec![None];
+    };
+    let result = if signed {
+        result.build_from_i128(value.to_i128())
+    } else {
+        result.build_from_u128(value.to_u128())
+    };
+    vec![Some(result.value as AttrObj)]
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for SIToFPOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
@@ -1307,6 +1127,69 @@ impl ConstFoldInterface for UIToFPOp {
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
     }
+}
+
+/// Return whether any `value` violates the fast-math flags.
+fn fast_math_forbids_fold(flags: FastmathFlagsAttr, values: &[&dyn FloatAttr]) -> bool {
+    let flags = flags.0;
+    (flags.contains(FastmathFlags::NNAN) && values.iter().any(|v| v.is_nan()))
+        || (flags.contains(FastmathFlags::NINF) && values.iter().any(|v| v.is_infinite()))
+}
+
+/// Convert a scalar float attribute to `result_ty`.
+fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -> Option<AttrObj> {
+    /// Convert `value` to `result_ty`, rounding to nearest-even.
+    fn convert<S>(ctx: &Context, value: S, result_ty: TypeHandle) -> Option<AttrObj>
+    where
+        S: FloatConvert<Half> + FloatConvert<Single> + FloatConvert<Double>,
+    {
+        let result_ty = result_ty.deref(ctx);
+        if result_ty.is::<FP16Type>() {
+            Some(Box::new(FPHalfAttr(value.convert(&mut false).value)) as AttrObj)
+        } else if result_ty.is::<FP32Type>() {
+            Some(Box::new(FPSingleAttr(value.convert(&mut false).value)) as AttrObj)
+        } else if result_ty.is::<FP64Type>() {
+            Some(Box::new(FPDoubleAttr(value.convert(&mut false).value)) as AttrObj)
+        } else {
+            None
+        }
+    }
+
+    if let Some(operand) = operand.downcast_ref::<FPHalfAttr>() {
+        convert(ctx, operand.0, result_ty)
+    } else if let Some(operand) = operand.downcast_ref::<FPSingleAttr>() {
+        convert(ctx, operand.0, result_ty)
+    } else if let Some(operand) = operand.downcast_ref::<FPDoubleAttr>() {
+        convert(ctx, operand.0, result_ty)
+    } else {
+        None
+    }
+}
+
+/// Fold a scalar float cast.
+fn check_fold_float_cast(
+    ctx: &Context,
+    operand_attrs: &[Option<AttrObj>],
+    result_ty: TypeHandle,
+    flags: FastmathFlagsAttr,
+) -> Vec<Option<AttrObj>> {
+    let [Some(operand)] = operand_attrs else {
+        assert!(operand_attrs.len() == 1);
+        return vec![None];
+    };
+    let Some(source) = attr_cast::<dyn FloatAttr>(&**operand) else {
+        return vec![None];
+    };
+    let Some(result) = convert_float_attr(ctx, operand, result_ty) else {
+        return vec![None];
+    };
+    let result_float = attr_cast::<dyn FloatAttr>(&*result)
+        .expect("floating-point conversion must produce a floating-point attribute");
+
+    if fast_math_forbids_fold(flags, &[source, result_float]) {
+        return vec![None];
+    }
+    vec![Some(result)]
 }
 
 #[op_interface_impl]
@@ -1343,18 +1226,19 @@ impl ConstFoldInterface for FPTruncOp {
 impl ConstFoldInterface for FNegOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [Some(operand)] = ops else {
+            assert!(ops.len() == 1);
             return vec![None];
         };
-        let float_val = attr_cast::<dyn FloatAttr>(&**operand)
-            .expect("invalid operand type: typecheck before optimizing");
+        let Some(float_val) = attr_cast::<dyn FloatAttr>(&**operand) else {
+            return vec![None];
+        };
         let negated = float_val.neg();
         // Negation cannot create or destroy NaN/Inf, so checking the operand
         // covers the result too.
         if fast_math_forbids_fold(self.fast_math_flags(ctx), &[float_val]) {
             return vec![None];
         }
-        let res = pliron::dyn_clone::clone_box(&*negated as &dyn Attribute);
-        vec![Some(res)]
+        vec![Some(negated as AttrObj)]
     }
     fn fold_in_place(
         &self,
@@ -1364,6 +1248,35 @@ impl ConstFoldInterface for FNegOp {
     ) -> IRStatus {
         self.fold_with_materialization(ctx, ops, rw)
     }
+}
+
+/// An accessor to get the two constant operands of a binary float op.
+fn get_float_bin_operands(
+    operand_attrs: &[Option<AttrObj>],
+) -> Option<(&dyn FloatAttr, &dyn FloatAttr)> {
+    let [Some(lhs), Some(rhs)] = operand_attrs else {
+        assert!(operand_attrs.len() == 2);
+        return None;
+    };
+    let lhs = attr_cast::<dyn FloatAttr>(&**lhs)?;
+    let rhs = attr_cast::<dyn FloatAttr>(&**rhs)?;
+    Some((lhs, rhs))
+}
+
+/// Constant fold a binary floating-point operation.
+fn check_fold_float_bin_op(
+    operand_attrs: &[Option<AttrObj>],
+    flags: FastmathFlagsAttr,
+    combine: impl Fn(&dyn FloatAttr, &dyn FloatAttr) -> Box<dyn FloatAttr>,
+) -> Vec<Option<AttrObj>> {
+    let Some((lhs, rhs)) = get_float_bin_operands(operand_attrs) else {
+        return vec![None];
+    };
+    let res = combine(lhs, rhs);
+    if fast_math_forbids_fold(flags, &[lhs, rhs, &*res]) {
+        return vec![None];
+    }
+    vec![Some(res as AttrObj)]
 }
 
 #[op_interface_impl]
@@ -1451,14 +1364,36 @@ impl ConstFoldInterface for FRemOp {
     }
 }
 
+/// Evaluate `lhs <pred> rhs` for same-typed floats.
+fn eval_fcmp(pred: &FCmpPredicateAttr, lhs: &dyn FloatAttr, rhs: &dyn FloatAttr) -> bool {
+    let ord = lhs.partial_cmp(rhs);
+    match pred {
+        FCmpPredicateAttr::False => false,
+        FCmpPredicateAttr::True => true,
+        FCmpPredicateAttr::ORD => ord.is_some(),
+        FCmpPredicateAttr::UNO => ord.is_none(),
+        FCmpPredicateAttr::OEQ => ord == Some(Ordering::Equal),
+        FCmpPredicateAttr::OGT => ord == Some(Ordering::Greater),
+        FCmpPredicateAttr::OGE => matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
+        FCmpPredicateAttr::OLT => ord == Some(Ordering::Less),
+        FCmpPredicateAttr::OLE => matches!(ord, Some(Ordering::Less | Ordering::Equal)),
+        FCmpPredicateAttr::ONE => matches!(ord, Some(Ordering::Less | Ordering::Greater)),
+        FCmpPredicateAttr::UEQ => !matches!(ord, Some(Ordering::Less | Ordering::Greater)),
+        FCmpPredicateAttr::UGT => !matches!(ord, Some(Ordering::Less | Ordering::Equal)),
+        FCmpPredicateAttr::UGE => ord != Some(Ordering::Less),
+        FCmpPredicateAttr::ULT => !matches!(ord, Some(Ordering::Greater | Ordering::Equal)),
+        FCmpPredicateAttr::ULE => ord != Some(Ordering::Greater),
+        FCmpPredicateAttr::UNE => ord != Some(Ordering::Equal),
+    }
+}
+
 #[op_interface_impl]
 impl ConstFoldInterface for FCmpOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let Some((lhs, rhs)) = get_float_bin_operands(ops) else {
             return vec![None];
         };
-        // The result is an i1, so only the operands can violate the fast-math
-        // assumptions.
+        // Only the operands can violate fast-math assumptions.
         if fast_math_forbids_fold(self.fast_math_flags(ctx), &[lhs, rhs]) {
             return vec![None];
         }
@@ -1479,12 +1414,12 @@ impl ConstFoldInterface for FCmpOp {
 impl ConstFoldInterface for SelectOp {
     fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
         let [cond, true_val, false_val] = ops else {
-            panic!("SelectOp must have exactly three operands");
+            assert!(ops.len() == 3);
+            return vec![None];
         };
         match cond {
             Some(cond_attr) => {
-                // A vector-of-i1 condition (allowed by the verifier) selects
-                // element-wise and cannot be folded here.
+                // Vector conditions require element-wise folding.
                 let Some(cond_int) = cond_attr.downcast_ref::<IntegerAttr>() else {
                     return vec![None];
                 };
@@ -1495,8 +1430,7 @@ impl ConstFoldInterface for SelectOp {
                 };
                 vec![chosen.clone()]
             }
-            // Whichever way an unknown condition goes, equal constant operands
-            // make the result that same constant.
+            // Equal constants make the condition irrelevant.
             None => match (true_val, false_val) {
                 (Some(t), Some(f)) if t == f => vec![Some(t.clone())],
                 _ => vec![None],
@@ -1509,9 +1443,7 @@ impl ConstFoldInterface for SelectOp {
         ops: &[Option<AttrObj>],
         rw: &mut dyn Rewriter,
     ) -> IRStatus {
-        // With a constant condition the select just forwards one of its
-        // operands, so it can be folded even when that operand is not itself
-        // constant.
+        // A constant condition forwards one operand directly.
         if let Some(cond_attr) = &ops[0]
             && let Some(cond_int) = cond_attr.downcast_ref::<IntegerAttr>()
         {

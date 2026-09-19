@@ -256,8 +256,7 @@ pub trait FloatAttr: TypedAttrInterface {
         let df = self.get_inner();
         df.to_u128_r(width, round, is_exact)
     }
-    /// [PartialOrd::partial_cmp](core::cmp::PartialOrd::partial_cmp): IEEE-754
-    /// comparison, `None` when the operands are unordered (i.e., either is a NaN).
+    /// [PartialOrd::partial_cmp]
     fn partial_cmp(&self, other: &dyn FloatAttr) -> Option<Ordering> {
         let df = self.get_inner();
         df.partial_cmp(other.get_inner())

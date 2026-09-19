@@ -40,8 +40,7 @@ impl APInt {
         self.value.is_zero()
     }
 
-    /// Is the sign bit set, i.e. is this value negative when read as a signed
-    /// two's complement integer?
+    /// Is the sign bit set?
     pub fn is_negative(&self) -> bool {
         self.value.msb()
     }
@@ -1180,13 +1179,12 @@ mod tests {
         let res = APInt::from_u8(5, bw(8)).trunc(bw(4));
         assert_eq!(res.to_u8(), 5);
 
-        // Truncation is bit-level, not value-level: -1 (i8, 0xff) -> 0xf (i4),
-        // which is still -1 when reinterpreted signed at the narrower width.
+        // Truncation is bit-level
         let res = APInt::from_i8(-1, bw(8)).trunc(bw(4));
         assert_eq!(res.to_u8(), 0xf);
         assert_eq!(res.to_i8(), -1);
 
-        // Truncating to the same width is the identity.
+        // Truncating to the same width is a no-op.
         let res = APInt::from_u8(200, bw(8)).trunc(bw(8));
         assert_eq!(res.to_u8(), 200);
     }
