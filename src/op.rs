@@ -34,11 +34,7 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{self, Display},
     hash::Hash,
@@ -65,7 +61,7 @@ use crate::{
             block_opd_parser, delimited_list_parser, location, process_parsed_ssa_defs, spaced,
             ssa_opd_parser, zero_or_more_parser,
         },
-        printers::iter_with_sep,
+        printers::{iter_with_sep, iter_with_sep_by},
     },
     location::{Located, Location},
     operation::{Operation, verify_operation},
@@ -422,11 +418,9 @@ pub fn canonical_syntax_print(
     let opid = op.as_ref().get_opid();
     let op = op.as_ref().get_operation().deref(ctx);
     let operands = iter_with_sep(op.operands(), sep);
-    let successors = iter_with_sep(
-        op.successors()
-            .map(|succ| "^".to_string() + succ.unique_name(ctx).as_ref()),
-        sep,
-    );
+    let successors = iter_with_sep_by(op.successors(), sep, |successor, ctx, state, f| {
+        write!(f, "^{}", successor.unique_name(ctx).print(ctx, state))
+    });
     let op_type = TypeSig {
         arguments: op.operands().map(|opd| opd.get_type(ctx)).collect(),
         results: op.results().map(|res| res.get_type(ctx)).collect(),
