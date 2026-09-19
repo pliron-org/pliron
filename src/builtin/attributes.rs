@@ -869,6 +869,7 @@ mod tests {
         for attr_input in [
             "builtin.string \"hello\"",
             "builtin.string \"hello \\\"world\\\"\"",
+            r#"builtin.string "a\\b\nc\td\re\0f\u{7f}""#,
         ] {
             assert_eq!(parse_print(&mut ctx, attr_input), attr_input);
         }
@@ -879,6 +880,15 @@ mod tests {
             Compilation error: invalid input program.
             Parse error at line: 1, column: 23
             Unexpected escaped character \k
+        "#]];
+        expected_err_msg.assert_eq(&err_msg);
+
+        // A unicode escape that isn't a unicode scalar value.
+        let err_msg = parse_error(&mut ctx, "builtin.string \"hello \\u{d800}\"");
+        let expected_err_msg = expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 23
+            Invalid unicode escape \u{d800}
         "#]];
         expected_err_msg.assert_eq(&err_msg);
     }

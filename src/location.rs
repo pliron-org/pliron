@@ -3,7 +3,11 @@
 
 //! Source location for different IR entities
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -29,7 +33,7 @@ use crate::{
     },
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
-        printers::list_with_sep,
+        printers::{list_with_sep, quoted},
     },
     operation::Operation,
     parsable::Parsable,
@@ -60,12 +64,13 @@ impl Printable for Source {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
             Source::File(path_key) => {
-                write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
+                let path = uniqued_any::get(ctx, *path_key).display().to_string();
+                write!(f, "{}", quoted(&path).print(ctx, state))
             }
             Source::InMemory => write!(f, "<in-memory>"),
         }
@@ -242,8 +247,8 @@ impl Printable for Location {
             Self::Named { name, child_loc } => {
                 write!(
                     f,
-                    "name: \"{}\", loc: ({})",
-                    name,
+                    "name: {}, loc: ({})",
+                    name.print(ctx, state),
                     child_loc.print(ctx, state)
                 )
             }
@@ -480,6 +485,36 @@ mod tests {
 
         let printed = print_location(&loc, &ctx);
         expect![r#"?"#].assert_eq(&printed);
+
+        let parsed = parse_location(&printed, &mut ctx);
+        assert_eq!(parsed, loc);
+    }
+
+    #[test]
+    fn test_print_and_parse_named_location_with_escapes() {
+        let mut ctx = Context::default();
+        let named = Location::Named {
+            name: "a\"b\\c\nd\te\u{7f}".to_string(),
+            child_loc: Box::new(Location::Unknown),
+        };
+
+        let printed = print_location(&named, &ctx);
+        expect![[r#"name: "a\"b\\c\nd\te\u{7f}", loc: (?)"#]].assert_eq(&printed);
+
+        let parsed = parse_location(&printed, &mut ctx);
+        assert_eq!(parsed, named);
+    }
+
+    #[test]
+    fn test_print_and_parse_srcpos_location_with_escapes() {
+        let mut ctx = Context::default();
+        let path = PathBuf::from("a\"b\\c.mlir");
+        let src = Source::new_from_file(&mut ctx, path);
+        let pos = SourcePosition { line: 1, column: 1 };
+        let loc = Location::SrcPos { src, pos };
+
+        let printed = print_location(&loc, &ctx);
+        expect![[r#""a\"b\\c.mlir": line: 1, column: 1"#]].assert_eq(&printed);
 
         let parsed = parse_location(&printed, &mut ctx);
         assert_eq!(parsed, loc);
