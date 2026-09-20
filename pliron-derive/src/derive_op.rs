@@ -6,8 +6,6 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::{DeriveInput, LitStr, Result, parse::Parser, parse_quote};
 
-const PROC_MACRO_NAME: &str = "def_op";
-
 struct OperandOrResultSpec {
     name: Option<syn::Ident>,
     ty: Option<Box<syn::Type>>,
@@ -87,14 +85,6 @@ impl DefOp {
                 "Op cannot be derived for generic structs",
             ));
         }
-
-        let attrs = input
-            .attrs
-            .into_iter()
-            .filter(|attr| !attr.path().is_ident(PROC_MACRO_NAME))
-            .collect();
-
-        let input = DeriveInput { attrs, ..input };
 
         let impl_op = ImplOp {
             struct_name: input.ident.clone(),

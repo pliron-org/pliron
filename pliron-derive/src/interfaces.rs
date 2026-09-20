@@ -222,8 +222,8 @@ pub(crate) fn interface_impl(
     let verifiers_entry = quote! {
         const _: () = {
             #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(#interface_verifiers_slice), linkme(crate = ::pliron::linkme))]
-            static INTERFACE_VERIFIER: (::core::any::TypeId, (#all_verifiers_fn_type)) =
-                    (::core::any::TypeId::of::<#rust_ty>(), <#rust_ty as #intr_name>::__all_verifiers);
+            static INTERFACE_VERIFIER: &[(::core::any::TypeId, (#all_verifiers_fn_type))] =
+                    &[(::core::any::TypeId::of::<#rust_ty>(), <#rust_ty as #intr_name>::__all_verifiers)];
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
                 ::pliron::InventoryWrapper(&INTERFACE_VERIFIER)
@@ -265,16 +265,25 @@ pub(crate) fn derive_op_interface_impl(
     attr: proc_macro::TokenStream,
     input: proc_macro::TokenStream,
 ) -> Result<proc_macro2::TokenStream> {
-    let intrs = syn::parse2::<PathList>(attr.into())?;
+    let interfaces = syn::parse2::<PathList>(attr.into())?.paths;
     let input = syn::parse2::<DeriveInput>(input.into())?;
     let struct_name = input.ident.clone();
 
-    let impls = intrs.paths.into_iter().map(|path| {
-        quote! {
-            #[::pliron::derive::op_interface_impl]
-            impl #path for #struct_name {}
-        }
-    });
+    let impls = quote! {
+        #(impl #interfaces for #struct_name {})*
+
+        ::pliron::type_to_trait!(#((#struct_name, #interfaces)),*);
+
+        const _: () = {
+            #[cfg_attr(not(target_family = "wasm"), ::pliron::linkme::distributed_slice(::pliron::op::OP_INTERFACE_VERIFIERS), linkme(crate = ::pliron::linkme))]
+            static INTERFACE_VERIFIER: &[(::core::any::TypeId, ::pliron::op::OpInterfaceAllVerifiers)] =
+                     &[#((::core::any::TypeId::of::<#struct_name>(), <#struct_name as #interfaces>::__all_verifiers)),*];
+            #[cfg(target_family = "wasm")]
+            ::pliron::inventory::submit! {
+                ::pliron::InventoryWrapper(&INTERFACE_VERIFIER)
+            }
+        };
+    };
 
     let mut output = input.to_token_stream();
     output.extend(impls);

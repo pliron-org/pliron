@@ -623,7 +623,8 @@ pub struct OperandSegmentSizesAttr(pub Vec<u32>);
 
 crate::dict_key!(
     /// Key for given names of operation results and block arguments.
-    ATTR_KEY_GIVEN_NAMES, "builtin_given_names"
+    ATTR_KEY_GIVEN_NAMES,
+    "builtin_given_names"
 );
 
 /// Given names management for [Operation](crate::operation::Operation) results

@@ -366,7 +366,7 @@ pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
 #[doc(hidden)]
 /// An [Op] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type OpInterfaceVerifierInfo = (core::any::TypeId, OpInterfaceAllVerifiers);
+type OpInterfaceVerifierInfo = &'static [(core::any::TypeId, OpInterfaceAllVerifiers)];
 
 #[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]

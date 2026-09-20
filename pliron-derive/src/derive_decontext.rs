@@ -681,13 +681,15 @@ mod tests {
                     ),
                     linkme(crate = ::pliron::linkme)
                 )]
-                static INTERFACE_VERIFIER: (
+                static INTERFACE_VERIFIER: &[(
                     ::core::any::TypeId,
                     (::pliron::attribute::AttrInterfaceAllVerifiers),
-                ) = (
-                    ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
-                );
+                )] = &[
+                    (
+                        ::core::any::TypeId::of::<Foo>(),
+                        <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
+                    ),
+                ];
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
                     ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)
@@ -739,13 +741,15 @@ mod tests {
                     ::pliron::linkme::distributed_slice(::pliron::r#type::TYPE_INTERFACE_VERIFIERS),
                     linkme(crate = ::pliron::linkme)
                 )]
-                static INTERFACE_VERIFIER: (
+                static INTERFACE_VERIFIER: &[(
                     ::core::any::TypeId,
                     (::pliron::r#type::TypeInterfaceAllVerifiers),
-                ) = (
-                    ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
-                );
+                )] = &[
+                    (
+                        ::core::any::TypeId::of::<Foo>(),
+                        <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
+                    ),
+                ];
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
                     ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)

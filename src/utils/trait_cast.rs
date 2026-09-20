@@ -92,14 +92,17 @@ pub struct TraitCasterInfo {
     pub caster: &'static (dyn Any + Sync + Send),
 }
 
+#[doc(hidden)]
+pub type TraitCasterInfos = &'static [TraitCasterInfo];
+
 #[cfg(not(target_family = "wasm"))]
 pub mod statics {
     use super::*;
 
     #[::pliron::linkme::distributed_slice]
-    pub static TRAIT_CASTERS: [TraitCasterInfo] = [..];
+    pub static TRAIT_CASTERS: [TraitCasterInfos] = [..];
 
-    pub fn get_trait_casters() -> impl Iterator<Item = &'static TraitCasterInfo> {
+    pub fn get_trait_casters() -> impl Iterator<Item = &'static TraitCasterInfos> {
         TRAIT_CASTERS.iter()
     }
 }
@@ -107,11 +110,12 @@ pub mod statics {
 #[cfg(target_family = "wasm")]
 pub mod statics {
     use super::*;
+    use crate::InventoryWrapper;
 
-    ::pliron::inventory::collect!(&'static TraitCasterInfo);
+    ::pliron::inventory::collect!(InventoryWrapper<TraitCasterInfos>);
 
-    pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfo> {
-        ::pliron::inventory::iter::<&'static TraitCasterInfo>()
+    pub fn get_trait_casters() -> impl Iterator<Item = &'static &'static TraitCasterInfos> {
+        ::pliron::inventory::iter::<InventoryWrapper<TraitCasterInfos>>().map(|llw| &llw.0)
     }
 }
 
@@ -125,6 +129,7 @@ pub use statics::*;
 static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sync + Send)>> =
     LazyLock::new(|| {
         get_trait_casters()
+            .flat_map(|infos| infos.iter())
             .map(|lazy| ((lazy.from, lazy.to), lazy.caster))
             .collect()
     });
@@ -152,6 +157,9 @@ static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sy
 #[macro_export]
 macro_rules! type_to_trait {
     ($ty_name:ty, $to_trait_name:path) => {
+        $crate::type_to_trait!(($ty_name, $to_trait_name));
+    };
+    ($(($ty_name:ty, $to_trait_name:path)),*) => {
         // The rust way to do an anonymous module.
         const _: () = {
             #[cfg_attr(
@@ -159,29 +167,31 @@ macro_rules! type_to_trait {
                 ::pliron::linkme::distributed_slice
                     ($crate::utils::trait_cast::TRAIT_CASTERS), linkme(crate = ::pliron::linkme)
             )]
-            static CAST_TO_TRAIT: $crate::utils::trait_cast::TraitCasterInfo =
-                $crate::utils::trait_cast::TraitCasterInfo {
-                    from: core::any::TypeId::of::<$ty_name>(),
-                    to: core::any::TypeId::of::<dyn $to_trait_name>(),
-                    caster: &(cast_to_trait
-                        as for<'a> fn(
-                            &'a (dyn core::any::Any + 'static),
-                        ) -> &'a (dyn $to_trait_name + 'static))
-                        as &'static (dyn core::any::Any + Sync + Send),
-                };
+            static CAST_TO_TRAIT: $crate::utils::trait_cast::TraitCasterInfos =
+                &[$({
+                    fn cast_to_trait<'a>(
+                        r: &'a (dyn core::any::Any + 'static),
+                    ) -> &'a (dyn $to_trait_name + 'static) {
+                        // This function is only called when the type of `r` is `$ty_name`,
+                        // so the downcast must succeed. A failure indicates an internal bug
+                        // in `type_to_trait!` or `any_to_trait`, not their usage.
+                        r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
+                    }
+
+                    $crate::utils::trait_cast::TraitCasterInfo {
+                        from: core::any::TypeId::of::<$ty_name>(),
+                        to: core::any::TypeId::of::<dyn $to_trait_name>(),
+                        caster: &(cast_to_trait
+                            as for<'a> fn(
+                                &'a (dyn core::any::Any + 'static),
+                            ) -> &'a (dyn $to_trait_name + 'static))
+                            as &'static (dyn core::any::Any + Sync + Send),
+                    }
+                }),*];
 
             #[cfg(target_family = "wasm")]
             ::pliron::inventory::submit! {
-                &CAST_TO_TRAIT
-            }
-
-            fn cast_to_trait<'a>(
-                r: &'a (dyn core::any::Any + 'static),
-            ) -> &'a (dyn $to_trait_name + 'static) {
-                // This function is only called when the type of `r` is `$ty_name`,
-                // so the downcast must succeed. A failure indicates an internal bug
-                // in `type_to_trait!` or `any_to_trait`, not their usage.
-                r.downcast_ref::<$ty_name>().unwrap() as &dyn $to_trait_name
+                ::pliron::InventoryWrapper(&CAST_TO_TRAIT)
             }
         };
     };
