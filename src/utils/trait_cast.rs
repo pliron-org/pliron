@@ -142,16 +142,21 @@ static TRAIT_CASTERS_MAP: LazyLock<HMap<(TypeId, TypeId), &'static (dyn Any + Sy
 /// trait Trait {}
 /// struct S1;
 /// impl Trait for S1 {}
-/// type_to_trait!(S1, Trait);
+/// struct S2;
+/// impl Trait for S2 {}
+/// type_to_trait!((S1, Trait), (S2, Trait));
 ///
 /// let s1: &dyn Any = &S1;
 /// any_to_trait::<dyn Trait>(s1).expect("Expected S1 to implement Trait");
 ///
-/// struct S2;
 /// let s2: &dyn Any = &S2;
+/// any_to_trait::<dyn Trait>(s2).expect("Expected S2 to implement Trait");
+///
+/// struct S3;
+/// let s3: &dyn Any = &S3;
 /// assert!(
-///     any_to_trait::<dyn Trait>(s2).is_none(),
-///     "S2 does not implement Trait"
+///     any_to_trait::<dyn Trait>(s3).is_none(),
+///     "S3 does not implement Trait"
 /// );
 /// ```
 #[macro_export]
