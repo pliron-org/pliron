@@ -787,7 +787,12 @@ impl Verify for CondBrOp {
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for CondBrOp {}
+impl OperandSegmentInterface for CondBrOp {
+    fn expected_num_segments(&self, _ctx: &Context) -> Option<usize> {
+        // The condition, the true destination operands and the false destination operands.
+        Some(3)
+    }
+}
 
 impl Printable for CondBrOp {
     fn fmt(
@@ -882,9 +887,8 @@ impl Parsable for CondBrOp {
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        <Self as NSuccsInterface<2>>::verify(self, ctx)?;
-        // One segment for the condition, and one segment for each successor.
-        self.verify_num_segments(ctx, 3)
+        <Self as OperandSegmentInterface>::verify(self, ctx)?;
+        <Self as NSuccsInterface<2>>::verify(self, ctx)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
@@ -1186,9 +1190,7 @@ impl SwitchOp {
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        // One segment for the condition, and one segment for each successor.
-        let num_succs = self.get_operation().deref(ctx).get_num_successors();
-        self.verify_num_segments(ctx, num_succs + 1)
+        <Self as OperandSegmentInterface>::verify(self, ctx)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
@@ -1213,7 +1215,12 @@ impl BranchOpInterface for SwitchOp {
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for SwitchOp {}
+impl OperandSegmentInterface for SwitchOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the condition, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum SwitchOpVerifyErr {
@@ -1451,9 +1458,7 @@ impl IndirectBrOp {
 #[op_interface_impl]
 impl BranchOpInterface for IndirectBrOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        // One segment for the address, and one segment for each successor.
-        let num_succs = self.get_operation().deref(ctx).get_num_successors();
-        self.verify_num_segments(ctx, num_succs + 1)
+        <Self as OperandSegmentInterface>::verify(self, ctx)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
@@ -1478,7 +1483,12 @@ impl BranchOpInterface for IndirectBrOp {
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for IndirectBrOp {}
+impl OperandSegmentInterface for IndirectBrOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the address, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum IndirectBrOpVerifyErr {

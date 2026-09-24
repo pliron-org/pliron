@@ -75,7 +75,7 @@ pub trait BranchOpInterface: IsTerminatorInterface {
     ///    for any `succ_idx < Operation::get_num_successors()` does not panic.
     ///  - The operand range it returns is contained in `0..Operation::get_num_operands()`.
     ///
-    /// Typically, an impl will include a call to [OperandSegmentInterface::verify_num_segments].
+    /// Typically, an impl will include a call to `<Self as OperandSegmentInterface>::verify`.
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()>;
 
     /// Return the index range of operands forwarded to successor `succ_idx`.
@@ -237,6 +237,10 @@ pub enum OperandSegmentInterfaceVerifyErr {
 /// | builtin_operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr](crate::builtin::attributes::OperandSegmentSizesAttr) |
 #[op_interface]
 pub trait OperandSegmentInterface {
+    /// The number of operand segments that this [Op] must have,
+    /// or [None] if any number of segments is valid.
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize>;
+
     /// Given a list of segmented operands, compute the segment sizes and flatten the operands
     /// (ready for use in constructing an operation).
     /// Call `set_operand_segment_sizes` with the computed segment sizes to set the attribute.
@@ -401,22 +405,6 @@ pub trait OperandSegmentInterface {
         removed
     }
 
-    /// Verify the operand segments and ensure that there are exactly `expected` segments.
-    fn verify_num_segments(&self, ctx: &Context, expected: usize) -> Result<()>
-    where
-        Self: Sized,
-    {
-        <Self as OperandSegmentInterface>::verify(self, ctx)?;
-        let found = self.num_segments(ctx);
-        if found != expected {
-            return verify_err!(
-                self.loc(ctx),
-                OperandSegmentInterfaceVerifyErr::SegmentCountMismatch { expected, found }
-            );
-        }
-        Ok(())
-    }
-
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
@@ -442,6 +430,17 @@ pub trait OperandSegmentInterface {
                     total,
                     num_operands
                 )
+            );
+        }
+
+        let segmented_op = op_cast::<dyn OperandSegmentInterface>(op).unwrap();
+        let found = attr.0.len();
+        if let Some(expected) = segmented_op.expected_num_segments(ctx)
+            && found != expected
+        {
+            return verify_err!(
+                self_op.loc(),
+                OperandSegmentInterfaceVerifyErr::SegmentCountMismatch { expected, found }
             );
         }
 
