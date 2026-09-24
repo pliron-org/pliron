@@ -10,7 +10,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::{cell::Ref, num::NonZero};
+use core::{cell::Ref, num::NonZero, ops::Range};
 
 use pliron::{
     arg_err_noloc,
@@ -654,9 +654,9 @@ pub struct BrOp;
 
 #[op_interface_impl]
 impl BranchOpInterface for BrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        self.get_operation().deref(ctx).operands().collect()
+        0..self.get_operation().deref(ctx).get_num_operands()
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -668,10 +668,10 @@ impl BranchOpInterface for BrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        Operation::remove_operand(self.get_operation(), ctx, opd_idx)
+        Operation::remove_operand(self.get_operation(), ctx, arg_idx)
     }
 }
 
@@ -858,14 +858,14 @@ impl Parsable for CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(
             succ_idx == 0 || succ_idx == 1,
             "CondBrOp has exactly two successors"
         );
 
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -877,10 +877,10 @@ impl BranchOpInterface for CondBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
@@ -1149,9 +1149,9 @@ impl SwitchOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1163,10 +1163,10 @@ impl BranchOpInterface for SwitchOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
@@ -1396,9 +1396,9 @@ impl IndirectBrOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for IndirectBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the address.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1410,10 +1410,10 @@ impl BranchOpInterface for IndirectBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the address operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
