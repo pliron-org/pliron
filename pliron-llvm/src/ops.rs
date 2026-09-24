@@ -1247,6 +1247,8 @@ pub enum SwitchOpVerifyErr {
     DefaultDestErr,
     #[error("SwitchOp has no condition operand or is not an integer")]
     ConditionErr,
+    #[error("Expected exactly one condition operand, but found {0}")]
+    ConditionOperandCount(u32),
 }
 
 impl Verify for SwitchOp {
@@ -1257,14 +1259,18 @@ impl Verify for SwitchOp {
             verify_err!(loc.clone(), SwitchOpVerifyErr::CaseValuesAttrErr)?
         };
 
+        let num_conditions = self.segment_size(ctx, 0);
+        if num_conditions != 1 {
+            verify_err!(
+                loc.clone(),
+                SwitchOpVerifyErr::ConditionOperandCount(num_conditions)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
             verify_err!(loc.clone(), SwitchOpVerifyErr::DefaultDestErr)?;
-        }
-
-        if op.get_num_operands() < 1 {
-            verify_err!(loc.clone(), SwitchOpVerifyErr::ConditionErr)?;
         }
 
         let condition_ty = pliron::r#type::Typed::get_type(&op.get_operand(0), ctx);
@@ -1514,11 +1520,22 @@ impl OperandSegmentInterface for IndirectBrOp {}
 pub enum IndirectBrOpVerifyErr {
     #[error("IndirectBrOp must have at least one destination")]
     NoDestinations,
+    #[error("Expected exactly one address operand, but found {0}")]
+    AddressOperandCount(u32),
 }
 
 impl Verify for IndirectBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
+
+        let num_addresses = self.segment_size(ctx, 0);
+        if num_addresses != 1 {
+            verify_err!(
+                loc.clone(),
+                IndirectBrOpVerifyErr::AddressOperandCount(num_addresses)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
