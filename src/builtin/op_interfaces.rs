@@ -57,8 +57,6 @@ pub enum BranchOpInterfaceVerifyErr {
         forwarded: String,
         expected: String,
     },
-    #[error("Expected {expected} operand segments, but found {found}")]
-    SuccessorSegmentCountMismatch { expected: usize, found: usize },
 }
 
 /// This [terminator](IsTerminatorInterface) [Op] branches to
@@ -76,6 +74,8 @@ pub trait BranchOpInterface: IsTerminatorInterface {
     ///  - Calling [successor_operand_range](Self::successor_operand_range)
     ///    for any `succ_idx < Operation::get_num_successors()` does not panic.
     ///  - The operand range it returns is contained in `0..Operation::get_num_operands()`.
+    ///
+    /// Typically, an impl will include a call to [OperandSegmentInterface::verify_num_segments].
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()>;
 
     /// Return the index range of operands forwarded to successor `succ_idx`.
@@ -220,6 +220,8 @@ pub enum OperandSegmentInterfaceVerifyErr {
     OperandSegmentSizesAttrErr,
     #[error("operand_segment_sizes total {0} does not match the number of operands {1}")]
     OperandSegmentSizesTotalMismatchErr(u32, u32),
+    #[error("Expected {expected} operand segments, but found {found}")]
+    SegmentCountMismatch { expected: usize, found: usize },
 }
 
 /// Interface for operations whose operands are grouped into segments.
@@ -397,6 +399,22 @@ pub trait OperandSegmentInterface {
         sizes[seg_idx] -= 1;
         self.set_operand_segment_sizes(ctx, OperandSegmentSizesAttr(sizes));
         removed
+    }
+
+    /// Verify the operand segments and ensure that there are exactly `expected` segments.
+    fn verify_num_segments(&self, ctx: &Context, expected: usize) -> Result<()>
+    where
+        Self: Sized,
+    {
+        <Self as OperandSegmentInterface>::verify(self, ctx)?;
+        let found = self.num_segments(ctx);
+        if found != expected {
+            return verify_err!(
+                self.loc(ctx),
+                OperandSegmentInterfaceVerifyErr::SegmentCountMismatch { expected, found }
+            );
+        }
+        Ok(())
     }
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>

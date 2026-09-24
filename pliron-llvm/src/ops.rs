@@ -882,21 +882,9 @@ impl Parsable for CondBrOp {
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        <Self as OperandSegmentInterface>::verify(self, ctx)?;
         <Self as NSuccsInterface<2>>::verify(self, ctx)?;
-
         // One segment for the condition, and one segment for each successor.
-        let found = self.num_segments(ctx);
-        if found != 3 {
-            return verify_err!(
-                self.loc(ctx),
-                op_interfaces::BranchOpInterfaceVerifyErr::SuccessorSegmentCountMismatch {
-                    expected: 3,
-                    found
-                }
-            );
-        }
-        Ok(())
+        self.verify_num_segments(ctx, 3)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
@@ -1198,21 +1186,9 @@ impl SwitchOp {
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        <Self as OperandSegmentInterface>::verify(self, ctx)?;
-
         // One segment for the condition, and one segment for each successor.
-        let expected = self.get_operation().deref(ctx).get_num_successors() + 1;
-        let found = self.num_segments(ctx);
-        if found != expected {
-            return verify_err!(
-                self.loc(ctx),
-                op_interfaces::BranchOpInterfaceVerifyErr::SuccessorSegmentCountMismatch {
-                    expected,
-                    found
-                }
-            );
-        }
-        Ok(())
+        let num_succs = self.get_operation().deref(ctx).get_num_successors();
+        self.verify_num_segments(ctx, num_succs + 1)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
@@ -1475,21 +1451,9 @@ impl IndirectBrOp {
 #[op_interface_impl]
 impl BranchOpInterface for IndirectBrOp {
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
-        <Self as OperandSegmentInterface>::verify(self, ctx)?;
-
         // One segment for the address, and one segment for each successor.
-        let expected = self.get_operation().deref(ctx).get_num_successors() + 1;
-        let found = self.num_segments(ctx);
-        if found != expected {
-            return verify_err!(
-                self.loc(ctx),
-                op_interfaces::BranchOpInterfaceVerifyErr::SuccessorSegmentCountMismatch {
-                    expected,
-                    found
-                }
-            );
-        }
-        Ok(())
+        let num_succs = self.get_operation().deref(ctx).get_num_successors();
+        self.verify_num_segments(ctx, num_succs + 1)
     }
 
     fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
