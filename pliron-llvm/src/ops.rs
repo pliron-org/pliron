@@ -645,7 +645,6 @@ pub struct AddrSpaceCastOp;
     interfaces = [
         IsTerminatorInterface,
         NResultsInterface<0>,
-        NSuccsInterface<1>,
         OneSuccInterface
     ],
     verifier = "succ"

@@ -170,20 +170,29 @@ pub trait NSuccsInterface<const N: usize>: BranchOpInterface {
         }
         Ok(())
     }
+
+    /// Get the `i`'th successor block.
+    fn get_successor_i(&self, ctx: &Context, i: LessThanN<N>) -> Ptr<BasicBlock> {
+        self.get_operation().deref(ctx).get_successor(i.i())
+    }
 }
 
 /// An [Op] having exactly one successor.
 #[op_interface]
-pub trait OneSuccInterface: NSuccsInterface<1> {
+pub trait OneSuccInterface: BranchOpInterface {
     /// Get the single successor block of this [Op].
     fn get_successor(&self, ctx: &Context) -> Ptr<BasicBlock> {
         self.get_operation().deref(ctx).get_successor(0)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let op = op.get_operation().deref(ctx);
+        if op.get_num_successors() != 1 {
+            return verify_err!(op.loc(), NSuccsVerifyErr(1, op.get_num_successors()));
+        }
         Ok(())
     }
 }
