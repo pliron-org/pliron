@@ -57,6 +57,8 @@ pub enum BranchOpInterfaceVerifyErr {
         forwarded: String,
         expected: String,
     },
+    #[error("Expected {expected} operand segments, but found {found}")]
+    SuccessorSegmentCountMismatch { expected: usize, found: usize },
 }
 
 /// This [terminator](IsTerminatorInterface) [Op] branches to
@@ -70,6 +72,12 @@ pub enum BranchOpInterfaceVerifyErr {
 /// [BranchOpInterface]: https://github.com/llvm/llvm-project/blob/b1f04d57f5818914d7db506985e2932f217844bd/mlir/include/mlir/Interfaces/ControlFlowInterfaces.td
 #[op_interface]
 pub trait BranchOpInterface: IsTerminatorInterface {
+    /// Verify that
+    ///  - Calling [successor_operand_range](Self::successor_operand_range)
+    ///    for any `succ_idx < Operation::get_num_successors()` does not panic.
+    ///  - The operand range it returns is contained in `0..Operation::get_num_operands()`.
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()>;
+
     /// Return the index range of operands forwarded to successor `succ_idx`.
     /// The `i`th returned index identifies the operand for the target block's `i`th argument.
     /// Panics if `succ_idx` is invalid.
@@ -118,6 +126,9 @@ pub trait BranchOpInterface: IsTerminatorInterface {
         Self: Sized,
     {
         let self_op = op_cast::<dyn BranchOpInterface>(op).unwrap();
+        // Verify that we can call [Self::successor_operands] and use its results without a panic.
+        self_op.verify_successor_operand_layout(ctx)?;
+
         // Verify that the values passed to a target block
         // matches the arguments of that block.
         for (succ_idx, succ) in op.get_operation().deref(ctx).successors().enumerate() {
@@ -151,7 +162,7 @@ pub trait BranchOpInterface: IsTerminatorInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {0} successors, but found {1}")]
+#[error("Expected {0} successor(s), but found {1}")]
 pub struct NSuccsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly `N` successors. Successors are branch targets, so this
@@ -729,7 +740,7 @@ pub trait SymbolUserOpInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {0} results, but found {1} results")]
+#[error("Expected {0} result(s), but found {1} results")]
 pub struct NResultsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly N results.
@@ -850,7 +861,7 @@ pub trait OneResultInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {} operands, but found {}", .0, .1)]
+#[error("Expected {} operand(s), but found {}", .0, .1)]
 pub struct NOpdsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly N operands.
