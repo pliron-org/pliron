@@ -256,7 +256,7 @@ dyn_clone::clone_trait_object!(Op);
 pub(crate) type OpParserFn =
     for<'a> fn(&mut StateStream<'a>, Vec<(Identifier, Location)>) -> ParseResult<'a, OpObj>;
 
-/// [Op] objects are boxed and stored in the IR.
+/// A type-erased handle to a concrete [Op].
 pub type OpObj = OpBox;
 
 impl PartialEq for OpObj {
@@ -544,58 +544,45 @@ pub fn canonical_syntax_parser<'a, T: Op>(
     parser_combinator(canonical_syntax_parse::<T>, results)
 }
 
-/// This must always be the same as any concrete [Op] object.
-#[derive(Clone)]
-struct OpData {
-    #[allow(unused)]
-    op: Ptr<Operation>,
-}
-
-/// A stack allocated alternative to [Box] for [Op] objects.
-#[derive(Clone)]
+/// A stack allocated alternative to `Box<dyn Op>`.
+#[derive(Clone, Copy)]
 pub struct OpBox {
-    data: OpData,
-    vtable_ptr: *const (),
+    op: Ptr<Operation>,
+    as_dyn: for<'a> fn(&'a Ptr<Operation>) -> &'a dyn Op,
 }
 
 impl OpBox {
     /// Create a new [OpBox] from a concrete [Op] object.
     pub fn new<T: Op>(op: T) -> Self {
         /// Static assertion to ensure that concrete [Op]s
-        /// always are the same as our [OpData] struct.
+        /// have the same size and alignment as `Ptr<Operation>`.
         struct StaticAsserter<S>(S);
         impl<S> StaticAsserter<S> {
-            const ASSERTTION: () = {
-                // Ensure that OpData and T have the same size.
+            const ASSERTION: () = {
                 assert!(
-                    core::mem::size_of::<OpData>() == core::mem::size_of::<S>(),
+                    core::mem::size_of::<Ptr<Operation>>() == core::mem::size_of::<S>()
+                        && core::mem::align_of::<Ptr<Operation>>() == core::mem::align_of::<S>(),
                     "OpBox can only box Op objects"
                 );
             };
         }
-        let _: () = StaticAsserter::<T>::ASSERTTION;
+        let _: () = StaticAsserter::<T>::ASSERTION;
 
-        let dyn_ref: &dyn Op = &op;
-        let (_, vtable_ptr) =
-            unsafe { core::mem::transmute::<&dyn Op, (*const T, *const ())>(dyn_ref) };
+        fn as_dyn<T: Op>(op: &Ptr<Operation>) -> &dyn Op {
+            // SAFETY: `T` has the same layout as `Ptr<Operation>`:
+            // `#[repr(transparent)] struct T { op: Ptr<Operation> }`
+            unsafe { &*(op as *const Ptr<Operation> as *const T) }
+        }
 
         OpBox {
-            data: OpData {
-                op: op.get_operation(),
-            },
-            vtable_ptr,
+            op: op.get_operation(),
+            as_dyn: as_dyn::<T>,
         }
     }
 
     /// Get a reference to the underlying [Op] object.
     pub fn op_ref(&self) -> &dyn Op {
-        unsafe {
-            let dyn_ref: &dyn Op = core::mem::transmute::<(&OpData, *const ()), &dyn Op>((
-                &self.data,
-                self.vtable_ptr,
-            ));
-            dyn_ref
-        }
+        (self.as_dyn)(&self.op)
     }
 
     /// Downcast this [OpBox] to a concrete [Op] type.
