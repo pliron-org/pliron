@@ -14,7 +14,7 @@ use crate::{
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
-    utils::table::{HMap, IMap, ISet},
+    utils::table::{HMap, HSet, IMap, ISet},
     value::{DefiningEntity, Value},
 };
 
@@ -24,18 +24,24 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     /// The immediate dominator of self.
+    ///
+    /// For a post-dominator tree, `None` means that the immediate dominator is
+    /// the implicit virtual root.
     parent: Option<G::Node>,
-    /// The nodes that self immediately dominates.
+    /// The real nodes that self immediately dominates.
     children: Vec<G::Node>,
 }
 
-/// Represents dominator tree for a control-flow-graph
-pub struct DomTree<G, GraphContext>
+/// Represents a dominator or post-dominator tree for a control-flow graph.
+///
+/// `IS_POST_DOM` is `false` for a dominator tree and `true` for a
+/// post-dominator tree. Post-dominator trees have an implicit virtual root;
+/// `roots()` returns the real CFG nodes attached to that virtual root.
+pub struct DomTree<G, GraphContext, const IS_POST_DOM: bool = false>
 where
     G: ControlFlowGraph<GraphContext>,
 {
-    // An empty tree has no root.
-    root: Option<G::Node>,
+    roots: Vec<G::Node>,
     dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
 }
 
@@ -43,6 +49,18 @@ where
 pub struct DomFrontierMap<G, GraphContext>(HMap<G::Node, ISet<G::Node>>)
 where
     G: ControlFlowGraph<GraphContext>;
+
+fn intersect(mut finger1: usize, mut finger2: usize, dom: &[Option<usize>]) -> usize {
+    while finger1 != finger2 {
+        while finger1 > finger2 {
+            finger1 = dom[finger1].expect("Processed node must have an immediate dominator");
+        }
+        while finger2 > finger1 {
+            finger2 = dom[finger2].expect("Processed node must have an immediate dominator");
+        }
+    }
+    finger1
+}
 
 /// Computes a dominator tree for `graph`.
 /// Only considers nodes reachable from the entry node of the graph.
@@ -57,7 +75,7 @@ where
 {
     let Some(entry_node) = graph.entry_node(ctx) else {
         return DomTree {
-            root: None,
+            roots: vec![],
             dominators_map: IMap::default(),
         };
     };
@@ -84,42 +102,27 @@ where
     );
     dom[0] = Some(0);
 
-    fn intersect(mut finger1: usize, mut finger2: usize, dom: &[Option<usize>]) -> usize {
-        while finger1 != finger2 {
-            while finger1 > finger2 {
-                finger1 = dom[finger1].unwrap();
-            }
-            while finger2 > finger1 {
-                finger2 = dom[finger2].unwrap();
-            }
-        }
-        finger1
-    }
-
     let mut changed = true;
     while changed {
         changed = false;
 
         for (i, node) in rpo.iter().enumerate().skip(1) {
             let preds = graph.predecessors(ctx, node);
-            // only consider predecessors reachable from entry (exactly the predecessors in rpo_index)
+            // Only consider predecessors reachable from entry (exactly the predecessors in rpo_index).
             let reachable_preds = preds.iter().filter(|p| rpo_index.contains_key(*p));
 
-            // new_idom <- first (processed) predecessor of b (pick one)
+            // new_idom <- first processed predecessor of b.
             let picked_pred = reachable_preds
                 .clone()
                 .find(|p| dom[rpo_index[*p]].is_some())
-                .unwrap();
+                .expect("Every reachable non-entry node must have a processed predecessor");
             let mut new_idom = rpo_index[picked_pred];
 
-            // for all other (reachable) predecessors, p, of b:
+            // For all other reachable predecessors, intersect their dominator paths.
             for pred in reachable_preds.filter(|p| *p != picked_pred) {
                 let pred_idx = rpo_index[pred];
-                match dom[pred_idx] {
-                    None => {}
-                    Some(_) => {
-                        new_idom = intersect(pred_idx, new_idom, &dom);
-                    }
+                if dom[pred_idx].is_some() {
+                    new_idom = intersect(pred_idx, new_idom, &dom);
                 }
             }
 
@@ -131,7 +134,7 @@ where
     }
 
     let mut dom_tree = DomTree {
-        root: Some(entry_node),
+        roots: vec![entry_node],
         dominators_map: IMap::default(),
     };
     let entry = DomTreeNode {
@@ -161,11 +164,286 @@ where
     dom_tree
 }
 
-impl<G, GraphContext> DomTree<G, GraphContext>
+fn mark_reverse_reachable<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+    start: G::Node,
+    reached: &mut HSet<G::Node>,
+) where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let mut stack = vec![start];
+    while let Some(node) = stack.pop() {
+        if !reached.insert(node.clone()) {
+            continue;
+        }
+        stack.extend(graph.predecessors(ctx, &node));
+    }
+}
+
+fn furthest_unreached_node<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+    start: G::Node,
+    already_reached: &HSet<G::Node>,
+    node_order: &HMap<G::Node, usize>,
+) -> G::Node
 where
     G: ControlFlowGraph<GraphContext>,
 {
-    /// Does `dominator` dominate `dominatee`?
+    let mut seen = HSet::<G::Node>::default();
+    let mut stack = vec![start.clone()];
+    let mut furthest = start;
+
+    while let Some(node) = stack.pop() {
+        if already_reached.contains(&node) || !seen.insert(node.clone()) {
+            continue;
+        }
+        furthest = node.clone();
+
+        // Use CFG node order rather than successor-list order so swapping branch
+        // successors does not change the selected non-trivial root.
+        let mut succs = graph.successors(ctx, &node);
+        succs.sort_by_key(|succ| {
+            node_order
+                .get(succ)
+                .copied()
+                .expect("Every successor must be a CFG node")
+        });
+        for succ in succs.into_iter().rev() {
+            if !already_reached.contains(&succ) && !seen.contains(&succ) {
+                stack.push(succ);
+            }
+        }
+    }
+
+    furthest
+}
+
+fn reaches_another_root<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+    start: &G::Node,
+    roots: &[G::Node],
+) -> bool
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let mut seen = HSet::<G::Node>::default();
+    let mut stack = graph.successors(ctx, start);
+    seen.insert(start.clone());
+
+    while let Some(node) = stack.pop() {
+        if !seen.insert(node.clone()) {
+            continue;
+        }
+        if roots.iter().any(|root| root == &node) {
+            return true;
+        }
+        stack.extend(graph.successors(ctx, &node));
+    }
+
+    false
+}
+
+fn find_post_dominator_roots<G, GraphContext>(ctx: &GraphContext, graph: &G) -> Vec<G::Node>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let nodes: Vec<G::Node> = graph.nodes(ctx).collect();
+    let node_order: HMap<G::Node, usize> = nodes
+        .iter()
+        .enumerate()
+        .map(|(index, node)| (node.clone(), index))
+        .collect();
+    let mut roots = Vec::<G::Node>::new();
+    let mut reverse_reached = HSet::<G::Node>::default();
+
+    // CFG exits are always post-dominator roots. Walking predecessors from each
+    // exit marks every node that can eventually reach a real exit.
+    for node in &nodes {
+        if graph.num_successors(ctx, node) == 0 {
+            roots.push(node.clone());
+            mark_reverse_reachable(ctx, graph, node.clone(), &mut reverse_reached);
+        }
+    }
+
+    // Nodes not reached above cannot reach any real exit. For each such area,
+    // choose the last node reached by a forward DFS as a non-trivial root, then
+    // walk backwards from it. This follows LLVM's "furthest away" strategy for
+    // providing useful post-dominance information inside infinite loops.
+    while reverse_reached.len() < nodes.len() {
+        let start = nodes
+            .iter()
+            .find(|node| !reverse_reached.contains(*node))
+            .expect("An unreached node must exist")
+            .clone();
+        let root = furthest_unreached_node(ctx, graph, start, &reverse_reached, &node_order);
+        roots.push(root.clone());
+        mark_reverse_reachable(ctx, graph, root, &mut reverse_reached);
+    }
+
+    // A non-trivial root is redundant if a forward walk from it reaches
+    // another root. Trivial roots (real exits) are always retained.
+    let mut i = 0;
+    while i < roots.len() {
+        if graph.num_successors(ctx, &roots[i]) == 0 {
+            i += 1;
+            continue;
+        }
+        if reaches_another_root(ctx, graph, &roots[i], &roots) {
+            roots.remove(i);
+        } else {
+            i += 1;
+        }
+    }
+
+    roots
+}
+
+fn reverse_cfg_rpo_from_roots<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+    roots: &[G::Node],
+) -> Vec<G::Node>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let mut seen = HSet::<G::Node>::default();
+    let mut post_order = Vec::<G::Node>::new();
+
+    for root in roots {
+        if seen.contains(root) {
+            continue;
+        }
+
+        seen.insert(root.clone());
+        let mut stack = vec![(root.clone(), 0usize)];
+        while let Some((node, pred_idx)) = stack.pop() {
+            if pred_idx < graph.num_predecessors(ctx, &node) {
+                stack.push((node.clone(), pred_idx + 1));
+                let pred = graph.get_predecessor(ctx, &node, pred_idx);
+                if seen.insert(pred.clone()) {
+                    stack.push((pred, 0));
+                }
+            } else {
+                post_order.push(node);
+            }
+        }
+    }
+
+    post_order.into_iter().rev().collect()
+}
+
+/// Computes a post-dominator tree for `graph`.
+///
+/// The tree has an implicit virtual root. Real CFG exits and selected nodes in
+/// infinite loops are attached to that virtual root. This allows the analysis
+/// to cover CFGs with multiple exits and nodes that cannot reach any exit.
+pub fn compute_post_dominator_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+) -> DomTree<G, GraphContext, true>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let roots = find_post_dominator_roots(ctx, graph);
+    if roots.is_empty() {
+        return DomTree {
+            roots,
+            dominators_map: IMap::default(),
+        };
+    }
+
+    let rpo = reverse_cfg_rpo_from_roots(ctx, graph, &roots);
+    let num_graph_nodes = graph.nodes(ctx).count();
+    assert_eq!(
+        rpo.len(),
+        num_graph_nodes,
+        "Post-dominator roots must make every CFG node reverse-reachable"
+    );
+
+    // Index 0 represents the virtual root. Real CFG nodes start at index 1.
+    let rpo_index: HMap<G::Node, usize> = rpo
+        .iter()
+        .enumerate()
+        .map(|(i, node)| (node.clone(), i + 1))
+        .collect();
+    let root_set: HSet<G::Node> = roots.iter().cloned().collect();
+    let mut dom: Vec<Option<usize>> = vec![None; rpo.len() + 1];
+    dom[0] = Some(0);
+
+    let mut changed = true;
+    while changed {
+        changed = false;
+
+        for node in &rpo {
+            let node_idx = rpo_index[node];
+            let mut new_idom = root_set.contains(node).then_some(0usize);
+
+            // Predecessors in the reverse CFG are successors in the forward CFG.
+            for pred in graph.successors(ctx, node) {
+                let Some(&pred_idx) = rpo_index.get(&pred) else {
+                    continue;
+                };
+                if dom[pred_idx].is_none() {
+                    continue;
+                }
+                new_idom = Some(match new_idom {
+                    Some(current) => intersect(pred_idx, current, &dom),
+                    None => pred_idx,
+                });
+            }
+
+            let new_idom = new_idom
+                .expect("Every post-dominator node must have a processed reverse predecessor");
+            if dom[node_idx] != Some(new_idom) {
+                dom[node_idx] = Some(new_idom);
+                changed = true;
+            }
+        }
+    }
+
+    let mut dom_tree = DomTree {
+        roots,
+        dominators_map: IMap::default(),
+    };
+
+    for node in &rpo {
+        let node_idx = rpo_index[node];
+        let parent_idx = dom[node_idx].expect("Post-dominator must have an idom");
+        let parent = (parent_idx != 0).then(|| rpo[parent_idx - 1].clone());
+        dom_tree.dominators_map.insert(
+            node.clone(),
+            DomTreeNode {
+                parent,
+                children: vec![],
+            },
+        );
+    }
+
+    for node in &rpo {
+        if let Some(parent) = dom_tree.dominators_map[node].parent.clone() {
+            dom_tree
+                .dominators_map
+                .get_mut(&parent)
+                .expect("Immediate post-dominator must be in the tree")
+                .children
+                .push(node.clone());
+        }
+    }
+
+    dom_tree
+}
+
+impl<G, GraphContext, const IS_POST_DOM: bool> DomTree<G, GraphContext, IS_POST_DOM>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    /// Does `dominator` dominate `dominatee` in this tree?
+    ///
+    /// For a post-dominator tree this answers the corresponding post-dominance
+    /// relation.
     pub fn dominates(&self, dominator: &G::Node, dominatee: &G::Node) -> bool {
         let mut node_opt = Some(dominatee.clone());
         while let Some(node) = node_opt {
@@ -177,54 +455,100 @@ where
         false
     }
 
-    /// Nearest common dominator of `node1` and `node2`.
-    pub fn nearest_common_dominator(&self, node1: &G::Node, node2: &G::Node) -> G::Node {
+    fn nearest_common_dominator_or_virtual(
+        &self,
+        node1: &G::Node,
+        node2: &G::Node,
+    ) -> Option<G::Node> {
         self.dominators(node1)
             .find(|node1_dom| self.dominates(node1_dom, node2))
-            .expect("For nodes reachable from entry, a common dominator must exist")
     }
 
     /// Does the dominator tree contain `node`?
-    /// That is, is `node` reachable from the entry node?
     pub fn contains(&self, node: &G::Node) -> bool {
         self.dominators_map.contains_key(node)
     }
 
-    /// Return the immediate dominator of `node`
+    /// Return the immediate dominator of `node`.
+    ///
+    /// For a post-dominator tree, `None` means the implicit virtual root.
     pub fn idom(&self, node: &G::Node) -> Option<G::Node> {
         self.dominators_map[node].parent.clone()
     }
 
-    /// Return an iterator over the dominators of `node`, starting with `node` itself,
-    /// then its immediate dominator, and so on up to the root.
+    /// Return an iterator over the dominators of `node`, starting with `node` itself.
+    ///
+    /// The implicit virtual root of a post-dominator tree is not yielded.
     pub fn dominators(&self, node: &G::Node) -> impl Iterator<Item = G::Node> + Clone + '_ {
         core::iter::successors(Some(node.clone()), |n| {
             self.dominators_map[n].parent.clone()
         })
     }
 
-    /// Get an iterator over the children nodes
+    /// Get an iterator over the real children nodes.
     pub fn children(&self, node: &G::Node) -> impl Iterator<Item = G::Node> + Clone + '_ {
         self.dominators_map[node].children.iter().cloned()
     }
 
-    /// Get the root of the dominator tree (i.e. the entry node of the graph)
-    /// Returns `None` if the graph has no entry node (empty dominator tree).
-    pub fn root(&self) -> Option<G::Node> {
-        self.root.clone()
+    /// Get the real CFG roots attached to the tree root.
+    ///
+    /// Dominator trees have exactly one root when non-empty. Post-dominator
+    /// trees can have multiple roots, all attached to the implicit virtual root.
+    pub fn roots(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.roots.iter().cloned()
     }
 
-    /// Get the number of nodes in the dominator tree
+    /// Returns whether this is a post-dominator tree.
+    pub const fn is_post_dominator(&self) -> bool {
+        IS_POST_DOM
+    }
+
+    /// Get the root of a dominator tree.
+    ///
+    /// Post-dominator trees always have an implicit virtual root, so this
+    /// returns `None` for them. Use `roots()` to inspect their real CFG roots.
+    pub fn root(&self) -> Option<G::Node> {
+        if IS_POST_DOM {
+            None
+        } else {
+            self.roots.first().cloned()
+        }
+    }
+
+    /// Get the number of real CFG nodes in the dominator tree.
     pub fn num_nodes(&self) -> usize {
         self.dominators_map.len()
     }
 
-    /// Get an iterator over all nodes in the dominator tree
+    /// Get an iterator over all real CFG nodes in the dominator tree.
     pub fn nodes(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
         self.dominators_map.keys().cloned()
     }
 }
 
+impl<G, GraphContext> DomTree<G, GraphContext, false>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    /// Nearest common dominator of `node1` and `node2`.
+    pub fn nearest_common_dominator(&self, node1: &G::Node, node2: &G::Node) -> G::Node {
+        self.nearest_common_dominator_or_virtual(node1, node2)
+            .expect("For nodes reachable from entry, a common dominator must exist")
+    }
+}
+
+impl<G, GraphContext> DomTree<G, GraphContext, true>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    /// Nearest common post-dominator of `node1` and `node2`.
+    ///
+    /// Returns `None` when their nearest common post-dominator is the implicit
+    /// virtual root.
+    pub fn nearest_common_dominator(&self, node1: &G::Node, node2: &G::Node) -> Option<G::Node> {
+        self.nearest_common_dominator_or_virtual(node1, node2)
+    }
+}
 impl<G, GraphContext> DomFrontierMap<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
@@ -740,6 +1064,161 @@ mod tests {
         assert_eq!(dom.idom(&1), Some(0));
 
         assert_eq!(dom.children(&0).collect::<ISet<_>>(), ISet::from_iter([1]));
+    }
+
+    #[test]
+    fn post_dominator_tree_empty_graph() {
+        let ctx: Vec<Node> = vec![];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+        assert!(post_dom.is_post_dominator());
+        assert_eq!(post_dom.root(), None);
+        assert_eq!(post_dom.roots().count(), 0);
+        assert_eq!(post_dom.num_nodes(), 0);
+    }
+
+    #[test]
+    fn post_dominator_tree_linear_chain() {
+        // 0 -> 1 -> 2
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[2]),
+            /* 2 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert!(post_dom.is_post_dominator());
+        assert_eq!(post_dom.root(), None);
+        assert_eq!(post_dom.roots().collect::<ISet<_>>(), ISet::from_iter([2]));
+        assert_eq!(post_dom.idom(&2), None);
+        assert_eq!(post_dom.idom(&1), Some(2));
+        assert_eq!(post_dom.idom(&0), Some(1));
+        assert!(post_dom.dominates(&1, &0));
+        assert!(post_dom.dominates(&2, &0));
+        assert_eq!(post_dom.nearest_common_dominator(&0, &1), Some(1));
+    }
+
+    #[test]
+    fn post_dominator_tree_diamond() {
+        //      0
+        //     / \
+        //    1   2
+        //     \ /
+        //      3
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[3]),
+            /* 2 */ n(&[3]),
+            /* 3 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(post_dom.roots().collect::<ISet<_>>(), ISet::from_iter([3]));
+        assert_eq!(post_dom.idom(&3), None);
+        assert_eq!(post_dom.idom(&1), Some(3));
+        assert_eq!(post_dom.idom(&2), Some(3));
+        assert_eq!(post_dom.idom(&0), Some(3));
+        assert_eq!(
+            post_dom.children(&3).collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 2])
+        );
+    }
+
+    #[test]
+    fn post_dominator_tree_multiple_exits() {
+        //    0
+        //   / \
+        //  1   2
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(
+            post_dom.roots().collect::<ISet<_>>(),
+            ISet::from_iter([1, 2])
+        );
+        assert_eq!(post_dom.idom(&1), None);
+        assert_eq!(post_dom.idom(&2), None);
+        // The branch itself is immediately post-dominated only by the virtual root.
+        assert_eq!(post_dom.idom(&0), None);
+        assert!(!post_dom.dominates(&1, &0));
+        assert!(!post_dom.dominates(&2, &0));
+        assert_eq!(post_dom.nearest_common_dominator(&1, &2), None);
+    }
+
+    #[test]
+    fn post_dominator_tree_infinite_loop() {
+        // 0 -> 1 -> 2
+        //      ^    |
+        //      |____|
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[2]),
+            /* 2 */ n(&[1]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(post_dom.num_nodes(), 3);
+        assert_eq!(post_dom.roots().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(post_dom.idom(&2), None);
+        assert_eq!(post_dom.idom(&1), Some(2));
+        assert_eq!(post_dom.idom(&0), Some(1));
+    }
+
+    #[test]
+    fn post_dominator_tree_infinite_loop_is_independent_of_successor_order() {
+        //      +-> 1 -+
+        //      |      |
+        //  0 --+      +-> 0
+        //      |      |
+        //      +-> 2 -+
+        let ctx_a = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[0]),
+            /* 2 */ n(&[0]),
+        ];
+        let ctx_b = vec![
+            /* 0 */ n(&[2, 1]),
+            /* 1 */ n(&[0]),
+            /* 2 */ n(&[0]),
+        ];
+
+        let post_dom_a = compute_post_dominator_tree(&ctx_a, &ArenaGraph);
+        let post_dom_b = compute_post_dominator_tree(&ctx_b, &ArenaGraph);
+
+        assert_eq!(post_dom_a.roots().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(post_dom_b.roots().collect::<Vec<_>>(), vec![2]);
+        for node in 0..3 {
+            assert_eq!(post_dom_a.idom(&node), post_dom_b.idom(&node));
+        }
+    }
+
+    #[test]
+    fn post_dominator_tree_exit_and_infinite_loop() {
+        //       +-> 1 (exit)
+        //       |
+        //  0 ---+
+        //       |
+        //       +-> 2 <-> 3
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[3]),
+            /* 3 */ n(&[2]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(post_dom.num_nodes(), 4);
+        assert_eq!(
+            post_dom.roots().collect::<ISet<_>>(),
+            ISet::from_iter([1, 3])
+        );
+        assert_eq!(post_dom.idom(&1), None);
+        assert_eq!(post_dom.idom(&3), None);
+        assert_eq!(post_dom.idom(&2), Some(3));
+        assert_eq!(post_dom.idom(&0), None);
     }
 
     #[test]
