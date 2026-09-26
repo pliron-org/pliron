@@ -3,7 +3,11 @@
 
 //! Source location for different IR entities
 
-use alloc::{boxed::Box, string::String, vec::Vec};
+use alloc::{
+    boxed::Box,
+    string::{String, ToString},
+    vec::Vec,
+};
 use core::{
     fmt::Debug,
     hash::{Hash, Hasher},
@@ -29,7 +33,7 @@ use crate::{
     },
     irfmt::{
         parsers::{delimited_list_parser, quoted_string_parser, spaced},
-        printers::list_with_sep,
+        printers::{list_with_sep, quoted},
     },
     operation::Operation,
     parsable::Parsable,
@@ -60,12 +64,13 @@ impl Printable for Source {
     fn fmt(
         &self,
         ctx: &Context,
-        _state: &printable::State,
+        state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         match self {
             Source::File(path_key) => {
-                write!(f, "\"{}\"", uniqued_any::get(ctx, *path_key).display())
+                let path = uniqued_any::get(ctx, *path_key).display().to_string();
+                write!(f, "{}", quoted(&path).print(ctx, state))
             }
             Source::InMemory => write!(f, "<in-memory>"),
         }
@@ -138,7 +143,7 @@ impl StableHashTrait for SourcePosition {
 /// This captures more or less the functionality of MLIR's
 /// [BuiltinLocationAttributes](https://mlir.llvm.org/docs/Dialects/Builtin/#location-attributes).
 /// For simplicity, unlike in MLIR, [Location] is not extensible.
-#[derive(PartialEq, Eq, Clone, Debug, StableHash, CloneIntoContext)]
+#[derive(PartialEq, Eq, Clone, Debug, Hash, StableHash, CloneIntoContext)]
 pub enum Location {
     /// A [Source] along with a [position](SourcePosition) within it.
     /// This is same as MLIR's [FileLineColLoc](https://mlir.llvm.org/docs/Dialects/Builtin/#filelinecolloc).
@@ -164,36 +169,6 @@ pub enum Location {
     /// Location unknown.
     /// See [UnknownLoc](https://mlir.llvm.org/docs/Dialects/Builtin/#unknownloc).
     Unknown,
-}
-
-/// [SourcePosition] doesn't implement [Hash], so this manual impl.
-impl Hash for Location {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        core::mem::discriminant(self).hash(state);
-        match self {
-            Location::SrcPos { src, pos } => {
-                src.hash(state);
-                pos.line.hash(state);
-                pos.column.hash(state);
-            }
-            Location::Fused {
-                metadata,
-                locations,
-            } => {
-                metadata.hash(state);
-                locations.hash(state);
-            }
-            Location::Named { name, child_loc } => {
-                name.hash(state);
-                child_loc.hash(state);
-            }
-            Location::CallSite { callee, caller } => {
-                callee.hash(state);
-                caller.hash(state);
-            }
-            Location::Unknown => {}
-        }
-    }
 }
 
 impl Location {
@@ -272,8 +247,8 @@ impl Printable for Location {
             Self::Named { name, child_loc } => {
                 write!(
                     f,
-                    "name: \"{}\", loc: ({})",
-                    name,
+                    "name: {}, loc: ({})",
+                    name.print(ctx, state),
                     child_loc.print(ctx, state)
                 )
             }
@@ -510,6 +485,36 @@ mod tests {
 
         let printed = print_location(&loc, &ctx);
         expect![r#"?"#].assert_eq(&printed);
+
+        let parsed = parse_location(&printed, &mut ctx);
+        assert_eq!(parsed, loc);
+    }
+
+    #[test]
+    fn test_print_and_parse_named_location_with_escapes() {
+        let mut ctx = Context::default();
+        let named = Location::Named {
+            name: "a\"b\\c\nd\te\u{7f}".to_string(),
+            child_loc: Box::new(Location::Unknown),
+        };
+
+        let printed = print_location(&named, &ctx);
+        expect![[r#"name: "a\"b\\c\nd\te\u{7f}", loc: (?)"#]].assert_eq(&printed);
+
+        let parsed = parse_location(&printed, &mut ctx);
+        assert_eq!(parsed, named);
+    }
+
+    #[test]
+    fn test_print_and_parse_srcpos_location_with_escapes() {
+        let mut ctx = Context::default();
+        let path = PathBuf::from("a\"b\\c.mlir");
+        let src = Source::new_from_file(&mut ctx, path);
+        let pos = SourcePosition { line: 1, column: 1 };
+        let loc = Location::SrcPos { src, pos };
+
+        let printed = print_location(&loc, &ctx);
+        expect![[r#""a\"b\\c.mlir": line: 1, column: 1"#]].assert_eq(&printed);
 
         let parsed = parse_location(&printed, &mut ctx);
         assert_eq!(parsed, loc);

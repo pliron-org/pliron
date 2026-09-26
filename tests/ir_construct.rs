@@ -23,7 +23,7 @@ use pliron::{
         interruptible::{self, walk_advance, walk_break},
     },
     ident,
-    irfmt::parsers::spaced,
+    irfmt::{parsers::spaced, printers::printable_from_fn},
     linked_list::ContainsLinkedList,
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
@@ -1259,20 +1259,7 @@ fn walker_print() {
         }
     }
 
-    struct OpPrinter {
-        root: Ptr<Operation>,
-    }
-    impl Printable for OpPrinter {
-        fn fmt(
-            &self,
-            ctx: &Context,
-            _state: &pliron::printable::State,
-            f: &mut core::fmt::Formatter<'_>,
-        ) -> core::fmt::Result {
-            print_op(ctx, self.root, f)
-        }
-    }
-    let op_printer = OpPrinter { root: module_op };
+    let op_printer = printable_from_fn(|ctx, _state, f| print_op(ctx, module_op, f));
     let printed = format!("{}", op_printer.disp(ctx));
     expect![[r#"
         builtin.module @bar 

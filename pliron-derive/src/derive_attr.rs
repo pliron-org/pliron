@@ -5,8 +5,6 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, quote};
 use syn::{DeriveInput, LitStr, Result};
 
-const PROC_MACRO_NAME: &str = "def_attribute";
-
 pub(crate) fn def_attribute(
     args: impl Into<TokenStream>,
     input: impl Into<TokenStream>,
@@ -49,14 +47,6 @@ impl DefAttribute {
                 "Attribute cannot be derived for generic structs or enums",
             ));
         }
-
-        let attrs = input
-            .attrs
-            .into_iter()
-            .filter(|attr| !attr.path().is_ident(PROC_MACRO_NAME))
-            .collect();
-
-        let input = DeriveInput { attrs, ..input };
 
         let impl_attr = ImplAttribute {
             ident: input.ident.clone(),

@@ -34,11 +34,7 @@
 //! [OpObj]s can be downcasted to their concrete types using
 //! [downcast_rs](https://docs.rs/downcast-rs/latest/downcast_rs/#example-without-generics).
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec::Vec,
-};
+use alloc::{boxed::Box, string::String, vec::Vec};
 use core::{
     fmt::{self, Display},
     hash::Hash,
@@ -65,7 +61,7 @@ use crate::{
             block_opd_parser, delimited_list_parser, location, process_parsed_ssa_defs, spaced,
             ssa_opd_parser, zero_or_more_parser,
         },
-        printers::iter_with_sep,
+        printers::{iter_with_sep, iter_with_sep_by},
     },
     location::{Located, Location},
     operation::{Operation, verify_operation},
@@ -260,7 +256,7 @@ dyn_clone::clone_trait_object!(Op);
 pub(crate) type OpParserFn =
     for<'a> fn(&mut StateStream<'a>, Vec<(Identifier, Location)>) -> ParseResult<'a, OpObj>;
 
-/// [Op] objects are boxed and stored in the IR.
+/// A type-erased handle to a concrete [Op].
 pub type OpObj = OpBox;
 
 impl PartialEq for OpObj {
@@ -370,7 +366,7 @@ pub type OpInterfaceAllVerifiers = fn() -> Vec<OpInterfaceVerifier>;
 #[doc(hidden)]
 /// An [Op] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type OpInterfaceVerifierInfo = (core::any::TypeId, OpInterfaceAllVerifiers);
+type OpInterfaceVerifierInfo = &'static [(core::any::TypeId, OpInterfaceAllVerifiers)];
 
 #[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]
@@ -422,11 +418,9 @@ pub fn canonical_syntax_print(
     let opid = op.as_ref().get_opid();
     let op = op.as_ref().get_operation().deref(ctx);
     let operands = iter_with_sep(op.operands(), sep);
-    let successors = iter_with_sep(
-        op.successors()
-            .map(|succ| "^".to_string() + succ.unique_name(ctx).as_ref()),
-        sep,
-    );
+    let successors = iter_with_sep_by(op.successors(), sep, |successor, ctx, state, f| {
+        write!(f, "^{}", successor.unique_name(ctx).print(ctx, state))
+    });
     let op_type = TypeSig {
         arguments: op.operands().map(|opd| opd.get_type(ctx)).collect(),
         results: op.results().map(|res| res.get_type(ctx)).collect(),
@@ -550,58 +544,45 @@ pub fn canonical_syntax_parser<'a, T: Op>(
     parser_combinator(canonical_syntax_parse::<T>, results)
 }
 
-/// This must always be the same as any concrete [Op] object.
-#[derive(Clone)]
-struct OpData {
-    #[allow(unused)]
-    op: Ptr<Operation>,
-}
-
-/// A stack allocated alternative to [Box] for [Op] objects.
-#[derive(Clone)]
+/// A stack allocated alternative to `Box<dyn Op>`.
+#[derive(Clone, Copy)]
 pub struct OpBox {
-    data: OpData,
-    vtable_ptr: *const (),
+    op: Ptr<Operation>,
+    as_dyn: for<'a> fn(&'a Ptr<Operation>) -> &'a dyn Op,
 }
 
 impl OpBox {
     /// Create a new [OpBox] from a concrete [Op] object.
     pub fn new<T: Op>(op: T) -> Self {
         /// Static assertion to ensure that concrete [Op]s
-        /// always are the same as our [OpData] struct.
+        /// have the same size and alignment as `Ptr<Operation>`.
         struct StaticAsserter<S>(S);
         impl<S> StaticAsserter<S> {
-            const ASSERTTION: () = {
-                // Ensure that OpData and T have the same size.
+            const ASSERTION: () = {
                 assert!(
-                    core::mem::size_of::<OpData>() == core::mem::size_of::<S>(),
+                    core::mem::size_of::<Ptr<Operation>>() == core::mem::size_of::<S>()
+                        && core::mem::align_of::<Ptr<Operation>>() == core::mem::align_of::<S>(),
                     "OpBox can only box Op objects"
                 );
             };
         }
-        let _: () = StaticAsserter::<T>::ASSERTTION;
+        let _: () = StaticAsserter::<T>::ASSERTION;
 
-        let dyn_ref: &dyn Op = &op;
-        let (_, vtable_ptr) =
-            unsafe { core::mem::transmute::<&dyn Op, (*const T, *const ())>(dyn_ref) };
+        fn as_dyn<T: Op>(op: &Ptr<Operation>) -> &dyn Op {
+            // SAFETY: `T` has the same layout as `Ptr<Operation>`:
+            // `#[repr(transparent)] struct T { op: Ptr<Operation> }`
+            unsafe { &*(op as *const Ptr<Operation> as *const T) }
+        }
 
         OpBox {
-            data: OpData {
-                op: op.get_operation(),
-            },
-            vtable_ptr,
+            op: op.get_operation(),
+            as_dyn: as_dyn::<T>,
         }
     }
 
     /// Get a reference to the underlying [Op] object.
     pub fn op_ref(&self) -> &dyn Op {
-        unsafe {
-            let dyn_ref: &dyn Op = core::mem::transmute::<(&OpData, *const ()), &dyn Op>((
-                &self.data,
-                self.vtable_ptr,
-            ));
-            dyn_ref
-        }
+        (self.as_dyn)(&self.op)
     }
 
     /// Downcast this [OpBox] to a concrete [Op] type.

@@ -558,7 +558,7 @@ trait TestAttrEnumInterface {
 #[derive(PartialEq, Clone, Debug, Hash)]
 enum VerifyIntrAttrEnum {
     Unit,
-    Payload(i32),
+    Value(i32),
 }
 
 #[attr_interface_impl]
@@ -569,7 +569,7 @@ impl TestAttrEnumInterface for VerifyIntrAttrEnum {}
 fn test_attr_intr_verify_order_enum() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let vio = VerifyIntrAttrEnum::Payload(7);
+    let vio = VerifyIntrAttrEnum::Value(7);
     verify_attr(&vio, ctx)?;
 
     expect![[r#"
@@ -798,7 +798,7 @@ trait TestTypeEnumInterface {
 #[derive(PartialEq, Clone, Debug, Hash)]
 enum VerifyIntrTypeEnum {
     Unit,
-    Payload(i32),
+    Value(i32),
 }
 
 #[type_interface_impl]
@@ -809,7 +809,7 @@ impl TestTypeEnumInterface for VerifyIntrTypeEnum {}
 fn test_type_intr_verify_order_enum() -> Result<()> {
     let ctx = &mut Context::new();
 
-    let vio = VerifyIntrTypeEnum::Payload(7);
+    let vio = VerifyIntrTypeEnum::Value(7);
     verify_type(&vio, ctx)?;
 
     expect![[r#"

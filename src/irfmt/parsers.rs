@@ -12,7 +12,7 @@ use crate::{
     builtin::given_names::set_operation_result_name,
     combine::{
         Parser, Stream, any, between, many, many1, none_of, optional,
-        parser::char::{digit, spaces},
+        parser::char::{digit, hex_digit, spaces},
         sep_by, token,
     },
     context::Ptr,
@@ -153,7 +153,8 @@ where
         .into()
 }
 
-/// Get a parser combinator to parse a hexadecimal integer, which is a sequence of hexadecimal digits prefixed with `0x`.
+/// Get a parser combinator to parse a hexadecimal integer,
+/// which is a sequence of hexadecimal digits prefixed with `0x`.
 pub fn hex_int_parser<'a, IntT>()
 -> Box<dyn Parser<StateStream<'a>, Output = IntT, PartialState = ()> + 'a>
 where
@@ -162,7 +163,8 @@ where
     parser_combinator(hex_int_parse, ())
 }
 
-/// Parse a quoted string, which is a double-quoted string that may contain escaped characters.
+/// Parse a quoted string: a double-quoted string that may contain escaped characters.
+/// This is a mirror to [quoted](crate::irfmt::printers::quoted).
 pub fn quoted_string_parse<'a>(
     state_stream: &mut StateStream<'a>,
     _arg: (),
@@ -173,17 +175,46 @@ pub fn quoted_string_parse<'a>(
         let loc = parsable_state.loc();
         let mut escaped_char = token('\\').with(any()).then(move |c: char| {
             let loc = loc.clone();
-            // This combine::parser() is so that we can return an error of the right type.
-            // I can't get the right error type with `and_then`
-            combine::parser(move |_parsable_state: &mut StateStream<'a>| {
-                // Filter out the escaped characters that we handle.
-                let result = match c {
-                    '\\' => Ok('\\'),
-                    '\"' => Ok('\"'),
-                    _ => arg_err!(loc.clone(), "Unexpected escaped character \\{}", c),
-                };
-                result.into_parse_result()
-            })
+            if c == 'u' {
+                // A `\u{...}` escape carries the hexadecimal value of a unicode scalar.
+                between(token('{'), token('}'), many1::<String, _, _>(hex_digit()))
+                    .then(move |digits: String| {
+                        let loc = loc.clone();
+                        // This combine::parser() is to return an error of the right type.
+                        combine::parser(move |_parsable_state: &mut StateStream<'a>| {
+                            let result = match u32::from_str_radix(&digits, 16)
+                                .ok()
+                                .and_then(char::from_u32)
+                            {
+                                Some(c) => Ok(c),
+                                None => arg_err!(
+                                    loc.clone(),
+                                    "Invalid unicode escape \\u{{{}}}",
+                                    digits
+                                ),
+                            };
+                            result.into_parse_result()
+                        })
+                    })
+                    .left()
+            } else {
+                // This combine::parser() is to return an error of the right type.
+                combine::parser(move |_parsable_state: &mut StateStream<'a>| {
+                    // Filter out the escaped characters that we handle.
+                    let result = match c {
+                        '\\' => Ok('\\'),
+                        '\"' => Ok('\"'),
+                        '\'' => Ok('\''),
+                        '0' => Ok('\0'),
+                        'n' => Ok('\n'),
+                        'r' => Ok('\r'),
+                        't' => Ok('\t'),
+                        _ => arg_err!(loc.clone(), "Unexpected escaped character \\{}", c),
+                    };
+                    result.into_parse_result()
+                })
+                .right()
+            }
         });
         escaped_char.parse_stream(parsable_state).into()
     });
@@ -204,7 +235,9 @@ pub fn quoted_string_parse<'a>(
         .into()
 }
 
-/// A parser combinator to parse a quoted string, which is a double-quoted string that may contain escaped characters.
+/// A parser combinator to parse a quoted string:
+/// a double-quoted string that may contain escaped characters.
+/// This is a mirror to [quoted](crate::irfmt::printers::quoted).
 pub fn quoted_string_parser<'a>()
 -> Box<dyn Parser<StateStream<'a>, Output = String, PartialState = ()> + 'a> {
     parser_combinator(quoted_string_parse, ())

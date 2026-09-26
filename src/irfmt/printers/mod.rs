@@ -10,11 +10,9 @@ use core::fmt;
 
 pub mod op;
 
-use alloc::string::String;
-
 use crate::{
     context::Context,
-    printable::{ListSeparator, Printable, State, fmt_iter},
+    printable::{ListSeparator, Printable, State},
 };
 
 /// Wrap a function to implement the Printable trait
@@ -29,22 +27,19 @@ where
     }
 }
 
-/// Print a value that implements Display.
-pub fn disp(disp: impl fmt::Display) -> impl Printable {
-    PrinterFn(move |_ctx: &Context, _state: &State, f: &mut fmt::Formatter<'_>| write!(f, "{disp}"))
+/// Create a [Printable] from a formatting function.
+pub fn printable_from_fn<F>(print: F) -> impl Printable
+where
+    F: Fn(&Context, &State, &mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    PrinterFn(print)
 }
 
 /// Print a string as a quoted string.
 pub fn quoted(s: &str) -> impl Printable + '_ {
-    PrinterFn(move |_ctx: &Context, _state: &State, f: &mut fmt::Formatter<'_>| write!(f, "{s:?}"))
-}
-
-/// Print a value using the given Rust format string.
-///
-/// Warning: formatted values are not parsable. A custom parser might need to be implemented when
-/// using `formatted` in the printer.
-pub fn formatted(s: String) -> impl Printable {
-    PrinterFn(move |_ctx: &Context, _state: &State, f: &mut fmt::Formatter<'_>| write!(f, "{s}"))
+    printable_from_fn(
+        move |_ctx: &Context, _state: &State, f: &mut fmt::Formatter<'_>| write!(f, "{s:?}"),
+    )
 }
 
 /// Print a list of items separated by `sep`.
@@ -58,16 +53,33 @@ where
     I: Iterator + Clone,
     I::Item: Printable,
 {
-    PrinterFn(
+    iter_with_sep_by(iter, sep, |item, ctx, state, f| item.fmt(ctx, state, f))
+}
+
+/// Print an iterator of items separated by `sep`, using `print_item` to print each item.
+pub fn iter_with_sep_by<I, F>(iter: I, sep: ListSeparator, print_item: F) -> impl Printable
+where
+    I: Iterator + Clone,
+    F: Fn(I::Item, &Context, &State, &mut fmt::Formatter<'_>) -> fmt::Result,
+{
+    printable_from_fn(
         move |ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>| {
-            fmt_iter(iter.clone(), ctx, state, sep, f)
+            let mut iter = iter.clone();
+            if let Some(first) = iter.next() {
+                print_item(first, ctx, state, f)?;
+            }
+            for item in iter {
+                sep.fmt(ctx, state, f)?;
+                print_item(item, ctx, state, f)?;
+            }
+            Ok(())
         },
     )
 }
 
 /// Print `p` enclosed by `left` and `right`.
 pub fn enclosed<P: Printable>(left: &'static str, right: &'static str, p: P) -> impl Printable {
-    PrinterFn(
+    printable_from_fn(
         move |ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>| {
             write!(f, "{left}")?;
             p.fmt(ctx, state, f)?;

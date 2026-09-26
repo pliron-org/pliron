@@ -10,7 +10,10 @@ use core::{
     fmt::{self, Display},
 };
 
-use crate::{common_traits::RcShare, context::Context, identifier::Identifier, utils::table::HMap};
+use crate::{
+    common_traits::RcShare, context::Context, identifier::Identifier, irfmt::printers::quoted,
+    utils::table::HMap,
+};
 
 /// Maximum number of nested region levels to print.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -232,8 +235,14 @@ macro_rules! impl_printable_for_display {
 }
 
 impl_printable_for_display!(
-    &str, String, usize, u64, u32, u16, u8, i64, i32, i16, i8, bool, char
+    &str, usize, u64, u32, u16, u8, i64, i32, i16, i8, bool, char
 );
+
+impl Printable for String {
+    fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        quoted(self).fmt(ctx, state, f)
+    }
+}
 
 /// Implement [Printable] for a type that already implements [Debug].
 /// Example:
