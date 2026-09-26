@@ -49,6 +49,7 @@ use pliron::{
     location::{Located, Location},
     op::{Op, OpObj, op_cast},
     operation::Operation,
+    opts::simplify_cfg::AdditionalRegionEntryInterface,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, Printable, indented_nl},
     region::Region,
@@ -4816,6 +4817,27 @@ impl VAArgOp {
     )
 )]
 pub struct FuncOp;
+
+#[op_interface_impl]
+impl AdditionalRegionEntryInterface for FuncOp {
+    fn get_additional_region_entries(
+        &self,
+        ctx: &Context,
+        region_idx: usize,
+    ) -> Vec<Ptr<BasicBlock>> {
+        let region = self.get_operation().deref(ctx).get_region(region_idx);
+        region
+            .deref(ctx)
+            .iter(ctx)
+            .filter(|block| {
+                block.deref(ctx).iter(ctx).any(|op| {
+                    let op_dyn = Operation::get_op_dyn(op, ctx);
+                    op_dyn.as_ref().downcast_ref::<BlockTagOp>().is_some()
+                })
+            })
+            .collect()
+    }
+}
 
 impl FuncOp {
     /// Create a new empty [FuncOp].
