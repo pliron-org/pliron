@@ -64,6 +64,7 @@ pub use llvm_di_builder::LLVMDIBuilder;
 
 /// Is `md` of the kind `kind`?
 fn is_md_kind(md: LLVMMetadata, kind: LLVMMetadataKind) -> bool {
+    // `LLVMMetadataKind` has no `PartialEq`. Thus we compare the discriminants.
     llvm_get_metadata_kind(md) as u32 == kind as u32
 }
 

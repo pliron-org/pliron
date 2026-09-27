@@ -27,7 +27,7 @@
 /// [Location::Fused]: pliron::location::Location::Fused
 /// [Location::Unknown]: pliron::location::Location::Unknown
 pub mod to_llvm_ir {
-    use std::string::{String, ToString};
+    use alloc::string::{String, ToString};
 
     use llvm_sys::{LLVMModuleFlagBehavior, debuginfo::LLVMDWARFEmissionKind};
     use pliron::{
@@ -82,6 +82,7 @@ pub mod to_llvm_ir {
         /// The amount of debug data to emit.
         pub emission_kind: EmissionKind,
         /// The source language of the compile unit.
+        /// DWARF has many languages. Thus this field uses the llvm-sys type.
         pub language: LLVMDWARFSourceLanguage,
         /// The producer of the compile unit.
         pub producer: String,
@@ -107,21 +108,18 @@ pub mod to_llvm_ir {
     }
 
     /// State for converting op locations to LLVM debug data.
+    ///
+    /// LLVM uniques the `DIFile`, `DILexicalBlockFile`, `DISubroutineType`
+    /// and `DILocation` nodes. Thus only the distinct nodes need a map here.
     pub(crate) struct DIConversionContext {
         options: DebugInfoOptions,
         builder: LLVMDIBuilder,
-        /// The compile unit. It is created with the first subprogram.
+        // The compile unit. It is created with the first subprogram.
         unit: Option<LLVMMetadata>,
-        subroutine_type: Option<LLVMMetadata>,
-        files: HMap<String, LLVMMetadata>,
-        /// Subprograms of inlined functions, by name and file.
+        // Subprograms of inlined functions, by name and file.
         inlined: HMap<(String, LLVMMetadata), LLVMMetadata>,
-        /// Scopes in a different file, by parent scope and file.
-        block_files: HMap<(LLVMMetadata, LLVMMetadata), LLVMMetadata>,
-        /// The subprogram of the current function.
+        // The subprogram of the current function.
         subprogram: Option<LLVMMetadata>,
-        /// Converted locations of the current function.
-        locations: HMap<Location, LLVMMetadata>,
     }
 
     impl DIConversionContext {
@@ -130,34 +128,24 @@ pub mod to_llvm_ir {
                 options,
                 builder: LLVMDIBuilder::new(module),
                 unit: None,
-                subroutine_type: None,
-                files: HMap::default(),
                 inlined: HMap::default(),
-                block_files: HMap::default(),
                 subprogram: None,
-                locations: HMap::default(),
             }
         }
 
         /// The `DIFile` of `src`.
-        fn file(&mut self, ctx: &Context, src: &Source) -> LLVMMetadata {
+        fn file(&self, ctx: &Context, src: &Source) -> LLVMMetadata {
             let name = match src {
                 Source::File(key) => uniqued_any::get(ctx, *key).to_string_lossy().into_owned(),
                 Source::InMemory => "<in-memory>".to_string(),
             };
-            if let Some(file) = self.files.get(&name) {
-                return *file;
-            }
-            let file = llvm_di_builder_create_file(&self.builder, &name, &self.options.directory);
-            self.files.insert(name, file);
-            file
+            llvm_di_builder_create_file(&self.builder, &name, &self.options.directory)
         }
 
-        /// The subroutine type of all subprograms.
-        /// The first call also creates the compile unit in `file`.
-        fn subroutine_type(&mut self, file: LLVMMetadata) -> LLVMMetadata {
-            if let Some(ty) = self.subroutine_type {
-                return ty;
+        /// Create the compile unit in `file`, if it does not exist.
+        fn ensure_unit(&mut self, file: LLVMMetadata) {
+            if self.unit.is_some() {
+                return;
             }
             let kind = match self.options.emission_kind {
                 EmissionKind::LineTablesOnly => {
@@ -165,65 +153,69 @@ pub mod to_llvm_ir {
                 }
                 EmissionKind::Full => LLVMDWARFEmissionKind::LLVMDWARFEmissionKindFull,
             };
-            // The C enum has no `Clone`, and the unit is made one time.
+            // The C enum has no `Clone`, and the unit is created one time.
             let language = core::mem::replace(
                 &mut self.options.language,
                 LLVMDWARFSourceLanguage::LLVMDWARFSourceLanguageC,
             );
-            let unit = llvm_di_builder_create_compile_unit(
+            self.unit = Some(llvm_di_builder_create_compile_unit(
                 &self.builder,
                 language,
                 file,
                 &self.options.producer,
                 self.options.optimized,
                 kind,
-            );
+            ));
+        }
+
+        /// Create the subprogram of a function definition in `file`.
+        /// An empty `linkage_name` means none.
+        fn create_subprogram(
+            &mut self,
+            name: &str,
+            linkage_name: &str,
+            file: LLVMMetadata,
+            line: u32,
+            is_local_to_unit: bool,
+        ) -> LLVMMetadata {
+            self.ensure_unit(file);
             let ty = llvm_di_builder_create_subroutine_type(&self.builder, file, &[]);
-            self.unit = Some(unit);
-            self.subroutine_type = Some(ty);
-            ty
+            llvm_di_builder_create_function(
+                &self.builder,
+                file,
+                name,
+                linkage_name,
+                file,
+                line,
+                ty,
+                is_local_to_unit,
+                true,
+                line,
+                self.options.optimized,
+            )
         }
 
         /// `scope`, or a lexical block of `scope` in the file of `src`.
-        fn scope_in_file(
-            &mut self,
-            ctx: &Context,
-            scope: LLVMMetadata,
-            src: &Source,
-        ) -> LLVMMetadata {
+        fn scope_in_file(&self, ctx: &Context, scope: LLVMMetadata, src: &Source) -> LLVMMetadata {
             let file = self.file(ctx, src);
             if llvm_di_scope_get_file(scope) == Some(file) {
-                return scope;
-            }
-            *self.block_files.entry((scope, file)).or_insert_with(|| {
+                scope
+            } else {
                 llvm_di_builder_create_lexical_block_file(&self.builder, scope, file, 0)
-            })
+            }
         }
 
         /// The subprogram of an inlined callee, from its outermost name.
         fn inlined_subprogram(&mut self, ctx: &Context, callee: &Location) -> Option<LLVMMetadata> {
             let callee = outermost(callee);
-            let name = name(callee)?.to_string();
-            let (src, _) = src_pos(callee).unwrap_or((Source::InMemory, 0));
+            let name = frame_name(callee)?;
+            let (src, _) = frame_src_pos(callee).unwrap_or((Source::InMemory, 0));
             let file = self.file(ctx, &src);
-            let key = (name, file);
+            let key = (name.to_string(), file);
             if let Some(subprogram) = self.inlined.get(&key) {
                 return Some(*subprogram);
             }
-            let ty = self.subroutine_type(file);
-            let subprogram = llvm_di_builder_create_function(
-                &self.builder,
-                file,
-                &key.0,
-                "",
-                file,
-                0,
-                ty,
-                true,
-                true,
-                0,
-                self.options.optimized,
-            );
+            let subprogram = self.create_subprogram(name, "", file, 0, true);
             self.inlined.insert(key, subprogram);
             Some(subprogram)
         }
@@ -242,8 +234,8 @@ pub mod to_llvm_ir {
                     let scope = self.scope_in_file(ctx, scope, src);
                     Some(llvm_di_builder_create_debug_location(
                         llvm_ctx,
-                        pos.line.max(0) as u32,
-                        pos.column.max(0) as u32,
+                        non_negative(pos.line),
+                        non_negative(pos.column),
                         scope,
                         inlined_at,
                     ))
@@ -270,6 +262,11 @@ pub mod to_llvm_ir {
         }
     }
 
+    /// `value`, or 0 if `value` is negative.
+    fn non_negative(value: i32) -> u32 {
+        value.max(0) as u32
+    }
+
     /// The outermost frame of `loc`: the last caller of a call site chain.
     fn outermost(mut loc: &Location) -> &Location {
         while let Location::CallSite { caller, .. } = loc {
@@ -279,22 +276,22 @@ pub mod to_llvm_ir {
     }
 
     /// The first name in a frame.
-    fn name(loc: &Location) -> Option<&str> {
+    fn frame_name(loc: &Location) -> Option<&str> {
         match loc {
             Location::Named { name, .. } => Some(name),
-            Location::Fused { locations, .. } => locations.iter().find_map(name),
-            Location::CallSite { caller, .. } => name(caller),
+            Location::Fused { locations, .. } => locations.iter().find_map(frame_name),
+            Location::CallSite { caller, .. } => frame_name(caller),
             Location::SrcPos { .. } | Location::Unknown => None,
         }
     }
 
-    /// The first source position in a frame.
-    fn src_pos(loc: &Location) -> Option<(Source, u32)> {
+    /// The first source position in a frame, as a source and a line.
+    fn frame_src_pos(loc: &Location) -> Option<(Source, u32)> {
         match loc {
-            Location::SrcPos { src, pos } => Some((*src, pos.line.max(0) as u32)),
-            Location::Named { child_loc, .. } => src_pos(child_loc),
-            Location::Fused { locations, .. } => locations.iter().find_map(src_pos),
-            Location::CallSite { caller, .. } => src_pos(caller),
+            Location::SrcPos { src, pos } => Some((*src, non_negative(pos.line))),
+            Location::Named { child_loc, .. } => frame_src_pos(child_loc),
+            Location::Fused { locations, .. } => locations.iter().find_map(frame_src_pos),
+            Location::CallSite { caller, .. } => frame_src_pos(caller),
             Location::Unknown => None,
         }
     }
@@ -339,34 +336,19 @@ pub mod to_llvm_ir {
         let Some(di) = cctx.di.as_mut() else {
             return;
         };
-        let symbol = func_op.get_symbol_name(ctx);
-        let llvm_name = func_op
-            .llvm_symbol_name(ctx)
-            .unwrap_or_else(|| symbol.to_string());
         di.subprogram = None;
-        di.locations.clear();
         let Some(loc) = function_location(ctx, func_op) else {
             return;
         };
         let loc = outermost(&loc);
-        let name = name(loc).unwrap_or(&llvm_name).to_string();
-        let (src, line) = src_pos(loc).unwrap_or((Source::InMemory, 0));
-        let file = di.file(ctx, &src);
-        let ty = di.subroutine_type(file);
+        let llvm_name = func_op
+            .llvm_symbol_name(ctx)
+            .unwrap_or_else(|| func_op.get_symbol_name(ctx).to_string());
+        let name = frame_name(loc).unwrap_or(&llvm_name);
         let linkage_name = if name == llvm_name { "" } else { &llvm_name };
-        let subprogram = llvm_di_builder_create_function(
-            &di.builder,
-            file,
-            &name,
-            linkage_name,
-            file,
-            line,
-            ty,
-            false,
-            true,
-            line,
-            di.options.optimized,
-        );
+        let (src, line) = frame_src_pos(loc).unwrap_or((Source::InMemory, 0));
+        let file = di.file(ctx, &src);
+        let subprogram = di.create_subprogram(name, linkage_name, file, line, false);
         llvm_set_subprogram(func_llvm, subprogram);
         di.subprogram = Some(subprogram);
     }
@@ -381,23 +363,13 @@ pub mod to_llvm_ir {
         let Some(di) = cctx.di.as_mut() else {
             return;
         };
-        let Some(subprogram) = di.subprogram else {
-            llvm_set_current_debug_location2(&cctx.builder, None);
-            return;
-        };
-        let di_loc = match di.locations.get(loc) {
-            Some(di_loc) => *di_loc,
-            None => {
-                let di_loc = di
-                    .translate(ctx, llvm_ctx, loc, subprogram, None)
-                    .unwrap_or_else(|| {
-                        llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
-                    });
-                di.locations.insert(loc.clone(), di_loc);
-                di_loc
-            }
-        };
-        llvm_set_current_debug_location2(&cctx.builder, Some(di_loc));
+        let di_loc = di.subprogram.map(|subprogram| {
+            di.translate(ctx, llvm_ctx, loc, subprogram, None)
+                .unwrap_or_else(|| {
+                    llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
+                })
+        });
+        llvm_set_current_debug_location2(&cctx.builder, di_loc);
     }
 
     /// Add the module flags that the debug data needs, and finalize it.

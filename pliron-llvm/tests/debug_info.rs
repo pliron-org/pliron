@@ -8,7 +8,7 @@
 use expect_test::expect;
 use pliron::{
     builtin::{
-        op_interfaces::{AtMostOneRegionInterface, SingleBlockRegionInterface, SymbolOpInterface},
+        op_interfaces::{SingleBlockRegionInterface, SymbolOpInterface},
         ops::ModuleOp,
     },
     combine::stream::position::SourcePosition,
@@ -22,7 +22,7 @@ use pliron::{
 use pliron_llvm::{
     debug_info_conversions::to_llvm_ir::{DebugInfoOptions, EmissionKind},
     llvm_sys::core::LLVMContext,
-    ops::FuncOp,
+    ops::{ConstantOp, FuncOp},
     to_llvm_ir,
 };
 
@@ -45,7 +45,7 @@ const INPUT_LL: &str = r#"
   }
 "#;
 
-/// The ops of the function `name`, in order, without constants.
+/// The ops of the entry block of the function `name`, in order, without constants.
 fn function_ops(ctx: &Context, module: ModuleOp, name: &str) -> Vec<Ptr<Operation>> {
     let func = module
         .get_body(ctx, 0)
@@ -54,12 +54,11 @@ fn function_ops(ctx: &Context, module: ModuleOp, name: &str) -> Vec<Ptr<Operatio
         .filter_map(|op| Operation::get_op::<FuncOp>(op, ctx))
         .find(|func| func.get_symbol_name(ctx).to_string() == name)
         .expect("function not found");
-    let region = func.get_region(ctx).expect("function has no region");
-    let blocks: Vec<_> = region.deref(ctx).iter(ctx).collect();
-    blocks
-        .into_iter()
-        .flat_map(|block| block.deref(ctx).iter(ctx).collect::<Vec<_>>())
-        .filter(|op| Operation::get_opid(*op, ctx).to_string() != "llvm.constant")
+    let entry = func.get_entry_block(ctx).expect("function has no body");
+    entry
+        .deref(ctx)
+        .iter(ctx)
+        .filter(|op| Operation::get_op::<ConstantOp>(*op, ctx).is_none())
         .collect()
 }
 

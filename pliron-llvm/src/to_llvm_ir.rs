@@ -173,6 +173,8 @@ impl<'a> ConversionContext<'a> {
         self.value_map.clear();
         self.block_map.clear();
         llvm_clear_insertion_position(&self.builder);
+        // The PHIs of block arguments are built before the subprogram is set.
+        // They must not get a location in the scope of the previous function.
         #[cfg(feature = "debug-info")]
         llvm_set_current_debug_location2(&self.builder, None);
     }
