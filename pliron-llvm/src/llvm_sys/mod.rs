@@ -38,6 +38,8 @@
 //! (which need not be marked `unsafe`) that is unsafe: an illusion of safety.
 
 pub mod core;
+#[cfg(feature = "debug-info")]
+pub mod debuginfo;
 pub mod lljit;
 pub mod target;
 

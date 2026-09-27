@@ -45,6 +45,14 @@ use pliron::{
 use pliron::derive::{op_interface, op_interface_impl, type_interface, type_interface_impl};
 use thiserror::Error;
 
+#[cfg(feature = "debug-info")]
+use crate::{
+    debug_info_conversions::to_llvm_ir::{
+        self as debug_info, DIConversionContext, DebugInfoOptions,
+    },
+    llvm_sys::debuginfo::llvm_set_current_debug_location2,
+};
+
 use crate::{
     attributes::{
         AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
@@ -132,11 +140,14 @@ pub struct ConversionContext<'a> {
     // Mapping from pliron types to LLVM types.
     pub(crate) types: TypeConversionContext,
     // The active LLVM builder.
-    builder: LLVMBuilder,
+    pub(crate) builder: LLVMBuilder,
     // Scratch builder in a scratch function for attempting to evaluate constants.
     scratch_builder: LLVMBuilder,
     // State for converting the module's metadata.
     pub(crate) md: MdConversionContext,
+    // State for converting op locations to debug data, if requested.
+    #[cfg(feature = "debug-info")]
+    pub(crate) di: Option<DIConversionContext>,
 }
 
 impl<'a> ConversionContext<'a> {
@@ -153,6 +164,8 @@ impl<'a> ConversionContext<'a> {
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
             md: MdConversionContext::default(),
+            #[cfg(feature = "debug-info")]
+            di: None,
         }
     }
 
@@ -160,6 +173,8 @@ impl<'a> ConversionContext<'a> {
         self.value_map.clear();
         self.block_map.clear();
         llvm_clear_insertion_position(&self.builder);
+        #[cfg(feature = "debug-info")]
+        llvm_set_current_debug_location2(&self.builder, None);
     }
 }
 
@@ -2068,6 +2083,8 @@ fn convert_block(
                 ToLLVMErr::MissingOpConversion(op.get_opid().to_string())
             );
         };
+        #[cfg(feature = "debug-info")]
+        debug_info::set_location(ctx, llvm_ctx, cctx, &opr.deref(ctx).loc());
         let op_llvm = op_conv.convert(ctx, llvm_ctx, cctx)?;
         convert_md_attachments(ctx, llvm_ctx, cctx, opr, op_llvm)?;
         {
@@ -2129,6 +2146,9 @@ fn convert_function(
         }
         cctx.block_map.insert(block, llvm_block);
     }
+
+    #[cfg(feature = "debug-info")]
+    debug_info::begin_function(ctx, cctx, func_op, func_llvm);
 
     // Convert within every block.
     for block in topological_order(ctx, &f_region) {
@@ -2743,6 +2763,30 @@ pub fn convert_module(
     llvm_ctx: &LLVMContext,
     module: ModuleOp,
 ) -> Result<LLVMModule> {
+    convert_module_impl(ctx, llvm_ctx, module, |_| {})
+}
+
+/// Convert pliron [ModuleOp] to [LLVMModule], with debug data from the op
+/// [Location]s. See [debug_info_conversions](crate::debug_info_conversions::to_llvm_ir).
+#[cfg(feature = "debug-info")]
+pub fn convert_module_with_debug_info(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module: ModuleOp,
+    options: DebugInfoOptions,
+) -> Result<LLVMModule> {
+    convert_module_impl(ctx, llvm_ctx, module, |cctx| {
+        cctx.di = Some(DIConversionContext::new(cctx.cur_llvm_module, options));
+    })
+}
+
+/// Convert pliron [ModuleOp] to [LLVMModule]. `init` prepares the [ConversionContext].
+fn convert_module_impl(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module: ModuleOp,
+    init: impl FnOnce(&mut ConversionContext),
+) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
     let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
     // Set data-layout up-front, it affects how instructions are built.
@@ -2753,6 +2797,7 @@ pub fn convert_module(
         llvm_module.set_target_triple(&target_triple);
     }
     let cctx = &mut ConversionContext::new(llvm_ctx, &llvm_module);
+    init(cctx);
 
     // Setup the scratch builder for evaluating constants.
     // `scratch_module` is freed at the end of this function, when it exits the scope.
@@ -2850,6 +2895,9 @@ pub fn convert_module(
         llvm_replace_all_uses_with(*placeholder, block_addr);
         llvm_delete_global(*placeholder);
     }
+
+    #[cfg(feature = "debug-info")]
+    debug_info::finish(llvm_ctx, cctx);
 
     Ok(llvm_module)
 }

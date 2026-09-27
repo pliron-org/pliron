@@ -43,6 +43,8 @@ pub mod types;
 
 #[cfg(feature = "llvm-sys")]
 pub mod data_layout;
+#[cfg(feature = "debug-info")]
+pub mod debug_info_conversions;
 #[cfg(feature = "llvm-sys")]
 pub mod from_llvm_ir;
 #[cfg(feature = "llvm-sys")]

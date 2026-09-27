@@ -54,5 +54,11 @@ jobs:
     - name: Tests (Release)
       run: RUSTFLAGS="-D warnings" cargo test --release --workspace --verbose
 
+    - name: Clippy (debug-info)
+      run: cargo clippy -p pliron-llvm --all-targets --features debug-info -- -D warnings
+
+    - name: Tests (debug-info)
+      run: RUSTFLAGS="-D warnings" cargo test -p pliron-llvm --features debug-info --test debug_info --verbose
+
     - name: Documentation
-      run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items
+      run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --features pliron-llvm/debug-info

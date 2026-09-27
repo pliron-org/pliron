@@ -8,6 +8,9 @@ This crate provides the following functionality:
 2. A wrapper around [llvm-sys](https://crates.io/crates/llvm-sys)
   converting to and from our LLVM dialect. This requires
   LLVM to be installed locally.
+3. With the `debug-info` feature, a conversion of op locations
+  to LLVM debug data (`DISubprogram`, `DILocation`). Use
+  `to_llvm_ir::convert_module_with_debug_info`.
 
 We currently support LLVM-23 and it needs to be on your computer.
 For installing on Debian / Ubuntu, it is recommended to use the

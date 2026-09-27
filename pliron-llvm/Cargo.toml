@@ -15,6 +15,8 @@ license.workspace = true
 default = ["llvm-sys"]
 
 llvm-sys = ["dep:llvm-sys", "std"]
+# Convert op locations to LLVM debug data.
+debug-info = ["llvm-sys"]
 std = ["pliron/std", "bitflags/std"]
 
 [dependencies]
