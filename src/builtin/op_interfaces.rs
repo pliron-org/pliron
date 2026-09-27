@@ -28,9 +28,9 @@ use crate::{
 };
 use alloc::{
     string::{String, ToString},
-    vec,
     vec::Vec,
 };
+use core::ops::Range;
 use pliron::derive::op_interface;
 use thiserror::Error;
 
@@ -62,14 +62,52 @@ pub enum BranchOpInterfaceVerifyErr {
 /// This [terminator](IsTerminatorInterface) [Op] branches to
 /// other [BasicBlock]s, possibly passing arguments to the target block.
 ///
-/// This is similar to MLIR's
-/// [BranchOpInterface](https://github.com/llvm/llvm-project/blob/b1f04d57f5818914d7db506985e2932f217844bd/mlir/include/mlir/Interfaces/ControlFlowInterfaces.td)
-/// but is stricter: (1) Produced operands aren't supported, just forwarded.
-/// (2) Type of the value passed is expected to be the same as the target block argument.
+/// This is similar to MLIR's [BranchOpInterface], but stricter:
+///
+/// 1. Produced operands aren't supported, just forwarded.
+/// 2. Type of the value passed is expected to be the same as the target block argument.
+///
+/// [BranchOpInterface]: https://github.com/llvm/llvm-project/blob/b1f04d57f5818914d7db506985e2932f217844bd/mlir/include/mlir/Interfaces/ControlFlowInterfaces.td
 #[op_interface]
 pub trait BranchOpInterface: IsTerminatorInterface {
-    /// Get a list of [Value]s that are forwarded to the target block.
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value>;
+    /// Verify that
+    ///  - Calling [successor_operand_range](Self::successor_operand_range)
+    ///    for any `succ_idx < Operation::get_num_successors()` does not panic.
+    ///  - The operand range it returns is contained in `0..Operation::get_num_operands()`.
+    ///
+    /// Typically, an impl will include a call to `<Self as OperandSegmentInterface>::verify`.
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()>;
+
+    /// Return the index range of operands forwarded to successor `succ_idx`.
+    /// The `i`th returned index identifies the operand for the target block's `i`th argument.
+    /// Panics if `succ_idx` is invalid.
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize>;
+
+    /// Get the list of [Value]s forwarded to successor `succ_idx`.
+    /// Panics if `succ_idx` is invalid.
+    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+        let range = self.successor_operand_range(ctx, succ_idx);
+        let op = self.get_operation().deref(ctx);
+        range.map(|opd_idx| op.get_operand(opd_idx)).collect()
+    }
+
+    /// Replace the operand forwarded to argument `arg_idx` of successor `succ_idx` with `operand`.
+    /// Panics if `succ_idx` or `arg_idx` is invalid.
+    fn set_successor_operand(
+        &self,
+        ctx: &Context,
+        succ_idx: usize,
+        arg_idx: usize,
+        operand: Value,
+    ) {
+        let range = self.successor_operand_range(ctx, succ_idx);
+        assert!(
+            arg_idx < range.len(),
+            "Successor argument index {arg_idx} out of bounds for {} operands forwarded to successor {succ_idx}",
+            range.len()
+        );
+        Operation::replace_operand(self.get_operation(), ctx, range.start + arg_idx, operand);
+    }
 
     /// Add a new operand to be forwarded to the given successor.
     /// The operand is appended after existing operands for the specified successor.
@@ -78,9 +116,9 @@ pub trait BranchOpInterface: IsTerminatorInterface {
     /// Panics if `succ_idx` is invalid.
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize;
 
-    /// Remove and return the operand at `opd_idx` among the operands forwarded to successor `succ_idx`.
-    /// Panics if `succ_idx` or `opd_idx` is invalid.
-    fn remove_successor_operand(&self, ctx: &mut Context, succ_idx: usize, opd_idx: usize)
+    /// Remove and return the operand forwarded to argument `arg_idx` of successor `succ_idx`.
+    /// Panics if `succ_idx` or `arg_idx` is invalid.
+    fn remove_successor_operand(&self, ctx: &mut Context, succ_idx: usize, arg_idx: usize)
     -> Value;
 
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
@@ -88,6 +126,9 @@ pub trait BranchOpInterface: IsTerminatorInterface {
         Self: Sized,
     {
         let self_op = op_cast::<dyn BranchOpInterface>(op).unwrap();
+        // Verify that we can call [Self::successor_operands] and use its results without a panic.
+        self_op.verify_successor_operand_layout(ctx)?;
+
         // Verify that the values passed to a target block
         // matches the arguments of that block.
         for (succ_idx, succ) in op.get_operation().deref(ctx).successors().enumerate() {
@@ -121,7 +162,7 @@ pub trait BranchOpInterface: IsTerminatorInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {0} successors, but found {1}")]
+#[error("Expected {0} successor(s), but found {1}")]
 pub struct NSuccsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly `N` successors. Successors are branch targets, so this
@@ -140,20 +181,29 @@ pub trait NSuccsInterface<const N: usize>: BranchOpInterface {
         }
         Ok(())
     }
+
+    /// Get the `i`'th successor block.
+    fn get_successor_i(&self, ctx: &Context, i: LessThanN<N>) -> Ptr<BasicBlock> {
+        self.get_operation().deref(ctx).get_successor(i.i())
+    }
 }
 
 /// An [Op] having exactly one successor.
 #[op_interface]
-pub trait OneSuccInterface: NSuccsInterface<1> {
+pub trait OneSuccInterface: BranchOpInterface {
     /// Get the single successor block of this [Op].
     fn get_successor(&self, ctx: &Context) -> Ptr<BasicBlock> {
         self.get_operation().deref(ctx).get_successor(0)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let op = op.get_operation().deref(ctx);
+        if op.get_num_successors() != 1 {
+            return verify_err!(op.loc(), NSuccsVerifyErr(1, op.get_num_successors()));
+        }
         Ok(())
     }
 }
@@ -170,6 +220,8 @@ pub enum OperandSegmentInterfaceVerifyErr {
     OperandSegmentSizesAttrErr,
     #[error("operand_segment_sizes total {0} does not match the number of operands {1}")]
     OperandSegmentSizesTotalMismatchErr(u32, u32),
+    #[error("Expected {expected} operand segments, but found {found}")]
+    SegmentCountMismatch { expected: usize, found: usize },
 }
 
 /// Interface for operations whose operands are grouped into segments.
@@ -185,6 +237,10 @@ pub enum OperandSegmentInterfaceVerifyErr {
 /// | builtin_operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr](crate::builtin::attributes::OperandSegmentSizesAttr) |
 #[op_interface]
 pub trait OperandSegmentInterface {
+    /// The number of operand segments that this [Op] must have,
+    /// or [None] if any number of segments is valid.
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize>;
+
     /// Given a list of segmented operands, compute the segment sizes and flatten the operands
     /// (ready for use in constructing an operation).
     /// Call `set_operand_segment_sizes` with the computed segment sizes to set the attribute.
@@ -202,17 +258,26 @@ pub trait OperandSegmentInterface {
         (flat_operands, sizes_attr)
     }
 
-    /// Get the `seg_idx`th segment of operands.
-    fn get_segment(&self, ctx: &Context, seg_idx: usize) -> Vec<Value> {
+    /// Return the index range of operands in segment `seg_idx` of this [Op].
+    /// Panics if `seg_idx` is out of bounds.
+    fn segment_range(&self, ctx: &Context, seg_idx: usize) -> Range<usize> {
         let sizes = self.get_operand_segment_sizes(ctx).0;
-        if seg_idx >= sizes.len() {
-            return vec![];
-        }
+        assert!(
+            seg_idx < sizes.len(),
+            "Segment index {seg_idx} out of bounds for {} segments",
+            sizes.len()
+        );
 
-        let self_op = self.get_operation().deref(ctx);
         let start = sizes[..seg_idx].iter().sum::<u32>() as usize;
-        let len = sizes[seg_idx] as usize;
-        self_op.operands().skip(start).take(len).collect()
+        start..start + sizes[seg_idx] as usize
+    }
+
+    /// Get the `seg_idx`th segment of operands.
+    /// Panics if `seg_idx` is out of bounds.
+    fn get_segment(&self, ctx: &Context, seg_idx: usize) -> Vec<Value> {
+        let range = self.segment_range(ctx, seg_idx);
+        let self_op = self.get_operation().deref(ctx);
+        range.map(|opd_idx| self_op.get_operand(opd_idx)).collect()
     }
 
     /// Get the length of the `seg_idx`th segment.
@@ -365,6 +430,17 @@ pub trait OperandSegmentInterface {
                     total,
                     num_operands
                 )
+            );
+        }
+
+        let segmented_op = op_cast::<dyn OperandSegmentInterface>(op).unwrap();
+        let found = attr.0.len();
+        if let Some(expected) = segmented_op.expected_num_segments(ctx)
+            && found != expected
+        {
+            return verify_err!(
+                self_op.loc(),
+                OperandSegmentInterfaceVerifyErr::SegmentCountMismatch { expected, found }
             );
         }
 
@@ -681,7 +757,7 @@ pub trait SymbolUserOpInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {0} results, but found {1} results")]
+#[error("Expected {0} result(s), but found {1} results")]
 pub struct NResultsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly N results.
@@ -802,7 +878,7 @@ pub trait OneResultInterface {
 }
 
 #[derive(Error, Debug)]
-#[error("Expected {} operands, but found {}", .0, .1)]
+#[error("Expected {} operand(s), but found {}", .0, .1)]
 pub struct NOpdsVerifyErr(pub usize, pub usize);
 
 /// An [Op] having exactly N operands.

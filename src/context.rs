@@ -371,7 +371,7 @@ pub static DICT_KEYS_VERIFIER: LazyLock<Result<()>> = LazyLock::new(verify_dict_
 /// This helper preserves interface dependency order (as returned by each `__all_verifiers`
 /// function) while deduplicating verifier function pointers.
 pub(crate) fn collect_deduped_interface_verifiers<Id, AllVerifiers, Verifier>(
-    interface_verifiers: impl Iterator<Item = &'static (Id, AllVerifiers)>,
+    interface_verifiers: impl Iterator<Item = &'static &'static [(Id, AllVerifiers)]>,
 ) -> HMap<Id, Vec<Verifier>>
 where
     Id: Eq + Hash + Clone + 'static,
@@ -379,7 +379,7 @@ where
     Verifier: Eq + Hash + Clone,
 {
     let mut grouped = IMap::default();
-    for entry in interface_verifiers {
+    for entry in interface_verifiers.flat_map(|it| it.iter()) {
         let (id, all_verifiers_for_interface) = entry;
         grouped
             .entry(id.clone())

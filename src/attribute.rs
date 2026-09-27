@@ -685,7 +685,7 @@ pub type AttrInterfaceAllVerifiers = fn() -> Vec<AttrInterfaceVerifier>;
 #[doc(hidden)]
 /// An [Attribute] paired with an interface it implements
 /// (specifically the verifiers (including super verifiers) for that interface).
-type AttrInterfaceVerifierInfo = (core::any::TypeId, AttrInterfaceAllVerifiers);
+type AttrInterfaceVerifierInfo = &'static [(core::any::TypeId, AttrInterfaceAllVerifiers)];
 
 #[doc(hidden)]
 #[cfg(not(target_family = "wasm"))]

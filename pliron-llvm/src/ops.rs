@@ -10,7 +10,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::{cell::Ref, num::NonZero};
+use core::{cell::Ref, num::NonZero, ops::Range};
 
 use pliron::{
     arg_err_noloc,
@@ -645,7 +645,6 @@ pub struct AddrSpaceCastOp;
     interfaces = [
         IsTerminatorInterface,
         NResultsInterface<0>,
-        NSuccsInterface<1>,
         OneSuccInterface
     ],
     verifier = "succ"
@@ -654,9 +653,13 @@ pub struct BrOp;
 
 #[op_interface_impl]
 impl BranchOpInterface for BrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OneSuccInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        self.get_operation().deref(ctx).operands().collect()
+        0..self.get_operation().deref(ctx).get_num_operands()
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -668,10 +671,10 @@ impl BranchOpInterface for BrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        Operation::remove_operand(self.get_operation(), ctx, opd_idx)
+        Operation::remove_operand(self.get_operation(), ctx, arg_idx)
     }
 }
 
@@ -708,7 +711,7 @@ impl BrOp {
 #[pliron_op(
     name = "llvm.cond_br",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>, NSuccsInterface<2>],
-    operands = (condition, true_dest_opds, false_dest_opds),
+    operands = (condition),
 )]
 pub struct CondBrOp;
 impl CondBrOp {
@@ -739,17 +742,37 @@ impl CondBrOp {
         op.set_operand_segment_sizes(ctx, segment_sizes);
         op
     }
+
+    /// Get the operands forwarded to the true destination.
+    pub fn get_true_dest_operands(&self, ctx: &Context) -> Vec<Value> {
+        self.successor_operands(ctx, 0)
+    }
+
+    /// Get the operands forwarded to the false destination.
+    pub fn get_false_dest_operands(&self, ctx: &Context) -> Vec<Value> {
+        self.successor_operands(ctx, 1)
+    }
 }
 
 #[derive(Error, Debug)]
 enum CondBrOpVerifyErr {
     #[error("Condition operand must be a 1-bit signless integer (i1) or vector of i1")]
     IncorrectConditionType,
+    #[error("Expected exactly one condition operand, but found {0}")]
+    ConditionOperandCount(u32),
 }
 
 impl Verify for CondBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         use pliron::r#type::Typed;
+        let num_conditions = self.segment_size(ctx, 0);
+        if num_conditions != 1 {
+            verify_err!(
+                self.loc(ctx),
+                CondBrOpVerifyErr::ConditionOperandCount(num_conditions)
+            )?
+        }
+
         // Ensure that the condition is a 1-bit signless integer
         let condition_ty = self.get_operand_condition(ctx).get_type(ctx);
         let condition_ty = condition_ty.deref(ctx);
@@ -764,7 +787,12 @@ impl Verify for CondBrOp {
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for CondBrOp {}
+impl OperandSegmentInterface for CondBrOp {
+    fn expected_num_segments(&self, _ctx: &Context) -> Option<usize> {
+        // The condition, the true destination operands and the false destination operands.
+        Some(3)
+    }
+}
 
 impl Printable for CondBrOp {
     fn fmt(
@@ -858,14 +886,19 @@ impl Parsable for CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)?;
+        <Self as NSuccsInterface<2>>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(
             succ_idx == 0 || succ_idx == 1,
             "CondBrOp has exactly two successors"
         );
 
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -877,10 +910,10 @@ impl BranchOpInterface for CondBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
@@ -901,7 +934,7 @@ impl BranchOpInterface for CondBrOp {
 #[pliron_op(
     name = "llvm.switch",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
-    operands = (condition, default_dest_opds, case_dest_opds),
+    operands = (condition),
     attributes = (llvm_switch_case_values: CaseValuesAttr)
 )]
 pub struct SwitchOp;
@@ -1145,13 +1178,24 @@ impl SwitchOp {
     pub fn default_dest_operands(&self, ctx: &Context) -> Vec<Value> {
         self.successor_operands(ctx, 0)
     }
+
+    /// Get the operands forwarded to the destination of case `case_idx`.
+    /// Panics if `case_idx` is invalid.
+    pub fn get_case_dest_operands(&self, ctx: &Context, case_idx: usize) -> Vec<Value> {
+        // Successor 0 is the default destination.
+        self.successor_operands(ctx, case_idx + 1)
+    }
 }
 
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1163,15 +1207,20 @@ impl BranchOpInterface for SwitchOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for SwitchOp {}
+impl OperandSegmentInterface for SwitchOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the condition, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum SwitchOpVerifyErr {
@@ -1181,6 +1230,8 @@ pub enum SwitchOpVerifyErr {
     DefaultDestErr,
     #[error("SwitchOp has no condition operand or is not an integer")]
     ConditionErr,
+    #[error("Expected exactly one condition operand, but found {0}")]
+    ConditionOperandCount(u32),
 }
 
 impl Verify for SwitchOp {
@@ -1191,14 +1242,18 @@ impl Verify for SwitchOp {
             verify_err!(loc.clone(), SwitchOpVerifyErr::CaseValuesAttrErr)?
         };
 
+        let num_conditions = self.segment_size(ctx, 0);
+        if num_conditions != 1 {
+            verify_err!(
+                loc.clone(),
+                SwitchOpVerifyErr::ConditionOperandCount(num_conditions)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
             verify_err!(loc.clone(), SwitchOpVerifyErr::DefaultDestErr)?;
-        }
-
-        if op.get_num_operands() < 1 {
-            verify_err!(loc.clone(), SwitchOpVerifyErr::ConditionErr)?;
         }
 
         let condition_ty = pliron::r#type::Typed::get_type(&op.get_operand(0), ctx);
@@ -1278,7 +1333,7 @@ impl Parsable for IndirectBrDest {
 #[pliron_op(
     name = "llvm.indirectbr",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
-    operands = (address: PointerType, dest_opds),
+    operands = (address: PointerType),
 )]
 pub struct IndirectBrOp;
 
@@ -1392,13 +1447,23 @@ impl IndirectBrOp {
             })
             .collect()
     }
+
+    /// Get the operands forwarded to destination `dest_idx`.
+    /// Panics if `dest_idx` is invalid.
+    pub fn get_dest_operands(&self, ctx: &Context, dest_idx: usize) -> Vec<Value> {
+        self.successor_operands(ctx, dest_idx)
+    }
 }
 
 #[op_interface_impl]
 impl BranchOpInterface for IndirectBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the address.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1410,25 +1475,41 @@ impl BranchOpInterface for IndirectBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the address operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for IndirectBrOp {}
+impl OperandSegmentInterface for IndirectBrOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the address, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum IndirectBrOpVerifyErr {
     #[error("IndirectBrOp must have at least one destination")]
     NoDestinations,
+    #[error("Expected exactly one address operand, but found {0}")]
+    AddressOperandCount(u32),
 }
 
 impl Verify for IndirectBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
+
+        let num_addresses = self.segment_size(ctx, 0);
+        if num_addresses != 1 {
+            verify_err!(
+                loc.clone(),
+                IndirectBrOpVerifyErr::AddressOperandCount(num_addresses)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
