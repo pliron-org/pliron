@@ -13,13 +13,13 @@ use crate::{
     r#type::Typed,
 };
 
-use super::PrinterFn;
+use super::printable_from_fn;
 
 /// Print the operation name and associated symbol of the Op. The Op must implement [SymbolOpInterface].
 /// The common pattern is `<opid> @<symbol_name>`. For example a function call would be printed as
 /// `call @my_func`.
 pub fn symb_op_header<T: Op + SymbolOpInterface>(op: &T) -> impl Printable + '_ {
-    PrinterFn(
+    printable_from_fn(
         move |ctx: &Context, _state: &State, f: &mut fmt::Formatter<'_>| {
             write!(f, "{} @{}", op.get_opid(), op.get_symbol_name(ctx))
         },
@@ -30,7 +30,7 @@ pub fn symb_op_header<T: Op + SymbolOpInterface>(op: &T) -> impl Printable + '_ 
 /// The common pattern is `<opid> @<symbol_name>: <type>`. For example a function header would
 /// become `func @my_func: (i32, i32) -> i32`.
 pub fn typed_symb_op_header<T: Op + SymbolOpInterface + Typed>(op: &T) -> impl Printable + '_ {
-    PrinterFn(
+    printable_from_fn(
         move |ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>| {
             symb_op_header(op).fmt(ctx, state, f)?;
             write!(f, ": ")?;
@@ -42,7 +42,7 @@ pub fn typed_symb_op_header<T: Op + SymbolOpInterface + Typed>(op: &T) -> impl P
 
 /// Print the region of an IR object that implements the [OneRegionInterface].
 pub fn region<T: Op + OneRegionInterface>(op: &T) -> impl Printable + '_ {
-    PrinterFn(
+    printable_from_fn(
         move |ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>| {
             op.get_region(ctx).fmt(ctx, state, f)
         },

@@ -17,20 +17,21 @@ use thiserror::Error;
 use pliron::{
     attribute::verify_attr,
     builtin::{
-        attr_interfaces::{OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
+        attr_interfaces::{MaterializableAttr, OutlinedAttr, PrintOnceAttr, TypedAttrInterface},
         attributes::{IntegerAttr, StringAttr},
         ops::ModuleOp,
         types::{IntegerType, Signedness},
     },
     combine::{self, Parser, choice, parser::char::spaces},
     common_traits::Verify,
-    context::Context,
+    context::{Context, Ptr},
     derive::{attr_interface_impl, format, pliron_attr},
     dict_key,
     identifier::Identifier,
     impl_printable_for_display, input_error,
     location::Located,
     op::Op,
+    operation::Operation,
     parsable::{IntoParseResult, Parsable},
     printable::Printable,
     result::Result,
@@ -38,7 +39,10 @@ use pliron::{
     verify_err_noloc,
 };
 
-use crate::types::{ArrayType, PointerType, StructType, VectorType};
+use crate::{
+    ops::ConstantOp,
+    types::{ArrayType, PointerType, StructType, VectorType},
+};
 
 use bitflags::bitflags;
 
@@ -495,6 +499,13 @@ impl TypedAttrInterface for SplatAttr {
     }
 }
 
+#[attr_interface_impl]
+impl MaterializableAttr for SplatAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        ConstantOp::new(ctx, Box::new(self.clone())).get_operation()
+    }
+}
+
 /// Verify that `element`, the `idx`'th element of an aggregate or splat, is of type `expected`.
 fn verify_element(
     ctx: &Context,
@@ -596,6 +607,13 @@ impl AggregateAttr {
 impl TypedAttrInterface for AggregateAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.ty
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for AggregateAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        ConstantOp::new(ctx, Box::new(self.clone())).get_operation()
     }
 }
 

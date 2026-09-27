@@ -5,7 +5,8 @@
 //!
 //! This pass removes operations that satisfy both the following conditions:
 //! 1. The operation has no side effects.
-//! 2. The operation's (SSA) results are not used by any other operation.
+//! 2. The operation does not implement [IsTerminatorInterface].
+//! 3. The operation's (SSA) results are not used by any other operation.
 //!
 //! An operation is considered to have side effects if either:
 //! 1. It does not implement the [SideEffects] interface, or
@@ -22,7 +23,7 @@ use pliron_derive::op_interface;
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::BranchOpInterface,
+    builtin::op_interfaces::{BranchOpInterface, IsTerminatorInterface},
     context::{Context, Ptr},
     graph::{
         HasLabel,
@@ -117,11 +118,11 @@ fn is_safe_to_erase(cand: DCECandidate, ctx: &Context) -> bool {
             // Get the dynamic op interface to check for SideEffects
             let def_op_dyn = Operation::get_op_dyn(def_op, ctx);
             // Determine if operation has side effects
-            let has_side_effects = match op_cast::<dyn SideEffects>(&*def_op_dyn) {
-                Some(side_effects_op) => side_effects_op.has_side_effects(ctx),
-                None => true, // If it doesn't implement SideEffects, assume it has side effects
-            };
-            !has_side_effects
+            let has_side_effects = op_cast::<dyn SideEffects>(&*def_op_dyn)
+                .is_none_or(|side_effects_op| side_effects_op.has_side_effects(ctx));
+            // Determine if the operation is a terminator
+            let is_terminator = op_impls::<dyn IsTerminatorInterface>(&*def_op_dyn);
+            !has_side_effects && !is_terminator
         }
         DCECandidate::BlockArg(arg) => {
             let block = arg.defining_block().expect("Expected a block argument");

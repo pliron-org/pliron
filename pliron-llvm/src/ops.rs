@@ -10,7 +10,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::{cell::Ref, num::NonZero};
+use core::{cell::Ref, num::NonZero, ops::Range};
 
 use pliron::{
     arg_err_noloc,
@@ -24,8 +24,8 @@ use pliron::{
             BranchOpInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
             IsolatedFromAboveInterface, NOpdsInterface, NResultsInterface, NSuccsInterface,
             OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
-            OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType, SameResultsType,
-            SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
+            OperandsMNOfType, OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType,
+            SameResultsType, SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
         types::{IntegerType, Signedness},
@@ -67,6 +67,7 @@ use crate::{
         InsertExtractValueIndicesAttr, LinkageAttr, ShuffleVectorMaskAttr, SplatAttr,
         SymbolAddrAttr, SyncScopeAttr,
     },
+    llvm_attrs::LlvmAttributesAttr,
     op_interfaces::{
         AlignableOpInterface, BinArithOp, CastOpInterface, CastOpWithNNegInterface, FastMathFlags,
         FloatBinArithOp, FloatBinArithOpWithFastMathFlags, IntBinArithOp,
@@ -644,7 +645,6 @@ pub struct AddrSpaceCastOp;
     interfaces = [
         IsTerminatorInterface,
         NResultsInterface<0>,
-        NSuccsInterface<1>,
         OneSuccInterface
     ],
     verifier = "succ"
@@ -653,9 +653,13 @@ pub struct BrOp;
 
 #[op_interface_impl]
 impl BranchOpInterface for BrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OneSuccInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        self.get_operation().deref(ctx).operands().collect()
+        0..self.get_operation().deref(ctx).get_num_operands()
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -667,10 +671,10 @@ impl BranchOpInterface for BrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         assert!(succ_idx == 0, "BrOp has exactly one successor");
-        Operation::remove_operand(self.get_operation(), ctx, opd_idx)
+        Operation::remove_operand(self.get_operation(), ctx, arg_idx)
     }
 }
 
@@ -707,7 +711,7 @@ impl BrOp {
 #[pliron_op(
     name = "llvm.cond_br",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>, NSuccsInterface<2>],
-    operands = (condition, true_dest_opds, false_dest_opds),
+    operands = (condition),
 )]
 pub struct CondBrOp;
 impl CondBrOp {
@@ -738,17 +742,37 @@ impl CondBrOp {
         op.set_operand_segment_sizes(ctx, segment_sizes);
         op
     }
+
+    /// Get the operands forwarded to the true destination.
+    pub fn get_true_dest_operands(&self, ctx: &Context) -> Vec<Value> {
+        self.successor_operands(ctx, 0)
+    }
+
+    /// Get the operands forwarded to the false destination.
+    pub fn get_false_dest_operands(&self, ctx: &Context) -> Vec<Value> {
+        self.successor_operands(ctx, 1)
+    }
 }
 
 #[derive(Error, Debug)]
 enum CondBrOpVerifyErr {
     #[error("Condition operand must be a 1-bit signless integer (i1) or vector of i1")]
     IncorrectConditionType,
+    #[error("Expected exactly one condition operand, but found {0}")]
+    ConditionOperandCount(u32),
 }
 
 impl Verify for CondBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         use pliron::r#type::Typed;
+        let num_conditions = self.segment_size(ctx, 0);
+        if num_conditions != 1 {
+            verify_err!(
+                self.loc(ctx),
+                CondBrOpVerifyErr::ConditionOperandCount(num_conditions)
+            )?
+        }
+
         // Ensure that the condition is a 1-bit signless integer
         let condition_ty = self.get_operand_condition(ctx).get_type(ctx);
         let condition_ty = condition_ty.deref(ctx);
@@ -763,7 +787,12 @@ impl Verify for CondBrOp {
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for CondBrOp {}
+impl OperandSegmentInterface for CondBrOp {
+    fn expected_num_segments(&self, _ctx: &Context) -> Option<usize> {
+        // The condition, the true destination operands and the false destination operands.
+        Some(3)
+    }
+}
 
 impl Printable for CondBrOp {
     fn fmt(
@@ -857,14 +886,19 @@ impl Parsable for CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpInterface for CondBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)?;
+        <Self as NSuccsInterface<2>>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         assert!(
             succ_idx == 0 || succ_idx == 1,
             "CondBrOp has exactly two successors"
         );
 
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -876,10 +910,10 @@ impl BranchOpInterface for CondBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
@@ -900,7 +934,7 @@ impl BranchOpInterface for CondBrOp {
 #[pliron_op(
     name = "llvm.switch",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
-    operands = (condition, default_dest_opds, case_dest_opds),
+    operands = (condition),
     attributes = (llvm_switch_case_values: CaseValuesAttr)
 )]
 pub struct SwitchOp;
@@ -1144,13 +1178,24 @@ impl SwitchOp {
     pub fn default_dest_operands(&self, ctx: &Context) -> Vec<Value> {
         self.successor_operands(ctx, 0)
     }
+
+    /// Get the operands forwarded to the destination of case `case_idx`.
+    /// Panics if `case_idx` is invalid.
+    pub fn get_case_dest_operands(&self, ctx: &Context, case_idx: usize) -> Vec<Value> {
+        // Successor 0 is the default destination.
+        self.successor_operands(ctx, case_idx + 1)
+    }
 }
 
 #[op_interface_impl]
 impl BranchOpInterface for SwitchOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the condition.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1162,15 +1207,20 @@ impl BranchOpInterface for SwitchOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the condition operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for SwitchOp {}
+impl OperandSegmentInterface for SwitchOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the condition, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum SwitchOpVerifyErr {
@@ -1180,6 +1230,8 @@ pub enum SwitchOpVerifyErr {
     DefaultDestErr,
     #[error("SwitchOp has no condition operand or is not an integer")]
     ConditionErr,
+    #[error("Expected exactly one condition operand, but found {0}")]
+    ConditionOperandCount(u32),
 }
 
 impl Verify for SwitchOp {
@@ -1190,14 +1242,18 @@ impl Verify for SwitchOp {
             verify_err!(loc.clone(), SwitchOpVerifyErr::CaseValuesAttrErr)?
         };
 
+        let num_conditions = self.segment_size(ctx, 0);
+        if num_conditions != 1 {
+            verify_err!(
+                loc.clone(),
+                SwitchOpVerifyErr::ConditionOperandCount(num_conditions)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
             verify_err!(loc.clone(), SwitchOpVerifyErr::DefaultDestErr)?;
-        }
-
-        if op.get_num_operands() < 1 {
-            verify_err!(loc.clone(), SwitchOpVerifyErr::ConditionErr)?;
         }
 
         let condition_ty = pliron::r#type::Typed::get_type(&op.get_operand(0), ctx);
@@ -1277,7 +1333,7 @@ impl Parsable for IndirectBrDest {
 #[pliron_op(
     name = "llvm.indirectbr",
     interfaces = [IsTerminatorInterface, NResultsInterface<0>],
-    operands = (address: PointerType, dest_opds),
+    operands = (address: PointerType),
 )]
 pub struct IndirectBrOp;
 
@@ -1391,13 +1447,23 @@ impl IndirectBrOp {
             })
             .collect()
     }
+
+    /// Get the operands forwarded to destination `dest_idx`.
+    /// Panics if `dest_idx` is invalid.
+    pub fn get_dest_operands(&self, ctx: &Context, dest_idx: usize) -> Vec<Value> {
+        self.successor_operands(ctx, dest_idx)
+    }
 }
 
 #[op_interface_impl]
 impl BranchOpInterface for IndirectBrOp {
-    fn successor_operands(&self, ctx: &Context, succ_idx: usize) -> Vec<Value> {
+    fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()> {
+        <Self as OperandSegmentInterface>::verify(self, ctx)
+    }
+
+    fn successor_operand_range(&self, ctx: &Context, succ_idx: usize) -> Range<usize> {
         // Skip the first segment, which is the address.
-        self.get_segment(ctx, succ_idx + 1)
+        self.segment_range(ctx, succ_idx + 1)
     }
 
     fn add_successor_operand(&self, ctx: &mut Context, succ_idx: usize, operand: Value) -> usize {
@@ -1409,25 +1475,41 @@ impl BranchOpInterface for IndirectBrOp {
         &self,
         ctx: &mut Context,
         succ_idx: usize,
-        opd_idx: usize,
+        arg_idx: usize,
     ) -> Value {
         // The successor operands start at segment 1, since segment 0 is the address operand.
-        self.remove_from_segment(ctx, succ_idx + 1, opd_idx)
+        self.remove_from_segment(ctx, succ_idx + 1, arg_idx)
     }
 }
 
 #[op_interface_impl]
-impl OperandSegmentInterface for IndirectBrOp {}
+impl OperandSegmentInterface for IndirectBrOp {
+    fn expected_num_segments(&self, ctx: &Context) -> Option<usize> {
+        // One segment for the address, and one segment for each successor.
+        Some(self.get_operation().deref(ctx).get_num_successors() + 1)
+    }
+}
 
 #[derive(Error, Debug)]
 pub enum IndirectBrOpVerifyErr {
     #[error("IndirectBrOp must have at least one destination")]
     NoDestinations,
+    #[error("Expected exactly one address operand, but found {0}")]
+    AddressOperandCount(u32),
 }
 
 impl Verify for IndirectBrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
+
+        let num_addresses = self.segment_size(ctx, 0);
+        if num_addresses != 1 {
+            verify_err!(
+                loc.clone(),
+                IndirectBrOpVerifyErr::AddressOperandCount(num_addresses)
+            )?
+        }
+
         let op = &*self.get_operation().deref(ctx);
 
         if op.get_num_successors() < 1 {
@@ -1482,8 +1564,8 @@ pub enum GetElementPtrOpErr {
 #[pliron_op(
     name = "llvm.gep",
     format = "`<` attr($llvm_gep_src_elem_type, $TypeAttr) `>` ` (` operands(CharSpace(`,`)) `)` opt_attr($llvm_gep_no_wrap_flags, $GepNoWrapFlagsAttr) attr($llvm_gep_indices, $GepIndicesAttr) ` : ` type($0)",
-    interfaces = [OneResultInterface],
-    operands = (src_ptr, dynamic_indices),
+    interfaces = [OneResultInterface, OperandsMNOfType<1, {-1}, IntegerType>],
+    operands = (src_ptr: PointerType, dynamic_indices),
     results = (_: PointerType),
     attributes = (
         llvm_gep_src_elem_type: TypeAttr,
@@ -2074,9 +2156,7 @@ impl AtomicStoreOp {
     }
 }
 
-/// Equivalent to LLVM's inline assembly call. The template and constraint
-/// strings follow LLVM's inline-asm syntax; `convergent` marks asm that must
-/// not be reordered across divergent control flow (e.g. warp-synchronous PTX).
+/// Equivalent to LLVM's inline assembly call.
 ///
 /// ### Operands
 /// | operand | description |
@@ -2089,27 +2169,54 @@ impl AtomicStoreOp {
 /// | `res` | the asm result (a void type when there is none) |
 #[pliron_op(
     name = "llvm.inline_asm",
-    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` convergent = ` attr($llvm_inline_asm_convergent, $BoolAttr) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
+    format = "attr($llvm_inline_asm_template, $StringAttr) `, ` attr($llvm_inline_asm_constraints, $StringAttr) ` side_effects = ` attr($llvm_inline_asm_side_effects, $BoolAttr) ` ` opt_attr($llvm_inline_asm_attrs, $LlvmAttributesAttr, label($attrs)) ` (` operands(CharSpace(`,`)) `) : ` type($0)",
     interfaces = [OneResultInterface],
     attributes = (
         llvm_inline_asm_template: StringAttr,
         llvm_inline_asm_constraints: StringAttr,
-        llvm_inline_asm_convergent: BoolAttr
-    ),
-    verifier = "succ"
+        llvm_inline_asm_side_effects: BoolAttr,
+        llvm_inline_asm_attrs: LlvmAttributesAttr
+    )
 )]
 pub struct InlineAsmOp;
 
+#[derive(Error, Debug)]
+enum InlineAsmOpVerifyErr {
+    #[error("Missing or incorrect inline asm template attribute")]
+    Template,
+    #[error("Missing or incorrect inline asm constraints attribute")]
+    Constraints,
+    #[error("Missing or incorrect inline asm side-effects attribute")]
+    SideEffects,
+}
+
+impl Verify for InlineAsmOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let loc = self.loc(ctx);
+        if self.get_attr_llvm_inline_asm_template(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::Template);
+        }
+        if self.get_attr_llvm_inline_asm_constraints(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::Constraints);
+        }
+        if self.get_attr_llvm_inline_asm_side_effects(ctx).is_none() {
+            return verify_err!(loc, InlineAsmOpVerifyErr::SideEffects);
+        }
+        Ok(())
+    }
+}
+
 impl InlineAsmOp {
-    /// Create a new [InlineAsmOp]. Use a void result type for asm with no
-    /// result value.
+    /// Create a new [InlineAsmOp].
+    ///
+    /// Use a void result type for asm with no result value.
     pub fn new(
         ctx: &mut Context,
         result_ty: TypeHandle,
         inputs: Vec<Value>,
         asm_template: &str,
         constraints: &str,
-        convergent: bool,
+        side_effects: bool,
     ) -> Self {
         let op = Operation::new(
             ctx,
@@ -2122,7 +2229,7 @@ impl InlineAsmOp {
         let op = InlineAsmOp { op };
         op.set_attr_llvm_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
         op.set_attr_llvm_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
-        op.set_attr_llvm_inline_asm_convergent(ctx, BoolAttr::new(convergent));
+        op.set_attr_llvm_inline_asm_side_effects(ctx, BoolAttr::new(side_effects));
         op
     }
 }
@@ -2142,7 +2249,11 @@ impl InlineAsmOp {
 #[pliron_op(
     name = "llvm.call",
     interfaces = [OneResultInterface],
-    attributes = (llvm_call_callee: IdentifierAttr, llvm_call_fastmath_flags: FastmathFlagsAttr)
+    attributes = (
+        llvm_call_callee: IdentifierAttr,
+        llvm_call_fastmath_flags: FastmathFlagsAttr,
+        llvm_call_attrs: LlvmAttributesAttr
+    )
 )]
 pub struct CallOp;
 
@@ -4462,7 +4573,8 @@ pub enum FCmpOpVerifyErr {
     attributes = (
         llvm_intrinsic_name: StringAttr,
         llvm_intrinsic_type: TypeAttr,
-        llvm_intrinsic_fastmath_flags: FastmathFlagsAttr
+        llvm_intrinsic_fastmath_flags: FastmathFlagsAttr,
+        llvm_intrinsic_attrs: LlvmAttributesAttr
     )
 )]
 pub struct CallIntrinsicOp;
@@ -4697,7 +4809,11 @@ impl VAArgOp {
         NOpdsInterface<0>,
         LlvmSymbolName
     ],
-    attributes = (llvm_func_type: TypeAttr, llvm_function_linkage: LinkageAttr)
+    attributes = (
+        llvm_func_type: TypeAttr,
+        llvm_function_linkage: LinkageAttr,
+        llvm_func_attrs: LlvmAttributesAttr
+    )
 )]
 pub struct FuncOp;
 

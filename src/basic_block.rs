@@ -3,7 +3,7 @@
 
 //! A [BasicBlock] is a list of [Operation]s.
 
-use alloc::{format, string::String, vec, vec::Vec};
+use alloc::{string::String, vec, vec::Vec};
 use thiserror::Error;
 
 use crate::{
@@ -24,7 +24,7 @@ use crate::{
     irfmt::{
         outlined::{preprint_outline_block, register_block_for_outline},
         parsers::{delimited_list_parser, location, spaced, type_parser},
-        printers::iter_with_sep,
+        printers::{iter_with_sep, iter_with_sep_by},
     },
     linked_list::{ContainsLinkedList, LinkedList, private},
     location::{Located, Location},
@@ -453,21 +453,23 @@ impl Printable for BasicBlock {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
+        let args = iter_with_sep_by(
+            self.args.iter(),
+            ListSeparator::CharSpace(','),
+            |arg, ctx, state, f| {
+                write!(
+                    f,
+                    "{}: {}",
+                    arg.as_value(self.self_ptr).print(ctx, state),
+                    arg.get_type().print(ctx, state)
+                )
+            },
+        );
         write!(
             f,
             "^{}({})",
-            self.unique_name(ctx),
-            iter_with_sep(
-                self.args.iter().map(|arg| {
-                    format!(
-                        "{}: {}",
-                        arg.as_value(self.self_ptr).print(ctx, state),
-                        arg.get_type().print(ctx, state)
-                    )
-                }),
-                ListSeparator::CharSpace(',')
-            )
-            .print(ctx, state),
+            self.unique_name(ctx).print(ctx, state),
+            args.print(ctx, state)
         )?;
 
         // Print non-outlined attributes inline.

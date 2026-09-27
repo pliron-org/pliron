@@ -8,6 +8,7 @@ use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
     context::{Context, Ptr},
+    irfmt::printers::enclosed,
     linked_list::ContainsLinkedList,
     operation::Operation,
     printable::{self, Printable},
@@ -94,11 +95,7 @@ impl Printable for Constness {
         match self {
             Constness::Undetermined => write!(f, "Undetermined"),
             Constness::NotAConstant => write!(f, "NotAConstant"),
-            Constness::Constant { val } => {
-                write!(f, "Constant(")?;
-                Printable::fmt(val, ctx, state, f)?;
-                write!(f, ")")
-            }
+            Constness::Constant { val } => enclosed("Constant(", ")", val).fmt(ctx, state, f),
         }
     }
 }

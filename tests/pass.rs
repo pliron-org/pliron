@@ -165,8 +165,8 @@ impl Pass for CountingPass {
     }
 }
 
-/// An [Analysis] whose payload is the compute-count at the time it was computed,
-/// so that tests can verify caching/invalidation of analyses.
+/// An [Analysis] that records its computation number.
+/// Tests use this number to verify analysis caching and invalidation.
 struct CountingAnalysis(u32);
 
 dict_key!(COUNTING_ANALYSIS_COMPUTED_KEY, "counting_analysis_computed");

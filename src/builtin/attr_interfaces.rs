@@ -256,6 +256,11 @@ pub trait FloatAttr: TypedAttrInterface {
         let df = self.get_inner();
         df.to_u128_r(width, round, is_exact)
     }
+    /// [PartialOrd::partial_cmp]
+    fn partial_cmp(&self, other: &dyn FloatAttr) -> Option<Ordering> {
+        let df = self.get_inner();
+        df.partial_cmp(other.get_inner())
+    }
     /// [Float::cmp_abs_normal](rustc_apfloat::Float::cmp_abs_normal)
     fn cmp_abs_normal(&self, other: &dyn FloatAttr) -> Ordering {
         let df = self.get_inner();

@@ -40,6 +40,11 @@ impl APInt {
         self.value.is_zero()
     }
 
+    /// Is the sign bit set?
+    pub fn is_negative(&self) -> bool {
+        self.value.msb()
+    }
+
     /// Add `self` and `rhs`. They must have the same bitwidth.
     pub fn add(&self, rhs: &APInt) -> APInt {
         assert_eq!(
@@ -249,19 +254,28 @@ impl APInt {
         APInt { value }
     }
 
-    /// Left-shift `self` by `rhs` bits, reporting whether the result
-    /// overflowed. They must have the same bitwidth, and the shift amount `rhs`
-    /// must be less than the bitwidth (a shift amount `>=` the bitwidth is
-    /// undefined for `shl` and must be ruled out by the caller).
+    /// Truncate `self` to `width` bits, keeping the low bits.
+    /// `width` must not exceed the current bitwidth.
+    pub fn trunc(&self, width: NonZero<usize>) -> APInt {
+        assert!(
+            width.get() <= self.bw(),
+            "APInt::trunc: target width {} exceeds bitwidth {}",
+            width.get(),
+            self.bw()
+        );
+        self.zext(width)
+    }
+
+    /// Left-shift `self` by `rhs` and report LLVM `shl` overflow.
     ///
-    /// Returns `(result, unsigned_overflow_occured, signed_overflow_occured)`,
-    /// where the result is the shifted value, `unsigned_overflow_occured` is true
-    /// if any bit shifted off the top was set (so the shift is not invertible by a
-    /// logical right shift), and `signed_overflow_occured` is true if the bits
-    /// shifted off the top together with the result's new sign bit are not all
-    /// equal to the original sign bit (so the shift is not invertible by an
-    /// arithmetic right shift). These match LLVM's `nuw` and `nsw` poison
-    /// conditions for `shl`, respectively.
+    /// Requirements:
+    /// - Both values have the same bitwidth.
+    /// - `rhs` is less than the bitwidth.
+    ///
+    /// Returns `(result, unsigned_overflow, signed_overflow)`:
+    /// - `result`: the shifted value.
+    /// - `unsigned_overflow`: a set bit was shifted out (`nuw`).
+    /// - `signed_overflow`: an arithmetic right shift cannot recover `self` (`nsw`).
     pub fn shl_overflow(&self, rhs: &APInt) -> (APInt, bool, bool) {
         assert_eq!(
             self.bw(),
@@ -330,8 +344,8 @@ impl APInt {
         APInt { value: quo }
     }
 
-    /// Unsigned remainder of `self` divided by `rhs`. They must have the same
-    /// bitwidth.
+    /// Unsigned remainder of `self` divided by `rhs`.
+    /// They must have the same bitwidth.
     pub fn urem(&self, rhs: &APInt) -> APInt {
         assert_eq!(
             self.bw(),
@@ -435,8 +449,8 @@ impl APInt {
             .expect("APInt::ugt: bitwidth mismatch")
     }
 
-    /// Unsigned greater-than-or-equal comparison. They must have the same
-    /// bitwidth.
+    /// Unsigned greater-than-or-equal comparison.
+    /// They must have the same bitwidth.
     pub fn uge(&self, rhs: &APInt) -> bool {
         assert_eq!(
             self.bw(),
@@ -492,8 +506,8 @@ impl APInt {
             .expect("APInt::sgt: bitwidth mismatch")
     }
 
-    /// Signed greater-than-or-equal comparison. They must have the same
-    /// bitwidth.
+    /// Signed greater-than-or-equal comparison.
+    /// They must have the same bitwidth.
     pub fn sge(&self, rhs: &APInt) -> bool {
         assert_eq!(
             self.bw(),
@@ -1149,6 +1163,37 @@ mod tests {
         // -3 (i4, 0b1101 == 13 unsigned) zero-extends to 13 (i8).
         let res = APInt::from_i8(-3, bw(4)).zext(bw(8));
         assert_eq!(res.to_u8(), 13);
+    }
+
+    #[test]
+    fn test_trunc() {
+        // Only the low bits are kept: 0x1_02 (i9, 258) -> 2 (i8).
+        let res = APInt::from_u64(258, bw(9)).trunc(bw(8));
+        assert_eq!(res.bw(), 8);
+        assert_eq!(res.to_u8(), 2);
+
+        // A value that fits in the target width is unchanged.
+        let res = APInt::from_u8(5, bw(8)).trunc(bw(4));
+        assert_eq!(res.to_u8(), 5);
+
+        // Truncation is bit-level
+        let res = APInt::from_i8(-1, bw(8)).trunc(bw(4));
+        assert_eq!(res.to_u8(), 0xf);
+        assert_eq!(res.to_i8(), -1);
+
+        // Truncating to the same width is a no-op.
+        let res = APInt::from_u8(200, bw(8)).trunc(bw(8));
+        assert_eq!(res.to_u8(), 200);
+    }
+
+    #[test]
+    fn test_is_negative() {
+        assert!(APInt::from_i8(-1, bw(8)).is_negative());
+        assert!(APInt::from_i8(i8::MIN, bw(8)).is_negative());
+        assert!(!APInt::from_i8(0, bw(8)).is_negative());
+        assert!(!APInt::from_i8(i8::MAX, bw(8)).is_negative());
+        // The sign bit is read at the value's own bitwidth: 1 is negative as i1.
+        assert!(APInt::from_u8(1, bw(1)).is_negative());
     }
 
     #[test]
