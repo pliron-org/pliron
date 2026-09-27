@@ -64,6 +64,8 @@ where
 {
     // An empty graph has no pre-sentinels.
     pre_sentinels: Vec<G::Node>,
+    // Children of the sentinel in the post-dominator tree.
+    sentinel_children: Vec<G::Node>,
     post_dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
 }
 
@@ -268,8 +270,32 @@ struct ReverseGraph<'a, G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
 {
+    /// The original graph that is reversed.
     graph: &'a G,
+    /// The pre-sentinels of [Self::graph].
     pre_sentinels: ISet<G::Node>,
+    /// Precomputed predecessors of each node in [Self::graph].
+    predecessors: HMap<G::Node, Vec<G::Node>>,
+}
+
+impl<'a, G, GraphContext> ReverseGraph<'a, G, GraphContext>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    fn new(ctx: &GraphContext, graph: &'a G, pre_sentinels: ISet<G::Node>) -> Self {
+        let predecessors = graph
+            .nodes(ctx)
+            .map(|node| {
+                let preds = graph.predecessors(ctx, &node);
+                (node, preds)
+            })
+            .collect();
+        ReverseGraph {
+            graph,
+            pre_sentinels,
+            predecessors,
+        }
+    }
 }
 
 impl<G, GraphContext> ControlFlowGraph<GraphContext> for ReverseGraph<'_, G, GraphContext>
@@ -278,14 +304,14 @@ where
 {
     type Node = ReverseNode<G::Node>;
 
-    fn num_successors(&self, ctx: &GraphContext, node: &Self::Node) -> usize {
+    fn num_successors(&self, _ctx: &GraphContext, node: &Self::Node) -> usize {
         match node {
             ReverseNode::Sentinel => self.pre_sentinels.len(),
-            ReverseNode::Real(n) => self.graph.num_predecessors(ctx, n),
+            ReverseNode::Real(n) => self.predecessors[n].len(),
         }
     }
 
-    fn get_successor(&self, ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node {
+    fn get_successor(&self, _ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node {
         match node {
             ReverseNode::Sentinel => ReverseNode::Real(
                 self.pre_sentinels
@@ -293,7 +319,7 @@ where
                     .expect("Pre-sentinel index out of bounds")
                     .clone(),
             ),
-            ReverseNode::Real(n) => ReverseNode::Real(self.graph.get_predecessor(ctx, n, i)),
+            ReverseNode::Real(n) => ReverseNode::Real(self.predecessors[n][i].clone()),
         }
     }
 
@@ -344,20 +370,23 @@ where
     if pre_sentinels.is_empty() {
         return PDomTree {
             pre_sentinels,
+            sentinel_children: vec![],
             post_dominators_map: IMap::default(),
         };
     }
 
-    let reverse_graph = ReverseGraph {
-        graph,
-        pre_sentinels: pre_sentinels.iter().cloned().collect(),
-    };
+    let reverse_graph = ReverseGraph::new(ctx, graph, pre_sentinels.iter().cloned().collect());
     let reverse_dom_tree = compute_dominator_tree(ctx, &reverse_graph);
     assert_eq!(
         reverse_dom_tree.num_nodes(),
         graph.nodes(ctx).count() + 1,
         "Pre-sentinels must make every CFG node reverse-reachable"
     );
+
+    let sentinel_children = reverse_dom_tree
+        .children(&ReverseNode::Sentinel)
+        .map(|child| child.into_real().expect("The sentinel is the tree root"))
+        .collect();
 
     // Remove the sentinel from the tree.
     let post_dominators_map = reverse_dom_tree
@@ -379,6 +408,7 @@ where
 
     PDomTree {
         pre_sentinels,
+        sentinel_children,
         post_dominators_map,
     }
 }
@@ -493,8 +523,18 @@ where
     }
 
     /// Get an iterator over the pre-sentinels.
+    ///
+    /// These are control-flow-graph nodes with the sentinel as a virtual successor.
+    /// See [Self::sentinel_children] for post-dominator tree children.
     pub fn pre_sentinels(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
         self.pre_sentinels.iter().cloned()
+    }
+
+    /// Get an iterator over the post-dominator tree children of the sentinel.
+    ///
+    /// See [Self::pre_sentinels] to get the nodes that have the sentinel as a virtual successor.
+    pub fn sentinel_children(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.sentinel_children.iter().cloned()
     }
 
     /// Get the number of nodes (not counting the sentinel) in the post-dominator tree.
@@ -1030,6 +1070,7 @@ mod tests {
         let ctx: Vec<Node> = vec![];
         let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
         assert_eq!(post_dom.pre_sentinels().count(), 0);
+        assert_eq!(post_dom.sentinel_children().count(), 0);
         assert_eq!(post_dom.num_nodes(), 0);
     }
 
@@ -1096,10 +1137,17 @@ mod tests {
         ];
         let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
 
+        // The branch is a child of the sentinel, ...
+        assert_eq!(
+            post_dom.sentinel_children().collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 2])
+        );
+        // ... but not a pre-sentinel.
         assert_eq!(
             post_dom.pre_sentinels().collect::<ISet<_>>(),
             ISet::from_iter([1, 2])
         );
+
         assert_eq!(post_dom.ipdom(&1), None);
         assert_eq!(post_dom.ipdom(&2), None);
         // The branch itself is immediately post-dominated only by the sentinel.
@@ -1175,6 +1223,10 @@ mod tests {
         assert_eq!(
             post_dom.pre_sentinels().collect::<ISet<_>>(),
             ISet::from_iter([1, 3])
+        );
+        assert_eq!(
+            post_dom.sentinel_children().collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 3])
         );
         assert_eq!(post_dom.ipdom(&1), None);
         assert_eq!(post_dom.ipdom(&3), None);
