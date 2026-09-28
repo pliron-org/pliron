@@ -4,6 +4,7 @@
 //! IR and control-flow-graph utilities
 
 pub mod dominance;
+pub mod loop_tree;
 pub mod traversals;
 pub mod visualize;
 pub mod walkers;
