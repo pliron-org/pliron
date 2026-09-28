@@ -153,9 +153,13 @@ impl LLVMLLJIT {
     /// followed by `perf inject --jit`. Samples resolve to function names, and to
     /// source lines if the module has debug info.
     ///
-    /// LLVM's perf listener only supports RuntimeDyld, so this JIT links
-    /// with RuntimeDyld instead of the platform default (JITLink on most
-    /// targets). Fails if LLVM was built without `LLVM_USE_PERF`.
+    /// LLVM's perf listener only supports `RuntimeDyld`, so this JIT links
+    /// with `RuntimeDyld` instead of the platform default (`JITLink` on most
+    /// targets).
+    ///
+    /// # Errors
+    ///
+    /// Fails if LLVM was built without `LLVM_USE_PERF`, or if creating the JIT fails.
     pub fn new_with_perf_listener() -> Result<Self, String> {
         // A process-wide singleton owned by LLVM, so it is never disposed.
         let listener = unsafe { LLVMCreatePerfJITEventListener() };
@@ -265,8 +269,8 @@ impl Drop for LLVMLLJIT {
     }
 }
 
-/// Object linking layer creator for [LLVMLLJIT::new_with_perf_listener]:
-/// a RuntimeDyld layer with the `JITEventListener` passed as `ctx` registered.
+/// Object linking layer creator for [`LLVMLLJIT::new_with_perf_listener`]:
+/// a `RuntimeDyld` layer with the `JITEventListener` passed as `ctx` registered.
 extern "C" fn create_rtdyld_layer_with_listener(
     ctx: *mut c_void,
     es: LLVMOrcExecutionSessionRef,
@@ -340,9 +344,13 @@ impl SimpleJIT {
         Self::new_with(LLVMLLJIT::new_with_default_builder, context, module)
     }
 
-    /// Like [SimpleJIT::new], but reports JIT'd code to `perf`.
+    /// Like [`SimpleJIT::new`], but reports JIT'd code to `perf`.
     ///
-    /// See [LLVMLLJIT::new_with_perf_listener].
+    /// See [`LLVMLLJIT::new_with_perf_listener`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if the JIT cannot be created or `module` cannot be added to it.
     pub fn new_with_perf_listener(
         context: LLVMContext,
         module: LLVMModule,

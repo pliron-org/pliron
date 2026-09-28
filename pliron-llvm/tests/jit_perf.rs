@@ -35,11 +35,11 @@ fn perf_listener_writes_jitdump() {
     unsafe { std::env::set_var("JITDUMPDIR", dump_dir.path()) };
 
     let context = LLVMContext::default();
-    let ir = r#"
+    let ir = r"
       define i32 @perf_add(i32 %a, i32 %b) {
           %sum = add i32 %a, %b
           ret i32 %sum
-      }"#;
+      }";
     let module = LLVMModule::from_ir_in_str(&context, ir, None).unwrap();
 
     let jit = match SimpleJIT::new_with_perf_listener(context, module) {
