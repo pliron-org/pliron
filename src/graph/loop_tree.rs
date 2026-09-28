@@ -9,67 +9,6 @@
 //!   - Only blocks reachable from the graph entry are included.
 //!   - Cycles with multiple entries (irreducible loops) are not represented,
 //!     but natural loops within them are included.
-//!
-//! The pseudocode below uses the book's terminology.
-//!   - `Generators` are the sources of back edges to a loop entry (also called latches).
-//!   - `LoopContains` holds immediate children: blocks or completed loops.
-//!   - `LoopEntry` is the header of a loop, or the block itself for a block node.
-//!   - `NIL` means that a node has no loop parent; it becomes a child of the graph root.
-//!
-//! ```text
-//! CALCULATE_LOOP_TREE(Graph, DomTree):
-//!     DFS = depth_first_search(Graph)
-//!     initialize all LoopParent links to NIL
-//!
-//!     for each block B in DFS postorder:
-//!         FIND_LOOP(B)
-//!
-//!     - Attach all parentless reachable blocks and loops to the graph root.
-//!     - Compute inclusive block sets and loop depths.
-//!
-//! FIND_LOOP(B):
-//!     Generators = { P in predecessors(B)
-//!                    where P is reachable and B dominates P }
-//!     if Generators is not empty:
-//!         FIND_BODY(Generators, B)
-//!
-//! FIND_BODY(Generators, Head):
-//!     Body = empty set
-//!     Queue = empty worklist
-//!
-//!     for each G in Generators:
-//!         if G != Head:
-//!             ADD_TO_BODY(LOOP_ANCESTOR(G))
-//!
-//!     while Queue is not empty:
-//!         X = remove one node from Queue
-//!         for each P in predecessors(LoopEntry(X)):
-//!             if P is reachable and P != Head:
-//!                 ADD_TO_BODY(LOOP_ANCESTOR(P))
-//!
-//!     add Head to Body
-//!     L = new loop node
-//!     LoopEntry(L) = Head
-//!     LoopParent(L) = NIL
-//!     LoopContains(L) = Body
-//!     Generators(L) = Generators
-//!     for each X in Body:
-//!         LoopParent(X) = L
-//!
-//! ADD_TO_BODY(X):
-//!     if X is not already in Body:
-//!         add X to Body
-//!         add X to Queue
-//!
-//! LOOP_ANCESTOR(X):
-//!     while LoopParent(X) != NIL:
-//!         X = LoopParent(X)
-//!     return X
-//! ```
-//!
-//! The dominance test selects natural-loop back edges, including self-edges.
-//! DFS postorder ensures that inner loops are constructed first, so
-//! `LOOP_ANCESTOR` can treat each completed inner loop as one unit.
 
 use alloc::vec::Vec;
 
@@ -132,6 +71,69 @@ where
     /// Maps blocks in loops to their innermost loop.
     block_parent: HMap<G::Node, LoopId>,
 }
+
+// ## Algorithm Description
+//
+// The pseudocode below uses the book's terminology.
+//   - `Generators` are the sources of back edges to a loop entry (also called latches).
+//   - `LoopContains` holds immediate children: blocks or completed loops.
+//   - `LoopEntry` is the header of a loop, or the block itself for a block node.
+//   - `NIL` means that a node has no loop parent; it becomes a child of the graph root.
+//
+// ```text
+// CALCULATE_LOOP_TREE(Graph, DomTree):
+//     DFS = depth_first_search(Graph)
+//     initialize all LoopParent links to NIL
+//
+//     for each block B in DFS postorder:
+//         FIND_LOOP(B)
+//
+//     - Attach all parentless reachable blocks and loops to the graph root.
+//     - Compute inclusive block sets and loop depths.
+//
+// FIND_LOOP(B):
+//     Generators = { P in predecessors(B)
+//                    where P is reachable and B dominates P }
+//     if Generators is not empty:
+//         FIND_BODY(Generators, B)
+//
+// FIND_BODY(Generators, Head):
+//     Body = empty set
+//     Queue = empty worklist
+//
+//     for each G in Generators:
+//         if G != Head:
+//             ADD_TO_BODY(LOOP_ANCESTOR(G))
+//
+//     while Queue is not empty:
+//         X = remove one node from Queue
+//         for each P in predecessors(LoopEntry(X)):
+//             if P is reachable and P != Head:
+//                 ADD_TO_BODY(LOOP_ANCESTOR(P))
+//
+//     add Head to Body
+//     L = new loop node
+//     LoopEntry(L) = Head
+//     LoopParent(L) = NIL
+//     LoopContains(L) = Body
+//     Generators(L) = Generators
+//     for each X in Body:
+//         LoopParent(X) = L
+//
+// ADD_TO_BODY(X):
+//     if X is not already in Body:
+//         add X to Body
+//         add X to Queue
+//
+// LOOP_ANCESTOR(X):
+//     while LoopParent(X) != NIL:
+//         X = LoopParent(X)
+//     return X
+// ```
+//
+// The dominance test selects natural-loop back edges, including self-edges.
+// DFS postorder ensures that inner loops are constructed first, so
+// `LOOP_ANCESTOR` can treat each completed inner loop as one unit.
 
 /// Computes the natural-loop tree for `graph`.
 pub fn compute_loop_tree<G, GraphContext>(
