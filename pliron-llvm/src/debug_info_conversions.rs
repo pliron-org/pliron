@@ -102,8 +102,12 @@ pub mod to_llvm_ir {
         builder: LLVMDIBuilder,
         // The compile unit. It is created with the first subprogram.
         unit: Option<LLVMMetadata>,
-        // Subprograms of inlined functions, by name and file.
-        inlined: HMap<(String, LLVMMetadata), LLVMMetadata>,
+        // The `DIFile` of each source.
+        files: HMap<Source, LLVMMetadata>,
+        // The `DILexicalBlockFile` of each scope and file.
+        block_files: HMap<(LLVMMetadata, LLVMMetadata), LLVMMetadata>,
+        // Subprograms of inlined functions, by file and name.
+        inlined: HMap<LLVMMetadata, HMap<String, LLVMMetadata>>,
         // The subprogram of the current function.
         subprogram: Option<LLVMMetadata>,
     }
@@ -114,18 +118,22 @@ pub mod to_llvm_ir {
                 options,
                 builder: LLVMDIBuilder::new(module),
                 unit: None,
+                files: HMap::default(),
+                block_files: HMap::default(),
                 inlined: HMap::default(),
                 subprogram: None,
             }
         }
 
         /// The `DIFile` of `src`.
-        fn file(&self, ctx: &Context, src: &Source) -> LLVMMetadata {
-            let name = match src {
-                Source::File(key) => uniqued_any::get(ctx, *key).to_string_lossy().into_owned(),
-                Source::InMemory => "<in-memory>".to_string(),
-            };
-            llvm_di_builder_create_file(&self.builder, &name, &self.options.directory)
+        fn file(&mut self, ctx: &Context, src: &Source) -> LLVMMetadata {
+            *self.files.entry(*src).or_insert_with(|| {
+                let name = match src {
+                    Source::File(key) => uniqued_any::get(ctx, *key).to_string_lossy().into_owned(),
+                    Source::InMemory => "<in-memory>".to_string(),
+                };
+                llvm_di_builder_create_file(&self.builder, &name, &self.options.directory)
+            })
         }
 
         /// Create the compile unit in `file`, if it does not exist.
@@ -182,13 +190,19 @@ pub mod to_llvm_ir {
         }
 
         /// `scope`, or a lexical block of `scope` in the file of `src`.
-        fn scope_in_file(&self, ctx: &Context, scope: LLVMMetadata, src: &Source) -> LLVMMetadata {
+        fn scope_in_file(
+            &mut self,
+            ctx: &Context,
+            scope: LLVMMetadata,
+            src: &Source,
+        ) -> LLVMMetadata {
             let file = self.file(ctx, src);
             if llvm_di_scope_get_file(scope) == Some(file) {
-                scope
-            } else {
-                llvm_di_builder_create_lexical_block_file(&self.builder, scope, file, 0)
+                return scope;
             }
+            *self.block_files.entry((scope, file)).or_insert_with(|| {
+                llvm_di_builder_create_lexical_block_file(&self.builder, scope, file, 0)
+            })
         }
 
         /// The subprogram of an inlined callee, from its outermost name.
@@ -197,12 +211,14 @@ pub mod to_llvm_ir {
             let name = frame_name(callee)?;
             let (src, _) = frame_src_pos(callee).unwrap_or((Source::InMemory, 0));
             let file = self.file(ctx, &src);
-            let key = (name.to_string(), file);
-            if let Some(subprogram) = self.inlined.get(&key) {
+            if let Some(subprogram) = self.inlined.get(&file).and_then(|names| names.get(name)) {
                 return Some(*subprogram);
             }
             let subprogram = self.create_subprogram(name, "", file, 0, true);
-            self.inlined.insert(key, subprogram);
+            self.inlined
+                .entry(file)
+                .or_default()
+                .insert(name.to_string(), subprogram);
             Some(subprogram)
         }
 
@@ -346,14 +362,12 @@ pub mod to_llvm_ir {
         cctx: &mut ConversionContext,
         op: Ptr<Operation>,
     ) {
-        // Clone the location only after this check. A clone of a nested
-        // location allocates, and this function runs for each op.
         let Some(di) = cctx.di.as_mut() else {
             return;
         };
-        let loc = op.deref(ctx).loc();
+        let op = op.deref(ctx);
         let di_loc = di.subprogram.map(|subprogram| {
-            di.translate(ctx, llvm_ctx, &loc, subprogram, None)
+            di.translate(ctx, llvm_ctx, op.loc_ref(), subprogram, None)
                 .unwrap_or_else(|| {
                     llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
                 })
