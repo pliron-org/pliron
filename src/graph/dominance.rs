@@ -14,9 +14,11 @@ use crate::{
     graph::{
         ControlFlowGraph, HasLabel, find_ancestor_block_of_block_in_region,
         find_ancestor_op_of_op_in_region, strictly_precedes_in_block, traversals,
+        visualize::DotLabel,
     },
     operation::Operation,
     pass::{Analysis, AnalysisManager},
+    printable::{Printable, State, indented_nl},
     region::Region,
     result::Result,
     utils::table::{HMap, IMap, ISet},
@@ -67,6 +69,98 @@ where
     // Children of the sentinel in the post-dominator tree.
     sentinel_children: Vec<G::Node>,
     post_dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
+}
+
+/// Prints a dominator tree in Graphviz DOT format.
+/// Edges go from each immediate dominator to its children.
+pub fn print_dom_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    tree: &DomTree<G, GraphContext>,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    print_dominance_tree(ctx, &tree.dominators_map, "dom_tree", false, state, f)
+}
+
+/// Prints a post-dominator tree (including the sentinel) in Graphviz DOT format.
+/// Edges go from each immediate post-dominator to its children.
+pub fn print_pdom_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    tree: &PDomTree<G, GraphContext>,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    print_dominance_tree(ctx, &tree.post_dominators_map, "pdom_tree", true, state, f)
+}
+
+fn print_dominance_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    nodes: &IMap<G::Node, DomTreeNode<G, GraphContext>>,
+    name: &str,
+    has_sentinel: bool,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    write!(f, "digraph {name} {{")?;
+    state.push_indent();
+    if has_sentinel {
+        write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
+    }
+    for (i, node) in nodes.keys().enumerate() {
+        write!(
+            f,
+            "{}n{i} [label={}];",
+            indented_nl(state),
+            DotLabel(&node.label(ctx)),
+        )?;
+    }
+    for (i, node) in nodes.values().enumerate() {
+        if let Some(parent) = &node.parent {
+            let parent = nodes.get_index_of(parent).unwrap();
+            write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
+        } else if has_sentinel {
+            write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+        }
+    }
+    state.pop_indent();
+    write!(f, "{}}}", indented_nl(state))
+}
+
+impl<G> Printable for DomTree<G, Context>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_dom_tree(ctx, self, state, f)
+    }
+}
+
+impl<G> Printable for PDomTree<G, Context>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_pdom_tree(ctx, self, state, f)
+    }
 }
 
 /// Maps each node to its dominance frontier
@@ -831,20 +925,25 @@ mod tests {
         string::{String, ToString},
     };
 
+    use expect_test::expect;
+
     use super::*;
     use crate::graph::{ControlFlowGraph, HasLabel};
 
     #[derive(Clone, Debug)]
     struct Node {
         succs: Vec<usize>,
+        label: Option<&'static str>,
     }
 
     #[derive(Clone, Copy, Debug)]
     struct ArenaGraph;
 
     impl HasLabel<Vec<Node>> for usize {
-        fn label(&self, _ctx: &Vec<Node>) -> String {
-            self.to_string()
+        fn label(&self, ctx: &Vec<Node>) -> String {
+            ctx[*self]
+                .label
+                .map_or_else(|| self.to_string(), str::to_string)
         }
     }
 
@@ -883,7 +982,48 @@ mod tests {
     fn n(succs: &[usize]) -> Node {
         Node {
             succs: succs.to_vec(),
+            label: None,
         }
+    }
+
+    #[test]
+    fn print_trees_with_duplicate_and_escaped_labels() {
+        let mut ctx = vec![n(&[1]), n(&[2]), n(&[])];
+        ctx[0].label = Some("sentinel");
+        ctx[1].label = Some("quote: \"; slash: \\;\nnext line\r");
+        ctx[2].label = Some("sentinel");
+        let state = State::default();
+        state.set_indent_width(4);
+        state.push_indent();
+        let dom = compute_dominator_tree(&ctx, &ArenaGraph);
+        let mut output = String::new();
+        print_dom_tree(&ctx, &dom, &state, &mut output).unwrap();
+        expect![[r#"
+            digraph dom_tree {
+                    n0 [label="sentinel"];
+                    n1 [label="quote: \"; slash: \\;\nnext line\r"];
+                    n2 [label="sentinel"];
+                    n0 -> n1;
+                    n1 -> n2;
+                }"#]]
+        .assert_eq(&output);
+        assert_eq!(state.current_indent(), 4);
+
+        let pdom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+        output.clear();
+        print_pdom_tree(&ctx, &pdom, &state, &mut output).unwrap();
+        expect![[r#"
+            digraph pdom_tree {
+                    sentinel [label="sentinel"];
+                    n0 [label="sentinel"];
+                    n1 [label="quote: \"; slash: \\;\nnext line\r"];
+                    n2 [label="sentinel"];
+                    sentinel -> n0;
+                    n0 -> n1;
+                    n1 -> n2;
+                }"#]]
+        .assert_eq(&output);
+        assert_eq!(state.current_indent(), 4);
     }
 
     #[test]

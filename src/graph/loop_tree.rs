@@ -15,12 +15,13 @@ use alloc::vec::Vec;
 use crate::{
     context::{Context, Ptr},
     graph::{
-        ControlFlowGraph,
+        ControlFlowGraph, HasLabel,
         dominance::{DomInfo, DomTree},
         traversals::region::DFSTraversal,
     },
     operation::Operation,
     pass::{Analysis, AnalysisManager},
+    printable::{Printable, State, indented_nl},
     region::Region,
     result::Result,
     utils::table::{HMap, ISet},
@@ -450,6 +451,73 @@ where
     }
 }
 
+/// Prints the loop hierarchy, with node labels, latches, and loop membership.
+pub fn print_loop_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    tree: &LoopTree<G, GraphContext>,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    f.write_str("root:")?;
+    let mut stack = Vec::new();
+    stack.push(tree.root_contents.iter());
+    state.push_indent();
+    while let Some(contents) = stack.last_mut() {
+        let Some(node) = contents.next() else {
+            stack.pop();
+            state.pop_indent();
+            continue;
+        };
+        write!(f, "{}", indented_nl(state))?;
+        match node {
+            LoopTreeNode::Block(block) => write!(f, "block {}", block.label(ctx))?,
+            LoopTreeNode::Loop(id) => {
+                let l = &tree.loops[id.0];
+                let parent = l
+                    .parent
+                    .map_or_else(|| "root".into(), |id| tree.loop_header(id).label(ctx));
+                write!(
+                    f,
+                    "loop {} (parent: {}, depth: {})",
+                    l.header.label(ctx),
+                    parent,
+                    l.depth,
+                )?;
+                state.push_indent();
+                stack.push(l.contents.iter());
+                for (name, nodes) in [("latches", &l.latches), ("blocks", &l.blocks)] {
+                    write!(f, "{}{name}: [", indented_nl(state))?;
+                    for (i, node) in nodes.iter().enumerate() {
+                        if i != 0 {
+                            f.write_str(", ")?;
+                        }
+                        f.write_str(&node.label(ctx))?;
+                    }
+                    f.write_str("]")?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+impl<G> Printable for LoopTree<G, Context>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_loop_tree(ctx, self, state, f)
+    }
+}
+
 /// Caches loop trees for regions in a program.
 #[derive(Default)]
 pub struct LoopInfo(HMap<Ptr<Region>, LoopTree<Ptr<Region>, Context>>);
@@ -499,7 +567,7 @@ mod tests {
             types::FunctionType,
         },
         derive::pliron_op,
-        graph::{HasLabel, dominance::compute_dominator_tree},
+        graph::dominance::compute_dominator_tree,
         ident,
         op::Op,
     };
@@ -635,48 +703,17 @@ mod tests {
                 .join(", ")
         )
         .unwrap();
-        writeln!(output, "root:").unwrap();
-        let mut queue: Vec<_> = tree.root_contents().map(|node| (node, 1)).collect();
-        queue.reverse();
-        while let Some((node, depth)) = queue.pop() {
-            let indent = "  ".repeat(depth);
-            match node {
-                LoopTreeNode::Block(block) => {
-                    writeln!(output, "{indent}block {}", block.label(ctx)).unwrap();
-                }
-                LoopTreeNode::Loop(id) => {
-                    writeln!(
-                        output,
-                        "{indent}loop {} (parent: {}, depth: {})",
-                        tree.loop_header(id).label(ctx),
-                        parent_label(tree.loop_parent(id)),
-                        tree.loop_depth(id)
-                    )
-                    .unwrap();
-                    writeln!(
-                        output,
-                        "{indent}  latches: [{}]",
-                        labels(tree.latches(id).collect())
-                    )
-                    .unwrap();
-                    writeln!(
-                        output,
-                        "{indent}  blocks: [{}]",
-                        labels(tree.blocks(id).collect())
-                    )
-                    .unwrap();
-                    writeln!(
-                        output,
-                        "{indent}  exiting blocks: [{}]; exit blocks: [{}]",
-                        labels(tree.exiting_blocks(ctx, graph, id).collect()),
-                        labels(tree.exit_blocks(ctx, graph, id).collect())
-                    )
-                    .unwrap();
-                    let mut children: Vec<_> = tree.loop_contents(id).collect();
-                    children.reverse();
-                    queue.extend(children.into_iter().map(|node| (node, depth + 1)));
-                }
-            }
+        print_loop_tree(ctx, tree, &State::default(), &mut output).unwrap();
+        writeln!(output).unwrap();
+        for id in tree.loops() {
+            writeln!(
+                output,
+                "loop {}: exiting blocks: [{}]; exit blocks: [{}]",
+                tree.loop_header(id).label(ctx),
+                labels(tree.exiting_blocks(ctx, graph, id).collect()),
+                labels(tree.exit_blocks(ctx, graph, id).collect()),
+            )
+            .unwrap();
         }
         output
     }
@@ -736,9 +773,9 @@ mod tests {
               loop 0 (parent: root, depth: 1)
                 latches: [0]
                 blocks: [0]
-                exiting blocks: [0]; exit blocks: [1]
                 block 0
               block 1
+            loop 0: exiting blocks: [0]; exit blocks: [1]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -756,10 +793,10 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [1, 3, 2]
                 blocks: [1, 3, 2]
-                exiting blocks: []; exit blocks: []
                 block 1
                 block 3
                 block 2
+            loop 1: exiting blocks: []; exit blocks: []
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -778,16 +815,16 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [4]
                 blocks: [1, 2, 4, 3]
-                exiting blocks: [1]; exit blocks: [5]
                 block 1
                 loop 2 (parent: 1, depth: 2)
                   latches: [3]
                   blocks: [2, 3]
-                  exiting blocks: [2]; exit blocks: [4]
                   block 2
                   block 3
                 block 4
               block 5
+            loop 1: exiting blocks: [1]; exit blocks: [5]
+            loop 2: exiting blocks: [2]; exit blocks: [4]
         "#]]
         .assert_eq(&print_tree(&(), &g, &tree));
         assert!(tree.contains(loop_at(&tree, 1), &3));
@@ -807,15 +844,15 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [3]
                 blocks: [1, 2, 3]
-                exiting blocks: [1]; exit blocks: [4]
                 block 1
                 loop 2 (parent: 1, depth: 2)
                   latches: [3]
                   blocks: [2, 3]
-                  exiting blocks: [3]; exit blocks: [1]
                   block 2
                   block 3
               block 4
+            loop 1: exiting blocks: [1]; exit blocks: [4]
+            loop 2: exiting blocks: [3]; exit blocks: [1]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -834,22 +871,22 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [6]
                 blocks: [1, 2, 6, 3, 5, 4]
-                exiting blocks: [1]; exit blocks: [7]
                 block 1
                 loop 2 (parent: 1, depth: 2)
                   latches: [5]
                   blocks: [2, 3, 5, 4]
-                  exiting blocks: [2]; exit blocks: [6]
                   block 2
                   loop 3 (parent: 2, depth: 3)
                     latches: [4]
                     blocks: [3, 4]
-                    exiting blocks: [3]; exit blocks: [5]
                     block 3
                     block 4
                   block 5
                 block 6
               block 7
+            loop 1: exiting blocks: [1]; exit blocks: [7]
+            loop 2: exiting blocks: [2]; exit blocks: [6]
+            loop 3: exiting blocks: [3]; exit blocks: [5]
         "#]]
         .assert_eq(&print_tree(&(), &g, &tree));
         assert_eq!(tree.loop_ancestor(4), LoopTreeNode::Loop(loop_at(&tree, 1)));
@@ -868,16 +905,16 @@ mod tests {
               loop 3 (parent: root, depth: 1)
                 latches: [4]
                 blocks: [3, 4]
-                exiting blocks: [3]; exit blocks: [5]
                 block 3
                 block 4
               loop 1 (parent: root, depth: 1)
                 latches: [2]
                 blocks: [1, 2]
-                exiting blocks: [1]; exit blocks: [5]
                 block 1
                 block 2
               block 5
+            loop 3: exiting blocks: [3]; exit blocks: [5]
+            loop 1: exiting blocks: [1]; exit blocks: [5]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -895,22 +932,22 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [6]
                 blocks: [1, 4, 5, 2, 6, 3]
-                exiting blocks: [6]; exit blocks: [7]
                 block 1
                 loop 4 (parent: 1, depth: 2)
                   latches: [5]
                   blocks: [4, 5]
-                  exiting blocks: [4]; exit blocks: [6]
                   block 4
                   block 5
                 loop 2 (parent: 1, depth: 2)
                   latches: [3]
                   blocks: [2, 3]
-                  exiting blocks: [2]; exit blocks: [6]
                   block 2
                   block 3
                 block 6
               block 7
+            loop 1: exiting blocks: [6]; exit blocks: [7]
+            loop 4: exiting blocks: [4]; exit blocks: [6]
+            loop 2: exiting blocks: [2]; exit blocks: [6]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -928,16 +965,16 @@ mod tests {
               loop 2 (parent: root, depth: 1)
                 latches: [4]
                 blocks: [2, 1, 3, 4]
-                exiting blocks: [2]; exit blocks: [5]
                 block 2
                 loop 1 (parent: 2, depth: 2)
                   latches: [3]
                   blocks: [1, 3]
-                  exiting blocks: [3]; exit blocks: [4]
                   block 1
                   block 3
                 block 4
               block 5
+            loop 2: exiting blocks: [2]; exit blocks: [5]
+            loop 1: exiting blocks: [3]; exit blocks: [4]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -955,10 +992,10 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [2]
                 blocks: [1, 2]
-                exiting blocks: [1]; exit blocks: [3]
                 block 1
                 block 2
               block 3
+            loop 1: exiting blocks: [1]; exit blocks: [3]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -989,10 +1026,10 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [3]
                 blocks: [1, 3]
-                exiting blocks: [3]; exit blocks: [2]
                 block 1
                 block 3
               block 2
+            loop 1: exiting blocks: [3]; exit blocks: [2]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -1010,9 +1047,9 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [2]
                 blocks: [1, 2]
-                exiting blocks: []; exit blocks: []
                 block 1
                 block 2
+            loop 1: exiting blocks: []; exit blocks: []
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
         let g = graph(&[&[1], &[2, 3, 3], &[1, 3], &[]]);
@@ -1026,10 +1063,10 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [2]
                 blocks: [1, 2]
-                exiting blocks: [1, 2]; exit blocks: [3]
                 block 1
                 block 2
               block 3
+            loop 1: exiting blocks: [1, 2]; exit blocks: [3]
         "#]]
         .assert_eq(&print_tree(&(), &g, &g.loop_tree()));
     }
@@ -1047,16 +1084,16 @@ mod tests {
               loop 1 (parent: root, depth: 1)
                 latches: [4, 3]
                 blocks: [1, 2, 4, 3]
-                exiting blocks: [1]; exit blocks: [5]
                 block 1
                 loop 2 (parent: 1, depth: 2)
                   latches: [4, 3]
                   blocks: [2, 4, 3]
-                  exiting blocks: [4, 3]; exit blocks: [1]
                   block 2
                   block 4
                   block 3
               block 5
+            loop 1: exiting blocks: [1]; exit blocks: [5]
+            loop 2: exiting blocks: [4, 3]; exit blocks: [1]
         "#]];
         let first = print_tree(&(), &g, &g.loop_tree());
         for preds in &mut g.predecessors {
@@ -1287,9 +1324,9 @@ mod tests {
               loop header_block2v1 (parent: root, depth: 1)
                 latches: [tail_block3v1]
                 blocks: [header_block2v1, tail_block3v1]
-                exiting blocks: []; exit blocks: []
                 block header_block2v1
                 block tail_block3v1
+            loop header_block2v1: exiting blocks: []; exit blocks: []
         "#]];
         let printed = print_tree(ctx, &region, tree);
         let mut direct_info = LoopInfo::default();
@@ -1345,8 +1382,8 @@ mod tests {
               loop entry_block2v1 (parent: root, depth: 1)
                 latches: [entry_block2v1]
                 blocks: [entry_block2v1]
-                exiting blocks: []; exit blocks: []
                 block entry_block2v1
+            loop entry_block2v1: exiting blocks: []; exit blocks: []
         "#]]
         .assert_eq(&print_tree(ctx, &region, tree));
         assert_eq!(dom_tree, dom_info.get_dom_tree(ctx, region) as *const _);
