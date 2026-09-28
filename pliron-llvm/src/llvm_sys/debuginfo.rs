@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Safe(r) wrappers around llvm_sys::debuginfo, and the debug location
-//! functions of llvm_sys::core.
+//! Safe(r) wrappers around `llvm_sys::debuginfo`, and the debug location
+//! functions of `llvm_sys::core`.
 
-use std::ptr;
+use std::{ffi::c_char, ptr};
 
 use llvm_sys::{
     LLVMModuleFlagBehavior,
@@ -31,21 +31,22 @@ mod llvm_di_builder {
         prelude::LLVMDIBuilderRef,
     };
 
-    use super::*;
+    use super::LLVMModule;
 
-    /// RAII wrapper around LLVMDIBuilderRef.
+    /// RAII wrapper around `LLVMDIBuilderRef`.
     /// Dropping it finalizes the debug data of its module.
     pub struct LLVMDIBuilder(LLVMDIBuilderRef);
 
     impl LLVMDIBuilder {
-        /// LLVMCreateDIBuilder
+        /// `LLVMCreateDIBuilder`
         ///
         /// The builder must be dropped before `module`.
+        #[must_use]
         pub fn new(module: &LLVMModule) -> Self {
             unsafe { LLVMDIBuilder(LLVMCreateDIBuilder(module.inner_ref())) }
         }
 
-        /// Get the inner LLVMDIBuilderRef
+        /// Get the inner `LLVMDIBuilderRef`
         pub(in crate::llvm_sys) fn inner_ref(&self) -> LLVMDIBuilderRef {
             self.0
         }
@@ -78,12 +79,14 @@ fn is_local_scope(md: LLVMMetadata) -> bool {
     )
 }
 
-/// LLVMDebugMetadataVersion
+/// `LLVMDebugMetadataVersion`
+#[must_use]
 pub fn llvm_debug_metadata_version() -> u32 {
     unsafe { LLVMDebugMetadataVersion() }
 }
 
-/// LLVMDIBuilderCreateFile
+/// `LLVMDIBuilderCreateFile`
+#[must_use]
 pub fn llvm_di_builder_create_file(
     builder: &LLVMDIBuilder,
     filename: &str,
@@ -92,18 +95,23 @@ pub fn llvm_di_builder_create_file(
     unsafe {
         LLVMDIBuilderCreateFile(
             builder.inner_ref(),
-            filename.as_ptr() as *const ::core::ffi::c_char,
+            filename.as_ptr().cast::<c_char>(),
             filename.len(),
-            directory.as_ptr() as *const ::core::ffi::c_char,
+            directory.as_ptr().cast::<c_char>(),
             directory.len(),
         )
         .into()
     }
 }
 
-/// LLVMDIBuilderCreateCompileUnit
+/// `LLVMDIBuilderCreateCompileUnit`
 ///
 /// The unit has no flags, no split DWARF, no SDK and no system root.
+///
+/// # Panics
+///
+/// If `file` is not a `DIFile`.
+#[must_use]
 pub fn llvm_di_builder_create_compile_unit(
     builder: &LLVMDIBuilder,
     language: LLVMDWARFSourceLanguage,
@@ -118,7 +126,7 @@ pub fn llvm_di_builder_create_compile_unit(
             builder.inner_ref(),
             language,
             file.into(),
-            producer.as_ptr() as *const ::core::ffi::c_char,
+            producer.as_ptr().cast::<c_char>(),
             producer.len(),
             is_optimized.into(),
             ptr::null(),
@@ -139,7 +147,12 @@ pub fn llvm_di_builder_create_compile_unit(
     }
 }
 
-/// LLVMDIBuilderCreateSubroutineType
+/// `LLVMDIBuilderCreateSubroutineType`
+///
+/// # Panics
+///
+/// If `file` is not a `DIFile`, or if there are more than `u32::MAX` parameter types.
+#[must_use]
 pub fn llvm_di_builder_create_subroutine_type(
     builder: &LLVMDIBuilder,
     file: LLVMMetadata,
@@ -153,17 +166,22 @@ pub fn llvm_di_builder_create_subroutine_type(
             builder.inner_ref(),
             file.into(),
             parameter_types.as_mut_ptr(),
-            parameter_types.len() as u32,
+            u32::try_from(parameter_types.len()).expect("too many parameter types"),
             LLVMDIFlagZero,
         )
         .into()
     }
 }
 
-/// LLVMDIBuilderCreateFunction
+/// `LLVMDIBuilderCreateFunction`
 ///
 /// The subprogram has no flags. An empty `linkage_name` means none.
+///
+/// # Panics
+///
+/// If `file` is not a `DIFile`, or `ty` is not a `DISubroutineType`.
 #[allow(clippy::too_many_arguments)]
+#[must_use]
 pub fn llvm_di_builder_create_function(
     builder: &LLVMDIBuilder,
     scope: LLVMMetadata,
@@ -186,9 +204,9 @@ pub fn llvm_di_builder_create_function(
         LLVMDIBuilderCreateFunction(
             builder.inner_ref(),
             scope.into(),
-            name.as_ptr() as *const ::core::ffi::c_char,
+            name.as_ptr().cast::<c_char>(),
             name.len(),
-            linkage_name.as_ptr() as *const ::core::ffi::c_char,
+            linkage_name.as_ptr().cast::<c_char>(),
             linkage_name.len(),
             file.into(),
             line,
@@ -203,7 +221,12 @@ pub fn llvm_di_builder_create_function(
     }
 }
 
-/// LLVMDIBuilderCreateLexicalBlockFile
+/// `LLVMDIBuilderCreateLexicalBlockFile`
+///
+/// # Panics
+///
+/// If `scope` is not a local scope, or `file` is not a `DIFile`.
+#[must_use]
 pub fn llvm_di_builder_create_lexical_block_file(
     builder: &LLVMDIBuilder,
     scope: LLVMMetadata,
@@ -223,7 +246,12 @@ pub fn llvm_di_builder_create_lexical_block_file(
     }
 }
 
-/// LLVMDIBuilderCreateDebugLocation
+/// `LLVMDIBuilderCreateDebugLocation`
+///
+/// # Panics
+///
+/// If `scope` is not a local scope, or `inlined_at` is not a `DILocation`.
+#[must_use]
 pub fn llvm_di_builder_create_debug_location(
     ctx: &LLVMContext,
     line: u32,
@@ -247,13 +275,18 @@ pub fn llvm_di_builder_create_debug_location(
     }
 }
 
-/// LLVMDIScopeGetFile
+/// `LLVMDIScopeGetFile`
+#[must_use]
 pub fn llvm_di_scope_get_file(scope: LLVMMetadata) -> Option<LLVMMetadata> {
     let file = unsafe { LLVMDIScopeGetFile(scope.into()) };
     (!file.is_null()).then(|| file.into())
 }
 
-/// LLVMSetSubprogram
+/// `LLVMSetSubprogram`
+///
+/// # Panics
+///
+/// If `func` is not a function, or `subprogram` is not a `DISubprogram`.
 pub fn llvm_set_subprogram(func: LLVMValue, subprogram: LLVMMetadata) {
     assert!(llvm_is_a::function(func));
     assert!(is_md_kind(
@@ -263,29 +296,29 @@ pub fn llvm_set_subprogram(func: LLVMValue, subprogram: LLVMMetadata) {
     unsafe { LLVMSetSubprogram(func.into(), subprogram.into()) }
 }
 
-/// LLVMSetCurrentDebugLocation2
+/// `LLVMSetCurrentDebugLocation2`
 ///
 /// `None` clears the location.
+///
+/// # Panics
+///
+/// If `loc` is not a `DILocation`.
 pub fn llvm_set_current_debug_location2(builder: &LLVMBuilder, loc: Option<LLVMMetadata>) {
     assert!(loc.is_none_or(|loc| is_md_kind(loc, LLVMMetadataKind::LLVMDILocationMetadataKind)));
     unsafe {
-        LLVMSetCurrentDebugLocation2(builder.inner_ref(), loc.map_or(ptr::null_mut(), Into::into))
+        LLVMSetCurrentDebugLocation2(builder.inner_ref(), loc.map_or(ptr::null_mut(), Into::into));
     }
 }
 
-/// LLVMGetModuleFlag
+/// `LLVMGetModuleFlag`
+#[must_use]
 pub fn llvm_get_module_flag(module: &LLVMModule, key: &str) -> Option<LLVMMetadata> {
-    let flag = unsafe {
-        LLVMGetModuleFlag(
-            module.inner_ref(),
-            key.as_ptr() as *const ::core::ffi::c_char,
-            key.len(),
-        )
-    };
+    let flag =
+        unsafe { LLVMGetModuleFlag(module.inner_ref(), key.as_ptr().cast::<c_char>(), key.len()) };
     (!flag.is_null()).then(|| flag.into())
 }
 
-/// LLVMAddModuleFlag
+/// `LLVMAddModuleFlag`
 pub fn llvm_add_module_flag(
     module: &LLVMModule,
     behavior: LLVMModuleFlagBehavior,
@@ -296,9 +329,9 @@ pub fn llvm_add_module_flag(
         LLVMAddModuleFlag(
             module.inner_ref(),
             behavior,
-            key.as_ptr() as *const ::core::ffi::c_char,
+            key.as_ptr().cast::<c_char>(),
             key.len(),
             value.into(),
-        )
+        );
     }
 }

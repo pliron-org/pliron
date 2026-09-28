@@ -2786,7 +2786,11 @@ fn convert_global_initializer(
     Ok(None)
 }
 
-/// Convert pliron [ModuleOp] to [LLVMModule].
+/// Convert pliron [`ModuleOp`] to [`LLVMModule`].
+///
+/// # Errors
+///
+/// Fails if an op, type or attribute in `module` cannot be converted.
 pub fn convert_module(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
@@ -2795,8 +2799,12 @@ pub fn convert_module(
     convert_module_impl(ctx, llvm_ctx, module, |_| {})
 }
 
-/// Convert pliron [ModuleOp] to [LLVMModule], with debug data from the op
-/// [Location]s. See [debug_info_conversions](crate::debug_info_conversions::to_llvm_ir).
+/// Convert pliron [`ModuleOp`] to [`LLVMModule`], with debug data from the op
+/// [`Location`]s. See [`debug_info_conversions`](crate::debug_info_conversions::to_llvm_ir).
+///
+/// # Errors
+///
+/// Fails if an op, type or attribute in `module` cannot be converted.
 #[cfg(feature = "debug-info")]
 pub fn convert_module_with_debug_info(
     ctx: &Context,
@@ -2809,7 +2817,7 @@ pub fn convert_module_with_debug_info(
     })
 }
 
-/// Convert pliron [ModuleOp] to [LLVMModule]. `init` prepares the [ConversionContext].
+/// Convert pliron [`ModuleOp`] to [`LLVMModule`]. `init` prepares the [`ConversionContext`].
 fn convert_module_impl(
     ctx: &Context,
     llvm_ctx: &LLVMContext,

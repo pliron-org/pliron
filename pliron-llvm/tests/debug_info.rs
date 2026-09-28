@@ -29,7 +29,7 @@ use pliron_llvm::{
 mod common;
 
 /// `kernel` calls `helper`. `helper` has no locations.
-const INPUT_LL: &str = r#"
+const INPUT_LL: &str = r"
   define void @kernel_sym(ptr %p) {
   entry:
     %v = load i32, ptr %p
@@ -43,7 +43,7 @@ const INPUT_LL: &str = r#"
   entry:
     ret void
   }
-"#;
+";
 
 /// The ops of the entry block of the function `name`, in order, without constants.
 fn function_ops(ctx: &Context, module: ModuleOp, name: &str) -> Vec<Ptr<Operation>> {
@@ -76,7 +76,7 @@ fn named(name: &str, child_loc: Location) -> Location {
     }
 }
 
-/// Parse [INPUT_LL], and give the ops of `kernel_sym` these locations:
+/// Parse [`INPUT_LL`], and give the ops of `kernel_sym` these locations:
 /// - load: a position in the kernel.
 /// - add: a position in `inner`, inlined at a position in the kernel.
 /// - store: a position in the kernel, in a different file.
@@ -198,7 +198,7 @@ fn no_locations_no_debug_info() -> Result<()> {
     Ok(())
 }
 
-/// [to_llvm_ir::convert_module] ignores locations.
+/// [`to_llvm_ir::convert_module`] ignores locations.
 #[test]
 fn convert_module_ignores_locations() -> Result<()> {
     let ctx = &mut Context::new();

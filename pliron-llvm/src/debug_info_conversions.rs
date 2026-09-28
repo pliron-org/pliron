@@ -3,29 +3,29 @@
 
 //! Conversion of op locations to LLVM debug data.
 
-/// Conversion of op locations to LLVM debug data, a companion to [crate::to_llvm_ir].
+/// Conversion of op locations to LLVM debug data, a companion to [`crate::to_llvm_ir`].
 ///
 /// Each function that has a location gets a `DISubprogram`.
 /// Each instruction in such a function gets a `DILocation`:
-/// - [Location::SrcPos] gives the line and the column.
-/// - [Location::Named] gives the location of its child. The name of the
+/// - [`Location::SrcPos`] gives the line and the column.
+/// - [`Location::Named`] gives the location of its child. The name of the
 ///   outermost frame of a location is the name of a function.
-/// - [Location::CallSite] gives the location of its callee, inlined at the
+/// - [`Location::CallSite`] gives the location of its callee, inlined at the
 ///   location of its caller. The name of the outermost frame of the callee
 ///   gives a `DISubprogram` for the callee. If the callee has no name, the
 ///   conversion uses the location of the caller.
-/// - [Location::Fused] gives its first location that converts. The C-API
+/// - [`Location::Fused`] gives its first location that converts. The C-API
 ///   cannot merge locations.
-/// - [Location::Unknown] gives line 0. Line 0 is code with no source line.
+/// - [`Location::Unknown`] gives line 0. Line 0 is code with no source line.
 ///
 /// A position in a file that is not the file of its scope gets a
 /// `DILexicalBlockFile`.
 ///
-/// [Location::SrcPos]: pliron::location::Location::SrcPos
-/// [Location::Named]: pliron::location::Location::Named
-/// [Location::CallSite]: pliron::location::Location::CallSite
-/// [Location::Fused]: pliron::location::Location::Fused
-/// [Location::Unknown]: pliron::location::Location::Unknown
+/// [`Location::SrcPos`]: pliron::location::Location::SrcPos
+/// [`Location::Named`]: pliron::location::Location::Named
+/// [`Location::CallSite`]: pliron::location::Location::CallSite
+/// [`Location::Fused`]: pliron::location::Location::Fused
+/// [`Location::Unknown`]: pliron::location::Location::Unknown
 pub mod to_llvm_ir {
     use alloc::string::{String, ToString};
 
@@ -75,7 +75,7 @@ pub mod to_llvm_ir {
         Full,
     }
 
-    /// Options for [convert_module_with_debug_info](crate::to_llvm_ir::convert_module_with_debug_info).
+    /// Options for [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info).
     #[derive(Debug)]
     #[non_exhaustive]
     pub struct DebugInfoOptions {
@@ -264,7 +264,7 @@ pub mod to_llvm_ir {
 
     /// `value`, or 0 if `value` is negative.
     fn non_negative(value: i32) -> u32 {
-        value.max(0) as u32
+        u32::try_from(value).unwrap_or(0)
     }
 
     /// The outermost frame of `loc`: the last caller of a call site chain.
@@ -307,7 +307,7 @@ pub mod to_llvm_ir {
             &mut (),
             &WALKCONFIG_PREORDER_FORWARD,
             func_op.get_operation(),
-            |ctx: &Context, _: &mut (), node: IRNode| -> WalkResult<Location> {
+            |ctx: &Context, _state: &mut (), node: IRNode| -> WalkResult<Location> {
                 let IRNode::Operation(op) = node else {
                     return walk_advance();
                 };
