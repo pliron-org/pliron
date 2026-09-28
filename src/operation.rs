@@ -99,12 +99,6 @@ struct BlockLinks {
     prev_op: Option<Ptr<Operation>>,
 }
 
-impl BlockLinks {
-    pub fn new() -> BlockLinks {
-        BlockLinks::default()
-    }
-}
-
 /// Basic unit of execution. May or may not be in a [BasicBlock].
 pub struct Operation {
     /// A [Ptr] to self.
@@ -175,7 +169,7 @@ impl Operation {
             results: Vec::with_capacity(result_types.len()),
             operands: Vec::with_capacity(operands.len()),
             successors: Vec::with_capacity(successors.len()),
-            block_links: BlockLinks::new(),
+            block_links: BlockLinks::default(),
             attributes: AttributeDict::default(),
             regions: Vec::with_capacity(num_regions),
             loc: Location::Unknown,
