@@ -175,8 +175,9 @@ impl<'a> ConversionContext<'a> {
         self.value_map.clear();
         self.block_map.clear();
         llvm_clear_insertion_position(&self.builder);
+        // The builder keeps the debug location of the last op of the previous function.
         // The PHIs of block arguments are built before the subprogram is set.
-        // They must not get a location in the scope of the previous function.
+        // Clear the location, else the PHIs get a location in the wrong subprogram.
         #[cfg(feature = "debug-info")]
         llvm_set_current_debug_location2(&self.builder, None);
     }
@@ -2113,7 +2114,7 @@ fn convert_block(
             );
         };
         #[cfg(feature = "debug-info")]
-        debug_info::set_location(ctx, llvm_ctx, cctx, &opr.deref(ctx).loc());
+        debug_info::set_location(ctx, llvm_ctx, cctx, opr);
         let op_llvm = op_conv.convert(ctx, llvm_ctx, cctx)?;
         convert_md_attachments(ctx, llvm_ctx, cctx, opr, op_llvm)?;
         {

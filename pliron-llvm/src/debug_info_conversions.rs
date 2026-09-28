@@ -1,44 +1,30 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Conversion of op locations to LLVM debug data.
-
 /// Conversion of op locations to LLVM debug data, a companion to [`crate::to_llvm_ir`].
 ///
-/// Each function that has a location gets a `DISubprogram`.
-/// Each instruction in such a function gets a `DILocation`:
-/// - [`Location::SrcPos`] gives the line and the column.
-/// - [`Location::Named`] gives the location of its child. The name of the
-///   outermost frame of a location is the name of a function.
-/// - [`Location::CallSite`] gives the location of its callee, inlined at the
-///   location of its caller. The name of the outermost frame of the callee
-///   gives a `DISubprogram` for the callee. If the callee has no name, the
-///   conversion uses the location of the caller.
-/// - [`Location::Fused`] gives its first location that converts. The C-API
-///   cannot merge locations.
-/// - [`Location::Unknown`] gives line 0. Line 0 is code with no source line.
+/// The conversion maps each located function to a `DISubprogram` and each
+/// located op to a `DILocation` in that subprogram. Call site locations become
+/// inlined frames. The conversion is lossy: a `DILocation` holds one position,
+/// so the conversion keeps the first position of each location.
 ///
-/// A position in a file that is not the file of its scope gets a
-/// `DILexicalBlockFile`.
-///
-/// [`Location::SrcPos`]: pliron::location::Location::SrcPos
-/// [`Location::Named`]: pliron::location::Location::Named
-/// [`Location::CallSite`]: pliron::location::Location::CallSite
-/// [`Location::Fused`]: pliron::location::Location::Fused
-/// [`Location::Unknown`]: pliron::location::Location::Unknown
+/// Use [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info)
+/// to get this data. [`DebugInfoOptions`] controls the compile unit and the
+/// emission kind.
 pub mod to_llvm_ir {
     use alloc::string::{String, ToString};
 
     use llvm_sys::{LLVMModuleFlagBehavior, debuginfo::LLVMDWARFEmissionKind};
     use pliron::{
         builtin::op_interfaces::SymbolOpInterface,
-        context::Context,
+        context::{Context, Ptr},
         graph::walkers::{
             IRNode, WALKCONFIG_PREORDER_FORWARD,
             interruptible::{WalkResult, immutable::walk_op, walk_advance, walk_break},
         },
         location::{Located, Location, Source},
         op::Op,
+        operation::Operation,
         uniqued_any,
         utils::table::HMap,
     };
@@ -353,18 +339,21 @@ pub mod to_llvm_ir {
         di.subprogram = Some(subprogram);
     }
 
-    /// Set the location of the instructions that `loc` converts to.
+    /// Set the location of the instructions that `op` converts to.
     pub(crate) fn set_location(
         ctx: &Context,
         llvm_ctx: &LLVMContext,
         cctx: &mut ConversionContext,
-        loc: &Location,
+        op: Ptr<Operation>,
     ) {
+        // Clone the location only after this check. A clone of a nested
+        // location allocates, and this function runs for each op.
         let Some(di) = cctx.di.as_mut() else {
             return;
         };
+        let loc = op.deref(ctx).loc();
         let di_loc = di.subprogram.map(|subprogram| {
-            di.translate(ctx, llvm_ctx, loc, subprogram, None)
+            di.translate(ctx, llvm_ctx, &loc, subprogram, None)
                 .unwrap_or_else(|| {
                     llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
                 })
