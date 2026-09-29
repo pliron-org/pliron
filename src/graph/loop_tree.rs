@@ -54,7 +54,7 @@ struct Loop<N> {
     depth: usize,
 }
 
-/// The loop tree of a control-flow graph.
+/// The loop tree of a control-flow-graph.
 ///
 /// The root represents the reachable part of the graph. Its children are
 /// top-level loops and blocks outside all loops. Each block is a leaf, with
