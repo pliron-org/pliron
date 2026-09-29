@@ -3,6 +3,7 @@
 
 //! IR and control-flow-graph utilities
 
+pub mod control_dependence;
 pub mod dominance;
 pub mod loop_tree;
 pub mod reverse;
