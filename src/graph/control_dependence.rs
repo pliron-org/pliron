@@ -355,7 +355,7 @@ impl Analysis for ControlDependenceInfo {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{boxed::Box, format, string::String, string::ToString, vec};
+    use alloc::{boxed::Box, string::String, string::ToString, vec};
     use core::fmt::Write as _;
     use expect_test::expect;
 
