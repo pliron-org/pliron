@@ -8,7 +8,7 @@
 use expect_test::expect;
 use pliron::{
     builtin::{
-        op_interfaces::{SingleBlockRegionInterface, SymbolOpInterface},
+        op_interfaces::{AtMostOneRegionInterface, SingleBlockRegionInterface, SymbolOpInterface},
         ops::ModuleOp,
     },
     combine::stream::position::SourcePosition,
@@ -16,6 +16,7 @@ use pliron::{
     init_env_logger_for_tests,
     linked_list::ContainsLinkedList,
     location::{Located, Location, Source},
+    op::Op,
     operation::Operation,
     result::Result,
 };
@@ -45,19 +46,26 @@ const INPUT_LL: &str = r"
   }
 ";
 
-/// The ops of the entry block of the function `name`, in order, without constants.
-fn function_ops(ctx: &Context, module: ModuleOp, name: &str) -> Vec<Ptr<Operation>> {
-    let func = module
+/// The function `name` in `module`.
+fn function(ctx: &Context, module: ModuleOp, name: &str) -> FuncOp {
+    module
         .get_body(ctx, 0)
         .deref(ctx)
         .iter(ctx)
         .filter_map(|op| Operation::get_op::<FuncOp>(op, ctx))
         .find(|func| func.get_symbol_name(ctx).to_string() == name)
-        .expect("function not found");
-    let entry = func.get_entry_block(ctx).expect("function has no body");
-    entry
+        .expect("function not found")
+}
+
+/// The ops of the function `name`, in order, without constants.
+fn function_ops(ctx: &Context, module: ModuleOp, name: &str) -> Vec<Ptr<Operation>> {
+    let region = function(ctx, module, name)
+        .get_region(ctx)
+        .expect("function has no body");
+    region
         .deref(ctx)
         .iter(ctx)
+        .flat_map(|block| block.deref(ctx).iter(ctx).collect::<Vec<_>>())
         .filter(|op| Operation::get_op::<ConstantOp>(*op, ctx).is_none())
         .collect()
 }
@@ -198,17 +206,136 @@ fn no_locations_no_debug_info() -> Result<()> {
     Ok(())
 }
 
-/// [`to_llvm_ir::convert_module`] ignores locations.
+/// `second` has PHIs and follows a located function. The module has a DWARF version.
+const PHI_INPUT_LL: &str = r#"
+  define void @first() {
+  entry:
+    ret void
+  }
+
+  define i32 @second(i1 %c, i32 %a) {
+  entry:
+    br i1 %c, label %then, label %exit
+  then:
+    br label %exit
+  exit:
+    %r = phi i32 [ %a, %entry ], [ 0, %then ]
+    ret i32 %r
+  }
+
+  !llvm.module.flags = !{!0}
+  !0 = !{i32 7, !"Dwarf Version", i32 5}
+"#;
+
+fn fused(locations: Vec<Location>) -> Location {
+    Location::Fused {
+        metadata: None,
+        locations,
+    }
+}
+
+/// `callee`, inlined at `at`.
+fn call_site(callee: Location, at: Location) -> Location {
+    Location::CallSite {
+        callee: Box::new(callee),
+        caller: Box::new(at),
+    }
+}
+
+/// Fused locations, call sites with a missing part, a located function op,
+/// PHIs after a located function, and an existing DWARF version.
 #[test]
-fn convert_module_ignores_locations() -> Result<()> {
+fn partial_locations() -> Result<()> {
+    init_env_logger_for_tests!();
     let ctx = &mut Context::new();
     let llvm_ctx = LLVMContext::default();
-    let module = located_module(ctx, &llvm_ctx)?;
-    let llvm_module = common::to_llvm_ir_verify(ctx, &llvm_ctx, module)?;
-    let ir = llvm_module.to_string();
-    assert!(
-        !ir.contains("!dbg") && !ir.contains("DICompileUnit"),
-        "{ir}"
-    );
+    let module = common::parse_llvm_ir_verify(ctx, &llvm_ctx, PHI_INPUT_LL, "debug_info_test")?;
+
+    let [first_ret] = function_ops(ctx, module, "first")[..] else {
+        panic!("unexpected ops in first");
+    };
+    let [cond_br, br, ret] = function_ops(ctx, module, "second")[..] else {
+        panic!("unexpected ops in second");
+    };
+    let second = function(ctx, module, "second").get_operation();
+    let locations = [
+        // A callee without a position: the caller position.
+        (
+            first_ret,
+            call_site(named("gone", Location::Unknown), src_pos(ctx, "k.rs", 1, 1)),
+        ),
+        // No name: the subprogram takes the symbol name.
+        (
+            second,
+            fused(vec![Location::Unknown, src_pos(ctx, "k.rs", 20, 1)]),
+        ),
+        (
+            cond_br,
+            fused(vec![Location::Unknown, src_pos(ctx, "k.rs", 21, 3)]),
+        ),
+        // A callee without a name: the caller position.
+        (
+            br,
+            call_site(src_pos(ctx, "inner.rs", 8, 1), src_pos(ctx, "k.rs", 22, 3)),
+        ),
+        // A caller without a position: the callee position, not inlined.
+        (
+            ret,
+            call_site(
+                named("inner", src_pos(ctx, "inner.rs", 9, 1)),
+                Location::Unknown,
+            ),
+        ),
+    ];
+    for (op, loc) in locations {
+        op.deref_mut(ctx).set_loc(loc);
+    }
+
+    let llvm_module = to_llvm_ir::convert_module_with_debug_info(
+        ctx,
+        &llvm_ctx,
+        module,
+        DebugInfoOptions::default(),
+    )?;
+    llvm_module.verify().expect("LLVM verifier failed");
+    expect![[r#"
+        ; ModuleID = 'debug_info_test'
+        source_filename = "debug_info_test"
+
+        define void @first() !dbg !4 {
+        entry_block2v1:
+          ret void, !dbg !7
+        }
+
+        define i32 @second(i1 %0, i32 %1) !dbg !8 {
+        entry_block3v1:
+          br i1 %0, label %then_block4v1, label %exit_block5v1, !dbg !9
+
+        then_block4v1:                                    ; preds = %entry_block3v1
+          br label %exit_block5v1, !dbg !10
+
+        exit_block5v1:                                    ; preds = %then_block4v1, %entry_block3v1
+          %v3 = phi i32 [ %1, %entry_block3v1 ], [ 0, %then_block4v1 ]
+          ret i32 %v3, !dbg !11
+        }
+
+        !llvm.module.flags = !{!0, !1}
+        !llvm.dbg.cu = !{!2}
+
+        !0 = !{i32 7, !"Dwarf Version", i32 5}
+        !1 = !{i32 2, !"Debug Info Version", i32 3}
+        !2 = distinct !DICompileUnit(language: DW_LANG_C, file: !3, producer: "pliron", isOptimized: false, runtimeVersion: 0, emissionKind: LineTablesOnly, splitDebugInlining: false)
+        !3 = !DIFile(filename: "k.rs", directory: "")
+        !4 = distinct !DISubprogram(name: "first", scope: !3, file: !3, line: 1, type: !5, scopeLine: 1, spFlags: DISPFlagDefinition, unit: !2)
+        !5 = !DISubroutineType(types: !6)
+        !6 = !{}
+        !7 = !DILocation(line: 1, column: 1, scope: !4)
+        !8 = distinct !DISubprogram(name: "second", scope: !3, file: !3, line: 20, type: !5, scopeLine: 20, spFlags: DISPFlagDefinition, unit: !2)
+        !9 = !DILocation(line: 21, column: 3, scope: !8)
+        !10 = !DILocation(line: 22, column: 3, scope: !8)
+        !11 = !DILocation(line: 9, column: 1, scope: !12)
+        !12 = !DILexicalBlockFile(scope: !8, file: !13, discriminator: 0)
+        !13 = !DIFile(filename: "inner.rs", directory: "")
+    "#]].assert_eq(&llvm_module.to_string());
     Ok(())
 }

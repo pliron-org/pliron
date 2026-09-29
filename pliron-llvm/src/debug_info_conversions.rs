@@ -95,8 +95,7 @@ pub mod to_llvm_ir {
 
     /// State for converting op locations to LLVM debug data.
     ///
-    /// LLVM uniques the `DIFile`, `DILexicalBlockFile`, `DISubroutineType`
-    /// and `DILocation` nodes. Thus only the distinct nodes need a map here.
+    /// LLVM uniques `DILocation`s, so they need no map here.
     pub(crate) struct DIConversionContext {
         options: DebugInfoOptions,
         builder: LLVMDIBuilder,
@@ -207,7 +206,6 @@ pub mod to_llvm_ir {
 
         /// The subprogram of an inlined callee, from its outermost name.
         fn inlined_subprogram(&mut self, ctx: &Context, callee: &Location) -> Option<LLVMMetadata> {
-            let callee = outermost(callee);
             let name = frame_name(callee)?;
             let (src, _) = frame_src_pos(callee).unwrap_or((Source::InMemory, 0));
             let file = self.file(ctx, &src);
@@ -269,15 +267,7 @@ pub mod to_llvm_ir {
         u32::try_from(value).unwrap_or(0)
     }
 
-    /// The outermost frame of `loc`: the last caller of a call site chain.
-    fn outermost(mut loc: &Location) -> &Location {
-        while let Location::CallSite { caller, .. } = loc {
-            loc = caller;
-        }
-        loc
-    }
-
-    /// The first name in a frame.
+    /// The first name in the outermost frame of `loc`.
     fn frame_name(loc: &Location) -> Option<&str> {
         match loc {
             Location::Named { name, .. } => Some(name),
@@ -287,7 +277,7 @@ pub mod to_llvm_ir {
         }
     }
 
-    /// The first source position in a frame, as a source and a line.
+    /// The first source position in the outermost frame of `loc`, as a source and a line.
     fn frame_src_pos(loc: &Location) -> Option<(Source, u32)> {
         match loc {
             Location::SrcPos { src, pos } => Some((*src, non_negative(pos.line))),
@@ -313,11 +303,11 @@ pub mod to_llvm_ir {
                 let IRNode::Operation(op) = node else {
                     return walk_advance();
                 };
-                let loc = op.deref(ctx).loc();
-                if loc.is_unknown() {
+                let op = op.deref(ctx);
+                if op.loc_ref().is_unknown() {
                     walk_advance()
                 } else {
-                    walk_break(outermost(&loc).clone())
+                    walk_break(op.loc())
                 }
             },
         );
@@ -342,13 +332,12 @@ pub mod to_llvm_ir {
         let Some(loc) = function_location(ctx, func_op) else {
             return;
         };
-        let loc = outermost(&loc);
         let llvm_name = func_op
             .llvm_symbol_name(ctx)
             .unwrap_or_else(|| func_op.get_symbol_name(ctx).to_string());
-        let name = frame_name(loc).unwrap_or(&llvm_name);
+        let name = frame_name(&loc).unwrap_or(&llvm_name);
         let linkage_name = if name == llvm_name { "" } else { &llvm_name };
-        let (src, line) = frame_src_pos(loc).unwrap_or((Source::InMemory, 0));
+        let (src, line) = frame_src_pos(&loc).unwrap_or((Source::InMemory, 0));
         let file = di.file(ctx, &src);
         let subprogram = di.create_subprogram(name, linkage_name, file, line, false);
         llvm_set_subprogram(func_llvm, subprogram);

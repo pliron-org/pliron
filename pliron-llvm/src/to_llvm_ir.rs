@@ -2787,11 +2787,7 @@ fn convert_global_initializer(
     Ok(None)
 }
 
-/// Convert pliron [`ModuleOp`] to [`LLVMModule`].
-///
-/// # Errors
-///
-/// Fails if an op, type or attribute in `module` cannot be converted.
+/// Convert pliron [ModuleOp] to [LLVMModule].
 pub fn convert_module(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
