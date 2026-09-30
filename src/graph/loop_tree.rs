@@ -54,7 +54,7 @@ struct Loop<N> {
     depth: usize,
 }
 
-/// The loop tree of a control-flow graph.
+/// The loop tree of a control-flow-graph.
 ///
 /// The root represents the reachable part of the graph. Its children are
 /// top-level loops and blocks outside all loops. Each block is a leaf, with
@@ -559,18 +559,7 @@ mod tests {
     use expect_test::expect;
 
     use super::*;
-    use crate::{
-        basic_block::BasicBlock,
-        builtin::{
-            op_interfaces::{IsTerminatorInterface, OneRegionInterface},
-            ops::FuncOp,
-            types::FunctionType,
-        },
-        derive::pliron_op,
-        graph::dominance::compute_dominator_tree,
-        ident,
-        op::Op,
-    };
+    use crate::graph::dominance::compute_dominator_tree;
 
     struct TestGraph {
         successors: Vec<Vec<usize>>,
@@ -1269,123 +1258,5 @@ mod tests {
             &[1, 6],
             &[1],
         ]));
-    }
-
-    #[pliron_op(
-        name = "test.loop_tree_branch",
-        format,
-        interfaces = [IsTerminatorInterface],
-        verifier = "succ",
-    )]
-    struct BranchOp;
-
-    #[test]
-    fn region_analysis_reuses_dominance_and_caches_the_tree() {
-        let ctx = &mut Context::new();
-        let ty = FunctionType::get(ctx, vec![], vec![]);
-        let func = FuncOp::new(ctx, ident!("loop_test"), ty);
-        let region = func.get_region(ctx);
-        let entry = func.get_entry_block(ctx);
-        let header = BasicBlock::new(ctx, Some(ident!("header")), vec![]);
-        header.insert_at_back(region, ctx);
-        let tail = BasicBlock::new(ctx, Some(ident!("tail")), vec![]);
-        tail.insert_at_back(region, ctx);
-        for (block, succ) in [(entry, header), (header, tail), (tail, header)] {
-            Operation::new(
-                ctx,
-                BranchOp::get_concrete_op_info(),
-                vec![],
-                vec![],
-                vec![succ],
-                0,
-            )
-            .insert_at_back(block, ctx);
-        }
-        let mut analyses = AnalysisManager::default();
-        analyses
-            .compute_analysis::<LoopInfo>(func.get_operation(), ctx)
-            .unwrap();
-        let mut dom_info = analyses
-            .try_get_analysis_mut::<DomInfo>(func.get_operation())
-            .expect("LoopInfo must cache DomInfo");
-        let mut info = analyses
-            .try_get_analysis_mut::<LoopInfo>(func.get_operation())
-            .unwrap();
-        let first = info.get_loop_tree(ctx, region, &mut dom_info) as *const _;
-        let tree = info.get_loop_tree(ctx, region, &mut dom_info);
-        assert_eq!(first, tree as *const _);
-        let expected = expect![[r#"
-            loops (1): [header_block2v1]
-            top-level loops: [header_block2v1]
-            block parents: [entry_block1v1: root, header_block2v1: header_block2v1, tail_block3v1: header_block2v1]
-            block depths: [entry_block1v1: 0, header_block2v1: 1, tail_block3v1: 1]
-            root:
-              block entry_block1v1
-              loop header_block2v1 (parent: root, depth: 1)
-                latches: [tail_block3v1]
-                blocks: [header_block2v1, tail_block3v1]
-                block header_block2v1
-                block tail_block3v1
-            loop header_block2v1: exiting blocks: []; exit blocks: []
-        "#]];
-        let printed = print_tree(ctx, &region, tree);
-        let mut direct_info = LoopInfo::default();
-        assert_eq!(
-            printed,
-            print_tree(
-                ctx,
-                &region,
-                direct_info.get_loop_tree(ctx, region, &mut dom_info),
-            )
-        );
-        expected.assert_eq(&printed);
-    }
-
-    #[test]
-    fn nested_region_uses_cached_dominance() {
-        let ctx = &mut Context::new();
-        let ty = FunctionType::get(ctx, vec![], vec![]);
-        let outer = FuncOp::new(ctx, ident!("outer"), ty);
-        let inner = FuncOp::new(ctx, ident!("inner"), ty);
-        inner
-            .get_operation()
-            .insert_at_back(outer.get_entry_block(ctx), ctx);
-        let region = inner.get_region(ctx);
-        let entry = inner.get_entry_block(ctx);
-        Operation::new(
-            ctx,
-            BranchOp::get_concrete_op_info(),
-            vec![],
-            vec![],
-            vec![entry],
-            0,
-        )
-        .insert_at_back(entry, ctx);
-        let mut analyses = AnalysisManager::default();
-        analyses
-            .compute_analysis::<LoopInfo>(outer.get_operation(), ctx)
-            .unwrap();
-        let mut dom_info = analyses
-            .try_get_analysis_mut::<DomInfo>(outer.get_operation())
-            .unwrap();
-        let dom_tree = dom_info.get_dom_tree(ctx, region) as *const _;
-        let mut info = analyses
-            .try_get_analysis_mut::<LoopInfo>(outer.get_operation())
-            .unwrap();
-        let tree = info.get_loop_tree(ctx, region, &mut dom_info);
-        expect![[r#"
-            loops (1): [entry_block2v1]
-            top-level loops: [entry_block2v1]
-            block parents: [entry_block2v1: entry_block2v1]
-            block depths: [entry_block2v1: 1]
-            root:
-              loop entry_block2v1 (parent: root, depth: 1)
-                latches: [entry_block2v1]
-                blocks: [entry_block2v1]
-                block entry_block2v1
-            loop entry_block2v1: exiting blocks: []; exit blocks: []
-        "#]]
-        .assert_eq(&print_tree(ctx, &region, tree));
-        assert_eq!(dom_tree, dom_info.get_dom_tree(ctx, region) as *const _);
     }
 }

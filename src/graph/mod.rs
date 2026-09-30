@@ -3,8 +3,10 @@
 
 //! IR and control-flow-graph utilities
 
+pub mod control_dependence;
 pub mod dominance;
 pub mod loop_tree;
+pub mod reverse;
 pub mod traversals;
 pub mod visualize;
 pub mod walkers;
@@ -25,8 +27,12 @@ use crate::{
     linked_list::{ContainsLinkedList, LinkedList},
     op::{Op, OpInterfaceMarker, op_cast},
     operation::Operation,
+    printable::{Printable, State, indented_nl},
     region::Region,
+    utils::table::ISet,
 };
+
+use visualize::DotLabel;
 
 /// A trait for graph nodes that can be labeled for visualization purposes.
 pub trait HasLabel<GraphContext> {
@@ -109,6 +115,56 @@ impl ControlFlowGraph<Context> for Ptr<Region> {
 impl HasLabel<Context> for Ptr<BasicBlock> {
     fn label(&self, ctx: &Context) -> String {
         self.deref(ctx).unique_name(ctx).to_string()
+    }
+}
+
+/// Prints a control-flow-graph in Graphviz DOT format.
+pub fn print_cfg<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let nodes: ISet<G::Node> = graph.nodes(ctx).collect();
+    write!(f, "digraph cfg {{")?;
+    state.push_indent();
+    for (i, node) in nodes.iter().enumerate() {
+        write!(
+            f,
+            "{}n{i} [label={}];",
+            indented_nl(state),
+            DotLabel(&node.label(ctx)),
+        )?;
+    }
+    for (i, node) in nodes.iter().enumerate() {
+        for succ in graph.successors(ctx, node) {
+            let succ = nodes
+                .get_index_of(&succ)
+                .expect("Successor is not a node of the graph");
+            write!(f, "{}n{i} -> n{succ};", indented_nl(state))?;
+        }
+    }
+    state.pop_indent();
+    write!(f, "{}}}", indented_nl(state))
+}
+
+/// Provides a [Printable] impl for [ControlFlowGraph]s, calling [print_cfg].
+pub struct CfgPrinter<'a, G>(pub &'a G);
+
+impl<G> Printable for CfgPrinter<'_, G>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_cfg(ctx, self.0, state, f)
     }
 }
 
