@@ -20,6 +20,7 @@ use crate::{
     location::{Located, Location},
     operation::Operation,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
+    printable::ListSeparator,
     result::Result,
     r#type::TypeHandle,
     value::Value,
@@ -274,6 +275,22 @@ pub fn list_parser<Input: Stream<Token = char>, Output>(
     parser: impl Parser<Input, Output = Output>,
 ) -> impl Parser<Input, Output = Vec<Output>> {
     sep_by::<Vec<_>, _, _, _>(parser.skip(spaces()), token(sep).skip(spaces()))
+}
+
+/// Parse a list of objects, separated by `sep`.
+/// This parses lists printed by [list_with_sep](super::printers::list_with_sep).
+pub fn list_with_sep_parser<Input: Stream<Token = char>, Output>(
+    sep: ListSeparator,
+    parser: impl Parser<Input, Output = Output>,
+) -> impl Parser<Input, Output = Vec<Output>> {
+    match sep {
+        ListSeparator::None | ListSeparator::Newline => {
+            many::<Vec<_>, _, _>(parser.skip(spaces())).left()
+        }
+        ListSeparator::Char(c) | ListSeparator::CharSpace(c) | ListSeparator::CharNewline(c) => {
+            list_parser(c, parser).right()
+        }
+    }
 }
 
 /// Parse zero-or-more occurrences (ignoring spaces) of `parser`.

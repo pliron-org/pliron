@@ -13,6 +13,8 @@ use pliron::{
 };
 use pliron_derive::format;
 
+use expect_test::expect;
+
 mod common;
 
 #[format]
@@ -266,19 +268,20 @@ fn int_div() {
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
-#[format("`<` opt($a) `>`")]
+#[format("opt($a)")]
 struct OptionalField {
     /// Some comment
-    a: Option<u64>,
+    a: Option<TypedHandle<IntegerType>>,
 }
 
 #[test]
 fn optional_field() {
     let ctx = &mut Context::new();
-    let test_ty = OptionalField { a: Some(42) };
+    let int_ty = IntegerType::get(ctx, 64, pliron::builtin::types::Signedness::Signed);
+    let test_ty = OptionalField { a: Some(int_ty) };
 
     let printed = test_ty.disp(ctx).to_string();
-    assert_eq!("<42>", &printed);
+    assert_eq!("builtin.integer si64", &printed);
 
     let res = parse_from_str(OptionalField::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
@@ -286,9 +289,10 @@ fn optional_field() {
     let test_ty = OptionalField { a: None };
 
     let printed = test_ty.disp(ctx).to_string();
-    assert_eq!("<>", &printed);
+    assert_eq!("", &printed);
 
-    let res = parse_from_str(OptionalField::parser(()), ctx, &printed).expect_ok(ctx);
+    // The type parser consumes the whitespace before it fails.
+    let res = parse_from_str(OptionalField::parser(()), ctx, " ").expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -318,12 +322,8 @@ fn optional_field_with_label_and_delimiters() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let res = parse_from_str(
-        OptionalFieldWithLabelAndDelimiters::parser(()),
-        ctx,
-        &printed,
-    )
-    .expect_ok(ctx);
+    let res =
+        parse_from_str(OptionalFieldWithLabelAndDelimiters::parser(()), ctx, " ").expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -349,9 +349,19 @@ fn optional_field_with_delimiters_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let res =
-        parse_from_str(OptionalFieldWithDelimitersOnly::parser(()), ctx, &printed).expect_ok(ctx);
+    let res = parse_from_str(OptionalFieldWithDelimitersOnly::parser(()), ctx, " ").expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
+
+    let err = parse_from_str(OptionalFieldWithDelimitersOnly::parser(()), ctx, "(x)")
+        .err()
+        .expect("Parsing must fail");
+    expect![[r#"
+        Compilation error: invalid input program.
+        Parse error at line: 1, column: 2
+        Unexpected `x`
+        Expected `+`, `-` or whitespace
+    "#]]
+    .assert_eq(&err.to_string());
 }
 
 #[format("opt($a, label($value))")]
@@ -375,7 +385,7 @@ fn optional_field_with_label_only() {
     let printed = test_ty.disp(ctx).to_string();
     assert_eq!("", &printed);
 
-    let res = parse_from_str(OptionalFieldWithLabelOnly::parser(()), ctx, &printed).expect_ok(ctx);
+    let res = parse_from_str(OptionalFieldWithLabelOnly::parser(()), ctx, " ").expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
@@ -433,7 +443,7 @@ fn opt_and_vec() {
     assert_eq!(res.disp(ctx).to_string(), printed);
 }
 
-#[format("`<` opt($0) `;` vec($1, Char(`,`)) `>`")]
+#[format("`<` opt($0) `;` vec($1, NewLine) `>`")]
 struct OptAndVecTuple(Option<u64>, Vec<u64>);
 
 #[test]
@@ -442,7 +452,7 @@ fn opt_and_vec_tuple() {
     let test_ty = OptAndVecTuple(Some(42), vec![1, 2, 3]);
 
     let printed = test_ty.disp(ctx).to_string();
-    assert_eq!("<42;1,2,3>", &printed);
+    assert_eq!("<42;1\n2\n3>", &printed);
 
     let res = parse_from_str(OptAndVecTuple::parser(()), ctx, &printed).expect_ok(ctx);
     assert_eq!(res.disp(ctx).to_string(), printed);
