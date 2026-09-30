@@ -9,8 +9,8 @@
 /// so the conversion keeps the first position of each location.
 ///
 /// Use [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info)
-/// to get this data. [`DebugInfoOptions`] controls the compile unit and the
-/// emission kind.
+/// to get this data. [`DebugInfoOptions`](to_llvm_ir::DebugInfoOptions)
+/// controls the compile unit and the emission kind.
 pub mod to_llvm_ir {
     use alloc::string::{String, ToString};
 
