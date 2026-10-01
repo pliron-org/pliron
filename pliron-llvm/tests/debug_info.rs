@@ -3,8 +3,6 @@
 
 //! Tests for the conversion of op locations to LLVM debug data.
 
-#![cfg(feature = "debug-info")]
-
 use expect_test::expect;
 use pliron::{
     builtin::{

@@ -45,7 +45,6 @@ use pliron::{
 use pliron::derive::{op_interface, op_interface_impl, type_interface, type_interface_impl};
 use thiserror::Error;
 
-#[cfg(feature = "debug-info")]
 use crate::{
     debug_info_conversions::to_llvm_ir::{
         self as debug_info, DIConversionContext, DebugInfoOptions,
@@ -148,7 +147,6 @@ pub struct ConversionContext<'a> {
     // State for converting the module's metadata.
     pub(crate) md: MdConversionContext,
     // State for converting op locations to debug data, if requested.
-    #[cfg(feature = "debug-info")]
     pub(crate) di: Option<DIConversionContext>,
 }
 
@@ -166,7 +164,6 @@ impl<'a> ConversionContext<'a> {
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
             md: MdConversionContext::default(),
-            #[cfg(feature = "debug-info")]
             di: None,
         }
     }
@@ -178,7 +175,6 @@ impl<'a> ConversionContext<'a> {
         // The builder keeps the debug location of the last op of the previous function.
         // The PHIs of block arguments are built before the subprogram is set.
         // Clear the location, else the PHIs get a location in the wrong subprogram.
-        #[cfg(feature = "debug-info")]
         llvm_set_current_debug_location2(&self.builder, None);
     }
 }
@@ -2113,7 +2109,6 @@ fn convert_block(
                 ToLLVMErr::MissingOpConversion(op.get_opid().to_string())
             );
         };
-        #[cfg(feature = "debug-info")]
         debug_info::set_location(ctx, llvm_ctx, cctx, opr);
         let op_llvm = op_conv.convert(ctx, llvm_ctx, cctx)?;
         convert_md_attachments(ctx, llvm_ctx, cctx, opr, op_llvm)?;
@@ -2177,7 +2172,6 @@ fn convert_function(
         cctx.block_map.insert(block, llvm_block);
     }
 
-    #[cfg(feature = "debug-info")]
     debug_info::begin_function(ctx, cctx, func_op, func_llvm);
 
     // Convert within every block.
@@ -2802,7 +2796,6 @@ pub fn convert_module(
 /// # Errors
 ///
 /// Fails if an op, type or attribute in `module` cannot be converted.
-#[cfg(feature = "debug-info")]
 pub fn convert_module_with_debug_info(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
@@ -2940,7 +2933,6 @@ fn convert_module_impl(
         llvm_delete_global(*placeholder);
     }
 
-    #[cfg(feature = "debug-info")]
     debug_info::finish(llvm_ctx, cctx);
 
     Ok(llvm_module)
