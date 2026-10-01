@@ -28,7 +28,7 @@ use crate::{
     context::{Context, Ptr},
     ident,
     identifier::Identifier,
-    indented_block, input_err,
+    input_err,
     irfmt::{
         parsers::{spaced, type_parser},
         printers::op::{region, symb_op_header, typed_symb_op_header},
@@ -99,10 +99,9 @@ impl Printable for ModuleOp {
             .0
             .retain(|key, _| key != &ATTR_KEY_SYM_NAME);
         if !attributes_to_print_separately.0.is_empty() {
-            indented_block!(state, {
-                write!(f, "{}", indented_nl(state))?;
-                attributes_to_print_separately.fmt(ctx, state, f)?;
-            });
+            let _indent = state.indent();
+            write!(f, "{}", indented_nl(state))?;
+            attributes_to_print_separately.fmt(ctx, state, f)?;
         }
         region(self).fmt(ctx, state, f)?;
         Ok(())
@@ -235,10 +234,9 @@ impl Printable for FuncOp {
             .0
             .retain(|key, _| key != &ATTR_KEY_BUILTIN_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);
         if !attributes_to_print_separately.0.is_empty() {
-            indented_block!(state, {
-                write!(f, "{}", indented_nl(state))?;
-                attributes_to_print_separately.fmt(ctx, state, f)?;
-            });
+            let _indent = state.indent();
+            write!(f, "{}", indented_nl(state))?;
+            attributes_to_print_separately.fmt(ctx, state, f)?;
         }
         region(self).fmt(ctx, state, f)?;
         Ok(())

@@ -279,10 +279,10 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     f.write_str("control dependence:")?;
-    state.push_indent();
+    let _indent = state.indent();
     for block in dependence.nodes() {
         write!(f, "{}block {}:", indented_nl(state), block.label(ctx))?;
-        state.push_indent();
+        let _block_indent = state.indent();
         write!(f, "{}controlling edges: [", indented_nl(state))?;
         for (i, edge) in dependence.direct_controlling_edges(&block).enumerate() {
             if i != 0 {
@@ -301,9 +301,7 @@ where
             }
             f.write_str("]")?;
         }
-        state.pop_indent();
     }
-    state.pop_indent();
     Ok(())
 }
 
@@ -819,7 +817,7 @@ mod tests {
         let dependence = ctx.dependence();
         let state = State::default();
         state.set_indent_width(4);
-        state.push_indent();
+        let _indent = state.indent();
         let mut output = String::new();
         print_control_dependence(&ctx, &dependence, &state, &mut output).unwrap();
         expect![[r#"

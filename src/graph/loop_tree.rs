@@ -463,12 +463,10 @@ where
 {
     f.write_str("root:")?;
     let mut stack = Vec::new();
-    stack.push(tree.root_contents.iter());
-    state.push_indent();
-    while let Some(contents) = stack.last_mut() {
+    stack.push((tree.root_contents.iter(), state.indent()));
+    while let Some((contents, _)) = stack.last_mut() {
         let Some(node) = contents.next() else {
             stack.pop();
-            state.pop_indent();
             continue;
         };
         write!(f, "{}", indented_nl(state))?;
@@ -486,8 +484,7 @@ where
                     parent,
                     l.depth,
                 )?;
-                state.push_indent();
-                stack.push(l.contents.iter());
+                stack.push((l.contents.iter(), state.indent()));
                 for (name, nodes) in [("latches", &l.latches), ("blocks", &l.blocks)] {
                     write!(f, "{}{name}: [", indented_nl(state))?;
                     for (i, node) in nodes.iter().enumerate() {

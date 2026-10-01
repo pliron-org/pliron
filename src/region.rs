@@ -10,7 +10,6 @@ use crate::{
     combine::{Parser, parser::char::spaces, token},
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
-    indented_block,
     linked_list::{ContainsLinkedList, private},
     location::Located,
     op::op_cast,
@@ -174,15 +173,16 @@ impl Printable for Region {
         state: &printable::State,
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
-        if !state.push_region_depth() {
+        let Some(_depth) = state.enter_region() else {
             // We want this to fail to parse.
             return f.write_str("{..}");
-        }
+        };
 
         fmt_indented_newline(state, f)?;
         write!(f, "{{")?;
 
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             fmt_indented_newline(state, f)?;
             fmt_iter(
                 self.iter(ctx),
@@ -191,12 +191,10 @@ impl Printable for Region {
                 ListSeparator::CharNewline('\n'),
                 f,
             )?;
-        });
+        }
 
         fmt_indented_newline(state, f)?;
-        write!(f, "}}")?;
-        state.pop_region_depth();
-        Ok(())
+        write!(f, "}}")
     }
 }
 
