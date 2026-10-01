@@ -10,31 +10,6 @@ pub trait Verify {
     fn verify(&self, ctx: &Context) -> Result<()>;
 }
 
-/// Sugar to implement a verifier that always succeeds.
-/// Usage:
-/// ```
-/// use pliron::{context::Context, impl_verify_succ, common_traits::Verify};
-/// struct A;
-/// let a = A;
-/// let ctx = Context::new();
-/// assert!(a.verify(&ctx).is_ok());
-/// impl_verify_succ!(A);
-/// ```
-#[deprecated(
-    since = "0.14.0",
-    note = "Consider using `pliron::derive::verify_succ` instead"
-)]
-#[macro_export]
-macro_rules! impl_verify_succ {
-    ($op_name:path) => {
-        impl $crate::common_traits::Verify for $op_name {
-            fn verify(&self, _ctx: &$crate::context::Context) -> $crate::result::Result<()> {
-                Ok(())
-            }
-        }
-    };
-}
-
 /// Anything that has a name.
 pub trait Named {
     /// A (not necessarily unique) name.

@@ -1767,7 +1767,12 @@ fn print_region_depth_limit() -> Result<()> {
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> {..}
         }"#]];
     expected_one_level.assert_eq(&module.print(ctx, &state).to_string());
-    // Printing restores the region depth, so reusing the state should produce identical output.
+    // Printing must restore the region depth limit that was set.
+    assert_eq!(
+        state.current_region_print_depth_limit(),
+        RegionPrintDepthLimit::Max(1)
+    );
+    // Reusing the state must produce identical output.
     expected_one_level.assert_eq(&module.print(ctx, &state).to_string());
 
     state.set_region_print_depth_limit(RegionPrintDepthLimit::Max(2));

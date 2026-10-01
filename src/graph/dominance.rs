@@ -99,27 +99,28 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     write!(f, "digraph {name} {{")?;
-    state.push_indent();
-    if has_sentinel {
-        write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
-    }
-    for (i, node) in nodes.keys().enumerate() {
-        write!(
-            f,
-            "{}n{i} [label={}];",
-            indented_nl(state),
-            DotLabel(&node.label(ctx)),
-        )?;
-    }
-    for (i, node) in nodes.values().enumerate() {
-        if let Some(parent) = &node.parent {
-            let parent = nodes.get_index_of(parent).unwrap();
-            write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
-        } else if has_sentinel {
-            write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+    {
+        let _indent = state.indent();
+        if has_sentinel {
+            write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
+        }
+        for (i, node) in nodes.keys().enumerate() {
+            write!(
+                f,
+                "{}n{i} [label={}];",
+                indented_nl(state),
+                DotLabel(&node.label(ctx)),
+            )?;
+        }
+        for (i, node) in nodes.values().enumerate() {
+            if let Some(parent) = &node.parent {
+                let parent = nodes.get_index_of(parent).unwrap();
+                write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
+            } else if has_sentinel {
+                write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+            }
         }
     }
-    state.pop_indent();
     write!(f, "{}}}", indented_nl(state))
 }
 
@@ -819,7 +820,7 @@ mod tests {
         ctx[2].label = Some("sentinel");
         let state = State::default();
         state.set_indent_width(4);
-        state.push_indent();
+        let _indent = state.indent();
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let mut output = String::new();
         print_dom_tree(&ctx, &dom, &state, &mut output).unwrap();

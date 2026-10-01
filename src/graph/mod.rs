@@ -130,24 +130,25 @@ where
 {
     let nodes: ISet<G::Node> = graph.nodes(ctx).collect();
     write!(f, "digraph cfg {{")?;
-    state.push_indent();
-    for (i, node) in nodes.iter().enumerate() {
-        write!(
-            f,
-            "{}n{i} [label={}];",
-            indented_nl(state),
-            DotLabel(&node.label(ctx)),
-        )?;
-    }
-    for (i, node) in nodes.iter().enumerate() {
-        for succ in graph.successors(ctx, node) {
-            let succ = nodes
-                .get_index_of(&succ)
-                .expect("Successor is not a node of the graph");
-            write!(f, "{}n{i} -> n{succ};", indented_nl(state))?;
+    {
+        let _indent = state.indent();
+        for (i, node) in nodes.iter().enumerate() {
+            write!(
+                f,
+                "{}n{i} [label={}];",
+                indented_nl(state),
+                DotLabel(&node.label(ctx)),
+            )?;
+        }
+        for (i, node) in nodes.iter().enumerate() {
+            for succ in graph.successors(ctx, node) {
+                let succ = nodes
+                    .get_index_of(&succ)
+                    .expect("Successor is not a node of the graph");
+                write!(f, "{}n{i} -> n{succ};", indented_nl(state))?;
+            }
         }
     }
-    state.pop_indent();
     write!(f, "{}}}", indented_nl(state))
 }
 
