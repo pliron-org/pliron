@@ -333,13 +333,17 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     /// Does `dominator` dominate `dominatee`?
+    /// Each node dominates itself. An unreachable node has no other dominators.
     pub fn dominates(&self, dominator: &G::Node, dominatee: &G::Node) -> bool {
         let mut node_opt = Some(dominatee.clone());
         while let Some(node) = node_opt {
             if node == *dominator {
                 return true;
             }
-            node_opt = self.dominators_map[&node].parent.clone();
+            node_opt = self
+                .dominators_map
+                .get(&node)
+                .and_then(|node| node.parent.clone());
         }
         false
     }
@@ -1303,6 +1307,12 @@ mod tests {
         assert!(!dom.contains(&2));
         assert!(!dom.contains(&3));
         assert!(!dom.contains(&4));
+
+        assert!(dom.dominates(&0, &1));
+        assert!(dom.dominates(&2, &2));
+        assert!(!dom.dominates(&0, &2));
+        assert!(!dom.dominates(&2, &0));
+        assert!(!dom.dominates(&2, &4));
 
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
 

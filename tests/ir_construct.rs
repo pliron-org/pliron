@@ -1440,15 +1440,15 @@ fn test_verify_operation_fails_on_undominated_op_result_use() {
     let b2 = BasicBlock::new(ctx, None, vec![]);
     b2.insert_at_back(func_region, ctx);
 
-    Operation::new(
+    let branch = Operation::new(
         ctx,
         BranchOp::get_concrete_op_info(),
         vec![],
         vec![],
         vec![b1, b2],
         0,
-    )
-    .insert_at_back(entry, ctx);
+    );
+    branch.insert_at_back(entry, ctx);
 
     let def_op = ConstantOp::new(ctx, 0);
     def_op.get_operation().insert_at_back(b1, ctx);
@@ -1462,6 +1462,11 @@ fn test_verify_operation_fails_on_undominated_op_result_use() {
 
     println!("{}", module.get_operation().disp(ctx));
 
+    let err = verify_operation(module.get_operation(), ctx).unwrap_err();
+    let err = err.err.downcast_ref::<DefUseVerifyErr>().unwrap();
+    assert!(matches!(err, DefUseVerifyErr::UseNotDominatedByDef(_)));
+
+    Operation::remove_successor(branch, ctx, 1);
     let err = verify_operation(module.get_operation(), ctx).unwrap_err();
     let err = err.err.downcast_ref::<DefUseVerifyErr>().unwrap();
     assert!(matches!(err, DefUseVerifyErr::UseNotDominatedByDef(_)));
@@ -1483,15 +1488,15 @@ fn test_verify_operation_fails_on_undominated_block_argument_use() {
     let b2 = BasicBlock::new(ctx, None, vec![]);
     b2.insert_at_back(func_region, ctx);
 
-    Operation::new(
+    let branch = Operation::new(
         ctx,
         BranchOp::get_concrete_op_info(),
         vec![],
         vec![],
         vec![b1, b2],
         0,
-    )
-    .insert_at_back(entry, ctx);
+    );
+    branch.insert_at_back(entry, ctx);
 
     let b1_arg0 = b1.deref(ctx).get_argument(0);
 
@@ -1504,6 +1509,11 @@ fn test_verify_operation_fails_on_undominated_block_argument_use() {
 
     println!("{}", module.get_operation().disp(ctx));
 
+    let err = verify_operation(module.get_operation(), ctx).unwrap_err();
+    let err = err.err.downcast_ref::<DefUseVerifyErr>().unwrap();
+    assert!(matches!(err, DefUseVerifyErr::UseNotDominatedByDef(_)));
+
+    Operation::remove_successor(branch, ctx, 1);
     let err = verify_operation(module.get_operation(), ctx).unwrap_err();
     let err = err.err.downcast_ref::<DefUseVerifyErr>().unwrap();
     assert!(matches!(err, DefUseVerifyErr::UseNotDominatedByDef(_)));
