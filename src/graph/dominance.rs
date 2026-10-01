@@ -99,27 +99,28 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     write!(f, "digraph {name} {{")?;
-    state.push_indent();
-    if has_sentinel {
-        write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
-    }
-    for (i, node) in nodes.keys().enumerate() {
-        write!(
-            f,
-            "{}n{i} [label={}];",
-            indented_nl(state),
-            DotLabel(&node.label(ctx)),
-        )?;
-    }
-    for (i, node) in nodes.values().enumerate() {
-        if let Some(parent) = &node.parent {
-            let parent = nodes.get_index_of(parent).unwrap();
-            write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
-        } else if has_sentinel {
-            write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+    {
+        let _indent = state.indent();
+        if has_sentinel {
+            write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
+        }
+        for (i, node) in nodes.keys().enumerate() {
+            write!(
+                f,
+                "{}n{i} [label={}];",
+                indented_nl(state),
+                DotLabel(&node.label(ctx)),
+            )?;
+        }
+        for (i, node) in nodes.values().enumerate() {
+            if let Some(parent) = &node.parent {
+                let parent = nodes.get_index_of(parent).unwrap();
+                write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
+            } else if has_sentinel {
+                write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+            }
         }
     }
-    state.pop_indent();
     write!(f, "{}}}", indented_nl(state))
 }
 
@@ -333,13 +334,17 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     /// Does `dominator` dominate `dominatee`?
+    /// Each node dominates itself. An unreachable node has no other dominators.
     pub fn dominates(&self, dominator: &G::Node, dominatee: &G::Node) -> bool {
         let mut node_opt = Some(dominatee.clone());
         while let Some(node) = node_opt {
             if node == *dominator {
                 return true;
             }
-            node_opt = self.dominators_map[&node].parent.clone();
+            node_opt = self
+                .dominators_map
+                .get(&node)
+                .and_then(|node| node.parent.clone());
         }
         false
     }
@@ -815,7 +820,7 @@ mod tests {
         ctx[2].label = Some("sentinel");
         let state = State::default();
         state.set_indent_width(4);
-        state.push_indent();
+        let _indent = state.indent();
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let mut output = String::new();
         print_dom_tree(&ctx, &dom, &state, &mut output).unwrap();
@@ -1303,6 +1308,12 @@ mod tests {
         assert!(!dom.contains(&2));
         assert!(!dom.contains(&3));
         assert!(!dom.contains(&4));
+
+        assert!(dom.dominates(&0, &1));
+        assert!(dom.dominates(&2, &2));
+        assert!(!dom.dominates(&0, &2));
+        assert!(!dom.dominates(&2, &0));
+        assert!(!dom.dominates(&2, &4));
 
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
 

@@ -20,7 +20,6 @@ use crate::{
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
     identifier::Identifier,
-    indented_block,
     irfmt::{
         outlined::{preprint_outline_block, register_block_for_outline},
         parsers::{delimited_list_parser, location, spaced, type_parser},
@@ -484,16 +483,13 @@ impl Printable for BasicBlock {
 
         write!(f, ":")?;
 
-        indented_block!(state, {
-            write!(
-                f,
-                "{}{}",
-                indented_nl(state),
-                iter_with_sep(self.iter(ctx), ListSeparator::CharNewline(';')).print(ctx, state),
-            )?;
-        });
-
-        Ok(())
+        let _indent = state.indent();
+        write!(
+            f,
+            "{}{}",
+            indented_nl(state),
+            iter_with_sep(self.iter(ctx), ListSeparator::CharNewline(';')).print(ctx, state),
+        )
     }
 }
 

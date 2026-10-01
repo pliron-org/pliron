@@ -35,7 +35,7 @@ use pliron::{
     graph::walkers::{self, IRNode, WALKCONFIG_PREORDER_FORWARD},
     ident,
     identifier::Identifier,
-    indented_block, input_err,
+    input_err,
     irfmt::{
         self,
         outlined::{OUTLINED_ATTR_MARKER, outlined_marker_or},
@@ -1040,11 +1040,12 @@ impl Printable for SwitchOp {
         let cases = self.cases(ctx);
 
         write!(f, "{}[", indented_nl(state))?;
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             write!(f, "{}", indented_nl(state))?;
             list_with_sep(&cases, pliron::printable::ListSeparator::CharNewline(','))
                 .fmt(ctx, state, f)?;
-        });
+        }
         write!(f, "{}]", indented_nl(state))?;
 
         Ok(())
@@ -1354,11 +1355,12 @@ impl Printable for IndirectBrOp {
             Self::get_opid_static(),
             address.print(ctx, state)
         )?;
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             write!(f, "{}", indented_nl(state))?;
             list_with_sep(&dests, pliron::printable::ListSeparator::CharNewline(','))
                 .fmt(ctx, state, f)?;
-        });
+        }
         write!(f, "{}]", indented_nl(state))?;
 
         Ok(())
@@ -2960,14 +2962,15 @@ impl Printable for GlobalOp {
                 && key != &ATTR_KEY_SYM_NAME
                 && key != &ATTR_KEY_LLVM_GLOBAL_INITIALIZER
         });
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             write!(
                 f,
                 "{}{}",
                 indented_nl(state),
                 attributes_to_print_separately.print(ctx, state)
             )?;
-        });
+        }
 
         if let Some(init_value) = self.get_initializer_value(ctx) {
             if attr_should_outline(&*init_value, ctx) {
@@ -4886,14 +4889,15 @@ impl Printable for FuncOp {
         attributes_to_print_separately
             .0
             .retain(|key, _| key != &ATTR_KEY_LLVM_FUNC_TYPE && key != &ATTR_KEY_SYM_NAME);
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             write!(
                 f,
                 "{}{}",
                 indented_nl(state),
                 attributes_to_print_separately.print(ctx, state)
             )?;
-        });
+        }
 
         if let Some(r) = self.get_region(ctx) {
             write!(f, " ")?;

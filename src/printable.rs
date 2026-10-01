@@ -74,13 +74,20 @@ impl State {
     }
 
     /// Increase the current indentation by [Self::indent_width]
-    pub fn push_indent(&self) {
+    /// until the returned guard is dropped.
+    pub fn indent(&self) -> IndentGuard<'_> {
+        self.push_indent();
+        IndentGuard(self)
+    }
+
+    /// Increase the current indentation by [Self::indent_width].
+    fn push_indent(&self) {
         let mut inner = self.0.as_ref().borrow_mut();
         inner.cur_indent += inner.indent_width;
     }
 
     /// Decrease the current indentation by [Self::indent_width].
-    pub fn pop_indent(&self) {
+    fn pop_indent(&self) {
         let mut inner = self.0.as_ref().borrow_mut();
         inner.cur_indent -= inner.indent_width;
     }
@@ -90,10 +97,22 @@ impl State {
         self.0.borrow_mut().region_print_depth_limit = limit;
     }
 
+    /// The number of nested region levels that can still be printed.
+    /// Entering / exiting a region decreases / increases this limit.
+    pub fn current_region_print_depth_limit(&self) -> RegionPrintDepthLimit {
+        self.0.borrow().region_print_depth_limit
+    }
+
+    /// Enter a region (if [Self::current_region_print_depth_limit] permits it)
+    /// until the returned guard is dropped.
+    /// Returns `None` without changing the limit when the region must be elided.
+    pub fn enter_region(&self) -> Option<RegionDepthGuard<'_>> {
+        self.push_region_depth().then(|| RegionDepthGuard(self))
+    }
+
     /// Enter a region if the remaining depth limit permits it.
     /// Returns false without changing the limit when the region must be elided.
-    /// Every successful push must be paired with [Self::pop_region_depth].
-    pub fn push_region_depth(&self) -> bool {
+    fn push_region_depth(&self) -> bool {
         let mut inner = self.0.borrow_mut();
         match &mut inner.region_print_depth_limit {
             RegionPrintDepthLimit::Unlimited => true,
@@ -106,7 +125,7 @@ impl State {
     }
 
     /// Leave a region previously entered by [Self::push_region_depth].
-    pub fn pop_region_depth(&self) {
+    fn pop_region_depth(&self) {
         let mut inner = self.0.borrow_mut();
         if let RegionPrintDepthLimit::Max(remaining) = &mut inner.region_print_depth_limit {
             *remaining += 1;
@@ -126,16 +145,23 @@ impl State {
     }
 }
 
-/// All statements in the block are indented during [fmt](Printable::fmt).
-/// Simply wraps the block with [State::push_indent] and [State::pop_indent].
-///
-/// See [Printable] for example usage.
-#[macro_export]
-macro_rules! indented_block {
-    ($state:ident, { $($tt:tt)* }) => {
-        $state.push_indent();
-        $($tt)*
-        $state.pop_indent();
+/// Increases the indentation of a [State] while it is alive.
+#[must_use = "the indentation is decreased as soon as the guard is dropped"]
+pub struct IndentGuard<'a>(&'a State);
+
+impl Drop for IndentGuard<'_> {
+    fn drop(&mut self) {
+        self.0.pop_indent();
+    }
+}
+
+/// Keeps one region nesting level of a [State] in use while it is alive.
+#[must_use = "the region depth is restored as soon as the guard is dropped"]
+pub struct RegionDepthGuard<'a>(&'a State);
+
+impl Drop for RegionDepthGuard<'_> {
+    fn drop(&mut self) {
+        self.0.pop_region_depth();
     }
 }
 
@@ -177,10 +203,12 @@ impl<T: Printable + ?Sized> Display for Displayable<'_, '_, T> {
 /// let state = State::default();
 /// assert!(S { i: 0 }.print(&ctx, &state).to_string() == "0");
 /// let svec = vec![ S { i: 8 }, S { i: 16 } ];
-/// use pliron::{indented_block, printable::indented_nl};
-/// indented_block!(state, {
+/// use pliron::printable::indented_nl;
+/// {
+///     let _indent = state.indent();
 ///     assert_eq!(format!("{}{}", indented_nl(&state), S { i: 108 }.print(&ctx, &state)), "\n  108");
-/// });
+/// }
+/// assert_eq!(format!("{}", indented_nl(&state)), "\n");
 /// ```
 pub trait Printable {
     fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::Result;
