@@ -369,7 +369,6 @@ pub mod to_llvm_ir {
         let Some(di) = cctx.di.take() else {
             return;
         };
-        llvm_set_current_debug_location2(&cctx.builder, None);
         if di.unit.is_some() {
             let int32 = llvm_int_type_in_context(llvm_ctx, 32);
             for (key, value) in [
