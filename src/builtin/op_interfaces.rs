@@ -1730,8 +1730,16 @@ pub trait CallOpInterface {
     ///   - A value if this is an indirect call
     fn callee(&self, ctx: &Context) -> CallOpCallable;
 
+    /// Return the index range of operands forwarded to the callee.
+    /// The `i`th returned index identifies the operand for the target callee's `i`th argument.
+    fn arg_range(&self, ctx: &Context) -> Range<usize>;
+
     /// Get arguments passed to callee
-    fn args(&self, ctx: &Context) -> Vec<Value>;
+    fn args(&self, ctx: &Context) -> Vec<Value> {
+        let range = self.arg_range(ctx);
+        let op = self.get_operation().deref(ctx);
+        range.map(|opd_idx| op.get_operand(opd_idx)).collect()
+    }
 
     /// Type of the callee
     fn callee_type(&self, ctx: &Context) -> TypeHandle {
