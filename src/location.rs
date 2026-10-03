@@ -357,6 +357,11 @@ pub trait Located {
     fn set_loc(&mut self, loc: Location);
 }
 
+/// A [Located] object that stores its [Location] and can lend a reference to it.
+pub trait LocatedRef: Located {
+    fn loc_ref(&self) -> &Location;
+}
+
 /// Recursively set the [Location] of every operation and block
 /// nested within `op` to [Location::Unknown].
 pub fn erase_locations(ctx: &Context, op: Ptr<Operation>) {

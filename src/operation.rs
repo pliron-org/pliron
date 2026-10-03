@@ -31,7 +31,7 @@ use crate::{
         parsers::{list_parser, location, spaced},
     },
     linked_list::{LinkedList, private},
-    location::{Located, Location},
+    location::{Located, LocatedRef, Location},
     op::{ConcreteOpInfo, Op, OpId, OpObj, op_impls},
     parsable::{self, Parsable, ParseResult, StateStream},
     printable::{self, Printable},
@@ -823,6 +823,12 @@ impl Located for Operation {
 
     fn set_loc(&mut self, loc: Location) {
         self.loc = loc;
+    }
+}
+
+impl LocatedRef for Operation {
+    fn loc_ref(&self) -> &Location {
+        &self.loc
     }
 }
 

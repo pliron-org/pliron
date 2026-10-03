@@ -26,7 +26,7 @@ use crate::{
         printers::{iter_with_sep, iter_with_sep_by},
     },
     linked_list::{ContainsLinkedList, LinkedList, private},
-    location::{Located, Location},
+    location::{Located, LocatedRef, Location},
     op::op_impls,
     operation::{DefUseVerifyErr, OpDbg, Operation, OperationParserConfig},
     parsable::{self, IntoParseResult, Parsable, ParseResult},
@@ -323,6 +323,12 @@ impl Located for BasicBlock {
 
     fn set_loc(&mut self, loc: Location) {
         self.loc = loc;
+    }
+}
+
+impl LocatedRef for BasicBlock {
+    fn loc_ref(&self) -> &Location {
+        &self.loc
     }
 }
 
