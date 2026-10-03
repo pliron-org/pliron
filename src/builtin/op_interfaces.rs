@@ -234,7 +234,7 @@ pub enum OperandSegmentInterfaceVerifyErr {
 /// ### Attribute(s):
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | builtin_operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr](crate::builtin::attributes::OperandSegmentSizesAttr) |
+/// | builtin_operand_segment_sizes | [ATTR_KEY_OPERAND_SEGMENT_SIZES] | [OperandSegmentSizesAttr] |
 #[op_interface]
 pub trait OperandSegmentInterface {
     /// The number of operand segments that this [Op] must have,
@@ -624,7 +624,7 @@ pub struct SymbolOpInterfaceErr;
 /// ### Attribute(s):
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | builtin_sym_name | [ATTR_KEY_SYM_NAME] | [IdentifierAttr](crate::builtin::attributes::IdentifierAttr) |
+/// | builtin_sym_name | [ATTR_KEY_SYM_NAME] | [IdentifierAttr] |
 #[op_interface]
 pub trait SymbolOpInterface {
     /// Get the name of the symbol defined by this operation.
@@ -1708,7 +1708,7 @@ dict_key!(ATTR_KEY_CALLEE_TYPE, "builtin_callee_type");
 ///
 /// | Name | Static Name Identifier | Type |
 /// |------|------------------------| -----|
-/// | builtin_callee_type | [ATTR_KEY_CALLEE_TYPE] | [TypeAttr](crate::builtin::attributes::TypeAttr) |
+/// | builtin_callee_type | [ATTR_KEY_CALLEE_TYPE] | [TypeAttr] |
 #[op_interface]
 pub trait CallOpInterface {
     fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
