@@ -36,8 +36,9 @@ pub mod itable {
 
 /// Hash table without iteration support.
 pub mod htable {
-    use core::{borrow::Borrow, fmt, hash::Hash};
+    use core::{fmt, hash::Hash};
 
+    use hashbrown::Equivalent;
     use rustc_hash::FxBuildHasher;
 
     /// A view into a single entry in a map, which may either be vacant or
@@ -265,8 +266,7 @@ pub mod htable {
         /// key type.
         pub fn get<Q>(&self, key: &Q) -> Option<&V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.get(key)
         }
@@ -279,8 +279,7 @@ pub mod htable {
         /// key type.
         pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.get_mut(key)
         }
@@ -292,8 +291,7 @@ pub mod htable {
         /// the key type.
         pub fn get_key_value<Q>(&self, key: &Q) -> Option<(&K, &V)>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.get_key_value(key)
         }
@@ -306,8 +304,7 @@ pub mod htable {
         /// key type.
         pub fn contains_key<Q>(&self, key: &Q) -> bool
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.contains_key(key)
         }
@@ -321,8 +318,7 @@ pub mod htable {
         /// key type.
         pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.remove(key)
         }
@@ -336,8 +332,7 @@ pub mod htable {
         /// key type.
         pub fn remove_entry<Q>(&mut self, key: &Q) -> Option<(K, V)>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.0.remove_entry(key)
         }
@@ -364,8 +359,7 @@ pub mod htable {
 
     impl<K: Eq + Hash, V, Q> core::ops::Index<&Q> for HMap<K, V>
     where
-        K: Borrow<Q>,
-        Q: Hash + Eq + ?Sized,
+        Q: Hash + Equivalent<K> + ?Sized,
     {
         type Output = V;
 
@@ -490,8 +484,7 @@ pub mod htable {
         /// value type.
         pub fn contains<Q>(&self, value: &Q) -> bool
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             self.0.contains(value)
         }
@@ -504,8 +497,7 @@ pub mod htable {
         /// value type.
         pub fn get<Q>(&self, value: &Q) -> Option<&T>
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             self.0.get(value)
         }
@@ -518,8 +510,7 @@ pub mod htable {
         /// value type.
         pub fn remove<Q>(&mut self, value: &Q) -> bool
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             self.0.remove(value)
         }
@@ -532,8 +523,7 @@ pub mod htable {
         /// value type.
         pub fn take<Q>(&mut self, value: &Q) -> Option<T>
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             self.0.take(value)
         }
@@ -609,7 +599,8 @@ pub mod htable {
 /// Hash table optimized for the common case of very few entries.
 pub mod smalltable {
     use alloc::boxed::Box;
-    use core::{borrow::Borrow, fmt, hash::Hash, mem};
+    use core::{fmt, hash::Hash, mem};
+    use indexmap::Equivalent;
 
     use rustc_hash::FxBuildHasher;
     use smallvec::SmallVec;
@@ -758,11 +749,10 @@ pub mod smalltable {
         /// Returns a reference to the value corresponding to the key.
         pub fn get<Q>(&self, key: &Q) -> Option<&V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             match &self.0 {
-                MapRepr::Inline(v) => v.iter().find(|(k, _)| k.borrow() == key).map(|(_, v)| v),
+                MapRepr::Inline(v) => v.iter().find(|(k, _)| key.equivalent(k)).map(|(_, v)| v),
                 MapRepr::Spilled(map) => map.get(key),
             }
         }
@@ -771,12 +761,11 @@ pub mod smalltable {
         /// key.
         pub fn get_mut<Q>(&mut self, key: &Q) -> Option<&mut V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             match &mut self.0 {
                 MapRepr::Inline(v) => {
-                    let i = v.iter().position(|(k, _)| k.borrow() == key)?;
+                    let i = v.iter().position(|(k, _)| key.equivalent(k))?;
                     Some(&mut v[i].1)
                 }
                 MapRepr::Spilled(map) => map.get_mut(key),
@@ -786,13 +775,12 @@ pub mod smalltable {
         /// Returns the key-value pair corresponding to the supplied key.
         pub fn get_key_value<Q>(&self, key: &Q) -> Option<(&K, &V)>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             match &self.0 {
                 MapRepr::Inline(v) => v
                     .iter()
-                    .find(|(k, _)| k.borrow() == key)
+                    .find(|(k, _)| key.equivalent(k))
                     .map(|(k, v)| (k, v)),
                 MapRepr::Spilled(map) => map.get_key_value(key),
             }
@@ -802,8 +790,7 @@ pub mod smalltable {
         /// key.
         pub fn contains_key<Q>(&self, key: &Q) -> bool
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             self.get(key).is_some()
         }
@@ -812,13 +799,12 @@ pub mod smalltable {
         /// the key was previously in the map.
         pub fn remove<Q>(&mut self, key: &Q) -> Option<V>
         where
-            K: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<K> + ?Sized,
         {
             match &mut self.0 {
                 MapRepr::Inline(v) => v
                     .iter()
-                    .position(|(k, _)| k.borrow() == key)
+                    .position(|(k, _)| key.equivalent(k))
                     .map(|i| v.swap_remove(i).1),
                 MapRepr::Spilled(map) => map.swap_remove(key),
             }
@@ -1296,11 +1282,10 @@ pub mod smalltable {
         /// Returns `true` if the set contains a value.
         pub fn contains<Q>(&self, value: &Q) -> bool
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             match &self.0 {
-                SetRepr::Inline(v) => v.iter().any(|x| x.borrow() == value),
+                SetRepr::Inline(v) => v.iter().any(|x| value.equivalent(x)),
                 SetRepr::Spilled(set) => set.contains(value),
             }
         }
@@ -1309,11 +1294,10 @@ pub mod smalltable {
         /// equal to the given value.
         pub fn get<Q>(&self, value: &Q) -> Option<&T>
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             match &self.0 {
-                SetRepr::Inline(v) => v.iter().find(|&x| x.borrow() == value),
+                SetRepr::Inline(v) => v.iter().find(|&x| value.equivalent(x)),
                 SetRepr::Spilled(set) => set.get(value),
             }
         }
@@ -1322,11 +1306,10 @@ pub mod smalltable {
         /// present.
         pub fn remove<Q>(&mut self, value: &Q) -> bool
         where
-            T: Borrow<Q>,
-            Q: Hash + Eq + ?Sized,
+            Q: Hash + Equivalent<T> + ?Sized,
         {
             match &mut self.0 {
-                SetRepr::Inline(v) => match v.iter().position(|x| x.borrow() == value) {
+                SetRepr::Inline(v) => match v.iter().position(|x| value.equivalent(x)) {
                     Some(i) => {
                         v.swap_remove(i);
                         true
