@@ -1,19 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-use alloc::{
-    boxed::Box,
-    string::{String, ToString},
-    vec,
-    vec::Vec,
-};
+use alloc::{vec, vec::Vec};
 
 use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
     graph::{
         ControlFlowGraph, HasLabel, find_ancestor_block_of_block_in_region,
-        find_ancestor_op_of_op_in_region, strictly_precedes_in_block, traversals,
+        find_ancestor_op_of_op_in_region,
+        reverse::{ReverseGraph, ReverseNode},
+        strictly_precedes_in_block, traversals,
         visualize::DotLabel,
     },
     operation::Operation,
@@ -48,18 +45,9 @@ where
 
 /// The post-dominator tree for a control-flow-graph.
 ///
-/// A control-flow graph may have multiple exit nodes, or nodes that do
-/// not have a path to any exit node. So, for convenience, we define a
-/// virtual node, called the **sentinel**, to represent a single unified exit.
-///
-/// The sentinel post-dominates all nodes of the control-flow-graph and
-/// forms the root of the post-dominator tree.
-///
-/// We also define **pre-sentinels** to be the following nodes:
-/// 1. Every exit node of the control-flow-graph (a node that has no CFG successors).
-/// 2. One node from each set of nodes that cannot reach an exit node.
-///
-/// Pre-sentinels are assumed to have the sentinel as their virtual CFG successor.
+/// The post-dominator tree is conceptually a dominator tree over
+/// the [reverse control-flow-graph](super::reverse). The sentinel
+/// of the reverse graph becomes the root of the post-dominator tree.
 pub struct PDomTree<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
@@ -111,27 +99,28 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     write!(f, "digraph {name} {{")?;
-    state.push_indent();
-    if has_sentinel {
-        write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
-    }
-    for (i, node) in nodes.keys().enumerate() {
-        write!(
-            f,
-            "{}n{i} [label={}];",
-            indented_nl(state),
-            DotLabel(&node.label(ctx)),
-        )?;
-    }
-    for (i, node) in nodes.values().enumerate() {
-        if let Some(parent) = &node.parent {
-            let parent = nodes.get_index_of(parent).unwrap();
-            write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
-        } else if has_sentinel {
-            write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+    {
+        let _indent = state.indent();
+        if has_sentinel {
+            write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
+        }
+        for (i, node) in nodes.keys().enumerate() {
+            write!(
+                f,
+                "{}n{i} [label={}];",
+                indented_nl(state),
+                DotLabel(&node.label(ctx)),
+            )?;
+        }
+        for (i, node) in nodes.values().enumerate() {
+            if let Some(parent) = &node.parent {
+                let parent = nodes.get_index_of(parent).unwrap();
+                write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
+            } else if has_sentinel {
+                write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+            }
         }
     }
-    state.pop_indent();
     write!(f, "{}}}", indented_nl(state))
 }
 
@@ -285,174 +274,7 @@ where
     dom_tree
 }
 
-/// Finds the pre-sentinels of `graph`. See [PDomTree].
-//
-// Strategy:
-// - Definition: A sink SCC is a strongly connected component that has no edge to another SCC.
-// - Every node reaches at least one sink SCC.
-// - A sink SCC is either a single exit node, or a set of nodes that cannot reach an exit node
-//   (an infinite loop, for example).
-// - So, one node from each sink SCC is picked as a pre-sentinel.
-fn find_pre_sentinels<G, GraphContext>(ctx: &GraphContext, graph: &G) -> Vec<G::Node>
-where
-    G: ControlFlowGraph<GraphContext>,
-{
-    let sccs = traversals::region::sccs_in_topological_order(ctx, graph);
-    // Map each node to the index of its SCC.
-    let scc_of: HMap<G::Node, usize> = sccs
-        .iter()
-        .enumerate()
-        .flat_map(|(i, scc)| scc.nodes.iter().map(move |node| (node.clone(), i)))
-        .collect();
-    // An SCC is a sink SCC if all successors of its nodes are within the SCC.
-    let is_sink_scc: Vec<bool> = sccs
-        .iter()
-        .enumerate()
-        .map(|(i, scc)| {
-            scc.nodes.iter().all(|node| {
-                graph
-                    .successors(ctx, node)
-                    .iter()
-                    .all(|succ| scc_of[succ] == i)
-            })
-        })
-        .collect();
-
-    // Select the last node (in graph order) from each sink SCC. This makes it
-    //   - Independent of successor order.
-    //   - Different from LLVM's "furthest away" (last node in a forward DFS) strategy.
-    // The latter may result in a different (but still correct) choice in infinite loops.
-    let mut selected: Vec<Option<G::Node>> = vec![None; sccs.len()];
-    for node in graph.nodes(ctx) {
-        let scc = scc_of[&node];
-        if is_sink_scc[scc] {
-            selected[scc] = Some(node);
-        }
-    }
-    selected.into_iter().flatten().collect()
-}
-
-/// A node of [ReverseGraph]: either the sentinel or a node of the original graph.
-#[derive(Clone, PartialEq, Eq, Hash)]
-enum ReverseNode<N> {
-    Sentinel,
-    Real(N),
-}
-
-impl<N> ReverseNode<N> {
-    /// Returns the node of the original graph, or `None` for the sentinel.
-    fn into_real(self) -> Option<N> {
-        match self {
-            ReverseNode::Sentinel => None,
-            ReverseNode::Real(node) => Some(node),
-        }
-    }
-}
-
-impl<N: HasLabel<GraphContext>, GraphContext> HasLabel<GraphContext> for ReverseNode<N> {
-    fn label(&self, ctx: &GraphContext) -> String {
-        match self {
-            ReverseNode::Sentinel => "sentinel".to_string(),
-            ReverseNode::Real(n) => n.label(ctx),
-        }
-    }
-}
-
-/// The reverse of a graph.
-/// The sentinel forms the entry, with an edge to each pre-sentinel.
-struct ReverseGraph<'a, G, GraphContext>
-where
-    G: ControlFlowGraph<GraphContext>,
-{
-    /// The original graph that is reversed.
-    graph: &'a G,
-    /// The pre-sentinels of [Self::graph].
-    pre_sentinels: ISet<G::Node>,
-    /// Precomputed predecessors of each node in [Self::graph].
-    predecessors: HMap<G::Node, Vec<G::Node>>,
-}
-
-impl<'a, G, GraphContext> ReverseGraph<'a, G, GraphContext>
-where
-    G: ControlFlowGraph<GraphContext>,
-{
-    fn new(ctx: &GraphContext, graph: &'a G, pre_sentinels: ISet<G::Node>) -> Self {
-        let predecessors = graph
-            .nodes(ctx)
-            .map(|node| {
-                let preds = graph.predecessors(ctx, &node);
-                (node, preds)
-            })
-            .collect();
-        ReverseGraph {
-            graph,
-            pre_sentinels,
-            predecessors,
-        }
-    }
-}
-
-impl<G, GraphContext> ControlFlowGraph<GraphContext> for ReverseGraph<'_, G, GraphContext>
-where
-    G: ControlFlowGraph<GraphContext>,
-{
-    type Node = ReverseNode<G::Node>;
-
-    fn num_successors(&self, _ctx: &GraphContext, node: &Self::Node) -> usize {
-        match node {
-            ReverseNode::Sentinel => self.pre_sentinels.len(),
-            ReverseNode::Real(n) => self.predecessors[n].len(),
-        }
-    }
-
-    fn get_successor(&self, _ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node {
-        match node {
-            ReverseNode::Sentinel => ReverseNode::Real(
-                self.pre_sentinels
-                    .get_index(i)
-                    .expect("Pre-sentinel index out of bounds")
-                    .clone(),
-            ),
-            ReverseNode::Real(n) => ReverseNode::Real(self.predecessors[n][i].clone()),
-        }
-    }
-
-    fn num_predecessors(&self, ctx: &GraphContext, node: &Self::Node) -> usize {
-        match node {
-            ReverseNode::Sentinel => 0,
-            ReverseNode::Real(n) => {
-                self.graph.num_successors(ctx, n) + usize::from(self.pre_sentinels.contains(n))
-            }
-        }
-    }
-
-    fn get_predecessor(&self, ctx: &GraphContext, node: &Self::Node, i: usize) -> Self::Node {
-        let ReverseNode::Real(n) = node else {
-            panic!("The sentinel has no predecessors");
-        };
-        if i < self.graph.num_successors(ctx, n) {
-            ReverseNode::Real(self.graph.get_successor(ctx, n, i))
-        } else {
-            assert!(self.pre_sentinels.contains(n) && i == self.graph.num_successors(ctx, n));
-            ReverseNode::Sentinel
-        }
-    }
-
-    fn entry_node(&self, _ctx: &GraphContext) -> Option<Self::Node> {
-        Some(ReverseNode::Sentinel)
-    }
-
-    fn nodes<'a>(&'a self, ctx: &'a GraphContext) -> Box<dyn Iterator<Item = Self::Node> + 'a> {
-        Box::new(
-            core::iter::once(ReverseNode::Sentinel)
-                .chain(self.graph.nodes(ctx).map(ReverseNode::Real)),
-        )
-    }
-}
-
 /// Computes a post-dominator tree for `graph`.
-///
-/// See [PDomTree] for the sentinel and pre-sentinels definitions.
 pub fn compute_post_dominator_tree<G, GraphContext>(
     ctx: &GraphContext,
     graph: &G,
@@ -460,7 +282,8 @@ pub fn compute_post_dominator_tree<G, GraphContext>(
 where
     G: ControlFlowGraph<GraphContext>,
 {
-    let pre_sentinels = find_pre_sentinels(ctx, graph);
+    let reverse_graph = ReverseGraph::new(ctx, graph);
+    let pre_sentinels: Vec<_> = reverse_graph.pre_sentinels().collect();
     if pre_sentinels.is_empty() {
         return PDomTree {
             pre_sentinels,
@@ -469,7 +292,6 @@ where
         };
     }
 
-    let reverse_graph = ReverseGraph::new(ctx, graph, pre_sentinels.iter().cloned().collect());
     let reverse_dom_tree = compute_dominator_tree(ctx, &reverse_graph);
     assert_eq!(
         reverse_dom_tree.num_nodes(),
@@ -512,13 +334,17 @@ where
     G: ControlFlowGraph<GraphContext>,
 {
     /// Does `dominator` dominate `dominatee`?
+    /// Each node dominates itself. An unreachable node has no other dominators.
     pub fn dominates(&self, dominator: &G::Node, dominatee: &G::Node) -> bool {
         let mut node_opt = Some(dominatee.clone());
         while let Some(node) = node_opt {
             if node == *dominator {
                 return true;
             }
-            node_opt = self.dominators_map[&node].parent.clone();
+            node_opt = self
+                .dominators_map
+                .get(&node)
+                .and_then(|node| node.parent.clone());
         }
         false
     }
@@ -994,7 +820,7 @@ mod tests {
         ctx[2].label = Some("sentinel");
         let state = State::default();
         state.set_indent_width(4);
-        state.push_indent();
+        let _indent = state.indent();
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let mut output = String::new();
         print_dom_tree(&ctx, &dom, &state, &mut output).unwrap();
@@ -1482,6 +1308,12 @@ mod tests {
         assert!(!dom.contains(&2));
         assert!(!dom.contains(&3));
         assert!(!dom.contains(&4));
+
+        assert!(dom.dominates(&0, &1));
+        assert!(dom.dominates(&2, &2));
+        assert!(!dom.dominates(&0, &2));
+        assert!(!dom.dominates(&2, &0));
+        assert!(!dom.dominates(&2, &4));
 
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
 
