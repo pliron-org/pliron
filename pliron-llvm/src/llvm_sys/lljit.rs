@@ -45,15 +45,27 @@
 //! ```
 
 use bitflags::bitflags;
-use core::{marker::PhantomData, mem, ops::Deref, ptr};
+use core::{
+    ffi::{c_char, c_void},
+    marker::PhantomData,
+    mem,
+    ops::Deref,
+    ptr,
+};
 
 use llvm_sys::{
     core::LLVMGetModuleContext,
+    execution_engine::LLVMCreatePerfJITEventListener,
     orc2::{
         LLVMJITEvaluatedSymbol, LLVMJITSymbolFlags, LLVMJITSymbolGenericFlags,
         LLVMOrcAbsoluteSymbols, LLVMOrcCSymbolMapPair,
         LLVMOrcCreateNewThreadSafeContextFromLLVMContext, LLVMOrcCreateNewThreadSafeModule,
-        LLVMOrcDisposeThreadSafeContext, lljit,
+        LLVMOrcDisposeThreadSafeContext, LLVMOrcExecutionSessionRef, LLVMOrcObjectLayerRef,
+        ee::{
+            LLVMOrcCreateRTDyldObjectLinkingLayerWithSectionMemoryManager,
+            LLVMOrcRTDyldObjectLinkingLayerRegisterJITEventListener,
+        },
+        lljit,
     },
 };
 
@@ -131,9 +143,46 @@ pub struct LLVMLLJIT(lljit::LLVMOrcLLJITRef);
 impl LLVMLLJIT {
     /// Create a new LLJIT instance with default settings.
     pub fn new_with_default_builder() -> Result<Self, String> {
+        unsafe { Self::new_with_builder(ptr::null_mut()) }
+    }
+
+    /// Create a new LLJIT instance that reports JIT'd code to `perf`.
+    ///
+    /// Code is written to a `jit-<pid>.dump` file under
+    /// `$JITDUMPDIR/.debug/jit/` (`$HOME` if unset), for `perf record -k 1`
+    /// followed by `perf inject --jit`. Samples resolve to function names, and to
+    /// source lines if the module has debug info.
+    ///
+    /// LLVM's perf listener only supports `RuntimeDyld`, so this JIT links
+    /// with `RuntimeDyld` instead of the platform default (`JITLink` on most
+    /// targets).
+    ///
+    /// # Errors
+    ///
+    /// Fails if LLVM was built without `LLVM_USE_PERF`, or if creating the JIT fails.
+    pub fn new_with_perf_listener() -> Result<Self, String> {
+        // A process-wide singleton owned by LLVM, so it is never disposed.
+        let listener = unsafe { LLVMCreatePerfJITEventListener() };
+        if listener.is_null() {
+            return Err("LLVM was built without perf support (LLVM_USE_PERF)".to_string());
+        }
+        unsafe {
+            let builder = lljit::LLVMOrcCreateLLJITBuilder();
+            lljit::LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator(
+                builder,
+                create_rtdyld_layer_with_listener,
+                listener.cast(),
+            );
+            Self::new_with_builder(builder)
+        }
+    }
+
+    /// Create a new LLJIT instance from `builder`, which is consumed.
+    /// A null `builder` uses default settings.
+    unsafe fn new_with_builder(builder: lljit::LLVMOrcLLJITBuilderRef) -> Result<Self, String> {
         unsafe {
             let mut jit = mem::MaybeUninit::uninit();
-            let err = lljit::LLVMOrcCreateLLJIT(jit.as_mut_ptr(), ptr::null_mut());
+            let err = lljit::LLVMOrcCreateLLJIT(jit.as_mut_ptr(), builder);
             handle_err(err)?;
             Ok(LLVMLLJIT(jit.assume_init()))
         }
@@ -220,6 +269,20 @@ impl Drop for LLVMLLJIT {
     }
 }
 
+/// Object linking layer creator for [`LLVMLLJIT::new_with_perf_listener`]:
+/// a `RuntimeDyld` layer with the `JITEventListener` passed as `ctx` registered.
+extern "C" fn create_rtdyld_layer_with_listener(
+    ctx: *mut c_void,
+    es: LLVMOrcExecutionSessionRef,
+    _triple: *const c_char,
+) -> LLVMOrcObjectLayerRef {
+    unsafe {
+        let layer = LLVMOrcCreateRTDyldObjectLinkingLayerWithSectionMemoryManager(es);
+        LLVMOrcRTDyldObjectLinkingLayerRegisterJITEventListener(layer, ctx.cast());
+        layer
+    }
+}
+
 /// A convenience wrapper around [LLVMLLJIT].
 ///
 /// It takes ownership of the [LLVMModule] to be compiled and its owning [LLVMContext].
@@ -278,8 +341,31 @@ impl SimpleJIT {
     ///
     /// See type documentation for examples.
     pub fn new(context: LLVMContext, module: LLVMModule) -> Result<Self, String> {
+        Self::new_with(LLVMLLJIT::new_with_default_builder, context, module)
+    }
+
+    /// Like [`SimpleJIT::new`], but reports JIT'd code to `perf`.
+    ///
+    /// See [`LLVMLLJIT::new_with_perf_listener`].
+    ///
+    /// # Errors
+    ///
+    /// Fails if the JIT cannot be created or `module` cannot be added to it.
+    pub fn new_with_perf_listener(
+        context: LLVMContext,
+        module: LLVMModule,
+    ) -> Result<Self, String> {
+        Self::new_with(LLVMLLJIT::new_with_perf_listener, context, module)
+    }
+
+    /// Create a JIT with `create_jit` and add `module` to it.
+    fn new_with(
+        create_jit: fn() -> Result<LLVMLLJIT, String>,
+        context: LLVMContext,
+        module: LLVMModule,
+    ) -> Result<Self, String> {
         initialize_native()?;
-        let jit = LLVMLLJIT::new_with_default_builder()?;
+        let jit = create_jit()?;
         jit.add_module(context, module)?;
         Ok(SimpleJIT { jit })
     }
