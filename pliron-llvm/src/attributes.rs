@@ -283,8 +283,7 @@ pub enum FCmpPredicateAttr {
 pub enum GepIndexAttr {
     /// This GEP index is a raw u32 compile time constant
     Constant(u32),
-    /// This GEP Index is the SSA value in the containing
-    /// [Operation](pliron::operation::Operation)s `operands[idx]`
+    /// This GEP Index is the SSA value in the containing [Operation]s `operands[idx]`
     OperandIdx(usize),
 }
 

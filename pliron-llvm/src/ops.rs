@@ -2386,15 +2386,14 @@ impl CallOpInterface for CallOp {
         }
     }
 
-    fn args(&self, ctx: &Context) -> Vec<Value> {
-        let op = self.op.deref(ctx);
+    fn arg_range(&self, ctx: &Context) -> Range<usize> {
         // If this is an indirect call, the first operand is the callee value.
         let skip = if matches!(self.callee(ctx), CallOpCallable::Direct(_)) {
             0
         } else {
             1
         };
-        op.operands().skip(skip).collect()
+        skip..self.get_operation().deref(ctx).get_num_operands()
     }
 }
 

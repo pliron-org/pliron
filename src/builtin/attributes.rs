@@ -626,7 +626,7 @@ crate::dict_key!(
     ATTR_KEY_GIVEN_NAMES, "builtin_given_names"
 );
 
-/// Given names management for [Operation](crate::operation::Operation) results
+/// Given names management for [Operation] results
 /// and [BasicBlock](crate::basic_block::BasicBlock) arguments.
 /// See [given_names](crate::builtin::given_names) for utility functions around this.
 #[pliron_attr(name = "builtin.given_names", verifier = "succ")]
