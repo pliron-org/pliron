@@ -147,7 +147,7 @@ pub struct ConversionContext<'a> {
     // State for converting the module's metadata.
     pub(crate) md: MdConversionContext,
     // State for converting op locations to debug data, if requested.
-    pub(crate) di: Option<DIConversionContext>,
+    pub(crate) di: Option<DIConversionContext<'a>>,
 }
 
 impl<'a> ConversionContext<'a> {
@@ -2787,7 +2787,7 @@ pub fn convert_module(
     llvm_ctx: &LLVMContext,
     module: ModuleOp,
 ) -> Result<LLVMModule> {
-    convert_module_impl(ctx, llvm_ctx, module, |_| {})
+    convert_module_impl(ctx, llvm_ctx, module, None)
 }
 
 /// Convert pliron [`ModuleOp`] to [`LLVMModule`], with debug data from the op
@@ -2802,17 +2802,15 @@ pub fn convert_module_with_debug_info(
     module: ModuleOp,
     options: DebugInfoOptions,
 ) -> Result<LLVMModule> {
-    convert_module_impl(ctx, llvm_ctx, module, |cctx| {
-        cctx.di = Some(DIConversionContext::new(cctx.cur_llvm_module, options));
-    })
+    convert_module_impl(ctx, llvm_ctx, module, Some(options))
 }
 
-/// Convert pliron [`ModuleOp`] to [`LLVMModule`]. `init` prepares the [`ConversionContext`].
+/// Convert pliron [`ModuleOp`] to [`LLVMModule`], with debug data if `options` is given.
 fn convert_module_impl(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
     module: ModuleOp,
-    init: impl FnOnce(&mut ConversionContext),
+    options: Option<DebugInfoOptions>,
 ) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
     let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
@@ -2823,8 +2821,9 @@ fn convert_module_impl(
     if let Some(target_triple) = crate::attributes::get_target_triple(ctx, module) {
         llvm_module.set_target_triple(&target_triple);
     }
-    let cctx = &mut ConversionContext::new(llvm_ctx, &llvm_module);
-    init(cctx);
+    let mut conversion = ConversionContext::new(llvm_ctx, &llvm_module);
+    let cctx = &mut conversion;
+    cctx.di = options.map(|options| DIConversionContext::new(&llvm_module, options));
 
     // Setup the scratch builder for evaluating constants.
     // `scratch_module` is freed at the end of this function, when it exits the scope.
@@ -2935,5 +2934,7 @@ fn convert_module_impl(
 
     debug_info::finish(llvm_ctx, cctx);
 
+    // The context borrows `llvm_module`, and its maps may use their borrows when dropped.
+    drop(conversion);
     Ok(llvm_module)
 }

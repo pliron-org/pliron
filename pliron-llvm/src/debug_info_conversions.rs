@@ -14,7 +14,10 @@
 pub mod to_llvm_ir {
     use alloc::string::{String, ToString};
 
-    use llvm_sys::{LLVMModuleFlagBehavior, debuginfo::LLVMDWARFEmissionKind};
+    use llvm_sys::{
+        LLVMModuleFlagBehavior,
+        debuginfo::{LLVMChecksumKind, LLVMDWARFEmissionKind},
+    };
     use pliron::{
         builtin::op_interfaces::SymbolOpInterface,
         context::{Context, Ptr},
@@ -40,10 +43,10 @@ pub mod to_llvm_ir {
             debuginfo::{
                 LLVMDIBuilder, llvm_add_module_flag, llvm_debug_metadata_version,
                 llvm_di_builder_create_compile_unit, llvm_di_builder_create_debug_location,
-                llvm_di_builder_create_file, llvm_di_builder_create_function,
-                llvm_di_builder_create_lexical_block_file, llvm_di_builder_create_subroutine_type,
-                llvm_di_scope_get_file, llvm_get_module_flag, llvm_set_current_debug_location2,
-                llvm_set_subprogram,
+                llvm_di_builder_create_file, llvm_di_builder_create_file_with_checksum,
+                llvm_di_builder_create_function, llvm_di_builder_create_lexical_block_file,
+                llvm_di_builder_create_subroutine_type, llvm_di_scope_get_file,
+                llvm_get_module_flag, llvm_set_current_debug_location2, llvm_set_subprogram,
             },
         },
         op_interfaces::LlvmSymbolName,
@@ -61,10 +64,19 @@ pub mod to_llvm_ir {
         Full,
     }
 
+    /// The text of a source file, to embed in its `DIFile`.
+    #[derive(Clone, Debug)]
+    pub struct SourceText<'a> {
+        /// The text.
+        pub text: &'a str,
+        /// The hexadecimal MD5 of [`text`](Self::text). It is not checked.
+        pub md5: String,
+    }
+
     /// Options for [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info).
     #[derive(Debug)]
     #[non_exhaustive]
-    pub struct DebugInfoOptions {
+    pub struct DebugInfoOptions<'a> {
         /// The amount of debug data to emit.
         pub emission_kind: EmissionKind,
         /// The source language of the compile unit.
@@ -78,9 +90,13 @@ pub mod to_llvm_ir {
         pub directory: String,
         /// The DWARF version. It is not set if the module already has one.
         pub dwarf_version: u32,
+        /// The source text of each file, by the path of the file in the location.
+        /// The `DIFile` of the file embeds the text and its MD5 checksum.
+        /// LLVM emits the text only in DWARF 5.
+        pub source_text: HMap<String, SourceText<'a>>,
     }
 
-    impl Default for DebugInfoOptions {
+    impl Default for DebugInfoOptions<'_> {
         fn default() -> Self {
             Self {
                 emission_kind: EmissionKind::default(),
@@ -89,6 +105,7 @@ pub mod to_llvm_ir {
                 optimized: false,
                 directory: String::new(),
                 dwarf_version: 4,
+                source_text: HMap::default(),
             }
         }
     }
@@ -96,8 +113,8 @@ pub mod to_llvm_ir {
     /// State for converting op locations to LLVM debug data.
     ///
     /// LLVM uniques `DILocation`s, so they need no map here.
-    pub(crate) struct DIConversionContext {
-        options: DebugInfoOptions,
+    pub(crate) struct DIConversionContext<'a> {
+        options: DebugInfoOptions<'a>,
         builder: LLVMDIBuilder,
         // The compile unit. It is created with the first subprogram.
         unit: Option<LLVMMetadata>,
@@ -111,8 +128,8 @@ pub mod to_llvm_ir {
         subprogram: Option<LLVMMetadata>,
     }
 
-    impl DIConversionContext {
-        pub(crate) fn new(module: &LLVMModule, options: DebugInfoOptions) -> Self {
+    impl<'a> DIConversionContext<'a> {
+        pub(crate) fn new(module: &LLVMModule, options: DebugInfoOptions<'a>) -> Self {
             Self {
                 options,
                 builder: LLVMDIBuilder::new(module),
@@ -131,7 +148,18 @@ pub mod to_llvm_ir {
                     Source::File(key) => uniqued_any::get(ctx, *key).to_string_lossy().into_owned(),
                     Source::InMemory => "<in-memory>".to_string(),
                 };
-                llvm_di_builder_create_file(&self.builder, &name, &self.options.directory)
+                let directory = &self.options.directory;
+                let Some(source) = self.options.source_text.get(&name) else {
+                    return llvm_di_builder_create_file(&self.builder, &name, directory);
+                };
+                llvm_di_builder_create_file_with_checksum(
+                    &self.builder,
+                    &name,
+                    directory,
+                    LLVMChecksumKind::CSK_MD5,
+                    &source.md5,
+                    source.text,
+                )
             })
         }
 

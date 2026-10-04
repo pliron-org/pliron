@@ -10,11 +10,11 @@ use llvm_sys::{
     LLVMModuleFlagBehavior,
     core::{LLVMAddModuleFlag, LLVMGetModuleFlag, LLVMSetCurrentDebugLocation2},
     debuginfo::{
-        LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateDebugLocation, LLVMDIBuilderCreateFile,
-        LLVMDIBuilderCreateFunction, LLVMDIBuilderCreateLexicalBlockFile,
-        LLVMDIBuilderCreateSubroutineType, LLVMDIFlagZero, LLVMDIScopeGetFile,
-        LLVMDWARFEmissionKind, LLVMDWARFSourceLanguage, LLVMDebugMetadataVersion, LLVMMetadataKind,
-        LLVMSetSubprogram,
+        LLVMChecksumKind, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateDebugLocation,
+        LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFileWithChecksum, LLVMDIBuilderCreateFunction,
+        LLVMDIBuilderCreateLexicalBlockFile, LLVMDIBuilderCreateSubroutineType, LLVMDIFlagZero,
+        LLVMDIScopeGetFile, LLVMDWARFEmissionKind, LLVMDWARFSourceLanguage,
+        LLVMDebugMetadataVersion, LLVMMetadataKind, LLVMSetSubprogram,
     },
     prelude::LLVMMetadataRef,
 };
@@ -99,6 +99,45 @@ pub fn llvm_di_builder_create_file(
             filename.len(),
             directory.as_ptr().cast::<c_char>(),
             directory.len(),
+        )
+        .into()
+    }
+}
+
+/// `LLVMDIBuilderCreateFileWithChecksum`
+///
+/// `checksum` is in hexadecimal. An empty `source` means none.
+///
+/// # Panics
+///
+/// If `checksum` is not a hexadecimal value of the length that `checksum_kind` requires.
+#[must_use]
+pub fn llvm_di_builder_create_file_with_checksum(
+    builder: &LLVMDIBuilder,
+    filename: &str,
+    directory: &str,
+    checksum_kind: LLVMChecksumKind,
+    checksum: &str,
+    source: &str,
+) -> LLVMMetadata {
+    let len = match checksum_kind {
+        LLVMChecksumKind::CSK_MD5 => 32,
+        LLVMChecksumKind::CSK_SHA1 => 40,
+        LLVMChecksumKind::CSK_SHA256 => 64,
+    };
+    assert!(checksum.len() == len && checksum.bytes().all(|b| b.is_ascii_hexdigit()));
+    unsafe {
+        LLVMDIBuilderCreateFileWithChecksum(
+            builder.inner_ref(),
+            filename.as_ptr().cast::<c_char>(),
+            filename.len(),
+            directory.as_ptr().cast::<c_char>(),
+            directory.len(),
+            checksum_kind,
+            checksum.as_ptr().cast::<c_char>(),
+            checksum.len(),
+            source.as_ptr().cast::<c_char>(),
+            source.len(),
         )
         .into()
     }

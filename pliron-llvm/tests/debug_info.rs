@@ -19,7 +19,7 @@ use pliron::{
     result::Result,
 };
 use pliron_llvm::{
-    debug_info_conversions::to_llvm_ir::{DebugInfoOptions, EmissionKind},
+    debug_info_conversions::to_llvm_ir::{DebugInfoOptions, EmissionKind, SourceText},
     llvm_sys::core::LLVMContext,
     ops::{ConstantOp, FuncOp},
     to_llvm_ir,
@@ -180,6 +180,34 @@ fn full_emission_kind() -> Result<()> {
     llvm_module.verify().expect("LLVM verifier failed");
     let ir = llvm_module.to_string();
     assert!(ir.contains("emissionKind: FullDebug"), "{ir}");
+    Ok(())
+}
+
+/// A file with a text embeds it and its checksum. The other files do not.
+#[test]
+fn source_text() -> Result<()> {
+    let ctx = &mut Context::new();
+    let llvm_ctx = LLVMContext::default();
+    let module = located_module(ctx, &llvm_ctx)?;
+
+    let mut options = DebugInfoOptions::default();
+    options.dwarf_version = 5;
+    options.source_text.insert(
+        "k.rs".to_string(),
+        SourceText {
+            text: "fn kernel() {}\n",
+            md5: "418f53b969f82938a944f4f2bae91f4c".to_string(),
+        },
+    );
+    let llvm_module = to_llvm_ir::convert_module_with_debug_info(ctx, &llvm_ctx, module, options)?;
+    llvm_module.verify().expect("LLVM verifier failed");
+    let ir = llvm_module.to_string();
+    let files: Vec<_> = ir.lines().filter(|line| line.contains("!DIFile")).collect();
+    expect![[r#"
+        !1 = !DIFile(filename: "k.rs", directory: "", checksumkind: CSK_MD5, checksum: "418f53b969f82938a944f4f2bae91f4c", source: "fn kernel() {}\0A")
+        !10 = !DIFile(filename: "inner.rs", directory: "")
+        !14 = !DIFile(filename: "other.rs", directory: "")"#]]
+    .assert_eq(&files.join("\n"));
     Ok(())
 }
 
