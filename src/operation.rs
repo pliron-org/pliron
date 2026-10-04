@@ -289,6 +289,13 @@ impl Operation {
         self.results.iter().flat_map(|res| res.def.uses())
     }
 
+    /// Get the [Location] of this operation, without a clone.
+    /// [`Located::loc`] gives an owned copy.
+    #[must_use]
+    pub fn loc_ref(&self) -> &Location {
+        &self.loc
+    }
+
     /// Get type of the idx'th result. Panics on invalid index.
     pub fn get_type(&self, idx: usize) -> TypeHandle {
         self.results[idx].ty
