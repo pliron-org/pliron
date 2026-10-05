@@ -224,7 +224,7 @@ pub fn parser_combinator<'a, Arg: Clone + 'static, Output: 'a>(
 ///             .unwrap()
 ///     });
 ///
-///     let source = Source::new_from_file(&mut ctx, plir_path);
+///     let source = Source::new_from_file(&ctx, plir_path);
 ///     let state_stream = state_stream_from_iterator(chars_iter, State::new(&mut ctx, source));
 ///     let (_parsed_res, _) : (Ptr<Operation>, _) =
 ///         Operation::top_level_parser().parse(state_stream).unwrap();

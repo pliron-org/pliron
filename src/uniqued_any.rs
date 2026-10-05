@@ -33,7 +33,7 @@ pub(crate) struct UniquedAny(Box<dyn Any + Send>);
 /// ```
 /// use pliron::{context::Context, uniqued_any::{get, save}};
 ///
-/// let ctx = &mut Context::new();
+/// let ctx = &Context::new();
 /// let key = save(ctx, String::from("value"));
 /// assert_eq!(get(ctx, key), "value");
 /// ```
@@ -67,7 +67,7 @@ impl<T: 'static> Hash for UniquedKey<T> {
 }
 
 /// Save a unique copy of an object and get a handle to the saved copy.
-pub fn save<T: Any + Hash + Eq + Send>(ctx: &mut Context, t: T) -> UniquedKey<T> {
+pub fn save<T: Any + Hash + Eq + Send>(ctx: &Context, t: T) -> UniquedKey<T> {
     let hash = TypeValueHash::new(&t);
     let t = UniquedAny(Box::new(t));
     let eq = |t1: &UniquedAny, t2: &UniquedAny| -> bool {
@@ -97,7 +97,7 @@ pub fn get<T: Any + Hash + Eq>(ctx: &Context, key: UniquedKey<T>) -> &T {
 /// ```
 /// use pliron::{context::Context, uniqued_any::Uniqued};
 ///
-/// let ctx = &mut Context::new();
+/// let ctx = &Context::new();
 /// let a = Uniqued::new(ctx, String::from("x + 1"));
 /// let b = Uniqued::new(ctx, String::from("x + 1"));
 /// let c = Uniqued::new(ctx, String::from("x + 2"));
@@ -109,7 +109,7 @@ pub struct Uniqued<T>(UniquedKey<T>);
 
 impl<T: Any + Hash + Eq + Send> Uniqued<T> {
     /// Unique and store the given `value`.
-    pub fn new(ctx: &mut Context, value: T) -> Self {
+    pub fn new(ctx: &Context, value: T) -> Self {
         Self(save(ctx, value))
     }
 
@@ -201,7 +201,7 @@ mod tests {
 
     #[test]
     fn test_uniqued_any() {
-        let ctx = &mut Context::new();
+        let ctx = &Context::new();
 
         let s1 = String::from("Hello");
         let s1_handle = save(ctx, s1);
@@ -227,7 +227,7 @@ mod tests {
         #[derive(Hash, PartialEq, Eq)]
         struct Feet(u64);
 
-        let ctx = &mut Context::new();
+        let ctx = &Context::new();
 
         let a = Uniqued::new(ctx, String::from("Hello"));
         let b = Uniqued::new(ctx, String::from("Hello"));
