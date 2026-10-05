@@ -970,6 +970,16 @@ mod tests {
             assert_attr_roundtrips(ctx, FPHalfAttr(value));
         }
     }
+
+    #[test]
+    fn test_fp_bfloat_attr_roundtrip() {
+        use pliron::{builtin::attributes::FPBFloatAttr, utils::apfloat::BFloat};
+        let ctx = &mut Context::default();
+        for s in ["0.0", "1.5", "-2.25"] {
+            let value: BFloat = s.parse().expect("valid bfloat literal");
+            assert_attr_roundtrips(ctx, FPBFloatAttr(value));
+        }
+    }
 }
 
 dict_key!(

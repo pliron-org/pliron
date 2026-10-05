@@ -12,14 +12,16 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::FloatAttr,
-        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
+        attributes::{
+            FPBFloatAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr,
+        },
         op_interfaces::{
             AtMostOneRegionInterface, BranchOpInterface, CallOpCallable, CallOpInterface,
             OneOpdInterface, OneResultInterface, SingleBlockRegionInterface, SymbolOpInterface,
         },
         ops::ModuleOp,
         type_interfaces::FunctionTypeInterface,
-        types::{FP16Type, FP32Type, FP64Type, IntegerType},
+        types::{BF16Type, FP16Type, FP32Type, FP64Type, IntegerType},
     },
     common_traits::Named,
     context::{Context, Ptr},
@@ -56,17 +58,17 @@ use crate::{
         instruction_iter, llvm_add_attribute_at_index, llvm_add_call_site_attribute, llvm_add_case,
         llvm_add_destination, llvm_add_function, llvm_add_global_in_address_space,
         llvm_add_incoming, llvm_append_basic_block_in_context, llvm_array_type2,
-        llvm_block_address, llvm_build_add, llvm_build_addrspacecast, llvm_build_and,
-        llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg, llvm_build_atomic_rmw,
-        llvm_build_bitcast, llvm_build_br, llvm_build_call2, llvm_build_cond_br,
-        llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd, llvm_build_fcmp,
-        llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg, llvm_build_fpext,
-        llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc, llvm_build_freeze,
-        llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags, llvm_build_icmp,
-        llvm_build_indirect_br, llvm_build_insert_element, llvm_build_insert_value,
-        llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr, llvm_build_mul, llvm_build_or,
-        llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret, llvm_build_ret_void,
-        llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
+        llvm_bfloat_type_in_context, llvm_block_address, llvm_build_add, llvm_build_addrspacecast,
+        llvm_build_and, llvm_build_array_alloca, llvm_build_ashr, llvm_build_atomic_cmpxchg,
+        llvm_build_atomic_rmw, llvm_build_bitcast, llvm_build_br, llvm_build_call2,
+        llvm_build_cond_br, llvm_build_extract_element, llvm_build_extract_value, llvm_build_fadd,
+        llvm_build_fcmp, llvm_build_fdiv, llvm_build_fence, llvm_build_fmul, llvm_build_fneg,
+        llvm_build_fpext, llvm_build_fptosi, llvm_build_fptoui, llvm_build_fptrunc,
+        llvm_build_freeze, llvm_build_frem, llvm_build_fsub, llvm_build_gep_with_no_wrap_flags,
+        llvm_build_icmp, llvm_build_indirect_br, llvm_build_insert_element,
+        llvm_build_insert_value, llvm_build_int_to_ptr, llvm_build_load2, llvm_build_lshr,
+        llvm_build_mul, llvm_build_or, llvm_build_phi, llvm_build_ptr_to_int, llvm_build_ret,
+        llvm_build_ret_void, llvm_build_sdiv, llvm_build_select, llvm_build_sext, llvm_build_shl,
         llvm_build_shuffle_vector, llvm_build_sitofp, llvm_build_srem, llvm_build_store,
         llvm_build_sub, llvm_build_switch, llvm_build_trunc, llvm_build_udiv, llvm_build_uitofp,
         llvm_build_unreachable, llvm_build_urem, llvm_build_va_arg, llvm_build_xor,
@@ -270,6 +272,13 @@ trait FloatAttrToFP64: FloatAttr {
 
 #[attr_interface_impl]
 impl FloatAttrToFP64 for FPHalfAttr {
+    fn to_fp64(&self) -> f64 {
+        float_to_f64(self.0, &mut false)
+    }
+}
+
+#[attr_interface_impl]
+impl FloatAttrToFP64 for FPBFloatAttr {
     fn to_fp64(&self) -> f64 {
         float_to_f64(self.0, &mut false)
     }
@@ -483,6 +492,18 @@ impl ToLLVMType for FP16Type {
         _tcctx: &mut TypeConversionContext,
     ) -> Result<LLVMType> {
         Ok(llvm_half_type_in_context(llvm_ctx))
+    }
+}
+
+#[type_interface_impl]
+impl ToLLVMType for BF16Type {
+    fn convert(
+        &self,
+        _ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        _tcctx: &mut TypeConversionContext,
+    ) -> Result<LLVMType> {
+        Ok(llvm_bfloat_type_in_context(llvm_ctx))
     }
 }
 
@@ -2223,6 +2244,18 @@ fn float_attr_to_llvm_const(
 
 #[attr_interface_impl]
 impl AttrToLLVMConst for FPHalfAttr {
+    fn convert(
+        &self,
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+    ) -> Result<LLVMValue> {
+        float_attr_to_llvm_const(self, ctx, llvm_ctx, cctx)
+    }
+}
+
+#[attr_interface_impl]
+impl AttrToLLVMConst for FPBFloatAttr {
     fn convert(
         &self,
         ctx: &Context,

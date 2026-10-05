@@ -717,6 +717,18 @@ mod tests {
     }
 
     #[test]
+    fn test_bf16_type_roundtrip() {
+        let mut ctx = Context::new();
+        let res = parse_from_str(type_parser(), &mut ctx, "builtin.bf16").expect_ok(&ctx);
+        assert_eq!(res.disp(&ctx).to_string().trim(), "builtin.bf16");
+        assert!(
+            res.deref(&ctx)
+                .downcast_ref::<pliron::builtin::types::BF16Type>()
+                .is_some()
+        );
+    }
+
+    #[test]
     fn test_struct_type_parsing() {
         let mut ctx = Context::new();
 

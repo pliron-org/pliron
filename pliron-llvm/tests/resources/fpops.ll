@@ -45,11 +45,19 @@ entry:
   %h3 = fsub half %h2, 0.5           ; h3 = 2.5
   %h_f = fpext half %h3 to float     ; h_f = 2.5
 
+  ; Same in bfloat precision
+  %bf = fptrunc float %c to bfloat   ; bf = 6.0
+  %bf2 = fmul bfloat %bf, 0.5        ; bf2 = 3.0
+  %bf3 = fadd bfloat %bf2, 0.5       ; bf3 = 3.5
+  %bf_f = fpext bfloat %bf3 to float ; bf_f = 3.5
+
   ; Cast final result to int and return
   %result2 = fptosi float %final_sum to i32
   %result1 = fptoui float %sum5 to i32
   %result0 = fptosi float %h_f to i32
-  %result3 = add i32 %result2, %result1
-  %result = add i32 %result3, %result0
+  %result3 = fptosi float %bf_f to i32
+  %result4 = add i32 %result2, %result1
+  %result5 = add i32 %result4, %result0
+  %result = add i32 %result5, %result3
   ret i32 %result
 }
