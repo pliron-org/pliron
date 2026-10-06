@@ -179,6 +179,16 @@ impl FloatTypeInterface for FP16Type {
     }
 }
 
+#[pliron_type(name = "builtin.bf16", format, generate_get = true, verifier = "succ")]
+#[derive(Hash, PartialEq, Eq, Debug)]
+pub struct BF16Type;
+#[type_interface_impl]
+impl FloatTypeInterface for BF16Type {
+    fn get_semantics(&self) -> Semantics {
+        apfloat::BFloat::get_semantics()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloc::{format, vec};

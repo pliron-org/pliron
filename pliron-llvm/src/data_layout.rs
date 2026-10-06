@@ -114,7 +114,7 @@ impl DataLayout {
 #[cfg(test)]
 mod tests {
     use pliron::{
-        builtin::types::{FP16Type, FP64Type, IntegerType, Signedness},
+        builtin::types::{BF16Type, FP16Type, FP64Type, IntegerType, Signedness},
         context::Context,
         ident,
         result::ExpectOk,
@@ -154,6 +154,7 @@ mod tests {
             IntegerType::get(ctx, 32, Signedness::Signless).into(),
             IntegerType::get(ctx, 128, Signedness::Signless).into(),
             FP16Type::get(ctx).into(),
+            BF16Type::get(ctx).into(),
             FP64Type::get(ctx).into(),
         ] {
             assert!(layout.packs_exactly(ctx, ty).expect_ok(ctx));
