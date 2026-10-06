@@ -191,7 +191,7 @@ impl FloatTypeInterface for BF16Type {
 
 #[cfg(test)]
 mod tests {
-    use alloc::{format, vec};
+    use alloc::{format, string::ToString, vec};
     use expect_test::expect;
 
     use super::*;
@@ -200,9 +200,11 @@ mod tests {
         builtin::types::{IntegerType, Signedness},
         combine::{Parser, eof},
         context::Context,
+        irfmt::parsers::type_parser,
         parsable::parse_from_str,
+        printable::Printable,
         result::ExpectOk,
-        r#type::Type,
+        r#type::{Type, TypeHandle},
     };
 
     #[test]
@@ -286,5 +288,27 @@ mod tests {
         .expect_ok(&ctx)
         .0;
         assert!(res == FunctionType::get(&ctx, vec![], vec![si32.into()]))
+    }
+
+    #[test]
+    fn test_float_types_roundtrip() {
+        let mut ctx = Context::new();
+
+        let cases: [(&str, TypeHandle); 4] = [
+            ("builtin.fp16", FP16Type::get(&ctx).into()),
+            ("builtin.bf16", BF16Type::get(&ctx).into()),
+            ("builtin.fp32", FP32Type::get(&ctx).into()),
+            ("builtin.fp64", FP64Type::get(&ctx).into()),
+        ];
+
+        for (input, expected_ty) in cases {
+            let res = parse_from_str(type_parser().and(eof()), &mut ctx, input)
+                .expect_ok(&ctx)
+                .0;
+            // The parsed type must be the uniqued float type.
+            assert!(res == expected_ty);
+            // The printed type must be the same as the input.
+            assert_eq!(res.disp(&ctx).to_string().trim(), input);
+        }
     }
 }
