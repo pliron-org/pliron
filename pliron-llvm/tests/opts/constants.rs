@@ -982,9 +982,11 @@ fn fpext_folds_constants() -> Result<()> {
         ^entry():
         h = builtin.constant <builtin.half 1.5> : builtin.fp16;
         s = builtin.constant <builtin.single 2.5> : builtin.fp32;
+        b = builtin.constant <builtin.bfloat 1.5> : builtin.bf16;
         h_to_s = llvm.fpext <> h to builtin.fp32;
         h_to_d = llvm.fpext <> h to builtin.fp64;
         s_to_d = llvm.fpext <> s to builtin.fp64;
+        b_to_s = llvm.fpext <> b to builtin.fp32;
         llvm.return s_to_d
       }
     "#;
@@ -998,13 +1000,16 @@ fn fpext_folds_constants() -> Result<()> {
           ^entry_block1v1() !0:
             h_v0 = builtin.constant <builtin.half 1.5> : builtin.fp16  !1;
             s_v1 = builtin.constant <builtin.single 2.5> : builtin.fp32  !2;
-            h_to_s_v5 = builtin.constant <builtin.single 1.5> : builtin.fp32  !3;
-            h_to_s_v2 = llvm.fpext <> h_v0 to builtin.fp32  !4;
-            h_to_d_v6 = builtin.constant <builtin.double 1.5> : builtin.fp64  !5;
-            h_to_d_v3 = llvm.fpext <> h_v0 to builtin.fp64  !6;
-            s_to_d_v7 = builtin.constant <builtin.double 2.5> : builtin.fp64  !7;
-            s_to_d_v4 = llvm.fpext <> s_v1 to builtin.fp64  !8;
-            llvm.return s_to_d_v7 !9
+            b_v2 = builtin.constant <builtin.bfloat 1.5> : builtin.bf16  !3;
+            h_to_s_v7 = builtin.constant <builtin.single 1.5> : builtin.fp32  !4;
+            h_to_s_v3 = llvm.fpext <> h_v0 to builtin.fp32  !5;
+            h_to_d_v8 = builtin.constant <builtin.double 1.5> : builtin.fp64  !6;
+            h_to_d_v4 = llvm.fpext <> h_v0 to builtin.fp64  !7;
+            s_to_d_v9 = builtin.constant <builtin.double 2.5> : builtin.fp64  !8;
+            s_to_d_v5 = llvm.fpext <> s_v1 to builtin.fp64  !9;
+            b_to_s_v10 = builtin.constant <builtin.single 1.5> : builtin.fp32  !10;
+            b_to_s_v6 = llvm.fpext <> b_v2 to builtin.fp32  !11;
+            llvm.return s_to_d_v9 !12
         }"#]]
     .assert_eq(&after);
     Ok(())
@@ -1042,10 +1047,13 @@ fn fptrunc_folds_constants() -> Result<()> {
         d_half = builtin.constant <builtin.double 1.5> : builtin.fp64;
         s = builtin.constant <builtin.single 3.25> : builtin.fp32;
         inexact = builtin.constant <builtin.double 1.0000000001> : builtin.fp64;
+        s_tie = builtin.constant <builtin.single 1.00390625> : builtin.fp32;
         d_to_s = llvm.fptrunc <> d to builtin.fp32;
         d_to_h = llvm.fptrunc <> d_half to builtin.fp16;
         s_to_h = llvm.fptrunc <> s to builtin.fp16;
         rounded = llvm.fptrunc <> inexact to builtin.fp32;
+        s_to_b = llvm.fptrunc <> s to builtin.bf16;
+        tie_to_b = llvm.fptrunc <> s_tie to builtin.bf16;
         llvm.return rounded
       }
     "#;
@@ -1061,15 +1069,20 @@ fn fptrunc_folds_constants() -> Result<()> {
             d_half_v1 = builtin.constant <builtin.double 1.5> : builtin.fp64  !2;
             s_v2 = builtin.constant <builtin.single 3.25> : builtin.fp32  !3;
             inexact_v3 = builtin.constant <builtin.double 1.0000000001> : builtin.fp64  !4;
-            d_to_s_v8 = builtin.constant <builtin.single 2.5> : builtin.fp32  !5;
-            d_to_s_v4 = llvm.fptrunc <> d_v0 to builtin.fp32  !6;
-            d_to_h_v9 = builtin.constant <builtin.half 1.5> : builtin.fp16  !7;
-            d_to_h_v5 = llvm.fptrunc <> d_half_v1 to builtin.fp16  !8;
-            s_to_h_v10 = builtin.constant <builtin.half 3.25> : builtin.fp16  !9;
-            s_to_h_v6 = llvm.fptrunc <> s_v2 to builtin.fp16  !10;
-            rounded_v11 = builtin.constant <builtin.single 1> : builtin.fp32  !11;
-            rounded_v7 = llvm.fptrunc <> inexact_v3 to builtin.fp32  !12;
-            llvm.return rounded_v11 !13
+            s_tie_v4 = builtin.constant <builtin.single 1.00390625> : builtin.fp32  !5;
+            d_to_s_v11 = builtin.constant <builtin.single 2.5> : builtin.fp32  !6;
+            d_to_s_v5 = llvm.fptrunc <> d_v0 to builtin.fp32  !7;
+            d_to_h_v12 = builtin.constant <builtin.half 1.5> : builtin.fp16  !8;
+            d_to_h_v6 = llvm.fptrunc <> d_half_v1 to builtin.fp16  !9;
+            s_to_h_v13 = builtin.constant <builtin.half 3.25> : builtin.fp16  !10;
+            s_to_h_v7 = llvm.fptrunc <> s_v2 to builtin.fp16  !11;
+            rounded_v14 = builtin.constant <builtin.single 1> : builtin.fp32  !12;
+            rounded_v8 = llvm.fptrunc <> inexact_v3 to builtin.fp32  !13;
+            s_to_b_v15 = builtin.constant <builtin.bfloat 3.25> : builtin.bf16  !14;
+            s_to_b_v9 = llvm.fptrunc <> s_v2 to builtin.bf16  !15;
+            tie_to_b_v16 = builtin.constant <builtin.bfloat 1> : builtin.bf16  !16;
+            tie_to_b_v10 = llvm.fptrunc <> s_tie_v4 to builtin.bf16  !17;
+            llvm.return rounded_v14 !18
         }"#]]
     .assert_eq(&after);
     Ok(())
@@ -1111,6 +1124,7 @@ fn sitofp_folds_constants() -> Result<()> {
         to_single = llvm.sitofp mid to builtin.fp32;
         negative = llvm.sitofp high_bit to builtin.fp64;
         rounded = llvm.sitofp inexact to builtin.fp32;
+        to_bfloat = llvm.sitofp mid to builtin.bf16;
         llvm.return rounded
       }
     "#;
@@ -1126,15 +1140,17 @@ fn sitofp_folds_constants() -> Result<()> {
             mid_v1 = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32 !2;
             high_bit_v2 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !3;
             inexact_v3 = builtin.constant <builtin.integer <16777217: i32>> : builtin.integer i32 !4;
-            to_half_v8 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
+            to_half_v9 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
             to_half_v4 = llvm.sitofp small_v0 to builtin.fp16  !6;
-            to_single_v9 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
+            to_single_v10 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
             to_single_v5 = llvm.sitofp mid_v1 to builtin.fp32  !8;
-            negative_v10 = builtin.constant <builtin.double -1> : builtin.fp64  !9;
+            negative_v11 = builtin.constant <builtin.double -1> : builtin.fp64  !9;
             negative_v6 = llvm.sitofp high_bit_v2 to builtin.fp64  !10;
-            rounded_v11 = builtin.constant <builtin.single 16777216> : builtin.fp32  !11;
+            rounded_v12 = builtin.constant <builtin.single 16777216> : builtin.fp32  !11;
             rounded_v7 = llvm.sitofp inexact_v3 to builtin.fp32  !12;
-            llvm.return rounded_v11 !13
+            to_bfloat_v13 = builtin.constant <builtin.bfloat 256> : builtin.bf16  !13;
+            to_bfloat_v8 = llvm.sitofp mid_v1 to builtin.bf16  !14;
+            llvm.return rounded_v12 !15
         }"#]].assert_eq(&after);
     Ok(())
 }
@@ -1173,6 +1189,7 @@ fn uitofp_folds_constants() -> Result<()> {
         to_single = llvm.uitofp <nneg=false> mid to builtin.fp32;
         unsigned = llvm.uitofp <nneg=false> high_bit to builtin.fp64;
         nneg = llvm.uitofp <nneg=true> non_negative to builtin.fp64;
+        to_bfloat = llvm.uitofp <nneg=false> small to builtin.bf16;
         llvm.return nneg
       }
     "#;
@@ -1188,15 +1205,17 @@ fn uitofp_folds_constants() -> Result<()> {
             mid_v1 = builtin.constant <builtin.integer <257: i32>> : builtin.integer i32 !2;
             high_bit_v2 = builtin.constant <builtin.integer <-1: i8>> : builtin.integer i8 !3;
             non_negative_v3 = builtin.constant <builtin.integer <42: i8>> : builtin.integer i8 !4;
-            to_half_v8 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
+            to_half_v9 = builtin.constant <builtin.half 42> : builtin.fp16  !5;
             to_half_v4 = llvm.uitofp <nneg=false> small_v0 to builtin.fp16  !6;
-            to_single_v9 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
+            to_single_v10 = builtin.constant <builtin.single 257> : builtin.fp32  !7;
             to_single_v5 = llvm.uitofp <nneg=false> mid_v1 to builtin.fp32  !8;
-            unsigned_v10 = builtin.constant <builtin.double 255> : builtin.fp64  !9;
+            unsigned_v11 = builtin.constant <builtin.double 255> : builtin.fp64  !9;
             unsigned_v6 = llvm.uitofp <nneg=false> high_bit_v2 to builtin.fp64  !10;
-            nneg_v11 = builtin.constant <builtin.double 42> : builtin.fp64  !11;
+            nneg_v12 = builtin.constant <builtin.double 42> : builtin.fp64  !11;
             nneg_v7 = llvm.uitofp <nneg=true> non_negative_v3 to builtin.fp64  !12;
-            llvm.return nneg_v11 !13
+            to_bfloat_v13 = builtin.constant <builtin.bfloat 42> : builtin.bf16  !13;
+            to_bfloat_v8 = llvm.uitofp <nneg=false> small_v0 to builtin.bf16  !14;
+            llvm.return nneg_v12 !15
         }"#]]
     .assert_eq(&after);
     Ok(())

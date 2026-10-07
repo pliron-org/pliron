@@ -95,6 +95,13 @@ pub fn f64_to_half(value: f64) -> Half {
         .value
 }
 
+/// Convert from Rust [f64] to [rustc_apfloat]'s [BFloat].
+pub fn f64_to_bfloat(value: f64) -> BFloat {
+    Double::from_bits(value.to_bits().into())
+        .convert(&mut false)
+        .value
+}
+
 #[derive(Debug, Error)]
 pub enum FloatErr {
     #[error("Invalid float literal: {0}")]
@@ -780,7 +787,8 @@ mod tests {
         printable::Printable,
         result::ExpectOk,
         utils::apfloat::{
-            double_to_f64, f32_to_single, f64_to_double, float_to_f64, single_to_f32,
+            double_to_f64, f32_to_single, f64_to_bfloat, f64_to_double, f64_to_half, float_to_f64,
+            single_to_f32,
         },
     };
 
@@ -1067,6 +1075,31 @@ mod tests {
 
         assert!(float_to_f64(Half::NAN, &mut false).is_nan());
 
+        // Every BFloat is exactly representable as an f64.
+        let cases: [(u128, f64); 8] = [
+            (0x0000, 0.0),                   // +0.0
+            (0x8000, -0.0),                  // -0.0
+            (0x3F80, 1.0),                   // 1.0
+            (0xC000, -2.0),                  // -2.0
+            (0x3EAB, 0.333984375),           // nearest BFloat to 1/3
+            (0x7F7F, 3.3895313892515355e38), // largest finite BFloat
+            (0x0001, 9.183549615799121e-41), // smallest positive subnormal BFloat
+            (0x7F80, f64::INFINITY),         // +Inf
+        ];
+
+        for (bits, expected) in cases {
+            let val = float_to_f64(BFloat::from_bits(bits), &mut false);
+            assert_eq!(val, expected, "Failed for BFloat with bits {:#x}", bits);
+            assert_eq!(
+                val.is_sign_negative(),
+                expected.is_sign_negative(),
+                "Sign mismatch for BFloat with bits {:#x}",
+                bits
+            );
+        }
+
+        assert!(float_to_f64(BFloat::NAN, &mut false).is_nan());
+
         // Widening from Single and narrowing from Quad both go through the same path.
         assert_eq!(
             float_to_f64(f32_to_single(core::f32::consts::PI), &mut false),
@@ -1076,5 +1109,27 @@ mod tests {
             float_to_f64(Quad::from_str("1.5").unwrap(), &mut false),
             1.5
         );
+    }
+
+    #[test]
+    fn test_f64_to_narrow_float() {
+        // Exactly representable values are preserved.
+        assert_eq!(f64_to_half(1.0).to_bits(), 0x3C00);
+        assert_eq!(f64_to_half(-2.0).to_bits(), 0xC000);
+        assert_eq!(f64_to_bfloat(1.0).to_bits(), 0x3F80);
+        assert_eq!(f64_to_bfloat(-2.0).to_bits(), 0xC000);
+
+        // Inexact values round to nearest.
+        assert_eq!(f64_to_half(1.0 / 3.0).to_bits(), 0x3555);
+        assert_eq!(f64_to_bfloat(1.0 / 3.0).to_bits(), 0x3EAB);
+
+        // Ties round to even.
+        assert_eq!(f64_to_half(1.000_488_281_25).to_bits(), 0x3C00);
+        assert_eq!(f64_to_bfloat(1.003_906_25).to_bits(), 0x3F80);
+        assert_eq!(f64_to_bfloat(1.011_718_75).to_bits(), 0x3F82);
+
+        // Overflow rounds to infinity.
+        assert_eq!(f64_to_half(1e10).to_bits(), 0x7C00);
+        assert_eq!(f64_to_bfloat(1e300).to_bits(), 0x7F80);
     }
 }

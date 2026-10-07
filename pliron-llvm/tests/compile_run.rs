@@ -462,7 +462,7 @@ fn test_fpops() {
     test_llvm_ir_via_pliron(
         RESOURCES_DIR.join("fpops.ll").to_str().unwrap(),
         Passes::default(),
-        47,
+        50,
     );
 }
 

@@ -22,8 +22,8 @@ use llvm_sys::{
         LLVMAddAttributeAtIndex, LLVMAddCallSiteAttribute, LLVMAddCase, LLVMAddDestination,
         LLVMAddFunction, LLVMAddGlobal, LLVMAddGlobalInAddressSpace, LLVMAddIncoming,
         LLVMAddNamedMetadataOperand, LLVMAppendBasicBlockInContext, LLVMArrayType2,
-        LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr, LLVMBuildAdd,
-        LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
+        LLVMBFloatTypeInContext, LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr,
+        LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
         LLVMBuildAtomicCmpXchgSyncScope, LLVMBuildAtomicRMWSyncScope, LLVMBuildBitCast,
         LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
@@ -748,6 +748,7 @@ pub fn llvm_is_valid_vector_element_type(ty: LLVMType) -> bool {
             | LLVMTypeKind::LLVMFloatTypeKind
             | LLVMTypeKind::LLVMDoubleTypeKind
             | LLVMTypeKind::LLVMHalfTypeKind
+            | LLVMTypeKind::LLVMBFloatTypeKind
             | LLVMTypeKind::LLVMFP128TypeKind
             | LLVMTypeKind::LLVMPPC_FP128TypeKind
             | LLVMTypeKind::LLVMX86_FP80TypeKind
@@ -1165,11 +1166,13 @@ pub fn llvm_const_real_get_double(val: LLVMValue) -> (f64, bool) {
 
 /// LLVMConstReal
 pub fn llvm_const_real(ty: LLVMType, n: f64) -> LLVMValue {
-    assert!(
-        llvm_get_type_kind(ty) == LLVMTypeKind::LLVMHalfTypeKind
-            || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMFloatTypeKind
-            || llvm_get_type_kind(ty) == LLVMTypeKind::LLVMDoubleTypeKind
-    );
+    assert!(matches!(
+        llvm_get_type_kind(ty),
+        LLVMTypeKind::LLVMHalfTypeKind
+            | LLVMTypeKind::LLVMBFloatTypeKind
+            | LLVMTypeKind::LLVMFloatTypeKind
+            | LLVMTypeKind::LLVMDoubleTypeKind
+    ));
     unsafe { LLVMConstReal(ty.into(), n).into() }
 }
 
@@ -1563,6 +1566,11 @@ pub fn llvm_double_type_in_context(context: &LLVMContext) -> LLVMType {
 /// LLVMHalfTypeInContext
 pub fn llvm_half_type_in_context(context: &LLVMContext) -> LLVMType {
     unsafe { LLVMHalfTypeInContext(context.inner_ref()).into() }
+}
+
+/// LLVMBFloatTypeInContext
+pub fn llvm_bfloat_type_in_context(context: &LLVMContext) -> LLVMType {
+    unsafe { LLVMBFloatTypeInContext(context.inner_ref()).into() }
 }
 
 /// ArrayType::isValidElementType
