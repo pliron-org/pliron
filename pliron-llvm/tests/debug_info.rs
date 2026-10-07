@@ -44,7 +44,6 @@ const INPUT_LL: &str = r"
   }
 ";
 
-/// The function `name` in `module`.
 fn function(ctx: &Context, module: ModuleOp, name: &str) -> FuncOp {
     module
         .get_body(ctx, 0)

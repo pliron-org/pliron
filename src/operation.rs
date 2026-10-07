@@ -289,9 +289,7 @@ impl Operation {
         self.results.iter().flat_map(|res| res.def.uses())
     }
 
-    /// Get the [Location] of this operation, without a clone.
-    /// [`Located::loc`] gives an owned copy.
-    #[must_use]
+    /// Borrowing alternative to [`Located::loc`].
     pub fn loc_ref(&self) -> &Location {
         &self.loc
     }

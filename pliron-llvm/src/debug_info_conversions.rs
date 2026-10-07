@@ -1,16 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-/// Conversion of op locations to LLVM debug data, a companion to [`crate::to_llvm_ir`].
+/// Conversion of op locations to `DISubprogram`s and `DILocation`s, via
+/// [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info).
 ///
-/// The conversion maps each located function to a `DISubprogram` and each
-/// located op to a `DILocation` in that subprogram. Call site locations become
-/// inlined frames. The conversion is lossy: a `DILocation` holds one position,
-/// so the conversion keeps the first position of each location.
-///
-/// Use [`convert_module_with_debug_info`](crate::to_llvm_ir::convert_module_with_debug_info)
-/// to get this data. [`DebugInfoOptions`](to_llvm_ir::DebugInfoOptions)
-/// controls the compile unit and the emission kind.
+/// Call sites become inlined frames. A `DILocation` holds one position,
+/// so only the first position of each location is kept.
 pub mod to_llvm_ir {
     use alloc::string::{String, ToString};
 
@@ -54,7 +49,6 @@ pub mod to_llvm_ir {
         to_llvm_ir::ConversionContext,
     };
 
-    /// The amount of debug data to emit.
     #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
     pub enum EmissionKind {
         /// Line tables and inlined frames only.
@@ -67,9 +61,8 @@ pub mod to_llvm_ir {
     /// The text of a source file, to embed in its `DIFile`.
     #[derive(Clone, Debug)]
     pub struct SourceText<'a> {
-        /// The text.
         pub text: &'a str,
-        /// The hexadecimal MD5 of [`text`](Self::text). It is not checked.
+        /// Hexadecimal MD5 of [`text`](Self::text). Not verified.
         pub md5: String,
     }
 
@@ -77,22 +70,16 @@ pub mod to_llvm_ir {
     #[derive(Debug)]
     #[non_exhaustive]
     pub struct DebugInfoOptions<'a> {
-        /// The amount of debug data to emit.
         pub emission_kind: EmissionKind,
-        /// The source language of the compile unit.
-        /// DWARF has many languages. Thus this field uses the llvm-sys type.
         pub language: LLVMDWARFSourceLanguage,
-        /// The producer of the compile unit.
         pub producer: String,
-        /// Whether the code is optimized.
         pub optimized: bool,
-        /// The directory for relative file names.
+        /// Base directory for relative file names.
         pub directory: String,
-        /// The DWARF version. It is not set if the module already has one.
+        /// Not set if the module already has one.
         pub dwarf_version: u32,
-        /// The source text of each file, by the path of the file in the location.
-        /// The `DIFile` of the file embeds the text and its MD5 checksum.
-        /// LLVM emits the text only in DWARF 5.
+        /// Text to embed in the `DIFile` of each location path.
+        /// LLVM emits it only in DWARF 5.
         pub source_text: HMap<String, SourceText<'a>>,
     }
 
@@ -110,21 +97,16 @@ pub mod to_llvm_ir {
         }
     }
 
-    /// State for converting op locations to LLVM debug data.
-    ///
     /// LLVM uniques `DILocation`s, so they need no map here.
     pub(crate) struct DIConversionContext<'a> {
         options: DebugInfoOptions<'a>,
         builder: LLVMDIBuilder,
-        // The compile unit. It is created with the first subprogram.
+        // Created with the first subprogram.
         unit: Option<LLVMMetadata>,
-        // The `DIFile` of each source.
         files: HMap<Source, LLVMMetadata>,
-        // The `DILexicalBlockFile` of each scope and file.
         block_files: HMap<(LLVMMetadata, LLVMMetadata), LLVMMetadata>,
         // Subprograms of inlined functions, by file and name.
         inlined: HMap<LLVMMetadata, HMap<String, LLVMMetadata>>,
-        // The subprogram of the current function.
         subprogram: Option<LLVMMetadata>,
     }
 
@@ -141,7 +123,6 @@ pub mod to_llvm_ir {
             }
         }
 
-        /// The `DIFile` of `src`.
         fn file(&mut self, ctx: &Context, src: &Source) -> LLVMMetadata {
             *self.files.entry(*src).or_insert_with(|| {
                 let name = match src {
@@ -163,7 +144,6 @@ pub mod to_llvm_ir {
             })
         }
 
-        /// Create the compile unit in `file`, if it does not exist.
         fn ensure_unit(&mut self, file: LLVMMetadata) {
             if self.unit.is_some() {
                 return;
@@ -189,7 +169,6 @@ pub mod to_llvm_ir {
             ));
         }
 
-        /// Create the subprogram of a function definition in `file`.
         /// An empty `linkage_name` means none.
         fn create_subprogram(
             &mut self,
@@ -232,7 +211,7 @@ pub mod to_llvm_ir {
             })
         }
 
-        /// The subprogram of an inlined callee, from its outermost name.
+        /// Keyed by the outermost name of `callee`.
         fn inlined_subprogram(&mut self, ctx: &Context, callee: &Location) -> Option<LLVMMetadata> {
             let name = frame_name(callee)?;
             let (src, _) = frame_src_pos(callee).unwrap_or((Source::InMemory, 0));
@@ -248,7 +227,6 @@ pub mod to_llvm_ir {
             Some(subprogram)
         }
 
-        /// The `DILocation` of `loc` in `scope`, inlined at `inlined_at`.
         fn translate(
             &mut self,
             ctx: &Context,
@@ -290,7 +268,6 @@ pub mod to_llvm_ir {
         }
     }
 
-    /// `value`, or 0 if `value` is negative.
     fn non_negative(value: i32) -> u32 {
         u32::try_from(value).unwrap_or(0)
     }
@@ -305,7 +282,7 @@ pub mod to_llvm_ir {
         }
     }
 
-    /// The first source position in the outermost frame of `loc`, as a source and a line.
+    /// The first source and line in the outermost frame of `loc`.
     fn frame_src_pos(loc: &Location) -> Option<(Source, u32)> {
         match loc {
             Location::SrcPos { src, pos } => Some((*src, non_negative(pos.line))),
@@ -345,8 +322,7 @@ pub mod to_llvm_ir {
         }
     }
 
-    /// Create the subprogram of `func_op`, which converts to `func_llvm`.
-    /// A function without a location gets no subprogram, and its instructions get no location.
+    /// A function without a location gets no subprogram, nor do its instructions get locations.
     pub(crate) fn begin_function(
         ctx: &Context,
         cctx: &mut ConversionContext,

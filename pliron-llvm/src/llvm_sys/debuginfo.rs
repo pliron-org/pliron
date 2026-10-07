@@ -41,7 +41,6 @@ mod llvm_di_builder {
         /// `LLVMCreateDIBuilder`
         ///
         /// The builder must be dropped before `module`.
-        #[must_use]
         pub fn new(module: &LLVMModule) -> Self {
             unsafe { LLVMDIBuilder(LLVMCreateDIBuilder(module.inner_ref())) }
         }
@@ -63,7 +62,6 @@ mod llvm_di_builder {
 }
 pub use llvm_di_builder::LLVMDIBuilder;
 
-/// Is `md` of the kind `kind`?
 fn is_md_kind(md: LLVMMetadata, kind: LLVMMetadataKind) -> bool {
     // `LLVMMetadataKind` has no `PartialEq`. Thus we compare the discriminants.
     llvm_get_metadata_kind(md) as u32 == kind as u32
@@ -80,13 +78,11 @@ fn is_local_scope(md: LLVMMetadata) -> bool {
 }
 
 /// `LLVMDebugMetadataVersion`
-#[must_use]
 pub fn llvm_debug_metadata_version() -> u32 {
     unsafe { LLVMDebugMetadataVersion() }
 }
 
 /// `LLVMDIBuilderCreateFile`
-#[must_use]
 pub fn llvm_di_builder_create_file(
     builder: &LLVMDIBuilder,
     filename: &str,
@@ -111,7 +107,6 @@ pub fn llvm_di_builder_create_file(
 /// # Panics
 ///
 /// If `checksum` is not a hexadecimal value of the length that `checksum_kind` requires.
-#[must_use]
 pub fn llvm_di_builder_create_file_with_checksum(
     builder: &LLVMDIBuilder,
     filename: &str,
@@ -150,7 +145,6 @@ pub fn llvm_di_builder_create_file_with_checksum(
 /// # Panics
 ///
 /// If `file` is not a `DIFile`.
-#[must_use]
 pub fn llvm_di_builder_create_compile_unit(
     builder: &LLVMDIBuilder,
     language: LLVMDWARFSourceLanguage,
@@ -191,7 +185,6 @@ pub fn llvm_di_builder_create_compile_unit(
 /// # Panics
 ///
 /// If `file` is not a `DIFile`, or if there are more than `u32::MAX` parameter types.
-#[must_use]
 pub fn llvm_di_builder_create_subroutine_type(
     builder: &LLVMDIBuilder,
     file: LLVMMetadata,
@@ -220,7 +213,6 @@ pub fn llvm_di_builder_create_subroutine_type(
 ///
 /// If `file` is not a `DIFile`, or `ty` is not a `DISubroutineType`.
 #[allow(clippy::too_many_arguments)]
-#[must_use]
 pub fn llvm_di_builder_create_function(
     builder: &LLVMDIBuilder,
     scope: LLVMMetadata,
@@ -265,7 +257,6 @@ pub fn llvm_di_builder_create_function(
 /// # Panics
 ///
 /// If `scope` is not a local scope, or `file` is not a `DIFile`.
-#[must_use]
 pub fn llvm_di_builder_create_lexical_block_file(
     builder: &LLVMDIBuilder,
     scope: LLVMMetadata,
@@ -290,7 +281,6 @@ pub fn llvm_di_builder_create_lexical_block_file(
 /// # Panics
 ///
 /// If `scope` is not a local scope, or `inlined_at` is not a `DILocation`.
-#[must_use]
 pub fn llvm_di_builder_create_debug_location(
     ctx: &LLVMContext,
     line: u32,
@@ -315,7 +305,6 @@ pub fn llvm_di_builder_create_debug_location(
 }
 
 /// `LLVMDIScopeGetFile`
-#[must_use]
 pub fn llvm_di_scope_get_file(scope: LLVMMetadata) -> Option<LLVMMetadata> {
     let file = unsafe { LLVMDIScopeGetFile(scope.into()) };
     (!file.is_null()).then(|| file.into())
@@ -350,7 +339,6 @@ pub fn llvm_set_current_debug_location2(builder: &LLVMBuilder, loc: Option<LLVMM
 }
 
 /// `LLVMGetModuleFlag`
-#[must_use]
 pub fn llvm_get_module_flag(module: &LLVMModule, key: &str) -> Option<LLVMMetadata> {
     let flag =
         unsafe { LLVMGetModuleFlag(module.inner_ref(), key.as_ptr().cast::<c_char>(), key.len()) };

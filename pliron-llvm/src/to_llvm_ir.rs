@@ -174,9 +174,8 @@ impl<'a> ConversionContext<'a> {
         self.value_map.clear();
         self.block_map.clear();
         llvm_clear_insertion_position(&self.builder);
-        // The builder keeps the debug location of the last op of the previous function.
-        // The PHIs of block arguments are built before the subprogram is set.
-        // Clear the location, else the PHIs get a location in the wrong subprogram.
+        // Else the PHIs of block arguments, built before the subprogram is set,
+        // get the last location of the previous function.
         llvm_set_current_debug_location2(&self.builder, None);
     }
 }
@@ -2838,7 +2837,6 @@ pub fn convert_module_with_debug_info(
     convert_module_impl(ctx, llvm_ctx, module, Some(options))
 }
 
-/// Convert pliron [`ModuleOp`] to [`LLVMModule`], with debug data if `options` is given.
 fn convert_module_impl(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
