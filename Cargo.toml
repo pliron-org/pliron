@@ -81,7 +81,7 @@ rustc-hash = "2"
 hashbrown = "0"
 indexmap = { version = "2", default-features = false }
 smallvec = { version = "1", default-features = false }
-combine = "4"
+combine = "4.6.8"
 thiserror = "2"
 tempfile = "3"
 log = { version = "0" }
