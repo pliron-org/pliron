@@ -32,7 +32,19 @@ use crate::{
 };
 
 type BitSet = hi_sparse_bitset::BitSet<hi_sparse_bitset::config::_128bit>;
-use hi_sparse_bitset::{cache::DynamicCache, ops as bitset_ops, reduce_w_cache as bitset_reduce};
+
+/// Union of all `sets`. Returns an empty set if `sets` is empty.
+fn union_all<'a>(sets: impl Iterator<Item = &'a BitSet> + Clone) -> BitSet {
+    // We use [DynamicCache](hi_sparse_bitset::cache::DynamicCache) because
+    // the default fixed-size cache panics when there are too many sets.
+    hi_sparse_bitset::reduce_w_cache(
+        hi_sparse_bitset::ops::Or,
+        sets,
+        hi_sparse_bitset::cache::DynamicCache,
+    )
+    .map(Into::into)
+    .unwrap_or_default()
+}
 
 /// This mirrors the approach from "Fast Liveness Checking for SSA-Form Programs":
 /// reduced reachability (`R`) and back-edge target closure (`Tq`) are precomputed
@@ -161,9 +173,8 @@ impl LivenessTq {
             // Add the children themselves
             let children_nodes: BitSet = child_indices.iter().copied().collect();
             // Union of children's sdom_tree plus the children themselves is the sdom_tree for this node.
-            let subtree = bitset_reduce(bitset_ops::Or, children_sdom_tree, DynamicCache);
-            sdom_tree[block_idx] =
-                (&subtree.map(Into::<BitSet>::into).unwrap_or_default() | &children_nodes).into();
+            let subtree = union_all(children_sdom_tree);
+            sdom_tree[block_idx] = (&subtree | &children_nodes).into();
         }
         let root = dom_tree
             .root()
@@ -179,13 +190,7 @@ impl LivenessTq {
         // `reduced_successors` is in RPO and excludes back edges,
         // so visiting from the back lets us reuse already-computed successor sets.
         for node in (0..n).rev() {
-            let mut reach = bitset_reduce(
-                bitset_ops::Or,
-                reduced_successors[node].iter().map(|succ| &res[succ]),
-                DynamicCache,
-            )
-            .map(Into::<BitSet>::into)
-            .unwrap_or_default();
+            let mut reach = union_all(reduced_successors[node].iter().map(|succ| &res[succ]));
             // Definition 4 in the paper does not include the node itself.
             // But for Definition 5 (T_up) and subsequent computations to work
             // (for example when a back edge starts at `t` itself),
@@ -238,13 +243,7 @@ impl LivenessTq {
             .filter(|t| back_edge_targets.contains(**t))
         {
             // In DFS preorder, dependencies for targets are already available.
-            let mut t_q = bitset_reduce(
-                bitset_ops::Or,
-                t_up_sets[t].iter().map(|t_up| &tq_sets[t_up]),
-                DynamicCache,
-            )
-            .map(Into::<BitSet>::into)
-            .unwrap_or_default();
+            let mut t_q = union_all(t_up_sets[t].iter().map(|t_up| &tq_sets[t_up]));
             // Equation 1: T_v = {v} U ...
             t_q.insert(t);
             tq_sets[t] = t_q;
@@ -257,14 +256,10 @@ impl LivenessTq {
             .iter()
             .filter(|s| !back_edges_by_source[**s].is_empty())
         {
-            let ts = bitset_reduce(
-                bitset_ops::Or,
+            let ts = union_all(
                 core::iter::once(&tq_sets[s])
                     .chain(back_edges_by_source[s].iter().map(|t| &tq_sets[*t])),
-                DynamicCache,
-            )
-            .map(Into::<BitSet>::into)
-            .unwrap_or_default();
+            );
             tq_sets[s] = ts;
             computed[s] = true;
         }
@@ -272,13 +267,7 @@ impl LivenessTq {
         // Phase 3 (paper Sec 5.2): propagate the phase-2 result through the reduced
         // graph in DFS postorder (same shape as reduced reachability precomputation).
         for &q in dfs_postorder.iter().filter(|q| !computed[**q]) {
-            let tq = bitset_reduce(
-                bitset_ops::Or,
-                reduced_successors[q].iter().map(|succ| &tq_sets[succ]),
-                DynamicCache,
-            )
-            .map(Into::<BitSet>::into)
-            .unwrap_or_default();
+            let tq = union_all(reduced_successors[q].iter().map(|succ| &tq_sets[succ]));
             tq_sets[q] = tq;
         }
 
@@ -1347,23 +1336,33 @@ mod tests {
 
     #[test]
     fn liveness_def_not_dominating_query_diamond() {
-        // Diamond CFG: entry -> {left, right} -> merge.
-        // Val is defined and used locally in `left`. Querying liveness at `right` and `entry`
-        // (neither of which is dominated by `left`) exercises the
-        // `!sdom_tree[def_idx].contains(query_idx)` early-exit path.
+        // - Diamond CFG: entry -> {left, right} -> merge.
+        // - Val is defined and used locally in `left`.
+        // - Querying liveness at `right` and `entry` (neither of which is dominated by `left`)
+        //   exercises the `!sdom_tree[def_idx].contains(query_idx)` early-exit path.
+        // - `entry` also branches to 32 empty `extra` blocks. This is only to ensure that
+        //   `hi_sparse_bitset` can handle large sets.
         let ctx = &mut Context::new();
         let (func, entry) = new_test_func(ctx, "diamond");
         let left = append_block(ctx, &func);
         let right = append_block(ctx, &func);
         let merge = append_block(ctx, &func);
+        let extras: Vec<_> = (0..32).map(|_| append_block(ctx, &func)).collect();
 
         let (_def_op, val) = insert_def(ctx, left);
         // Local use in `left` — SSA dominance is satisfied (def dominates its own block).
         insert_use(ctx, left, val);
 
-        insert_br(ctx, entry, vec![left, right]);
+        insert_br(
+            ctx,
+            entry,
+            [left, right].into_iter().chain(extras.clone()).collect(),
+        );
         insert_br(ctx, left, vec![merge]);
         insert_br(ctx, right, vec![merge]);
+        for extra in extras {
+            insert_br(ctx, extra, vec![merge]);
+        }
 
         let mut analysis_manager = AnalysisManager::default();
         analysis_manager
@@ -1823,27 +1822,5 @@ mod tests {
             val,
             OpInsertionPoint::AfterOperation(_holder_2)
         ));
-    }
-
-    #[test]
-    fn liveness_wide_cfg_exceeds_default_reduce_cache() {
-        // hi_sparse_bitset uses FixedCache<32> by default. A CFG with more than
-        // 32 successors exercises liveness reductions whose fan-in exceeds that
-        // fixed cache capacity.
-        const FANOUT: usize = 33;
-
-        let ctx = &mut Context::new();
-        let (func, entry) = new_test_func(ctx, "wide_cfg");
-
-        let successors = (0..FANOUT)
-            .map(|_| append_block(ctx, &func))
-            .collect::<Vec<_>>();
-
-        insert_br(ctx, entry, successors);
-
-        let mut analysis_manager = AnalysisManager::default();
-        analysis_manager
-            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
-            .expect("Liveness analysis must compute successfully");
     }
 }
