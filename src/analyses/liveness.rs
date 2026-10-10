@@ -35,8 +35,7 @@ type BitSet = hi_sparse_bitset::BitSet<hi_sparse_bitset::config::_128bit>;
 
 /// Union of all `sets`. Returns an empty set if `sets` is empty.
 fn union_all<'a>(sets: impl Iterator<Item = &'a BitSet> + Clone) -> BitSet {
-    // We use [DynamicCache](hi_sparse_bitset::cache::DynamicCache) because
-    // the default fixed-size cache panics when there are too many sets.
+    // We use `DynamicCache` because the default fixed-size cache panics on too many sets.
     hi_sparse_bitset::reduce_w_cache(
         hi_sparse_bitset::ops::Or,
         sets,
@@ -1340,8 +1339,8 @@ mod tests {
         // - Val is defined and used locally in `left`.
         // - Querying liveness at `right` and `entry` (neither of which is dominated by `left`)
         //   exercises the `!sdom_tree[def_idx].contains(query_idx)` early-exit path.
-        // - `entry` also branches to 32 empty `extra` blocks. This is only to ensure that
-        //   `hi_sparse_bitset` can handle large sets.
+        // - `entry` also branches to 32 empty `extra` blocks.
+        //   `union_all` (calling `hi_sparse_bitset`) must handle many sets.
         let ctx = &mut Context::new();
         let (func, entry) = new_test_func(ctx, "diamond");
         let left = append_block(ctx, &func);
