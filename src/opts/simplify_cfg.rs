@@ -21,6 +21,7 @@ use alloc::{
     vec,
     vec::Vec,
 };
+use pliron_derive::op_interface;
 
 use crate::{
     attribute::AttrObj,
@@ -38,7 +39,7 @@ use crate::{
         rewriter::{IRRewriter, Rewriter},
     },
     linked_list::{ContainsLinkedList, LinkedList},
-    op::{op_cast, op_impls},
+    op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
     pass::{AnalysisManager, Pass, PassResult},
@@ -47,6 +48,50 @@ use crate::{
     utils::table::{HSet, ISet},
     value::Value,
 };
+
+/// Describes additional CFG entry points in an operation's regions.
+///
+/// These blocks can be entered through control flow that is not represented by
+/// ordinary predecessor edges. CFG simplification must therefore treat them as
+/// reachable and must not merge them into ordinary predecessors.
+#[op_interface]
+pub trait AdditionalRegionEntryInterface {
+    /// Return the additional entry blocks in the region at `region_idx`.
+    fn get_additional_region_entries(
+        &self,
+        ctx: &Context,
+        region_idx: usize,
+    ) -> Vec<Ptr<BasicBlock>>;
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+/// Return all entry points of an SSA region: its ordinary entry block and any
+/// additional entries reported by [AdditionalRegionEntryInterface].
+fn region_entry_blocks(region: Ptr<Region>, ctx: &Context) -> Vec<Ptr<BasicBlock>> {
+    let Some(entry) = region.deref(ctx).get_head() else {
+        return vec![];
+    };
+
+    let mut entries = vec![entry];
+    let parent_op = region.deref(ctx).get_parent_op();
+    let parent_op_dyn = Operation::get_op_dyn(parent_op, ctx);
+    if let Some(interface) = op_cast::<dyn AdditionalRegionEntryInterface>(parent_op_dyn.as_ref()) {
+        let region_idx = region.deref(ctx).find_index_in_parent(ctx);
+        entries.extend(
+            interface
+                .get_additional_region_entries(ctx, region_idx)
+                .into_iter()
+                .filter(|block| *block != entry),
+        );
+    }
+    entries
+}
 
 /// For each operand of `op`, return the constant value it carries if the operand
 /// is defined by [ConstFoldInterface], or `None` otherwise.
@@ -75,12 +120,12 @@ fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrO
 /// Merge `succ` into `pred` when
 /// * `pred` has a single successor `succ`, and
 /// * `succ`'s only predecessor is `pred`, and
-/// * `succ` is not the region `entry`
+/// * `succ` is not one of the region's CFG entry points
 ///
 /// Returns `true` on success.
 fn try_merge_succ(
     pred: Ptr<BasicBlock>,
-    entry: Ptr<BasicBlock>,
+    entries: &HSet<Ptr<BasicBlock>>,
     ctx: &mut Context,
     rewriter: &mut dyn Rewriter,
 ) -> bool {
@@ -88,7 +133,7 @@ fn try_merge_succ(
     let [succ] = succs[..] else {
         return false;
     };
-    if succ == entry {
+    if entries.contains(&succ) {
         return false;
     }
     if succ.num_preds(ctx) != 1 {
@@ -186,12 +231,13 @@ pub fn remove_blocks_inside_region(
         return remove_blocks_inside_block(head, ctx, rewriter);
     }
 
-    let Some(entry) = region.deref(ctx).get_head() else {
+    let entries = region_entry_blocks(region, ctx);
+    if entries.is_empty() {
         return IRStatus::Unchanged;
-    };
+    }
 
     let mut status = IRStatus::Unchanged;
-    let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
+    let mut stack = entries;
     let mut visited = HSet::<Ptr<BasicBlock>>::default();
     while let Some(block) = stack.pop() {
         if !visited.insert(block) {
@@ -272,19 +318,21 @@ pub fn merge_inside_region(
         return merge_inside_block(head, ctx, rewriter);
     }
 
-    let Some(entry) = region.deref(ctx).get_head() else {
+    let entries = region_entry_blocks(region, ctx);
+    if entries.is_empty() {
         return IRStatus::Unchanged;
-    };
+    }
 
     let mut status = IRStatus::Unchanged;
-    let mut stack: Vec<Ptr<BasicBlock>> = vec![entry];
+    let protected_entries: HSet<Ptr<BasicBlock>> = entries.iter().copied().collect();
+    let mut stack = entries;
     let mut visited = HSet::<Ptr<BasicBlock>>::default();
     while let Some(block) = stack.pop() {
         if !visited.insert(block) {
             continue;
         }
 
-        while try_merge_succ(block, entry, ctx, rewriter) {
+        while try_merge_succ(block, &protected_entries, ctx, rewriter) {
             status = IRStatus::Changed;
         }
 
