@@ -15,19 +15,23 @@ use crate::{
     identifier::Identifier,
     linked_list::ContainsLinkedList,
     location::{Located, Location},
-    op::{Op, op_cast},
+    op::{Op, op_cast, op_impls},
     operation::Operation,
     printable::Printable,
     region::Region,
     result::{AnyError, Result},
     symbol_table::{SymbolTableCollection, walk_symbol_table},
     r#type::{Type, TypeHandle, TypeInterfaceMarker, Typed, type_impls},
-    utils::{const_bound_n::LessThanN, table::HMap},
-    value::Value,
+    utils::{
+        const_bound_n::LessThanN,
+        table::{HMap, HSet},
+    },
+    value::{DefiningEntity, Use, Value},
     verify_err, verify_error,
 };
 use alloc::{
     string::{String, ToString},
+    vec,
     vec::Vec,
 };
 use core::ops::Range;
@@ -76,6 +80,9 @@ pub trait BranchOpInterface: IsTerminatorInterface {
     ///  - The operand range it returns is contained in `0..Operation::get_num_operands()`.
     ///
     /// Typically, an impl will include a call to `<Self as OperandSegmentInterface>::verify`.
+    ///
+    /// This exists so that `<Self as BranchOpInterface>::verify` can safely
+    /// call [Self::successor_operand_range] and use its results without a panic.
     fn verify_successor_operand_layout(&self, ctx: &Context) -> Result<()>;
 
     /// Return the index range of operands forwarded to successor `succ_idx`.
@@ -203,6 +210,318 @@ pub trait OneSuccInterface: BranchOpInterface {
         let op = op.get_operation().deref(ctx);
         if op.get_num_successors() != 1 {
             return verify_err!(op.loc(), NSuccsVerifyErr(1, op.get_num_successors()));
+        }
+        Ok(())
+    }
+}
+
+/// The source of a control-flow edge of a [RegionBranchOpInterface] op.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RegionBranchPoint {
+    /// The op itself, when control reaches it.
+    Parent,
+    /// A terminator in one of the regions of the op.
+    Terminator(Ptr<Operation>),
+}
+
+/// The target of a control-flow edge of a [RegionBranchOpInterface] op.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RegionSuccessor {
+    /// The entry block of this region. Its arguments receive values.
+    Region(Ptr<Region>),
+    /// Control continues after this op (the region branch op itself).
+    /// Its results receive values.
+    After(Ptr<Operation>),
+}
+
+/// A control-flow edge of a [RegionBranchOpInterface] op, and the values it passes.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RegionEdge {
+    /// The source of the edge.
+    pub from: RegionBranchPoint,
+    /// The target of the edge.
+    pub to: RegionSuccessor,
+    /// Operands (of the operation at [Self::from]) that flow on this edge,
+    /// each paired with the value that receives it (its receiver).
+    ///
+    /// The receiver is:
+    ///   - an entry block argument of the [Self::to] region, or
+    ///   - a result of the [Self::to] op.
+    pub flows: Vec<(Use<Value>, Value)>,
+}
+
+#[derive(Error, Debug)]
+pub enum RegionBranchOpInterfaceVerifyErr {
+    #[error("region_edges must only target regions of the op itself")]
+    ForeignRegionSuccessor,
+    #[error("region_edges must only target After(op) where op is the op itself")]
+    InvalidOpSuccessor,
+    #[error("region_edges must only start at terminators in the regions of the op itself")]
+    InvalidTerminator,
+    #[error(
+        "region_edges must only use operands of the operation at the edge's source as flow operands"
+    )]
+    OperandNotAtBranchPoint,
+    #[error("region_edges must only use entry block arguments of the target region as receivers")]
+    ReceiverNotRegionArgument,
+    #[error("region_edges must only use results of the target op as receivers")]
+    ReceiverNotResult,
+    #[error("region_edges must not pass two operands of an edge to the same receiver")]
+    DuplicateReceiver,
+    #[error(
+        "region_edges must pass operands to receivers of the same type, but {operand} flows into {receiver}"
+    )]
+    FlowTypeMismatch { operand: String, receiver: String },
+    #[error("operands_used_in_regions must only return operands of the op itself")]
+    UsedInRegionsNotOperand,
+    #[error("region_edges must pass operands to the same receivers on all edges into a successor")]
+    ReceiverSetMismatch,
+}
+
+/// An [Op] whose regions are entered and exited through known control-flow edges,
+/// with known values passed along each edge.
+///
+/// This is a simpler form of MLIR's [RegionBranchOpInterface].
+///
+/// - [Self::region_edges] lists all control-flow edges of the op:
+///   into, out of, and between its regions.
+/// - An edge pairs operands (of the op, or of a terminator in its regions)
+///   with their receiver values ([RegionEdge::flows]). The types must match.
+/// - All edges into the same successor have the same receivers.
+///
+/// No assumption can be made about the value of an entry block argument or a result
+/// that is not the receiver of any [RegionEdge::flows]. Analyses must treat such
+/// values as ⊥ (the safe bottom value of a meet semi-lattice).
+///
+/// [RegionBranchOpInterface]: https://github.com/llvm/llvm-project/blob/ea7d852a70e8/mlir/include/mlir/Interfaces/ControlFlowInterfaces.td
+#[op_interface]
+pub trait RegionBranchOpInterface {
+    /// Verify that [Self::region_edges] or [Self::operands_used_in_regions] do not panic.
+    /// For example, verify the regions, terminators and operand counts that it reads.
+    ///
+    /// This exists so that `<Self as RegionBranchOpInterface>::verify` can call
+    /// these methods and use their results without a panic.
+    fn verify_region_edges_layout(&self, ctx: &Context) -> Result<()>;
+
+    /// Get all possible [RegionEdge]s of this op.
+    fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge>;
+
+    /// Get the operands that this op itself uses while its regions run.
+    /// Example: the upper bound of a loop op.
+    fn operands_used_in_regions(&self, ctx: &Context) -> Vec<Use<Value>>;
+
+    /// Get the edges that start at `point`.
+    fn edges_from(&self, ctx: &Context, point: RegionBranchPoint) -> Vec<RegionEdge> {
+        self.region_edges(ctx)
+            .into_iter()
+            .filter(|edge| edge.from == point)
+            .collect()
+    }
+
+    /// Get the edges that end at `successor`.
+    fn edges_to(&self, ctx: &Context, successor: RegionSuccessor) -> Vec<RegionEdge> {
+        self.region_edges(ctx)
+            .into_iter()
+            .filter(|edge| edge.to == successor)
+            .collect()
+    }
+
+    /// Get the [flows](RegionEdge::flows) of all edges, as `(operand, receiver)` pairs.
+    fn region_flows(&self, ctx: &Context) -> Vec<(Use<Value>, Value)> {
+        self.region_edges(ctx)
+            .into_iter()
+            .flat_map(|edge| edge.flows)
+            .collect()
+    }
+
+    /// Get the receivers in `successor`, each once.
+    fn successor_receivers(&self, ctx: &Context, successor: RegionSuccessor) -> Vec<Value> {
+        let mut receivers = Vec::new();
+        for (_, receiver) in self
+            .edges_to(ctx, successor)
+            .into_iter()
+            .flat_map(|edge| edge.flows)
+        {
+            if !receivers.contains(&receiver) {
+                receivers.push(receiver);
+            }
+        }
+        receivers
+    }
+
+    /// Get the operands that [flow](RegionEdge::flows) into `receiver`.
+    fn incoming_operands(&self, ctx: &Context, receiver: Value) -> Vec<Use<Value>> {
+        self.region_flows(ctx)
+            .into_iter()
+            .filter_map(|(operand, to)| (to == receiver).then_some(operand))
+            .collect()
+    }
+
+    /// Get the regions that the terminators of `region` branch to.
+    fn successor_regions(&self, ctx: &Context, region: Ptr<Region>) -> Vec<Ptr<Region>> {
+        let mut successors = Vec::new();
+        for edge in self.region_edges(ctx) {
+            let (RegionBranchPoint::Terminator(terminator), RegionSuccessor::Region(target)) =
+                (edge.from, edge.to)
+            else {
+                continue;
+            };
+            if terminator.deref(ctx).get_parent_region(ctx) == Some(region)
+                && !successors.contains(&target)
+            {
+                successors.push(target);
+            }
+        }
+        successors
+    }
+
+    /// Get the regions reachable from `region` through one or more edges between regions.
+    /// `region` itself is included only if it is on a cycle.
+    fn reachable_regions(&self, ctx: &Context, region: Ptr<Region>) -> Vec<Ptr<Region>> {
+        let mut reachable: Vec<Ptr<Region>> = Vec::new();
+        let mut worklist = vec![region];
+        while let Some(source) = worklist.pop() {
+            for target in self.successor_regions(ctx, source) {
+                if !reachable.contains(&target) {
+                    reachable.push(target);
+                    worklist.push(target);
+                }
+            }
+        }
+        reachable
+    }
+
+    /// Is `region` reachable from itself (for example, a loop body)?
+    fn is_repetitive_region(&self, ctx: &Context, region: Ptr<Region>) -> bool {
+        self.reachable_regions(ctx, region).contains(&region)
+    }
+
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let this = op.get_operation();
+        let loc = op.loc(ctx);
+        let self_op = op_cast::<dyn RegionBranchOpInterface>(op)
+            .expect("Op must implement RegionBranchOpInterface");
+        self_op.verify_region_edges_layout(ctx)?;
+        if self_op
+            .operands_used_in_regions(ctx)
+            .iter()
+            .any(|operand| operand.user_op() != this)
+        {
+            return verify_err!(
+                loc,
+                RegionBranchOpInterfaceVerifyErr::UsedInRegionsNotOperand
+            );
+        }
+        let mut successor_receivers: Vec<(RegionSuccessor, HSet<Value>)> = Vec::new();
+        for edge in self_op.region_edges(ctx) {
+            let receivers: HSet<Value> = edge.flows.iter().map(|(_, receiver)| *receiver).collect();
+            match successor_receivers
+                .iter()
+                .find(|(successor, _)| *successor == edge.to)
+            {
+                Some((_, first)) => {
+                    // We've already seen this region successor. The receivers must match.
+                    if *first != receivers {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::ReceiverSetMismatch
+                        );
+                    }
+                }
+                // We're seeing this region successor for the first time.
+                None => successor_receivers.push((edge.to, receivers)),
+            }
+            // The operation that owns the operands of this edge.
+            let source = match edge.from {
+                RegionBranchPoint::Parent => this,
+                RegionBranchPoint::Terminator(terminator) => {
+                    let terminator_op = Operation::get_op_dyn(terminator, ctx);
+                    if terminator.deref(ctx).get_parent_op(ctx) != Some(this)
+                        || !op_impls::<dyn IsTerminatorInterface>(terminator_op.as_ref())
+                    {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::InvalidTerminator
+                        );
+                    }
+                    terminator
+                }
+            };
+            match edge.to {
+                RegionSuccessor::Region(region) => {
+                    if region.deref(ctx).get_parent_op() != this {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::ForeignRegionSuccessor
+                        );
+                    }
+                }
+                RegionSuccessor::After(target) => {
+                    if target != this {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::InvalidOpSuccessor
+                        );
+                    }
+                }
+            }
+            let mut receivers = Vec::new();
+            for (operand, receiver) in &edge.flows {
+                if operand.user_op() != source {
+                    return verify_err!(
+                        loc,
+                        RegionBranchOpInterfaceVerifyErr::OperandNotAtBranchPoint
+                    );
+                }
+                match (edge.to, receiver.defining_entity()) {
+                    (RegionSuccessor::Region(region), DefiningEntity::Block(block)) => {
+                        if region.deref(ctx).get_entry_block() != Some(block) {
+                            return verify_err!(
+                                loc,
+                                RegionBranchOpInterfaceVerifyErr::ReceiverNotRegionArgument
+                            );
+                        }
+                    }
+                    (RegionSuccessor::Region(_), DefiningEntity::Op(_)) => {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::ReceiverNotRegionArgument
+                        );
+                    }
+                    (RegionSuccessor::After(target), DefiningEntity::Op(def_op)) => {
+                        if def_op != target {
+                            return verify_err!(
+                                loc,
+                                RegionBranchOpInterfaceVerifyErr::ReceiverNotResult
+                            );
+                        }
+                    }
+                    (RegionSuccessor::After(_), DefiningEntity::Block(_)) => {
+                        return verify_err!(
+                            loc,
+                            RegionBranchOpInterfaceVerifyErr::ReceiverNotResult
+                        );
+                    }
+                }
+                if receivers.contains(receiver) {
+                    return verify_err!(loc, RegionBranchOpInterfaceVerifyErr::DuplicateReceiver);
+                }
+                receivers.push(*receiver);
+                let operand_ty = operand.get_def(ctx).get_type(ctx);
+                let receiver_ty = receiver.get_type(ctx);
+                if operand_ty != receiver_ty {
+                    return verify_err!(
+                        loc,
+                        RegionBranchOpInterfaceVerifyErr::FlowTypeMismatch {
+                            operand: operand_ty.disp(ctx).to_string(),
+                            receiver: receiver_ty.disp(ctx).to_string(),
+                        }
+                    );
+                }
+            }
         }
         Ok(())
     }

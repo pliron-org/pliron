@@ -12,6 +12,7 @@ use alloc::{vec, vec::Vec};
 
 use crate::{
     basic_block::BasicBlock,
+    builtin::op_interfaces::RegionBranchOpInterface,
     context::{Context, Ptr},
     graph::{
         dominance::{DomInfo, DomTree},
@@ -21,6 +22,8 @@ use crate::{
     },
     irbuild::inserter::OpInsertionPoint,
     linked_list::{ContainsLinkedList, LinkedList},
+    op::op_cast,
+    operation::Operation,
     pass::{Analysis, AnalysisManager},
     region::Region,
     result::Result,
@@ -552,6 +555,65 @@ impl<T: RegionLiveness> Liveness<T> {
             .any(|op| user_ops_in_point_block.contains(&op))
     }
 
+    /// For a `point` in a region of `op`,
+    /// and `value` defined in a region containing `op`,
+    /// determine if `value` is live at `point`.
+    ///
+    /// Returns [None] if `op` does not implement [RegionBranchOpInterface].
+    ///
+    // `value` is reported as live at `point` if one of these is true:
+    // 1. `value` has a use in the region that contains `point`, or in a region reachable from it.
+    // 2. `op` itself reads `value` while its regions run
+    //    ([operands_used_in_regions](RegionBranchOpInterface::operands_used_in_regions)).
+    // 3. `value` is live after `op`.
+    fn is_live_in_region_branch_op(
+        &mut self,
+        ctx: &Context,
+        dom_info: &mut DomInfo,
+        value: Value,
+        point: OpInsertionPoint,
+        op: Ptr<Operation>,
+    ) -> Option<bool> {
+        let op_dyn = Operation::get_op_dyn(op, ctx);
+        let region_branch = op_cast::<dyn RegionBranchOpInterface>(op_dyn.as_ref())?;
+        if !dom_info.value_strictly_dominates_op(ctx, value, op) {
+            // If the value doesn't dominate the operation, it can't be live inside it.
+            return Some(false);
+        }
+        let query_block = point
+            .get_insertion_block(ctx)
+            .expect("Query point must be within a block");
+
+        // The region of `op` that contains `point`.
+        let region = op
+            .deref(ctx)
+            .regions()
+            .find(|&region| {
+                find_ancestor_block_of_block_in_region(ctx, query_block, region).is_some()
+            })
+            .expect("`op` must contain the query point");
+
+        // Rule 1: A use in `region`, or in a region reachable from it.
+        if core::iter::once(region)
+            .chain(region_branch.reachable_regions(ctx, region))
+            .any(|reachable_region| Self::has_use_in_region_subtree(ctx, value, reachable_region))
+        {
+            return Some(true);
+        }
+
+        // Rule 2: `op` itself reads `value` while its regions run.
+        if region_branch
+            .operands_used_in_regions(ctx)
+            .iter()
+            .any(|operand| operand.get_def(ctx) == value)
+        {
+            return Some(true);
+        }
+
+        // Rule 3: Live after `op`.
+        Some(self.is_live_at_point(ctx, dom_info, value, OpInsertionPoint::AfterOperation(op)))
+    }
+
     /// Is `value` live at a program point?
     pub fn is_live_at_point(
         &mut self,
@@ -614,6 +676,15 @@ impl<T: RegionLiveness> Liveness<T> {
                     // there is no path from the definition to the query block.
                     return false;
                 };
+                if let Some(live) = self.is_live_in_region_branch_op(
+                    ctx,
+                    dom_info,
+                    value,
+                    point,
+                    query_op_in_def_region,
+                ) {
+                    return live;
+                }
                 if Self::has_use_in_region_subtree(ctx, value, query_region) {
                     // A use inside a queried nested region implies, conservatively,
                     // that the value is live throughout that region.
@@ -689,13 +760,14 @@ mod tests {
         basic_block::BasicBlock,
         builtin::{
             op_interfaces::{
-                IsTerminatorInterface, OneRegionInterface, SingleBlockRegionInterface,
+                IsTerminatorInterface, OneRegionInterface, RegionBranchOpInterface,
+                RegionBranchPoint, RegionEdge, RegionSuccessor, SingleBlockRegionInterface,
             },
             ops::{FuncOp, ModuleOp},
             types::{FunctionType, IntegerType, Signedness},
         },
         context::{Context, Ptr},
-        derive::pliron_op,
+        derive::{op_interface_impl, pliron_op},
         graph::dominance::DomInfo,
         ident,
         irbuild::inserter::OpInsertionPoint,
@@ -703,7 +775,7 @@ mod tests {
         operation::Operation,
         pass::AnalysisManager,
         region::Region,
-        value::Value,
+        value::{Use, Value},
     };
 
     #[pliron_op(name = "test.liveness_node", format, verifier = "succ")]
@@ -781,6 +853,222 @@ mod tests {
         let inner_block = BasicBlock::new(ctx, None, vec![]);
         inner_block.insert_at_back(region, ctx);
         (holder, region, inner_block)
+    }
+
+    /// A loop
+    /// - operand 0 is the initial value of body argument 0.
+    /// - operand 1 is a bound (it flows nowhere).
+    /// - operand 2 is the initial value of body argument 1.
+    /// - The body's tail terminator passes its two operands back to the body arguments,
+    ///   or exits the op.
+    #[pliron_op(name = "test.liveness_loop", format, verifier = "succ")]
+    struct LoopOp;
+
+    /// An `if`
+    /// - control enters one of its two regions
+    /// - each region's tail terminator exits the op.
+    /// - No values flow.
+    #[pliron_op(name = "test.liveness_if", format, verifier = "succ")]
+    struct IfOp;
+
+    /// The terminator of the last block of `region`.
+    fn tail_terminator(ctx: &Context, region: Ptr<Region>) -> Ptr<Operation> {
+        let tail = region.deref(ctx).get_tail().unwrap();
+        tail.deref(ctx).get_tail().unwrap()
+    }
+
+    #[op_interface_impl]
+    impl RegionBranchOpInterface for LoopOp {
+        fn verify_region_edges_layout(&self, _ctx: &Context) -> crate::result::Result<()> {
+            Ok(())
+        }
+
+        fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge> {
+            let op = self.get_operation();
+            let body = op.deref(ctx).get_region(0);
+            let entry = body.deref(ctx).get_head().unwrap();
+            let body_args = [
+                entry.deref(ctx).get_argument(0),
+                entry.deref(ctx).get_argument(1),
+            ];
+            let terminator = tail_terminator(ctx, body);
+            // Pair operands of `user` with the body arguments.
+            let flows_from = |user: Ptr<Operation>, operands: [usize; 2]| {
+                operands
+                    .into_iter()
+                    .zip(body_args)
+                    .map(|(operand, arg)| (user.deref(ctx).get_operand_as_use(operand), arg))
+                    .collect()
+            };
+            vec![
+                RegionEdge {
+                    from: RegionBranchPoint::Parent,
+                    to: RegionSuccessor::Region(body),
+                    flows: flows_from(op, [0, 2]),
+                },
+                RegionEdge {
+                    from: RegionBranchPoint::Parent,
+                    to: RegionSuccessor::After(op),
+                    flows: vec![],
+                },
+                RegionEdge {
+                    from: RegionBranchPoint::Terminator(terminator),
+                    to: RegionSuccessor::Region(body),
+                    flows: flows_from(terminator, [0, 1]),
+                },
+                RegionEdge {
+                    from: RegionBranchPoint::Terminator(terminator),
+                    to: RegionSuccessor::After(op),
+                    flows: vec![],
+                },
+            ]
+        }
+
+        fn operands_used_in_regions(&self, ctx: &Context) -> Vec<Use<Value>> {
+            let op = self.get_operation().deref(ctx);
+            vec![op.get_operand_as_use(1), op.get_operand_as_use(2)]
+        }
+    }
+
+    #[op_interface_impl]
+    impl RegionBranchOpInterface for IfOp {
+        fn verify_region_edges_layout(&self, _ctx: &Context) -> crate::result::Result<()> {
+            Ok(())
+        }
+
+        fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge> {
+            let op = self.get_operation();
+            let mut edges = Vec::new();
+            for region in op.deref(ctx).regions() {
+                edges.push(RegionEdge {
+                    from: RegionBranchPoint::Parent,
+                    to: RegionSuccessor::Region(region),
+                    flows: vec![],
+                });
+                edges.push(RegionEdge {
+                    from: RegionBranchPoint::Terminator(tail_terminator(ctx, region)),
+                    to: RegionSuccessor::After(op),
+                    flows: vec![],
+                });
+            }
+            edges
+        }
+
+        fn operands_used_in_regions(&self, _ctx: &Context) -> Vec<Use<Value>> {
+            vec![]
+        }
+    }
+
+    /// Compute liveness and dominance for `func`, and check `checks`.
+    fn check_liveness(ctx: &Context, func: &FuncOp, checks: &[(Value, OpInsertionPoint, bool)]) {
+        let mut analysis_manager = AnalysisManager::default();
+        analysis_manager
+            .compute_analysis::<Liveness<LivenessTq>>(func.get_operation(), ctx)
+            .expect("Liveness analysis must compute successfully");
+        analysis_manager
+            .compute_analysis::<DomInfo>(func.get_operation(), ctx)
+            .expect("DomInfo analysis must compute successfully");
+        let mut liveness = analysis_manager
+            .try_get_analysis_mut::<Liveness<LivenessTq>>(func.get_operation())
+            .unwrap();
+        let mut dom_info = analysis_manager
+            .try_get_analysis_mut::<DomInfo>(func.get_operation())
+            .unwrap();
+        for (i, (value, point, expected)) in checks.iter().enumerate() {
+            assert_eq!(
+                liveness.is_live_at_point(ctx, &mut dom_info, *value, *point),
+                *expected,
+                "check {i}"
+            );
+        }
+    }
+
+    /// Inside a loop body, a value must be live if
+    /// - the body uses it (the body runs again),
+    /// - if the loop itself reads it while the body runs,
+    /// - if it is used after the loop.
+    ///
+    /// A value that is only an initial value of the loop must not be live.
+    #[test]
+    fn liveness_region_branch_loop() {
+        let ctx = &mut Context::new();
+        let (func, entry) = new_test_func(ctx, "region_branch_loop");
+        let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
+
+        let (_, init) = insert_def(ctx, entry);
+        let (_, bound) = insert_def(ctx, entry);
+        let (_, reread_init) = insert_def(ctx, entry);
+        let (_, in_body) = insert_def(ctx, entry);
+        let (_, after) = insert_def(ctx, entry);
+
+        let loop_op = Operation::new(
+            ctx,
+            LoopOp::get_concrete_op_info(),
+            vec![],
+            vec![init, bound, reread_init],
+            vec![],
+            1,
+        );
+        loop_op.insert_at_back(entry, ctx);
+        let body = BasicBlock::new(ctx, None, vec![i64_ty.into(), i64_ty.into()]);
+        body.insert_at_back(loop_op.deref(ctx).get_region(0), ctx);
+        let body_args = body.deref(ctx).arguments().collect::<Vec<_>>();
+        insert_use(ctx, body, in_body);
+        let terminator = Operation::new(
+            ctx,
+            BrOp::get_concrete_op_info(),
+            vec![],
+            body_args,
+            vec![],
+            0,
+        );
+        terminator.insert_at_back(body, ctx);
+        insert_use(ctx, entry, after);
+
+        let start = OpInsertionPoint::AtBlockStart(body);
+        let end = OpInsertionPoint::BeforeOperation(terminator);
+        check_liveness(
+            ctx,
+            &func,
+            &[
+                (init, start, false),
+                (bound, start, true),
+                // It flows into the body, and the loop also reads it later.
+                (reread_init, start, true),
+                (in_body, start, true),
+                // The use is before this point, but the body runs again.
+                (in_body, end, true),
+                (after, start, true),
+            ],
+        );
+    }
+
+    /// A use in one region of an `if` must not make a value live in the other region.
+    #[test]
+    fn liveness_region_branch_if() {
+        let ctx = &mut Context::new();
+        let (func, entry) = new_test_func(ctx, "region_branch_if");
+
+        let (_, in_else) = insert_def(ctx, entry);
+
+        let if_op = Operation::new(ctx, IfOp::get_concrete_op_info(), vec![], vec![], vec![], 2);
+        if_op.insert_at_back(entry, ctx);
+        let then_block = BasicBlock::new(ctx, None, vec![]);
+        then_block.insert_at_back(if_op.deref(ctx).get_region(0), ctx);
+        insert_br(ctx, then_block, vec![]);
+        let else_block = BasicBlock::new(ctx, None, vec![]);
+        else_block.insert_at_back(if_op.deref(ctx).get_region(1), ctx);
+        insert_use(ctx, else_block, in_else);
+        insert_br(ctx, else_block, vec![]);
+
+        check_liveness(
+            ctx,
+            &func,
+            &[
+                (in_else, OpInsertionPoint::AtBlockStart(then_block), false),
+                (in_else, OpInsertionPoint::AtBlockStart(else_block), true),
+            ],
+        );
     }
 
     #[test]
