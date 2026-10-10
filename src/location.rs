@@ -55,7 +55,7 @@ pub enum Source {
 
 impl Source {
     /// Get a [Source] handle to the source specified by `path`.
-    pub fn new_from_file(ctx: &mut Context, path: impl Into<PathBuf>) -> Self {
+    pub fn new_from_file(ctx: &Context, path: impl Into<PathBuf>) -> Self {
         Self::File(uniqued_any::save(ctx, path.into()))
     }
 }
@@ -398,7 +398,7 @@ mod tests {
     fn test_print_and_parse_srcpos_location() {
         let mut ctx = Context::default();
         let path = PathBuf::from("foo.mlir");
-        let src = Source::new_from_file(&mut ctx, path.clone());
+        let src = Source::new_from_file(&ctx, path.clone());
         let pos = SourcePosition {
             line: 42,
             column: 7,
@@ -509,7 +509,7 @@ mod tests {
     fn test_print_and_parse_srcpos_location_with_escapes() {
         let mut ctx = Context::default();
         let path = PathBuf::from("a\"b\\c.mlir");
-        let src = Source::new_from_file(&mut ctx, path);
+        let src = Source::new_from_file(&ctx, path);
         let pos = SourcePosition { line: 1, column: 1 };
         let loc = Location::SrcPos { src, pos };
 

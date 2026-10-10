@@ -262,14 +262,9 @@ pub(crate) fn derive_clone_attribute_into_context(input: TokenStream) -> syn::Re
         }
     };
 
-    let interface_verifiers_slice = parse_quote! { ::pliron::attribute::ATTR_INTERFACE_VERIFIERS };
-    let all_verifiers_fn_type = parse_quote! { ::pliron::attribute::AttrInterfaceAllVerifiers };
     interfaces::interface_impl(
         item_impl.into_token_stream(),
-        interface_verifiers_slice,
-        all_verifiers_fn_type,
-        interfaces::RegisterBoxedCast::Register,
-        interfaces::ImplsMarkerTrait::Skip,
+        interfaces::InterfaceImplOpts::attr(),
     )
 }
 
@@ -296,15 +291,9 @@ pub(crate) fn derive_clone_type_into_context(input: TokenStream) -> syn::Result<
         }
     };
 
-    let interface_verifiers_slice = parse_quote! { ::pliron::r#type::TYPE_INTERFACE_VERIFIERS };
-    let all_verifiers_fn_type = parse_quote! { ::pliron::r#type::TypeInterfaceAllVerifiers };
-    let impls_marker_trait = parse_quote! { ::pliron::r#type::TypeImplsInterface };
     interfaces::interface_impl(
         item_impl.into_token_stream(),
-        interface_verifiers_slice,
-        all_verifiers_fn_type,
-        interfaces::RegisterBoxedCast::Skip,
-        interfaces::ImplsMarkerTrait::Implement(impls_marker_trait),
+        interfaces::InterfaceImplOpts::r#type(),
     )
 }
 
@@ -669,7 +658,7 @@ mod tests {
                     )
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext);
+            ::pliron::type_to_trait!((Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext));
             ::pliron::boxed_type_to_trait!(
                 Foo, ::pliron::irbuild::decontext::CloneAttributeIntoContext
             );
@@ -681,13 +670,15 @@ mod tests {
                     ),
                     linkme(crate = ::pliron::linkme)
                 )]
-                static INTERFACE_VERIFIER: (
+                static INTERFACE_VERIFIER: &[(
                     ::core::any::TypeId,
                     (::pliron::attribute::AttrInterfaceAllVerifiers),
-                ) = (
-                    ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
-                );
+                )] = &[
+                    (
+                        ::core::any::TypeId::of::<Foo>(),
+                        <Foo as ::pliron::irbuild::decontext::CloneAttributeIntoContext>::__all_verifiers,
+                    ),
+                ];
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
                     ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)
@@ -732,20 +723,22 @@ mod tests {
                     <Foo as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into()
                 }
             }
-            ::pliron::type_to_trait!(Foo, ::pliron::irbuild::decontext::CloneTypeIntoContext);
+            ::pliron::type_to_trait!((Foo, ::pliron::irbuild::decontext::CloneTypeIntoContext));
             const _: () = {
                 #[cfg_attr(
                     not(target_family = "wasm"),
                     ::pliron::linkme::distributed_slice(::pliron::r#type::TYPE_INTERFACE_VERIFIERS),
                     linkme(crate = ::pliron::linkme)
                 )]
-                static INTERFACE_VERIFIER: (
+                static INTERFACE_VERIFIER: &[(
                     ::core::any::TypeId,
                     (::pliron::r#type::TypeInterfaceAllVerifiers),
-                ) = (
-                    ::core::any::TypeId::of::<Foo>(),
-                    <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
-                );
+                )] = &[
+                    (
+                        ::core::any::TypeId::of::<Foo>(),
+                        <Foo as ::pliron::irbuild::decontext::CloneTypeIntoContext>::__all_verifiers,
+                    ),
+                ];
                 #[cfg(target_family = "wasm")]
                 ::pliron::inventory::submit! {
                     ::pliron::InventoryWrapper(& INTERFACE_VERIFIER)

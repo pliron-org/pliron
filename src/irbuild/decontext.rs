@@ -541,11 +541,11 @@ mod tests {
 
     #[test]
     fn source_stable_hash() {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
 
-        let s1 = Source::new_from_file(&mut ctx, "foo.mlir");
-        let s2 = Source::new_from_file(&mut ctx, "foo.mlir");
-        let s3 = Source::new_from_file(&mut ctx, "bar.mlir");
+        let s1 = Source::new_from_file(&ctx, "foo.mlir");
+        let s2 = Source::new_from_file(&ctx, "foo.mlir");
+        let s3 = Source::new_from_file(&ctx, "bar.mlir");
         assert_eq!(stable_hash_of(&ctx, &s1), stable_hash_of(&ctx, &s2));
         assert_ne!(stable_hash_of(&ctx, &s1), stable_hash_of(&ctx, &s3));
         assert_ne!(
@@ -556,10 +556,10 @@ mod tests {
 
     #[test]
     fn source_clone_into_context() {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
         let mut dst_ctx = Context::new();
 
-        let file_src = Source::new_from_file(&mut ctx, "foo.mlir");
+        let file_src = Source::new_from_file(&ctx, "foo.mlir");
         let cloned_src = file_src.clone_into_context(&ctx, &mut dst_ctx);
         assert_eq!(
             file_src.disp(&ctx).to_string(),
@@ -572,8 +572,8 @@ mod tests {
 
     #[test]
     fn location_stable_hash() {
-        let mut ctx = Context::new();
-        let src = Source::new_from_file(&mut ctx, "foo.mlir");
+        let ctx = Context::new();
+        let src = Source::new_from_file(&ctx, "foo.mlir");
 
         let loc1 = Location::SrcPos {
             src,
@@ -607,9 +607,9 @@ mod tests {
 
     #[test]
     fn location_clone_into_context() {
-        let mut ctx = Context::new();
+        let ctx = Context::new();
         let mut dst_ctx = Context::new();
-        let src = Source::new_from_file(&mut ctx, "foo.mlir");
+        let src = Source::new_from_file(&ctx, "foo.mlir");
 
         // A location nesting a `Source` (via `SrcPos`) inside a `Named`, to
         // exercise the recursive clone.

@@ -6,8 +6,6 @@ use proc_macro2::TokenStream;
 use quote::{ToTokens, format_ident, quote};
 use syn::{DeriveInput, LitStr, Result, parse::Parser, parse_quote};
 
-const PROC_MACRO_NAME: &str = "def_op";
-
 struct OperandOrResultSpec {
     name: Option<syn::Ident>,
     ty: Option<Box<syn::Type>>,
@@ -88,14 +86,6 @@ impl DefOp {
             ));
         }
 
-        let attrs = input
-            .attrs
-            .into_iter()
-            .filter(|attr| !attr.path().is_ident(PROC_MACRO_NAME))
-            .collect();
-
-        let input = DeriveInput { attrs, ..input };
-
         let impl_op = ImplOp {
             struct_name: input.ident.clone(),
             dialect_name: dialect_name.to_string(),
@@ -114,6 +104,7 @@ impl ToTokens for DefOp {
             let generics = &self.input.generics;
             quote! {
                 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+                #[repr(transparent)]
                 #(#attributes)*
                 #vis struct #ident #generics { op: ::pliron::context::Ptr<::pliron::operation::Operation> }
             }
@@ -483,6 +474,7 @@ mod tests {
 
         expect![[r##"
             #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+            #[repr(transparent)]
             struct TestOp {
                 op: ::pliron::context::Ptr<::pliron::operation::Operation>,
             }

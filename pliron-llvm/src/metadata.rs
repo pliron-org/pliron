@@ -59,7 +59,6 @@ use pliron::{
         IRNode, WALKCONFIG_PREORDER_FORWARD,
         interruptible::{WalkResult, immutable::walk_op, walk_advance, walk_break},
     },
-    indented_block,
     irfmt::{
         parsers::{delimited_list_parser, list_parser},
         printers::iter_with_sep,
@@ -335,7 +334,8 @@ impl Printable for MdTableAttr {
     ) -> core::fmt::Result {
         // A module's metadata table can be long, so print an entry per line.
         write!(f, "[")?;
-        indented_block!(state, {
+        {
+            let _indent = state.indent();
             for (id, node) in self.iter() {
                 if id != 0 {
                     write!(f, ",")?;
@@ -343,7 +343,7 @@ impl Printable for MdTableAttr {
                 write!(f, "{}#{id} = ", indented_nl(state))?;
                 node.fmt(ctx, state, f)?;
             }
-        });
+        }
         if !self.is_empty() {
             write!(f, "{}", indented_nl(state))?;
         }

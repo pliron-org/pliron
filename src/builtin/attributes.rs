@@ -7,7 +7,7 @@ use crate::{
     attribute::{AttrObj, AttributeDict},
     builtin::{
         attr_interfaces::{FloatAttr, OutlinedAttr},
-        types::{FP16Type, FP32Type, FP64Type},
+        types::{BF16Type, FP16Type, FP32Type, FP64Type},
     },
     combine::{Parser, attempt, between, parser::char::spaces, sep_by, token},
     common_traits::Verify,
@@ -334,6 +334,57 @@ impl FloatAttr for FPHalfAttr {
     }
 }
 
+#[pliron_attr(name = "builtin.bfloat", format = "$0", verifier = "succ")]
+#[derive(Clone, Debug)]
+/// An attribute that is a brain floating-point (bfloat16) number.
+pub struct FPBFloatAttr(pub apfloat::BFloat);
+
+// Bitwise equality (IEEE equality would consider +0.0 == -0.0 and NaN != NaN).
+impl PartialEq for FPBFloatAttr {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+impl Eq for FPBFloatAttr {}
+
+impl Hash for FPBFloatAttr {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.0.to_bits().hash(state);
+    }
+}
+
+#[attr_interface_impl]
+impl TypedAttrInterface for FPBFloatAttr {
+    fn get_type(&self, ctx: &Context) -> TypeHandle {
+        BF16Type::get(ctx).into()
+    }
+}
+
+#[attr_interface_impl]
+impl FloatAttr for FPBFloatAttr {
+    fn get_inner(&self) -> &dyn apfloat::DynFloat {
+        &self.0
+    }
+
+    fn build_from(&self, df: Box<dyn apfloat::DynFloat>) -> Box<dyn FloatAttr> {
+        let df = df
+            .downcast::<apfloat::BFloat>()
+            .expect("Expected a BFloat (bfloat16) float");
+        Box::new(FPBFloatAttr(*df))
+    }
+
+    fn get_semantics(&self) -> apfloat::Semantics {
+        Self::get_semantics_static()
+    }
+
+    fn get_semantics_static() -> apfloat::Semantics
+    where
+        Self: Sized,
+    {
+        <apfloat::BFloat as apfloat::GetSemantics>::get_semantics()
+    }
+}
+
 #[pliron_attr(name = "builtin.single", format = "$0", verifier = "succ")]
 #[derive(Clone, Debug)]
 /// An attribute that is a single-precision floating-point number.
@@ -462,6 +513,14 @@ impl FloatAttr for FPDoubleAttr {
 
 #[attr_interface_impl]
 impl MaterializableAttr for FPHalfAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
+        const_op.get_operation()
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for FPBFloatAttr {
     fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
         let const_op = ConstantOp::new(ctx, Box::new(self.clone()));
         const_op.get_operation()
@@ -626,7 +685,7 @@ crate::dict_key!(
     ATTR_KEY_GIVEN_NAMES, "builtin_given_names"
 );
 
-/// Given names management for [Operation](crate::operation::Operation) results
+/// Given names management for [Operation] results
 /// and [BasicBlock](crate::basic_block::BasicBlock) arguments.
 /// See [given_names](crate::builtin::given_names) for utility functions around this.
 #[pliron_attr(name = "builtin.given_names", verifier = "succ")]

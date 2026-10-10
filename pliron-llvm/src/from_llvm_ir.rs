@@ -14,13 +14,15 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::TypedAttrInterface,
-        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr},
+        attributes::{
+            FPBFloatAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr, StringAttr,
+        },
         op_interfaces::{
             AtMostOneRegionInterface, CallOpCallable, OneResultInterface,
             SingleBlockRegionInterface,
         },
         ops::ModuleOp,
-        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
+        types::{BF16Type, FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     identifier::{self, Identifier},
@@ -35,7 +37,7 @@ use pliron::{
     result::Result,
     r#type::{TypeHandle, TypedHandle},
     utils::{
-        apfloat::f64_to_half,
+        apfloat::{f64_to_bfloat, f64_to_half},
         apint::APInt,
         table::{HMap, HSet, IMap},
     },
@@ -194,6 +196,8 @@ fn const_llvm_scalar_to_attr(
     assert!(!lost_info, "Lost information when converting FP constant");
     if ty_obj.is::<FP16Type>() {
         Ok(Some(Box::new(FPHalfAttr(f64_to_half(fp64)))))
+    } else if ty_obj.is::<BF16Type>() {
+        Ok(Some(Box::new(FPBFloatAttr(f64_to_bfloat(fp64)))))
     } else if ty_obj.is::<FP32Type>() {
         Ok(Some(Box::new(FPSingleAttr::from(fp64 as f32))))
     } else if ty_obj.is::<FP64Type>() {
@@ -313,13 +317,13 @@ pub(crate) fn convert_type(
             Ok(VectorType::get(ctx, elem_ty, num_elements, kind).into())
         }
         LLVMTypeKind::LLVMHalfTypeKind => Ok(FP16Type::get(ctx).into()),
+        LLVMTypeKind::LLVMBFloatTypeKind => Ok(BF16Type::get(ctx).into()),
         LLVMTypeKind::LLVMX86_FP80TypeKind => todo!(),
         LLVMTypeKind::LLVMFP128TypeKind => todo!(),
         LLVMTypeKind::LLVMPPC_FP128TypeKind => todo!(),
         LLVMTypeKind::LLVMLabelTypeKind => todo!(),
         LLVMTypeKind::LLVMMetadataTypeKind => todo!(),
         LLVMTypeKind::LLVMTokenTypeKind => todo!(),
-        LLVMTypeKind::LLVMBFloatTypeKind => todo!(),
         LLVMTypeKind::LLVMX86_AMXTypeKind => todo!(),
         LLVMTypeKind::LLVMTargetExtTypeKind => todo!(),
         LLVMTypeKind::LLVMByteTypeKind => todo!(),

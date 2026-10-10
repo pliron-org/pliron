@@ -51,7 +51,16 @@ struct Visualizer<'a> {
 }
 
 /// A string escaped for use as a quoted DOT label.
-struct DotLabel<'a>(&'a str);
+///
+/// ```
+/// use pliron::graph::visualize::DotLabel;
+///
+/// assert_eq!(
+///     format!("{}", DotLabel("quotes: \"; slash: \\;\nnext line\r")),
+///     "\"quotes: \\\"; slash: \\\\;\\nnext line\\r\""
+/// );
+/// ```
+pub struct DotLabel<'a>(pub &'a str);
 
 impl Display for DotLabel<'_> {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
@@ -293,19 +302,4 @@ fn graphviz_callback(
     }
 
     walk_advance()
-}
-
-#[cfg(test)]
-mod tests {
-    use alloc::format;
-
-    use super::DotLabel;
-
-    #[test]
-    fn dot_label_escapes_quoted_string_syntax() {
-        assert_eq!(
-            format!("{}", DotLabel("quotes: \"; slash: \\;\nnext line\r")),
-            "\"quotes: \\\"; slash: \\\\;\\nnext line\\r\""
-        );
-    }
 }

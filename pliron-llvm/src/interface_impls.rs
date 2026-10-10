@@ -13,9 +13,9 @@ use pliron::{
     basic_block::BasicBlock,
     builtin::{
         attr_interfaces::{FloatAttr, TypedAttrInterface},
-        attributes::{FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
+        attributes::{FPBFloatAttr, FPDoubleAttr, FPHalfAttr, FPSingleAttr, IntegerAttr},
         op_interfaces::{BranchOpInterface, OneResultInterface},
-        types::{FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
+        types::{BF16Type, FP16Type, FP32Type, FP64Type, IntegerType, Signedness},
     },
     context::{Context, Ptr},
     derive::op_interface_impl,
@@ -31,7 +31,7 @@ use pliron::{
     result::Result,
     r#type::{TypeHandle, Typed, TypedHandle},
     utils::{
-        apfloat::{Double, Float, FloatConvert, Half, Round, Single, Status},
+        apfloat::{BFloat, Double, Float, FloatConvert, Half, Round, Single, Status},
         apint::{APInt, bw},
     },
     value::Value,
@@ -1057,6 +1057,8 @@ fn zero_float_attr(ctx: &Context, ty: TypeHandle) -> Option<Box<dyn FloatAttr>> 
     let ty = ty.deref(ctx);
     if ty.is::<FP16Type>() {
         Some(Box::new(FPHalfAttr(Half::ZERO)))
+    } else if ty.is::<BF16Type>() {
+        Some(Box::new(FPBFloatAttr(BFloat::ZERO)))
     } else if ty.is::<FP32Type>() {
         Some(Box::new(FPSingleAttr(Single::ZERO)))
     } else if ty.is::<FP64Type>() {
@@ -1141,11 +1143,13 @@ fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -
     /// Convert `value` to `result_ty`, rounding to nearest-even.
     fn convert<S>(ctx: &Context, value: S, result_ty: TypeHandle) -> Option<AttrObj>
     where
-        S: FloatConvert<Half> + FloatConvert<Single> + FloatConvert<Double>,
+        S: FloatConvert<Half> + FloatConvert<BFloat> + FloatConvert<Single> + FloatConvert<Double>,
     {
         let result_ty = result_ty.deref(ctx);
         if result_ty.is::<FP16Type>() {
             Some(Box::new(FPHalfAttr(value.convert(&mut false).value)) as AttrObj)
+        } else if result_ty.is::<BF16Type>() {
+            Some(Box::new(FPBFloatAttr(value.convert(&mut false).value)) as AttrObj)
         } else if result_ty.is::<FP32Type>() {
             Some(Box::new(FPSingleAttr(value.convert(&mut false).value)) as AttrObj)
         } else if result_ty.is::<FP64Type>() {
@@ -1156,6 +1160,8 @@ fn convert_float_attr(ctx: &Context, operand: &AttrObj, result_ty: TypeHandle) -
     }
 
     if let Some(operand) = operand.downcast_ref::<FPHalfAttr>() {
+        convert(ctx, operand.0, result_ty)
+    } else if let Some(operand) = operand.downcast_ref::<FPBFloatAttr>() {
         convert(ctx, operand.0, result_ty)
     } else if let Some(operand) = operand.downcast_ref::<FPSingleAttr>() {
         convert(ctx, operand.0, result_ty)

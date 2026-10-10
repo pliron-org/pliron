@@ -7,11 +7,15 @@ use crate::{
     basic_block::BasicBlock,
     context::{Context, Ptr},
     graph::{
-        ControlFlowGraph, find_ancestor_block_of_block_in_region, find_ancestor_op_of_op_in_region,
+        ControlFlowGraph, HasLabel, find_ancestor_block_of_block_in_region,
+        find_ancestor_op_of_op_in_region,
+        reverse::{ReverseGraph, ReverseNode},
         strictly_precedes_in_block, traversals,
+        visualize::DotLabel,
     },
     operation::Operation,
     pass::{Analysis, AnalysisManager},
+    printable::{Printable, State, indented_nl},
     region::Region,
     result::Result,
     utils::table::{HMap, IMap, ISet},
@@ -29,7 +33,7 @@ where
     children: Vec<G::Node>,
 }
 
-/// Represents dominator tree for a control-flow-graph
+/// The dominator tree for a control-flow-graph
 pub struct DomTree<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
@@ -37,6 +41,115 @@ where
     // An empty tree has no root.
     root: Option<G::Node>,
     dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
+}
+
+/// The post-dominator tree for a control-flow-graph.
+///
+/// The post-dominator tree is conceptually a dominator tree over
+/// the [reverse control-flow-graph](super::reverse). The sentinel
+/// of the reverse graph becomes the root of the post-dominator tree.
+pub struct PDomTree<G, GraphContext>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    // An empty graph has no pre-sentinels.
+    pre_sentinels: Vec<G::Node>,
+    // Children of the sentinel in the post-dominator tree.
+    sentinel_children: Vec<G::Node>,
+    post_dominators_map: IMap<G::Node, DomTreeNode<G, GraphContext>>,
+}
+
+/// Prints a dominator tree in Graphviz DOT format.
+/// Edges go from each immediate dominator to its children.
+pub fn print_dom_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    tree: &DomTree<G, GraphContext>,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    print_dominance_tree(ctx, &tree.dominators_map, "dom_tree", false, state, f)
+}
+
+/// Prints a post-dominator tree (including the sentinel) in Graphviz DOT format.
+/// Edges go from each immediate post-dominator to its children.
+pub fn print_pdom_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    tree: &PDomTree<G, GraphContext>,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    print_dominance_tree(ctx, &tree.post_dominators_map, "pdom_tree", true, state, f)
+}
+
+fn print_dominance_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    nodes: &IMap<G::Node, DomTreeNode<G, GraphContext>>,
+    name: &str,
+    has_sentinel: bool,
+    state: &State,
+    f: &mut impl core::fmt::Write,
+) -> core::fmt::Result
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    write!(f, "digraph {name} {{")?;
+    {
+        let _indent = state.indent();
+        if has_sentinel {
+            write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
+        }
+        for (i, node) in nodes.keys().enumerate() {
+            write!(
+                f,
+                "{}n{i} [label={}];",
+                indented_nl(state),
+                DotLabel(&node.label(ctx)),
+            )?;
+        }
+        for (i, node) in nodes.values().enumerate() {
+            if let Some(parent) = &node.parent {
+                let parent = nodes.get_index_of(parent).unwrap();
+                write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
+            } else if has_sentinel {
+                write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
+            }
+        }
+    }
+    write!(f, "{}}}", indented_nl(state))
+}
+
+impl<G> Printable for DomTree<G, Context>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_dom_tree(ctx, self, state, f)
+    }
+}
+
+impl<G> Printable for PDomTree<G, Context>
+where
+    G: ControlFlowGraph<Context>,
+{
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        print_pdom_tree(ctx, self, state, f)
+    }
 }
 
 /// Maps each node to its dominance frontier
@@ -161,18 +274,77 @@ where
     dom_tree
 }
 
+/// Computes a post-dominator tree for `graph`.
+pub fn compute_post_dominator_tree<G, GraphContext>(
+    ctx: &GraphContext,
+    graph: &G,
+) -> PDomTree<G, GraphContext>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    let reverse_graph = ReverseGraph::new(ctx, graph);
+    let pre_sentinels: Vec<_> = reverse_graph.pre_sentinels().collect();
+    if pre_sentinels.is_empty() {
+        return PDomTree {
+            pre_sentinels,
+            sentinel_children: vec![],
+            post_dominators_map: IMap::default(),
+        };
+    }
+
+    let reverse_dom_tree = compute_dominator_tree(ctx, &reverse_graph);
+    assert_eq!(
+        reverse_dom_tree.num_nodes(),
+        graph.nodes(ctx).count() + 1,
+        "Pre-sentinels must make every CFG node reverse-reachable"
+    );
+
+    let sentinel_children = reverse_dom_tree
+        .children(&ReverseNode::Sentinel)
+        .map(|child| child.into_real().expect("The sentinel is the tree root"))
+        .collect();
+
+    // Remove the sentinel from the tree.
+    let post_dominators_map = reverse_dom_tree
+        .dominators_map
+        .into_iter()
+        .filter_map(|(node, dom_node)| {
+            // Skip the entry for the sentinel.
+            let node = node.into_real()?;
+            // A node whose parent is the sentinel gets no parent.
+            let parent = dom_node.parent.and_then(ReverseNode::into_real);
+            let children = dom_node
+                .children
+                .into_iter()
+                .map(|child| child.into_real().expect("The sentinel is the tree root"))
+                .collect();
+            Some((node, DomTreeNode { parent, children }))
+        })
+        .collect();
+
+    PDomTree {
+        pre_sentinels,
+        sentinel_children,
+        post_dominators_map,
+    }
+}
+
 impl<G, GraphContext> DomTree<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
 {
     /// Does `dominator` dominate `dominatee`?
+    /// Each node dominates itself. An unreachable node has no other dominators.
     pub fn dominates(&self, dominator: &G::Node, dominatee: &G::Node) -> bool {
         let mut node_opt = Some(dominatee.clone());
         while let Some(node) = node_opt {
             if node == *dominator {
                 return true;
             }
-            node_opt = self.dominators_map[&node].parent.clone();
+            node_opt = self
+                .dominators_map
+                .get(&node)
+                .and_then(|node| node.parent.clone());
         }
         false
     }
@@ -225,6 +397,77 @@ where
     }
 }
 
+impl<G, GraphContext> PDomTree<G, GraphContext>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    /// Does `post_dominator` post-dominate `post_dominatee`?
+    pub fn post_dominates(&self, post_dominator: &G::Node, post_dominatee: &G::Node) -> bool {
+        self.post_dominators(post_dominatee)
+            .any(|node| node == *post_dominator)
+    }
+
+    /// Nearest common post-dominator of `node1` and `node2`.
+    /// Returns `None` when the nearest common post-dominator is the sentinel.
+    pub fn nearest_common_post_dominator(
+        &self,
+        node1: &G::Node,
+        node2: &G::Node,
+    ) -> Option<G::Node> {
+        self.post_dominators(node1)
+            .find(|node1_pdom| self.post_dominates(node1_pdom, node2))
+    }
+
+    /// Does the post-dominator tree contain `node`?
+    pub fn contains(&self, node: &G::Node) -> bool {
+        self.post_dominators_map.contains_key(node)
+    }
+
+    /// Return the immediate post-dominator of `node`.
+    /// Returns `None` when the immediate post-dominator is the sentinel.
+    pub fn ipdom(&self, node: &G::Node) -> Option<G::Node> {
+        self.post_dominators_map[node].parent.clone()
+    }
+
+    /// Return an iterator over the post-dominators of `node`, starting with `node` itself,
+    /// then its immediate post-dominator, and so on up to, but not including, the sentinel.
+    pub fn post_dominators(&self, node: &G::Node) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        core::iter::successors(Some(node.clone()), |n| {
+            self.post_dominators_map[n].parent.clone()
+        })
+    }
+
+    /// Get an iterator over the children nodes.
+    pub fn children(&self, node: &G::Node) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.post_dominators_map[node].children.iter().cloned()
+    }
+
+    /// Get an iterator over the pre-sentinels.
+    ///
+    /// These are control-flow-graph nodes with the sentinel as a virtual successor.
+    /// See [Self::sentinel_children] for post-dominator tree children.
+    pub fn pre_sentinels(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.pre_sentinels.iter().cloned()
+    }
+
+    /// Get an iterator over the post-dominator tree children of the sentinel.
+    ///
+    /// See [Self::pre_sentinels] to get the nodes that have the sentinel as a virtual successor.
+    pub fn sentinel_children(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.sentinel_children.iter().cloned()
+    }
+
+    /// Get the number of nodes (not counting the sentinel) in the post-dominator tree.
+    pub fn num_nodes(&self) -> usize {
+        self.post_dominators_map.len()
+    }
+
+    /// Get an iterator over all nodes (except the sentinel) in the post-dominator tree.
+    pub fn nodes(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
+        self.post_dominators_map.keys().cloned()
+    }
+}
+
 impl<G, GraphContext> DomFrontierMap<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
@@ -236,7 +479,7 @@ where
         let mut res: HMap<G::Node, ISet<G::Node>> =
             graph.nodes(ctx).map(|n| (n, ISet::default())).collect();
         for b in graph.nodes(ctx) {
-            if graph.num_predecessors(ctx, &b) < 2 {
+            if !dom_tree.contains(&b) || graph.num_predecessors(ctx, &b) < 2 {
                 continue;
             }
             let preds = graph.predecessors(ctx, &b);
@@ -508,20 +751,25 @@ mod tests {
         string::{String, ToString},
     };
 
+    use expect_test::expect;
+
     use super::*;
     use crate::graph::{ControlFlowGraph, HasLabel};
 
     #[derive(Clone, Debug)]
     struct Node {
         succs: Vec<usize>,
+        label: Option<&'static str>,
     }
 
     #[derive(Clone, Copy, Debug)]
     struct ArenaGraph;
 
     impl HasLabel<Vec<Node>> for usize {
-        fn label(&self, _ctx: &Vec<Node>) -> String {
-            self.to_string()
+        fn label(&self, ctx: &Vec<Node>) -> String {
+            ctx[*self]
+                .label
+                .map_or_else(|| self.to_string(), str::to_string)
         }
     }
 
@@ -560,7 +808,48 @@ mod tests {
     fn n(succs: &[usize]) -> Node {
         Node {
             succs: succs.to_vec(),
+            label: None,
         }
+    }
+
+    #[test]
+    fn print_trees_with_duplicate_and_escaped_labels() {
+        let mut ctx = vec![n(&[1]), n(&[2]), n(&[])];
+        ctx[0].label = Some("sentinel");
+        ctx[1].label = Some("quote: \"; slash: \\;\nnext line\r");
+        ctx[2].label = Some("sentinel");
+        let state = State::default();
+        state.set_indent_width(4);
+        let _indent = state.indent();
+        let dom = compute_dominator_tree(&ctx, &ArenaGraph);
+        let mut output = String::new();
+        print_dom_tree(&ctx, &dom, &state, &mut output).unwrap();
+        expect![[r#"
+            digraph dom_tree {
+                    n0 [label="sentinel"];
+                    n1 [label="quote: \"; slash: \\;\nnext line\r"];
+                    n2 [label="sentinel"];
+                    n0 -> n1;
+                    n1 -> n2;
+                }"#]]
+        .assert_eq(&output);
+        assert_eq!(state.current_indent(), 4);
+
+        let pdom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+        output.clear();
+        print_pdom_tree(&ctx, &pdom, &state, &mut output).unwrap();
+        expect![[r#"
+            digraph pdom_tree {
+                    sentinel [label="sentinel"];
+                    n0 [label="sentinel"];
+                    n1 [label="quote: \"; slash: \\;\nnext line\r"];
+                    n2 [label="sentinel"];
+                    sentinel -> n0;
+                    n0 -> n1;
+                    n1 -> n2;
+                }"#]]
+        .assert_eq(&output);
+        assert_eq!(state.current_indent(), 4);
     }
 
     #[test]
@@ -743,6 +1032,175 @@ mod tests {
     }
 
     #[test]
+    fn post_dominator_tree_empty_graph() {
+        let ctx: Vec<Node> = vec![];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+        assert_eq!(post_dom.pre_sentinels().count(), 0);
+        assert_eq!(post_dom.sentinel_children().count(), 0);
+        assert_eq!(post_dom.num_nodes(), 0);
+    }
+
+    #[test]
+    fn post_dominator_tree_linear_chain() {
+        // 0 -> 1 -> 2
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[2]),
+            /* 2 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(
+            post_dom.pre_sentinels().collect::<ISet<_>>(),
+            ISet::from_iter([2])
+        );
+        assert_eq!(post_dom.ipdom(&2), None);
+        assert_eq!(post_dom.ipdom(&1), Some(2));
+        assert_eq!(post_dom.ipdom(&0), Some(1));
+        assert!(post_dom.post_dominates(&1, &0));
+        assert!(post_dom.post_dominates(&2, &0));
+        assert_eq!(post_dom.nearest_common_post_dominator(&0, &1), Some(1));
+    }
+
+    #[test]
+    fn post_dominator_tree_diamond() {
+        //      0
+        //     / \
+        //    1   2
+        //     \ /
+        //      3
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[3]),
+            /* 2 */ n(&[3]),
+            /* 3 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(
+            post_dom.pre_sentinels().collect::<ISet<_>>(),
+            ISet::from_iter([3])
+        );
+        assert_eq!(post_dom.ipdom(&3), None);
+        assert_eq!(post_dom.ipdom(&1), Some(3));
+        assert_eq!(post_dom.ipdom(&2), Some(3));
+        assert_eq!(post_dom.ipdom(&0), Some(3));
+        assert_eq!(
+            post_dom.children(&3).collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 2])
+        );
+    }
+
+    #[test]
+    fn post_dominator_tree_multiple_exits() {
+        //    0
+        //   / \
+        //  1   2
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        // The branch is a child of the sentinel, ...
+        assert_eq!(
+            post_dom.sentinel_children().collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 2])
+        );
+        // ... but not a pre-sentinel.
+        assert_eq!(
+            post_dom.pre_sentinels().collect::<ISet<_>>(),
+            ISet::from_iter([1, 2])
+        );
+
+        assert_eq!(post_dom.ipdom(&1), None);
+        assert_eq!(post_dom.ipdom(&2), None);
+        // The branch itself is immediately post-dominated only by the sentinel.
+        assert_eq!(post_dom.ipdom(&0), None);
+        assert!(!post_dom.post_dominates(&1, &0));
+        assert!(!post_dom.post_dominates(&2, &0));
+        assert_eq!(post_dom.nearest_common_post_dominator(&1, &2), None);
+    }
+
+    #[test]
+    fn post_dominator_tree_infinite_loop() {
+        // 0 -> 1 -> 2
+        //      ^    |
+        //      |____|
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[2]),
+            /* 2 */ n(&[1]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(post_dom.num_nodes(), 3);
+        assert_eq!(post_dom.pre_sentinels().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(post_dom.ipdom(&2), None);
+        assert_eq!(post_dom.ipdom(&1), Some(2));
+        assert_eq!(post_dom.ipdom(&0), Some(1));
+    }
+
+    #[test]
+    fn post_dominator_tree_infinite_loop_is_independent_of_successor_order() {
+        //      +-> 1 -+
+        //      |      |
+        //  0 --+      +-> 0
+        //      |      |
+        //      +-> 2 -+
+        let ctx_a = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[0]),
+            /* 2 */ n(&[0]),
+        ];
+        let ctx_b = vec![
+            /* 0 */ n(&[2, 1]),
+            /* 1 */ n(&[0]),
+            /* 2 */ n(&[0]),
+        ];
+
+        let post_dom_a = compute_post_dominator_tree(&ctx_a, &ArenaGraph);
+        let post_dom_b = compute_post_dominator_tree(&ctx_b, &ArenaGraph);
+
+        assert_eq!(post_dom_a.pre_sentinels().collect::<Vec<_>>(), vec![2]);
+        assert_eq!(post_dom_b.pre_sentinels().collect::<Vec<_>>(), vec![2]);
+        for node in 0..3 {
+            assert_eq!(post_dom_a.ipdom(&node), post_dom_b.ipdom(&node));
+        }
+    }
+
+    #[test]
+    fn post_dominator_tree_exit_and_infinite_loop() {
+        //       +-> 1 (exit)
+        //       |
+        //  0 ---+
+        //       |
+        //       +-> 2 <-> 3
+        let ctx = vec![
+            /* 0 */ n(&[1, 2]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[3]),
+            /* 3 */ n(&[2]),
+        ];
+        let post_dom = compute_post_dominator_tree(&ctx, &ArenaGraph);
+
+        assert_eq!(post_dom.num_nodes(), 4);
+        assert_eq!(
+            post_dom.pre_sentinels().collect::<ISet<_>>(),
+            ISet::from_iter([1, 3])
+        );
+        assert_eq!(
+            post_dom.sentinel_children().collect::<ISet<_>>(),
+            ISet::from_iter([0, 1, 3])
+        );
+        assert_eq!(post_dom.ipdom(&1), None);
+        assert_eq!(post_dom.ipdom(&3), None);
+        assert_eq!(post_dom.ipdom(&2), Some(3));
+        assert_eq!(post_dom.ipdom(&0), None);
+    }
+
+    #[test]
     fn dom_frontier_single() {
         let ctx = vec![n(&[])];
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
@@ -825,6 +1283,48 @@ mod tests {
         let dom = compute_dominator_tree(&ctx, &ArenaGraph);
         let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
         assert_eq!(*df.frontier(&4), ISet::from_iter([3, 4, 11, 12]));
+    }
+
+    #[test]
+    fn dom_frontier_unreachable_multi_predecessor() {
+        // reachable:
+        //      0 (entry) -> 1 (exit)
+        // unreachable:
+        //      2 (dead_a) ----\
+        //                      -> 4 (dead_join)
+        //      3 (dead_b) ----/
+        let ctx = vec![
+            /* 0 */ n(&[1]),
+            /* 1 */ n(&[]),
+            /* 2 */ n(&[4]),
+            /* 3 */ n(&[4]),
+            /* 4 */ n(&[]),
+        ];
+        let dom = compute_dominator_tree(&ctx, &ArenaGraph);
+        assert_eq!(dom.root(), Some(0));
+        assert_eq!(dom.num_nodes(), 2);
+        assert!(dom.contains(&0));
+        assert!(dom.contains(&1));
+        assert!(!dom.contains(&2));
+        assert!(!dom.contains(&3));
+        assert!(!dom.contains(&4));
+
+        assert!(dom.dominates(&0, &1));
+        assert!(dom.dominates(&2, &2));
+        assert!(!dom.dominates(&0, &2));
+        assert!(!dom.dominates(&2, &0));
+        assert!(!dom.dominates(&2, &4));
+
+        let df = DomFrontierMap::new(&ctx, &ArenaGraph, &dom);
+
+        // Reachable-node behavior remains unchanged.
+        assert_eq!(*df.frontier(&0), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&1), ISet::from_iter([]));
+
+        // Unreachable nodes (including multi-predecessor join) receive empty frontiers.
+        assert_eq!(*df.frontier(&2), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&3), ISet::from_iter([]));
+        assert_eq!(*df.frontier(&4), ISet::from_iter([]));
     }
 
     // --- Operation-level dominance tests ---

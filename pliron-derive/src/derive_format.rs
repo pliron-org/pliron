@@ -379,7 +379,7 @@ impl PrintableBuilder<()> for DeriveBasePrintable {
             let Elem::Directive(sep) = &d.args[1] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
 
             let name = var_name_from_elem(&d.args[0], r#struct.is_enum_variant, err)?;
 
@@ -559,7 +559,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let Elem::Directive(sep) = &d.args[0] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
                 let succs = ::pliron::irfmt::printers::iter_with_sep_by(
@@ -586,7 +586,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let Elem::Directive(sep) = &d.args[0] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
                 let regions = op.regions();
@@ -606,7 +606,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let Elem::Directive(sep) = &d.args[0] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
                 let operands = op.operands();
@@ -626,7 +626,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let Elem::Directive(sep) = &d.args[0] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
                 let types = op.result_types();
@@ -646,7 +646,7 @@ impl PrintableBuilder<OpPrinterState> for DeriveOpPrintable {
             let Elem::Directive(sep) = &d.args[0] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, true, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             Ok(quote! {
                 let op = self.get_operation().deref(ctx);
                 let operand_types = op.operands().map(|opd| ::pliron::r#type::Typed::get_type(&opd, ctx));
@@ -983,7 +983,7 @@ trait ParsableBuilder<State: Default> {
             };
             let labelled_parser = if let Some(label) = &label {
                 quote! {
-                    (::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#label))
+                    (::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#label)))
                         .skip(::pliron::combine::parser::char::char(':').skip(::pliron::combine::parser::char::spaces())))
                         .with(#value_parser)
                 }
@@ -993,7 +993,7 @@ trait ParsableBuilder<State: Default> {
             let delimited_labelled_parser = if let Some((open, close)) = &delimiters {
                 quote! {
                     ::pliron::combine::parser::sequence::between(
-                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#open)),
+                        ::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#open))),
                         ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#close)),
                         #labelled_parser
                     )
@@ -1003,7 +1003,8 @@ trait ParsableBuilder<State: Default> {
             };
 
             Ok(quote! {
-                let #name = ::pliron::combine::parser::choice::optional(#delimited_labelled_parser)
+                let #name = ::pliron::combine::parser::char::spaces()
+                    .with(::pliron::combine::parser::choice::optional(#delimited_labelled_parser))
                     .parse_stream(state_stream).into_result()?.0;
             })
         } else if d.name == "vec" {
@@ -1053,11 +1054,11 @@ trait ParsableBuilder<State: Default> {
             let Elem::Directive(sep) = &d.args[1] else {
                 return err;
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
 
             let inner_ty = get_inner_type_option_vec(ty)?;
             Ok(quote! {
-                let parsed_vec: ::pliron::alloc::vec::Vec<_> = ::pliron::irfmt::parsers::list_parser(#sep, <#inner_ty>::parser(()))
+                let parsed_vec: ::pliron::alloc::vec::Vec<_> = ::pliron::irfmt::parsers::list_with_sep_parser(#sep, <#inner_ty>::parser(()))
                     .parse_stream(state_stream).into_result()?.0;
                 let #name: #ty = parsed_vec.try_into().map_err(|_vec| {
                     ::pliron::input_error!(
@@ -1566,7 +1567,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                         .to_string(),
                 ));
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             let regions_var_name = format_ident!("{}", "regions");
             if matches!(&state.regions, ElementSpec::Individual(regions) if !regions.is_empty()) {
                 return Err(syn::Error::new_spanned(
@@ -1582,7 +1583,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
 
             Ok(quote! {
                 let #regions_var_name =
-                    ::pliron::irfmt::parsers::list_parser
+                    ::pliron::irfmt::parsers::list_with_sep_parser
                         (#sep, ::pliron::region::Region::parser(#regions_temp_parent_op))
                     .parse_stream(state_stream)
                     .into_result()?
@@ -1618,7 +1619,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                         .to_string(),
                 ));
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             let succ_var_name = format_ident!("{}", "successors");
             if matches!(&state.successors, ElementSpec::Individual(successors) if !successors.is_empty())
             {
@@ -1629,7 +1630,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
             state.successors = ElementSpec::All(succ_var_name.clone());
             Ok(quote! {
-                let #succ_var_name = ::pliron::irfmt::parsers::list_parser(#sep, block_opd_parser())
+                let #succ_var_name = ::pliron::irfmt::parsers::list_with_sep_parser(#sep, block_opd_parser())
                     .parse_stream(state_stream)
                     .into_result()?
                     .0;
@@ -1643,7 +1644,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                         .to_string(),
                 ));
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             let operands_var_name = format_ident!("{}", "operands");
             if matches!(&state.operands, ElementSpec::Individual(operands) if !operands.is_empty())
             {
@@ -1654,7 +1655,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
             state.operands = ElementSpec::All(operands_var_name.clone());
             Ok(quote! {
-                let #operands_var_name = ::pliron::irfmt::parsers::list_parser(#sep, ssa_opd_parser())
+                let #operands_var_name = ::pliron::irfmt::parsers::list_with_sep_parser(#sep, ssa_opd_parser())
                     .parse_stream(state_stream)
                     .into_result()?
                     .0;
@@ -1668,7 +1669,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                         .to_string(),
                 ));
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             let result_types_var_name = format_ident!("{}", "result_types");
             if matches!(&state.result_types, ElementSpec::Individual(result_types) if !result_types.is_empty())
             {
@@ -1679,7 +1680,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             }
             state.result_types = ElementSpec::All(result_types_var_name.clone());
             Ok(quote! {
-                let #result_types_var_name = ::pliron::irfmt::parsers::list_parser(#sep, ::pliron::irfmt::parsers::type_parser())
+                let #result_types_var_name = ::pliron::irfmt::parsers::list_with_sep_parser(#sep, ::pliron::irfmt::parsers::type_parser())
                     .parse_stream(state_stream)
                     .into_result()?
                     .0;
@@ -1693,7 +1694,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                         .to_string(),
                 ));
             };
-            let sep = directive_to_list_separator(sep, false, input.ident.span())?;
+            let sep = directive_to_list_separator(sep, input.ident.span())?;
             if matches!(&state.operand_types, ElementSpec::Individual(operand_types) if !operand_types.is_empty())
             {
                 return Err(syn::Error::new_spanned(
@@ -1702,7 +1703,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
                 ));
             }
             Ok(quote! {
-                ::pliron::irfmt::parsers::list_parser(#sep, ::pliron::irfmt::parsers::type_parser())
+                ::pliron::irfmt::parsers::list_with_sep_parser(#sep, ::pliron::irfmt::parsers::type_parser())
                     .parse_stream(state_stream)
                     .into_result()?;
             })
@@ -1957,22 +1958,14 @@ fn get_inner_type_option_vec(ty: &Type) -> Result<Type> {
 }
 
 /// Parse directive into ListSeparator
-fn directive_to_list_separator(
-    d: &Directive,
-    use_pliron_list_separator: bool,
-    span: Span,
-) -> Result<TokenStream> {
+fn directive_to_list_separator(d: &Directive, span: Span) -> Result<TokenStream> {
     let err: Result<TokenStream> = Err(syn::Error::new(
         span,
         "Please refer to the documentation on correctly specifiying a list separator".to_string(),
     ));
 
     if d.name == "NewLine" {
-        if use_pliron_list_separator {
-            return Ok(quote! { ::pliron::printable::ListSeparator::NewLine });
-        } else {
-            return Ok(quote! { '\n' });
-        }
+        return Ok(quote! { ::pliron::printable::ListSeparator::Newline });
     }
 
     if d.args.len() != 1 {
@@ -1988,10 +1981,6 @@ fn directive_to_list_separator(
     }
 
     let sep_char = sep_char.chars().next().unwrap();
-
-    if !use_pliron_list_separator {
-        return Ok(quote! { #sep_char });
-    }
 
     if d.name == "CharNewline" {
         return Ok(quote! { ::pliron::printable::ListSeparator::CharNewline(#sep_char) });
