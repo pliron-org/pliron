@@ -20,9 +20,9 @@ quote.workspace = true
 combine.workspace = true
 indexmap.workspace = true
 rustc-hash.workspace = true
-convert_case = "0.11"
+convert_case = "0.12.0"
 
-syn = { version = "3", features = ["derive", "full", "parsing"] }
+syn = { version = "3.0.7", features = ["derive", "full", "parsing"] }
 
 [dev-dependencies]
 prettyplease.workspace = true
