@@ -16,8 +16,8 @@ use crate::{
     linked_list::ContainsLinkedList,
     location::{Located, Location},
     op::{Op, op_cast, op_impls},
-    operation::Operation,
-    printable::Printable,
+    operation::{OpDbg, Operation},
+    printable::{self, Printable},
     region::Region,
     result::{AnyError, Result},
     symbol_table::{SymbolTableCollection, walk_symbol_table},
@@ -229,9 +229,8 @@ pub enum RegionBranchPoint {
 pub enum RegionSuccessor {
     /// The entry block of this region. Its arguments receive values.
     Region(Ptr<Region>),
-    /// Control continues after this op (the region branch op itself).
-    /// Its results receive values.
-    After(Ptr<Operation>),
+    /// Control continues after the region branch op. Its results receive values.
+    After,
 }
 
 /// A control-flow edge of a [RegionBranchOpInterface] op, and the values it passes.
@@ -250,12 +249,78 @@ pub struct RegionEdge {
     pub flows: Vec<(Use<Value>, Value)>,
 }
 
+/// Prints `parent`, or the terminator op (with its regions elided).
+impl Printable for RegionBranchPoint {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        _state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        match self {
+            RegionBranchPoint::Parent => write!(f, "parent"),
+            RegionBranchPoint::Terminator(terminator) => write!(
+                f,
+                "{}",
+                OpDbg {
+                    op: *terminator,
+                    ctx
+                }
+            ),
+        }
+    }
+}
+
+/// Prints `region <index>` (the index in the region branch op), or `after`.
+impl Printable for RegionSuccessor {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        _state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        match self {
+            RegionSuccessor::Region(region) => {
+                write!(f, "region {}", region.deref(ctx).find_index_in_parent(ctx))
+            }
+            RegionSuccessor::After => write!(f, "after"),
+        }
+    }
+}
+
+/// Prints `<from> -> <to>: [<operand> -> <receiver>, ...]`.
+impl Printable for RegionEdge {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(
+            f,
+            "{} -> {}: [",
+            self.from.print(ctx, state),
+            self.to.print(ctx, state)
+        )?;
+        for (i, (operand, receiver)) in self.flows.iter().enumerate() {
+            if i > 0 {
+                write!(f, ", ")?;
+            }
+            write!(
+                f,
+                "{} -> {}",
+                operand.get_def(ctx).print(ctx, state),
+                receiver.print(ctx, state)
+            )?;
+        }
+        write!(f, "]")
+    }
+}
+
 #[derive(Error, Debug)]
 pub enum RegionBranchOpInterfaceVerifyErr {
     #[error("region_edges must only target regions of the op itself")]
     ForeignRegionSuccessor,
-    #[error("region_edges must only target After(op) where op is the op itself")]
-    InvalidOpSuccessor,
     #[error("region_edges must only start at terminators in the regions of the op itself")]
     InvalidTerminator,
     #[error(
@@ -450,23 +515,13 @@ pub trait RegionBranchOpInterface {
                     terminator
                 }
             };
-            match edge.to {
-                RegionSuccessor::Region(region) => {
-                    if region.deref(ctx).get_parent_op() != this {
-                        return verify_err!(
-                            loc,
-                            RegionBranchOpInterfaceVerifyErr::ForeignRegionSuccessor
-                        );
-                    }
-                }
-                RegionSuccessor::After(target) => {
-                    if target != this {
-                        return verify_err!(
-                            loc,
-                            RegionBranchOpInterfaceVerifyErr::InvalidOpSuccessor
-                        );
-                    }
-                }
+            if let RegionSuccessor::Region(region) = edge.to
+                && region.deref(ctx).get_parent_op() != this
+            {
+                return verify_err!(
+                    loc,
+                    RegionBranchOpInterfaceVerifyErr::ForeignRegionSuccessor
+                );
             }
             let mut receivers = Vec::new();
             for (operand, receiver) in &edge.flows {
@@ -491,15 +546,15 @@ pub trait RegionBranchOpInterface {
                             RegionBranchOpInterfaceVerifyErr::ReceiverNotRegionArgument
                         );
                     }
-                    (RegionSuccessor::After(target), DefiningEntity::Op(def_op)) => {
-                        if def_op != target {
+                    (RegionSuccessor::After, DefiningEntity::Op(def_op)) => {
+                        if def_op != this {
                             return verify_err!(
                                 loc,
                                 RegionBranchOpInterfaceVerifyErr::ReceiverNotResult
                             );
                         }
                     }
-                    (RegionSuccessor::After(_), DefiningEntity::Block(_)) => {
+                    (RegionSuccessor::After, DefiningEntity::Block(_)) => {
                         return verify_err!(
                             loc,
                             RegionBranchOpInterfaceVerifyErr::ReceiverNotResult

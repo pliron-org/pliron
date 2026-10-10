@@ -908,7 +908,7 @@ mod tests {
                 },
                 RegionEdge {
                     from: RegionBranchPoint::Parent,
-                    to: RegionSuccessor::After(op),
+                    to: RegionSuccessor::After,
                     flows: vec![],
                 },
                 RegionEdge {
@@ -918,7 +918,7 @@ mod tests {
                 },
                 RegionEdge {
                     from: RegionBranchPoint::Terminator(terminator),
-                    to: RegionSuccessor::After(op),
+                    to: RegionSuccessor::After,
                     flows: vec![],
                 },
             ]
@@ -947,7 +947,7 @@ mod tests {
                 });
                 edges.push(RegionEdge {
                     from: RegionBranchPoint::Terminator(tail_terminator(ctx, region)),
-                    to: RegionSuccessor::After(op),
+                    to: RegionSuccessor::After,
                     flows: vec![],
                 });
             }
