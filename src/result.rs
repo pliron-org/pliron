@@ -109,7 +109,7 @@ use thiserror::Error;
 
 use crate::{
     context::Context,
-    location::{Located, Location},
+    location::{Located, LocatedRef, Location},
     printable::{Printable, State},
     std_deps::backtrace::{Backtrace, BacktraceStatus},
     utils::trait_cast::any_to_trait,
@@ -204,6 +204,12 @@ impl Located for Error {
 
     fn set_loc(&mut self, loc: Location) {
         self.loc = loc;
+    }
+}
+
+impl LocatedRef for Error {
+    fn loc_ref(&self) -> &Location {
+        &self.loc
     }
 }
 
