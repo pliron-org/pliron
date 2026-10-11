@@ -211,7 +211,12 @@ fn build_bitcode(input_file: &str, mut opts: impl Pass) -> (tempfile::TempDir, P
         .expect("Parsed operation must be a ModuleOp");
 
     // Execute it and try.
-    let module = match to_llvm_ir::convert_module(ctx, &llvm_context, parsed_module_op) {
+    let module = match to_llvm_ir::convert_module(
+        ctx,
+        &llvm_context,
+        parsed_module_op,
+        Default::default(),
+    ) {
         Ok(module) => module,
         Err(err) => {
             eprintln!("{}", err.disp(ctx));

@@ -238,7 +238,7 @@ fn run(cli: Cli, ctx: &mut Context) -> Result<()> {
         );
     })?;
 
-    let module = to_llvm_ir::convert_module(ctx, &llvm_context, pliron_module)?;
+    let module = to_llvm_ir::convert_module(ctx, &llvm_context, pliron_module, Default::default())?;
     module
         .verify()
         .map_err(|err| verify_error_noloc!("{}", err.to_string()))?;

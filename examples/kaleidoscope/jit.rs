@@ -38,7 +38,7 @@ fn lower_to_llvm_ir(src: &str, llvm_ctx: &LLVMContext) -> Result<LLVMModule> {
     lower_module(ctx, module)?;
     verify_operation(module.get_operation(), ctx)?;
     // Convert from LLVM dialect to LLVM IR
-    let llvm_module = to_llvm_ir::convert_module(ctx, llvm_ctx, module)?;
+    let llvm_module = to_llvm_ir::convert_module(ctx, llvm_ctx, module, Default::default())?;
     llvm_module
         .verify()
         .map_err(|e| input_error_noloc!("Generated LLVM module is invalid: {}", e))?;

@@ -15,15 +15,15 @@ use llvm_sys::{
     LLVMFastMathApproxFunc, LLVMFastMathFlags, LLVMFastMathNoInfs, LLVMFastMathNoNaNs,
     LLVMFastMathNoSignedZeros, LLVMFastMathNone, LLVMGEPFlagInBounds, LLVMGEPFlagNUSW,
     LLVMGEPFlagNUW, LLVMGEPNoWrapFlags, LLVMInlineAsmDialect, LLVMIntPredicate, LLVMLinkage,
-    LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
+    LLVMModuleFlagBehavior, LLVMOpcode, LLVMRealPredicate, LLVMTypeKind, LLVMValueKind,
     analysis::LLVMVerifyModule,
     bit_writer::LLVMWriteBitcodeToFile,
     core::{
         LLVMAddAttributeAtIndex, LLVMAddCallSiteAttribute, LLVMAddCase, LLVMAddDestination,
         LLVMAddFunction, LLVMAddGlobal, LLVMAddGlobalInAddressSpace, LLVMAddIncoming,
-        LLVMAddNamedMetadataOperand, LLVMAppendBasicBlockInContext, LLVMArrayType2,
-        LLVMBFloatTypeInContext, LLVMBasicBlockAsValue, LLVMBlockAddress, LLVMBuildAShr,
-        LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
+        LLVMAddModuleFlag, LLVMAddNamedMetadataOperand, LLVMAppendBasicBlockInContext,
+        LLVMArrayType2, LLVMBFloatTypeInContext, LLVMBasicBlockAsValue, LLVMBlockAddress,
+        LLVMBuildAShr, LLVMBuildAdd, LLVMBuildAddrSpaceCast, LLVMBuildAnd, LLVMBuildArrayAlloca,
         LLVMBuildAtomicCmpXchgSyncScope, LLVMBuildAtomicRMWSyncScope, LLVMBuildBitCast,
         LLVMBuildBr, LLVMBuildCall2, LLVMBuildCondBr, LLVMBuildExtractElement,
         LLVMBuildExtractValue, LLVMBuildFAdd, LLVMBuildFCmp, LLVMBuildFDiv, LLVMBuildFMul,
@@ -64,13 +64,13 @@ use llvm_sys::{
         LLVMGetInstructionParent, LLVMGetIntTypeWidth, LLVMGetIntrinsicDeclaration,
         LLVMGetLastEnumAttributeKind, LLVMGetLastFunction, LLVMGetLastGlobal, LLVMGetLinkage,
         LLVMGetMDKindIDInContext, LLVMGetMDNodeNumOperands, LLVMGetMDNodeOperands, LLVMGetMDString,
-        LLVMGetMaskValue, LLVMGetModuleContext, LLVMGetModuleIdentifier, LLVMGetNNeg, LLVMGetNSW,
-        LLVMGetNUW, LLVMGetNamedFunction, LLVMGetNamedGlobal, LLVMGetNamedMetadataName,
-        LLVMGetNamedMetadataNumOperands, LLVMGetNamedMetadataOperands, LLVMGetNextBasicBlock,
-        LLVMGetNextFunction, LLVMGetNextGlobal, LLVMGetNextInstruction, LLVMGetNextNamedMetadata,
-        LLVMGetNextParam, LLVMGetNumArgOperands, LLVMGetNumIndices, LLVMGetNumMaskElements,
-        LLVMGetNumOperands, LLVMGetOperand, LLVMGetOrdering, LLVMGetParam, LLVMGetParamTypes,
-        LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
+        LLVMGetMaskValue, LLVMGetModuleContext, LLVMGetModuleFlag, LLVMGetModuleIdentifier,
+        LLVMGetNNeg, LLVMGetNSW, LLVMGetNUW, LLVMGetNamedFunction, LLVMGetNamedGlobal,
+        LLVMGetNamedMetadataName, LLVMGetNamedMetadataNumOperands, LLVMGetNamedMetadataOperands,
+        LLVMGetNextBasicBlock, LLVMGetNextFunction, LLVMGetNextGlobal, LLVMGetNextInstruction,
+        LLVMGetNextNamedMetadata, LLVMGetNextParam, LLVMGetNumArgOperands, LLVMGetNumIndices,
+        LLVMGetNumMaskElements, LLVMGetNumOperands, LLVMGetOperand, LLVMGetOrdering, LLVMGetParam,
+        LLVMGetParamTypes, LLVMGetPointerAddressSpace, LLVMGetPoison, LLVMGetPreviousBasicBlock,
         LLVMGetPreviousFunction, LLVMGetPreviousGlobal, LLVMGetPreviousInstruction,
         LLVMGetPreviousParam, LLVMGetReturnType, LLVMGetStringAttributeKind,
         LLVMGetStringAttributeValue, LLVMGetStructElementTypes, LLVMGetStructName,
@@ -87,11 +87,11 @@ use llvm_sys::{
         LLVMPositionBuilderAtEnd, LLVMPositionBuilderBefore, LLVMPrintModuleToFile,
         LLVMPrintModuleToString, LLVMPrintTypeToString, LLVMPrintValueToString,
         LLVMReplaceAllUsesWith, LLVMScalableVectorType, LLVMSetAlignment, LLVMSetAtomicSyncScopeID,
-        LLVMSetDataLayout, LLVMSetFastMathFlags, LLVMSetGlobalConstant, LLVMSetInitializer,
-        LLVMSetLinkage, LLVMSetMetadata, LLVMSetNNeg, LLVMSetOrdering, LLVMSetTarget,
-        LLVMSetVolatile, LLVMStructCreateNamed, LLVMStructSetBody, LLVMStructTypeInContext,
-        LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock, LLVMValueAsMetadata,
-        LLVMValueIsBasicBlock, LLVMValueMetadataEntriesGetKind,
+        LLVMSetCurrentDebugLocation2, LLVMSetDataLayout, LLVMSetFastMathFlags,
+        LLVMSetGlobalConstant, LLVMSetInitializer, LLVMSetLinkage, LLVMSetMetadata, LLVMSetNNeg,
+        LLVMSetOrdering, LLVMSetTarget, LLVMSetVolatile, LLVMStructCreateNamed, LLVMStructSetBody,
+        LLVMStructTypeInContext, LLVMTypeIsSized, LLVMTypeOf, LLVMValueAsBasicBlock,
+        LLVMValueAsMetadata, LLVMValueIsBasicBlock, LLVMValueMetadataEntriesGetKind,
         LLVMValueMetadataEntriesGetMetadata, LLVMVectorType, LLVMVoidTypeInContext,
     },
     debuginfo::{
@@ -3680,6 +3680,47 @@ pub fn llvm_metadata_as_value(ctx: &LLVMContext, md: LLVMMetadata) -> LLVMValue 
 /// LLVMValueAsMetadata
 pub fn llvm_value_as_metadata(val: LLVMValue) -> LLVMMetadata {
     unsafe { LLVMValueAsMetadata(val.into()).into() }
+}
+
+/// LLVMSetCurrentDebugLocation2
+pub fn llvm_set_current_debug_location2(builder: &LLVMBuilder, loc: Option<LLVMMetadata>) {
+    assert!(loc.is_none_or(|loc| matches!(
+        llvm_get_metadata_kind(loc),
+        LLVMMetadataKind::LLVMDILocationMetadataKind
+    )));
+    unsafe {
+        LLVMSetCurrentDebugLocation2(builder.inner_ref(), loc.map_or(ptr::null_mut(), Into::into))
+    }
+}
+
+/// LLVMGetModuleFlag
+pub fn llvm_get_module_flag(module: &LLVMModule, key: &str) -> Option<LLVMMetadata> {
+    let flag = unsafe {
+        LLVMGetModuleFlag(
+            module.inner_ref(),
+            key.as_ptr() as *const core::ffi::c_char,
+            key.len(),
+        )
+    };
+    (!flag.is_null()).then(|| flag.into())
+}
+
+/// LLVMAddModuleFlag
+pub fn llvm_add_module_flag(
+    module: &LLVMModule,
+    behavior: LLVMModuleFlagBehavior,
+    key: &str,
+    value: LLVMMetadata,
+) {
+    unsafe {
+        LLVMAddModuleFlag(
+            module.inner_ref(),
+            behavior,
+            key.as_ptr() as *const core::ffi::c_char,
+            key.len(),
+            value.into(),
+        )
+    }
 }
 
 /// LLVMGetMDString

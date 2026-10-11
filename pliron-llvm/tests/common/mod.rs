@@ -20,6 +20,7 @@ use pliron::{
 use pliron_llvm::{
     from_llvm_ir,
     llvm_sys::core::{LLVMContext, LLVMMemoryBuffer, LLVMModule},
+    metadata_conversions::to_llvm_ir::DebugInfoOptions,
     to_llvm_ir,
 };
 
@@ -108,7 +109,30 @@ pub fn to_llvm_ir_verify(
     llvm_ctx: &LLVMContext,
     module_op: ModuleOp,
 ) -> Result<LLVMModule> {
-    let llvm_mod = to_llvm_ir::convert_module(ctx, llvm_ctx, module_op)?;
+    let llvm_mod = to_llvm_ir::convert_module(ctx, llvm_ctx, module_op, Default::default())?;
+    llvm_mod.verify().map_err(|err| {
+        pliron::verify_error_noloc!("Verification of the LLVM module failed: {}", err)
+    })?;
+    Ok(llvm_mod)
+}
+
+/// Converts `module_op` into an LLVM-IR module with debug data, and verifies it.
+#[cfg(feature = "llvm-sys")]
+#[allow(dead_code)]
+pub fn to_llvm_ir_with_debug_info_verify(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module_op: ModuleOp,
+    options: DebugInfoOptions,
+) -> Result<LLVMModule> {
+    let llvm_mod = to_llvm_ir::convert_module(
+        ctx,
+        llvm_ctx,
+        module_op,
+        to_llvm_ir::ToLLVMOptions {
+            debug_info: Some(options),
+        },
+    )?;
     llvm_mod.verify().map_err(|err| {
         pliron::verify_error_noloc!("Verification of the LLVM module failed: {}", err)
     })?;

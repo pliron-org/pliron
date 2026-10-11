@@ -165,7 +165,7 @@ mod tests {
         },
         llvm_sys::{core::LLVMContext, lljit::SimpleJIT},
         ops::{CallOp, FuncOp, ReturnOp},
-        to_llvm_ir::convert_module,
+        to_llvm_ir::{ToLLVMOptions, convert_module},
         types::FuncType,
     };
 
@@ -238,7 +238,8 @@ mod tests {
 
         // Convert to LLVM
         let llvm_ctx = LLVMContext::default();
-        let llvm_ir = convert_module(&ctx, &llvm_ctx, module).expect_ok(&ctx);
+        let llvm_ir =
+            convert_module(&ctx, &llvm_ctx, module, ToLLVMOptions::default()).expect_ok(&ctx);
 
         expect![[r#"
             ; ModuleID = 'test_module'

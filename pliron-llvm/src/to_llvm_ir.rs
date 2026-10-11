@@ -48,13 +48,6 @@ use pliron::derive::{op_interface, op_interface_impl, type_interface, type_inter
 use thiserror::Error;
 
 use crate::{
-    debug_info_conversions::to_llvm_ir::{
-        self as debug_info, DIConversionContext, DebugInfoOptions,
-    },
-    llvm_sys::debuginfo::llvm_set_current_debug_location2,
-};
-
-use crate::{
     attributes::{
         AggregateAttr, AtomicOrderingAttr, AtomicRmwKindAttr, BytesAttr, FCmpPredicateAttr,
         ICmpPredicateAttr, LinkageAttr, PoisonAttr, SplatAttr, SymbolAddrAttr, UndefAttr, ZeroAttr,
@@ -88,13 +81,14 @@ use crate::{
         llvm_half_type_in_context, llvm_int_type_in_context, llvm_is_a, llvm_lookup_intrinsic_id,
         llvm_pointer_type_in_context, llvm_position_builder_at_end, llvm_replace_all_uses_with,
         llvm_scalable_vector_type, llvm_set_alignment, llvm_set_atomic_sync_scope_id,
-        llvm_set_fast_math_flags, llvm_set_global_constant, llvm_set_initializer, llvm_set_linkage,
-        llvm_set_nneg, llvm_set_ordering, llvm_set_volatile, llvm_struct_create_named,
-        llvm_struct_set_body, llvm_struct_type_in_context, llvm_type_of, llvm_vector_type,
-        llvm_void_type_in_context,
+        llvm_set_current_debug_location2, llvm_set_fast_math_flags, llvm_set_global_constant,
+        llvm_set_initializer, llvm_set_linkage, llvm_set_nneg, llvm_set_ordering,
+        llvm_set_volatile, llvm_struct_create_named, llvm_struct_set_body,
+        llvm_struct_type_in_context, llvm_type_of, llvm_vector_type, llvm_void_type_in_context,
     },
     metadata_conversions::to_llvm_ir::{
-        MdConversionContext, convert_md_attachments, convert_module_metadata,
+        DebugInfoOptions, MdConversionContext, begin_function_debug_info, convert_md_attachments,
+        convert_module_metadata, finish_debug_info, set_debug_location,
     },
     op_interfaces::{
         AlignableOpInterface, FastMathFlags, IsDeclaration, LlvmSymbolName, NNegFlag,
@@ -147,13 +141,15 @@ pub struct ConversionContext<'a> {
     // Scratch builder in a scratch function for attempting to evaluate constants.
     scratch_builder: LLVMBuilder,
     // State for converting the module's metadata.
-    pub(crate) md: MdConversionContext,
-    // State for converting op locations to debug data, if requested.
-    pub(crate) di: Option<DIConversionContext<'a>>,
+    pub(crate) md: MdConversionContext<'a>,
 }
 
 impl<'a> ConversionContext<'a> {
-    pub fn new(llvm_ctx: &'a LLVMContext, cur_llvm_module: &'a LLVMModule) -> Self {
+    pub fn new(
+        llvm_ctx: &'a LLVMContext,
+        cur_llvm_module: &'a LLVMModule,
+        options: ToLLVMOptions<'a>,
+    ) -> Self {
         Self {
             cur_llvm_module,
             value_map: HMap::default(),
@@ -165,8 +161,7 @@ impl<'a> ConversionContext<'a> {
             types: TypeConversionContext::default(),
             builder: LLVMBuilder::new(llvm_ctx),
             scratch_builder: LLVMBuilder::new(llvm_ctx),
-            md: MdConversionContext::default(),
-            di: None,
+            md: MdConversionContext::new(cur_llvm_module, options.debug_info),
         }
     }
 
@@ -174,8 +169,6 @@ impl<'a> ConversionContext<'a> {
         self.value_map.clear();
         self.block_map.clear();
         llvm_clear_insertion_position(&self.builder);
-        // Else the PHIs of block arguments, built before the subprogram is set,
-        // get the last location of the previous function.
         llvm_set_current_debug_location2(&self.builder, None);
     }
 }
@@ -2129,7 +2122,7 @@ fn convert_block(
                 ToLLVMErr::MissingOpConversion(op.get_opid().to_string())
             );
         };
-        debug_info::set_location(ctx, llvm_ctx, cctx, opr);
+        set_debug_location(ctx, llvm_ctx, cctx, opr);
         let op_llvm = op_conv.convert(ctx, llvm_ctx, cctx)?;
         convert_md_attachments(ctx, llvm_ctx, cctx, opr, op_llvm)?;
         {
@@ -2192,7 +2185,7 @@ fn convert_function(
         cctx.block_map.insert(block, llvm_block);
     }
 
-    debug_info::begin_function(ctx, cctx, func_op, func_llvm);
+    begin_function_debug_info(ctx, cctx, func_op, func_llvm);
 
     // Convert within every block.
     for block in topological_order(ctx, &f_region) {
@@ -2813,35 +2806,19 @@ fn convert_global_initializer(
     Ok(None)
 }
 
+/// Options for [convert_module].
+#[derive(Debug, Default)]
+pub struct ToLLVMOptions<'a> {
+    /// Emit debug data from the op [Location]s, if set.
+    pub debug_info: Option<DebugInfoOptions<'a>>,
+}
+
 /// Convert pliron [ModuleOp] to [LLVMModule].
 pub fn convert_module(
     ctx: &Context,
     llvm_ctx: &LLVMContext,
     module: ModuleOp,
-) -> Result<LLVMModule> {
-    convert_module_impl(ctx, llvm_ctx, module, None)
-}
-
-/// Convert pliron [`ModuleOp`] to [`LLVMModule`], with debug data from the op
-/// [`Location`]s. See [`debug_info_conversions`](crate::debug_info_conversions::to_llvm_ir).
-///
-/// # Errors
-///
-/// Fails if an op, type or attribute in `module` cannot be converted.
-pub fn convert_module_with_debug_info(
-    ctx: &Context,
-    llvm_ctx: &LLVMContext,
-    module: ModuleOp,
-    options: DebugInfoOptions,
-) -> Result<LLVMModule> {
-    convert_module_impl(ctx, llvm_ctx, module, Some(options))
-}
-
-fn convert_module_impl(
-    ctx: &Context,
-    llvm_ctx: &LLVMContext,
-    module: ModuleOp,
-    options: Option<DebugInfoOptions>,
+    options: ToLLVMOptions,
 ) -> Result<LLVMModule> {
     let mod_name = module.get_symbol_name(ctx);
     let llvm_module = LLVMModule::new(mod_name.as_ref(), llvm_ctx);
@@ -2852,9 +2829,19 @@ fn convert_module_impl(
     if let Some(target_triple) = crate::attributes::get_target_triple(ctx, module) {
         llvm_module.set_target_triple(&target_triple);
     }
-    let mut conversion = ConversionContext::new(llvm_ctx, &llvm_module);
-    let cctx = &mut conversion;
-    cctx.di = options.map(|options| DIConversionContext::new(&llvm_module, options));
+    convert_module_contents(ctx, llvm_ctx, module, &llvm_module, options)?;
+    Ok(llvm_module)
+}
+
+/// Convert the contents of `module` into `llvm_module`.
+fn convert_module_contents(
+    ctx: &Context,
+    llvm_ctx: &LLVMContext,
+    module: ModuleOp,
+    llvm_module: &LLVMModule,
+    options: ToLLVMOptions,
+) -> Result<()> {
+    let cctx = &mut ConversionContext::new(llvm_ctx, llvm_module, options);
 
     // Setup the scratch builder for evaluating constants.
     // `scratch_module` is freed at the end of this function, when it exits the scope.
@@ -2880,7 +2867,7 @@ fn convert_module_impl(
             let fn_ty_llvm = func_ty_to_llvm.convert(ctx, llvm_ctx, &mut cctx.types)?;
             let name = func_op.get_symbol_name(ctx);
             let llvm_name = func_op.llvm_symbol_name(ctx).unwrap_or(name.clone().into());
-            let func_llvm = llvm_add_function(&llvm_module, &llvm_name, fn_ty_llvm);
+            let func_llvm = llvm_add_function(llvm_module, &llvm_name, fn_ty_llvm);
             if let Some(attrs) = func_op.get_attr_llvm_func_attrs(ctx) {
                 add_function_attributes(
                     ctx,
@@ -2902,7 +2889,7 @@ fn convert_module_impl(
                 .unwrap_or(global_name.clone().into());
             let global_addr_space = global_op.address_space(ctx);
             let global_llvm = llvm_add_global_in_address_space(
-                &llvm_module,
+                llvm_module,
                 global_ty_llvm,
                 &llvm_global_name,
                 global_addr_space,
@@ -2963,9 +2950,6 @@ fn convert_module_impl(
         llvm_delete_global(*placeholder);
     }
 
-    debug_info::finish(llvm_ctx, cctx);
-
-    // The context borrows `llvm_module`, and its maps may use their borrows when dropped.
-    drop(conversion);
-    Ok(llvm_module)
+    finish_debug_info(llvm_ctx, cctx);
+    Ok(())
 }

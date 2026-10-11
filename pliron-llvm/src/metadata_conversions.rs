@@ -416,40 +416,67 @@ pub mod from_llvm_ir {
     }
 }
 
-/// Conversion of LLVM metadata to LLVM-IR, a companion to [crate::to_llvm_ir].
+/// Conversion of LLVM metadata (including debug-info) to LLVM-IR,
+/// a companion to [crate::to_llvm_ir].
 pub mod to_llvm_ir {
-    use alloc::{string::ToString, vec::Vec};
+    use alloc::{
+        string::{String, ToString},
+        vec::Vec,
+    };
 
+    use llvm_sys::{
+        LLVMModuleFlagBehavior,
+        debuginfo::{LLVMChecksumKind, LLVMDIFlagZero},
+    };
     use pliron::{
         attribute::attr_cast,
-        builtin::ops::ModuleOp,
+        builtin::{op_interfaces::SymbolOpInterface, ops::ModuleOp},
         context::{Context, Ptr},
+        graph::walkers::{
+            IRNode, WALKCONFIG_PREORDER_FORWARD,
+            interruptible::{WalkResult, immutable::walk_op, walk_advance, walk_break},
+        },
         input_err_noloc, input_error_noloc,
+        location::{Located, Location, Source},
+        op::Op,
         operation::Operation,
         printable::Printable,
         result::Result,
+        uniqued_any,
         utils::table::{HMap, HSet},
     };
     use thiserror::Error;
 
     use crate::{
-        llvm_sys::core::{
-            LLVMContext, LLVMMetadata, LLVMValue, llvm_add_named_metadata_operand,
-            llvm_get_md_kind_id_in_context, llvm_global_set_metadata, llvm_is_a,
-            llvm_md_node_in_context2, llvm_md_string_in_context2, llvm_metadata_as_value,
-            llvm_metadata_replace_all_uses_with, llvm_set_metadata, llvm_temporary_md_node,
-            llvm_value_as_metadata,
+        llvm_sys::{
+            core::{
+                LLVMContext, LLVMMetadata, LLVMModule, LLVMValue, llvm_add_module_flag,
+                llvm_add_named_metadata_operand, llvm_const_int, llvm_get_md_kind_id_in_context,
+                llvm_get_module_flag, llvm_global_set_metadata, llvm_int_type_in_context,
+                llvm_is_a, llvm_md_node_in_context2, llvm_md_string_in_context2,
+                llvm_metadata_as_value, llvm_metadata_replace_all_uses_with,
+                llvm_set_current_debug_location2, llvm_set_metadata, llvm_temporary_md_node,
+                llvm_value_as_metadata,
+            },
+            debuginfo::{
+                LLVMDIBuilder, llvm_debug_metadata_version, llvm_di_builder_create_compile_unit,
+                llvm_di_builder_create_debug_location, llvm_di_builder_create_file,
+                llvm_di_builder_create_file_with_checksum, llvm_di_builder_create_function,
+                llvm_di_builder_create_lexical_block_file, llvm_di_builder_create_subroutine_type,
+                llvm_di_scope_get_file, llvm_set_subprogram,
+            },
         },
         metadata::{
             MdNodeId, MdOperandAttr, MdTableAttr, get_attachments, get_metadata_table,
             get_named_metadata,
         },
+        op_interfaces::LlvmSymbolName,
+        ops::FuncOp,
         to_llvm_ir::{AttrToLLVMConst, ConversionContext},
     };
 
     /// State for converting metadata to LLVM.
-    #[derive(Default)]
-    pub(crate) struct MdConversionContext {
+    pub(crate) struct MdConversionContext<'a> {
         // The module's metadata table, that metadata references resolve against.
         table: MdTableAttr,
         // Metadata nodes that have already been built.
@@ -458,6 +485,23 @@ pub mod to_llvm_ir {
         temporaries: HMap<MdNodeId, LLVMMetadata>,
         // Metadata nodes currently being built, to detect cyclic references.
         in_progress: HSet<MdNodeId>,
+        // State for debug info conversion.
+        di: Option<DiConversionContext<'a>>,
+    }
+
+    impl<'a> MdConversionContext<'a> {
+        pub(crate) fn new(
+            module: &'a LLVMModule,
+            debug_info: Option<DebugInfoOptions<'a>>,
+        ) -> Self {
+            Self {
+                table: MdTableAttr::default(),
+                node_map: HMap::default(),
+                temporaries: HMap::default(),
+                in_progress: HSet::default(),
+                di: debug_info.map(|options| DiConversionContext::new(module, options)),
+            }
+        }
     }
 
     /// Metadata conversion errors.
@@ -628,5 +672,369 @@ pub mod to_llvm_ir {
             }
         }
         Ok(())
+    }
+
+    /// The amount of debug data to emit.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum DwarfEmissionKind {
+        /// No debug data.
+        None,
+        /// All the debug data.
+        Full,
+        /// Line tables and inlined frames only.
+        #[default]
+        LineTablesOnly,
+    }
+
+    /// The source language of a compile unit.
+    #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+    pub enum DwarfSourceLanguage {
+        /// C.
+        #[default]
+        C,
+        /// C++.
+        CPlusPlus,
+        /// Rust.
+        Rust,
+    }
+
+    /// The text of a source file, to embed in its `DIFile`.
+    #[derive(Clone, Debug)]
+    pub struct SourceText<'a> {
+        /// The contents of the file.
+        pub text: &'a str,
+        /// Hexadecimal MD5 of [text](Self::text). Not verified.
+        pub md5: String,
+    }
+
+    /// Debug data options of [ToLLVMOptions](crate::to_llvm_ir::ToLLVMOptions).
+    #[derive(Debug)]
+    pub struct DebugInfoOptions<'a> {
+        /// The amount of debug data to emit.
+        pub emission_kind: DwarfEmissionKind,
+        /// The source language of the compile unit.
+        pub language: DwarfSourceLanguage,
+        /// The producer of the compile unit.
+        pub producer: String,
+        /// Is the code optimized?
+        pub optimized: bool,
+        /// Base directory for relative file names.
+        pub directory: String,
+        /// Not set if the module already has one.
+        pub dwarf_version: u32,
+        /// Text to embed in the `DIFile` of each location path.
+        pub source_text: HMap<String, SourceText<'a>>,
+    }
+
+    impl Default for DebugInfoOptions<'_> {
+        fn default() -> Self {
+            Self {
+                emission_kind: DwarfEmissionKind::default(),
+                language: DwarfSourceLanguage::default(),
+                producer: "pliron".to_string(),
+                optimized: false,
+                directory: String::new(),
+                dwarf_version: 4,
+                source_text: HMap::default(),
+            }
+        }
+    }
+
+    /// State for converting op locations to debug data.
+    struct DiConversionContext<'a> {
+        options: DebugInfoOptions<'a>,
+        builder: LLVMDIBuilder<'a>,
+        // The compile unit. Created with the first subprogram.
+        unit: Option<LLVMMetadata>,
+        // The `DIFile` of each source.
+        files: HMap<Source, LLVMMetadata>,
+        // Lexical block files, by their scope and file.
+        block_files: HMap<(LLVMMetadata, LLVMMetadata), LLVMMetadata>,
+        // Subprograms of inlined functions, by file and name.
+        inlined: HMap<LLVMMetadata, HMap<String, LLVMMetadata>>,
+        // The subprogram of the function that is being converted.
+        subprogram: Option<LLVMMetadata>,
+    }
+
+    impl<'a> DiConversionContext<'a> {
+        fn new(module: &'a LLVMModule, options: DebugInfoOptions<'a>) -> Self {
+            Self {
+                options,
+                builder: LLVMDIBuilder::new(module),
+                unit: None,
+                files: HMap::default(),
+                block_files: HMap::default(),
+                inlined: HMap::default(),
+                subprogram: None,
+            }
+        }
+
+        fn file(&mut self, ctx: &Context, src: &Source) -> LLVMMetadata {
+            *self.files.entry(*src).or_insert_with(|| {
+                let name = match src {
+                    Source::File(key) => uniqued_any::get(ctx, *key).to_string_lossy().into_owned(),
+                    Source::InMemory => "<in-memory>".to_string(),
+                };
+                let directory = &self.options.directory;
+                let Some(source) = self.options.source_text.get(&name) else {
+                    return llvm_di_builder_create_file(&self.builder, &name, directory);
+                };
+                llvm_di_builder_create_file_with_checksum(
+                    &self.builder,
+                    &name,
+                    directory,
+                    LLVMChecksumKind::CSK_MD5,
+                    &source.md5,
+                    source.text,
+                )
+            })
+        }
+
+        fn ensure_unit(&mut self, file: LLVMMetadata) {
+            if self.unit.is_some() {
+                return;
+            }
+            self.unit = Some(llvm_di_builder_create_compile_unit(
+                &self.builder,
+                self.options.language.into(),
+                file,
+                &self.options.producer,
+                self.options.optimized,
+                "",
+                0,
+                "",
+                self.options.emission_kind.into(),
+                0,
+                false,
+                false,
+                "",
+                "",
+            ));
+        }
+
+        fn create_subprogram(
+            &mut self,
+            name: &str,
+            linkage_name: &str,
+            file: LLVMMetadata,
+            line: u32,
+            is_local_to_unit: bool,
+        ) -> LLVMMetadata {
+            self.ensure_unit(file);
+            let ty =
+                llvm_di_builder_create_subroutine_type(&self.builder, file, &[], LLVMDIFlagZero);
+            llvm_di_builder_create_function(
+                &self.builder,
+                file,
+                name,
+                linkage_name,
+                file,
+                line,
+                ty,
+                is_local_to_unit,
+                true,
+                line,
+                LLVMDIFlagZero,
+                self.options.optimized,
+            )
+        }
+
+        /// `scope`, or a lexical block of `scope` in the file of `src`.
+        fn scope_in_file(
+            &mut self,
+            ctx: &Context,
+            scope: LLVMMetadata,
+            src: &Source,
+        ) -> LLVMMetadata {
+            let file = self.file(ctx, src);
+            if llvm_di_scope_get_file(scope) == Some(file) {
+                return scope;
+            }
+            *self.block_files.entry((scope, file)).or_insert_with(|| {
+                llvm_di_builder_create_lexical_block_file(&self.builder, scope, file, 0)
+            })
+        }
+
+        /// Keyed by the outermost name of `callee`.
+        fn inlined_subprogram(&mut self, ctx: &Context, callee: &Location) -> Option<LLVMMetadata> {
+            let name = frame_name(callee)?;
+            let (src, _) = frame_src_pos(callee).unwrap_or((Source::InMemory, 0));
+            let file = self.file(ctx, &src);
+            if let Some(subprogram) = self.inlined.get(&file).and_then(|names| names.get(name)) {
+                return Some(*subprogram);
+            }
+            let subprogram = self.create_subprogram(name, "", file, 0, true);
+            self.inlined
+                .entry(file)
+                .or_default()
+                .insert(name.to_string(), subprogram);
+            Some(subprogram)
+        }
+
+        fn translate(
+            &mut self,
+            ctx: &Context,
+            llvm_ctx: &LLVMContext,
+            loc: &Location,
+            scope: LLVMMetadata,
+            inlined_at: Option<LLVMMetadata>,
+        ) -> Option<LLVMMetadata> {
+            match loc {
+                Location::SrcPos { src, pos } => {
+                    let scope = self.scope_in_file(ctx, scope, src);
+                    Some(llvm_di_builder_create_debug_location(
+                        llvm_ctx,
+                        non_negative(pos.line),
+                        non_negative(pos.column),
+                        scope,
+                        inlined_at,
+                    ))
+                }
+                Location::Named { child_loc, .. } => {
+                    self.translate(ctx, llvm_ctx, child_loc, scope, inlined_at)
+                }
+                Location::CallSite { callee, caller } => {
+                    let Some(caller) = self.translate(ctx, llvm_ctx, caller, scope, inlined_at)
+                    else {
+                        return self.translate(ctx, llvm_ctx, callee, scope, inlined_at);
+                    };
+                    let Some(callee_scope) = self.inlined_subprogram(ctx, callee) else {
+                        return Some(caller);
+                    };
+                    self.translate(ctx, llvm_ctx, callee, callee_scope, Some(caller))
+                        .or(Some(caller))
+                }
+                Location::Fused { locations, .. } => locations
+                    .iter()
+                    .find_map(|loc| self.translate(ctx, llvm_ctx, loc, scope, inlined_at)),
+                Location::Unknown => None,
+            }
+        }
+    }
+
+    fn non_negative(value: i32) -> u32 {
+        u32::try_from(value).unwrap_or(0)
+    }
+
+    /// The first name in the outermost frame of `loc`.
+    fn frame_name(loc: &Location) -> Option<&str> {
+        match loc {
+            Location::Named { name, .. } => Some(name),
+            Location::Fused { locations, .. } => locations.iter().find_map(frame_name),
+            Location::CallSite { caller, .. } => frame_name(caller),
+            Location::SrcPos { .. } | Location::Unknown => None,
+        }
+    }
+
+    /// The first source and line in the outermost frame of `loc`.
+    fn frame_src_pos(loc: &Location) -> Option<(Source, u32)> {
+        match loc {
+            Location::SrcPos { src, pos } => Some((*src, non_negative(pos.line))),
+            Location::Named { child_loc, .. } => frame_src_pos(child_loc),
+            Location::Fused { locations, .. } => locations.iter().find_map(frame_src_pos),
+            Location::CallSite { caller, .. } => frame_src_pos(caller),
+            Location::Unknown => None,
+        }
+    }
+
+    /// The location of `func_op`, or else the first known location in its body.
+    fn function_location(ctx: &Context, func_op: FuncOp) -> Option<Location> {
+        let loc = func_op.loc(ctx);
+        if !loc.is_unknown() {
+            return Some(loc);
+        }
+        let result = walk_op(
+            ctx,
+            &mut (),
+            &WALKCONFIG_PREORDER_FORWARD,
+            func_op.get_operation(),
+            |ctx: &Context, _state: &mut (), node: IRNode| -> WalkResult<Location> {
+                let IRNode::Operation(op) = node else {
+                    return walk_advance();
+                };
+                let loc = op.deref(ctx).loc();
+                if loc.is_unknown() {
+                    walk_advance()
+                } else {
+                    walk_break(loc)
+                }
+            },
+        );
+        match result {
+            WalkResult::Break(loc) => Some(loc),
+            WalkResult::Continue(_) => None,
+        }
+    }
+
+    /// Create the subprogram of `func_op`, if debug data is requested.
+    pub(crate) fn begin_function_debug_info(
+        ctx: &Context,
+        cctx: &mut ConversionContext,
+        func_op: FuncOp,
+        func_llvm: LLVMValue,
+    ) {
+        let Some(di) = cctx.md.di.as_mut() else {
+            return;
+        };
+        di.subprogram = None;
+        let Some(loc) = function_location(ctx, func_op) else {
+            return;
+        };
+        let llvm_name = func_op
+            .llvm_symbol_name(ctx)
+            .unwrap_or_else(|| func_op.get_symbol_name(ctx).to_string());
+        let name = frame_name(&loc).unwrap_or(&llvm_name);
+        let linkage_name = if name == llvm_name { "" } else { &llvm_name };
+        let (src, line) = frame_src_pos(&loc).unwrap_or((Source::InMemory, 0));
+        let file = di.file(ctx, &src);
+        let subprogram = di.create_subprogram(name, linkage_name, file, line, false);
+        llvm_set_subprogram(func_llvm, subprogram);
+        di.subprogram = Some(subprogram);
+    }
+
+    /// Set the debug location of the instructions that `op` converts to,
+    /// if debug data is requested.
+    pub(crate) fn set_debug_location(
+        ctx: &Context,
+        llvm_ctx: &LLVMContext,
+        cctx: &mut ConversionContext,
+        op: Ptr<Operation>,
+    ) {
+        let Some(di) = cctx.md.di.as_mut() else {
+            return;
+        };
+        let loc = op.deref(ctx).loc();
+        let di_loc = di.subprogram.map(|subprogram| {
+            di.translate(ctx, llvm_ctx, &loc, subprogram, None)
+                .unwrap_or_else(|| {
+                    llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
+                })
+        });
+        llvm_set_current_debug_location2(&cctx.builder, di_loc);
+    }
+
+    /// Add the module flags that the debug data needs, and finalize it.
+    pub(crate) fn finish_debug_info(llvm_ctx: &LLVMContext, cctx: &mut ConversionContext) {
+        let Some(di) = cctx.md.di.take() else {
+            return;
+        };
+        if di.unit.is_none() {
+            return;
+        }
+        let int32 = llvm_int_type_in_context(llvm_ctx, 32);
+        for (key, value) in [
+            ("Debug Info Version", llvm_debug_metadata_version()),
+            ("Dwarf Version", di.options.dwarf_version),
+        ] {
+            if llvm_get_module_flag(cctx.cur_llvm_module, key).is_none() {
+                let value = llvm_value_as_metadata(llvm_const_int(int32, value.into(), false));
+                llvm_add_module_flag(
+                    cctx.cur_llvm_module,
+                    LLVMModuleFlagBehavior::LLVMModuleFlagBehaviorWarning,
+                    key,
+                    value,
+                );
+            }
+        }
     }
 }
