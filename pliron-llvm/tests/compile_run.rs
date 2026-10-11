@@ -38,13 +38,15 @@ use pliron_llvm::{
 fn llvm_major_version() -> String {
     let manifest =
         Manifest::from_path(env!("CARGO_MANIFEST_PATH")).expect("Could not read Cargo.toml");
-    let llvm_version = manifest.dependencies.expect("Expected llvm-sys dependency")["llvm-sys"]
+    let llvm_sys_version = manifest.dependencies.expect("Expected llvm-sys dependency")["llvm-sys"]
         .req()
         .to_string();
+    // The llvm-sys major version is the LLVM major version followed by the LLVM minor version.
+    let llvm_version = llvm_sys_version.split('.').next().unwrap();
     assert!(
         llvm_version.len() == 3,
         "Unexpected llvm-sys version format: Expected two-digit major version and one digit minor version, got {}",
-        llvm_version
+        llvm_sys_version
     );
     llvm_version[..2].to_string()
 }
