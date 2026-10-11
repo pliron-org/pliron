@@ -34,8 +34,11 @@
 //! ensuring better readability and simpler formatters (custom printers and parsers
 //! don't need to be responsible for metadata, it's automatically taken care of).
 //!
-//! TODO: Only generic nodes (LLVM's `MDTuple`) are supported. LLVM's specialized
-//! debug info nodes (`DILocation`, `DISubprogram`, ...) need extensions in [MdNodeAttr];
+//! Debug locations (`DILocation`, and the file and line of a function's `DISubprogram`)
+//! are represented as op [Location]s.
+//!
+//! TODO: Only generic nodes (LLVM's `MDTuple`) are supported. LLVM's other specialized
+//! debug info nodes (`DICompileUnit`, `DIType`, ...) need extensions in [MdNodeAttr];
 //! until then, conversion from LLVM-IR drops them, with a warning.
 
 use crate::attributes::{AggregateAttr, SplatAttr, SymbolAddrAttr};

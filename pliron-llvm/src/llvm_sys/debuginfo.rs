@@ -9,15 +9,21 @@ use llvm_sys::{
     debuginfo::{
         LLVMChecksumKind, LLVMDIBuilderCreateCompileUnit, LLVMDIBuilderCreateDebugLocation,
         LLVMDIBuilderCreateFile, LLVMDIBuilderCreateFileWithChecksum, LLVMDIBuilderCreateFunction,
-        LLVMDIBuilderCreateLexicalBlockFile, LLVMDIBuilderCreateSubroutineType, LLVMDIFlags,
-        LLVMDIScopeGetFile, LLVMDWARFEmissionKind, LLVMDWARFSourceLanguage,
-        LLVMDebugMetadataVersion, LLVMMetadataKind, LLVMSetSubprogram,
+        LLVMDIBuilderCreateLexicalBlockFile, LLVMDIBuilderCreateSubroutineType,
+        LLVMDIFileGetDirectory, LLVMDIFileGetFilename, LLVMDIFlags, LLVMDILocationGetColumn,
+        LLVMDILocationGetInlinedAt, LLVMDILocationGetLine, LLVMDILocationGetScope,
+        LLVMDIScopeGetFile, LLVMDISubprogramGetLine, LLVMDWARFEmissionKind,
+        LLVMDWARFSourceLanguage, LLVMDebugMetadataVersion, LLVMGetSubprogram,
+        LLVMInstructionGetDebugLoc, LLVMMetadataKind, LLVMSetSubprogram,
     },
     prelude::LLVMMetadataRef,
 };
 
 use crate::{
-    llvm_sys::core::{LLVMContext, LLVMMetadata, LLVMValue, llvm_get_metadata_kind, llvm_is_a},
+    llvm_sys::{
+        core::{LLVMContext, LLVMMetadata, LLVMValue, llvm_get_metadata_kind, llvm_is_a},
+        sized_cstr_to_string,
+    },
     metadata_conversions::to_llvm_ir::{DwarfEmissionKind, DwarfSourceLanguage},
 };
 
@@ -345,4 +351,80 @@ pub fn llvm_set_subprogram(func: LLVMValue, subprogram: LLVMMetadata) {
         LLVMMetadataKind::LLVMDISubprogramMetadataKind
     ));
     unsafe { LLVMSetSubprogram(func.into(), subprogram.into()) }
+}
+
+/// LLVMGetSubprogram
+pub fn llvm_get_subprogram(func: LLVMValue) -> Option<LLVMMetadata> {
+    assert!(llvm_is_a::function(func));
+    let subprogram = unsafe { LLVMGetSubprogram(func.into()) };
+    (!subprogram.is_null()).then(|| subprogram.into())
+}
+
+/// LLVMDISubprogramGetLine
+pub fn llvm_di_subprogram_get_line(subprogram: LLVMMetadata) -> u32 {
+    assert!(is_md_kind(
+        subprogram,
+        LLVMMetadataKind::LLVMDISubprogramMetadataKind
+    ));
+    unsafe { LLVMDISubprogramGetLine(subprogram.into()) }
+}
+
+/// LLVMInstructionGetDebugLoc
+pub fn llvm_instruction_get_debug_loc(inst: LLVMValue) -> Option<LLVMMetadata> {
+    assert!(llvm_is_a::instruction(inst));
+    let loc = unsafe { LLVMInstructionGetDebugLoc(inst.into()) };
+    (!loc.is_null()).then(|| loc.into())
+}
+
+/// LLVMDILocationGetLine
+pub fn llvm_di_location_get_line(loc: LLVMMetadata) -> u32 {
+    assert!(is_md_kind(
+        loc,
+        LLVMMetadataKind::LLVMDILocationMetadataKind
+    ));
+    unsafe { LLVMDILocationGetLine(loc.into()) }
+}
+
+/// LLVMDILocationGetColumn
+pub fn llvm_di_location_get_column(loc: LLVMMetadata) -> u32 {
+    assert!(is_md_kind(
+        loc,
+        LLVMMetadataKind::LLVMDILocationMetadataKind
+    ));
+    unsafe { LLVMDILocationGetColumn(loc.into()) }
+}
+
+/// LLVMDILocationGetScope
+pub fn llvm_di_location_get_scope(loc: LLVMMetadata) -> LLVMMetadata {
+    assert!(is_md_kind(
+        loc,
+        LLVMMetadataKind::LLVMDILocationMetadataKind
+    ));
+    unsafe { LLVMDILocationGetScope(loc.into()).into() }
+}
+
+/// LLVMDILocationGetInlinedAt
+pub fn llvm_di_location_get_inlined_at(loc: LLVMMetadata) -> Option<LLVMMetadata> {
+    assert!(is_md_kind(
+        loc,
+        LLVMMetadataKind::LLVMDILocationMetadataKind
+    ));
+    let inlined_at = unsafe { LLVMDILocationGetInlinedAt(loc.into()) };
+    (!inlined_at.is_null()).then(|| inlined_at.into())
+}
+
+/// LLVMDIFileGetFilename
+pub fn llvm_di_file_get_filename(file: LLVMMetadata) -> String {
+    assert!(is_md_kind(file, LLVMMetadataKind::LLVMDIFileMetadataKind));
+    let mut len = 0;
+    let ptr = unsafe { LLVMDIFileGetFilename(file.into(), &mut len) };
+    sized_cstr_to_string(ptr, len as usize).unwrap_or_default()
+}
+
+/// LLVMDIFileGetDirectory
+pub fn llvm_di_file_get_directory(file: LLVMMetadata) -> String {
+    assert!(is_md_kind(file, LLVMMetadataKind::LLVMDIFileMetadataKind));
+    let mut len = 0;
+    let ptr = unsafe { LLVMDIFileGetDirectory(file.into(), &mut len) };
+    sized_cstr_to_string(ptr, len as usize).unwrap_or_default()
 }

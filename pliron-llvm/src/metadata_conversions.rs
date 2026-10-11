@@ -3,9 +3,9 @@
 
 //! Conversion of [LLVM metadata](crate::metadata) to and from LLVM-IR.
 
-/// Conversion of LLVM metadata from LLVM-IR, a companion to [crate::from_llvm_ir].
 pub mod from_llvm_ir {
     use alloc::{
+        boxed::Box,
         string::{String, ToString},
         vec,
         vec::Vec,
@@ -14,23 +14,35 @@ pub mod from_llvm_ir {
     use llvm_sys::debuginfo::LLVMMetadataKind;
     use pliron::{
         builtin::ops::ModuleOp,
+        combine::stream::position::SourcePosition,
         context::{Context, Ptr},
         input_error_noloc,
+        location::{Located, Location, Source},
         operation::Operation,
         result::Result,
+        std_deps::path::PathBuf,
         utils::table::{HMap, HSet},
     };
     use thiserror::Error;
 
     use crate::{
         from_llvm_ir::{ConversionContext, const_llvm_value_to_attr},
-        llvm_sys::core::{
-            LLVMMetadata, LLVMModule, LLVMValue, llvm_get_md_kind_id_in_module,
-            llvm_get_md_node_operands, llvm_get_md_string, llvm_get_metadata_kind,
-            llvm_get_named_metadata_operands, llvm_global_copy_all_metadata,
-            llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_md_node_in_module,
-            llvm_metadata_as_value_in_module, llvm_named_metadata_names,
-            llvm_print_module_to_string, llvm_print_value_to_string, llvm_value_as_metadata,
+        llvm_sys::{
+            core::{
+                LLVMMetadata, LLVMModule, LLVMValue, llvm_get_md_kind_id_in_module,
+                llvm_get_md_node_operands, llvm_get_md_string, llvm_get_metadata_kind,
+                llvm_get_named_metadata_operands, llvm_global_copy_all_metadata,
+                llvm_instruction_get_all_metadata_other_than_debug_loc, llvm_is_a,
+                llvm_md_node_in_module, llvm_metadata_as_value_in_module,
+                llvm_named_metadata_names, llvm_print_module_to_string, llvm_print_value_to_string,
+                llvm_value_as_metadata,
+            },
+            debuginfo::{
+                llvm_di_file_get_directory, llvm_di_file_get_filename, llvm_di_location_get_column,
+                llvm_di_location_get_inlined_at, llvm_di_location_get_line,
+                llvm_di_location_get_scope, llvm_di_scope_get_file, llvm_di_subprogram_get_line,
+                llvm_get_subprogram, llvm_instruction_get_debug_loc,
+            },
         },
         metadata::{
             MdAttachmentsAttr, MdNodeAttr, MdNodeId, MdOperandAttr, MdTableAttr, NamedMdAttr,
@@ -336,7 +348,7 @@ pub mod from_llvm_ir {
         for (kind_id, md) in entries {
             let kind = md_kind_name(cctx, module, kind_id)?;
             if kind == MD_KIND_DBG {
-                // A debug location. pliron has its own [Location](pliron::location::Location).
+                // Debug data converts to [Location].
                 continue;
             }
             let Some(node) = convert_md_node(ctx, cctx, module, md)? else {
@@ -359,6 +371,7 @@ pub mod from_llvm_ir {
         inst: LLVMValue,
         m_inst: Ptr<Operation>,
     ) -> Result<()> {
+        convert_instruction_debug_loc(ctx, inst, m_inst);
         let entries = llvm_instruction_get_all_metadata_other_than_debug_loc(inst);
         convert_md_attachments(ctx, cctx, module, entries, m_inst)
     }
@@ -371,8 +384,69 @@ pub mod from_llvm_ir {
         global: LLVMValue,
         m_op: Ptr<Operation>,
     ) -> Result<()> {
+        if llvm_is_a::function(global) {
+            convert_function_debug_loc(ctx, global, m_op);
+        }
         let entries = llvm_global_copy_all_metadata(global);
         convert_md_attachments(ctx, cctx, module, entries, m_op)
+    }
+
+    /// A position at `line` and `column` in the file of the debug data `scope`.
+    fn src_pos(ctx: &Context, scope: LLVMMetadata, line: u32, column: u32) -> Location {
+        if line == 0 {
+            // Line 0 is LLVM's convention for no source position.
+            return Location::Unknown;
+        }
+        let src = llvm_di_scope_get_file(scope).map_or(Source::InMemory, |file| {
+            // A relative file name is relative to the directory of the file.
+            let path = PathBuf::from(llvm_di_file_get_directory(file))
+                .join(llvm_di_file_get_filename(file));
+            Source::new_from_file(ctx, path)
+        });
+        let pos = SourcePosition {
+            line: line.try_into().unwrap_or(i32::MAX),
+            column: column.try_into().unwrap_or(i32::MAX),
+        };
+        Location::SrcPos { src, pos }
+    }
+
+    /// The [Location] of the `DILocation` `di_loc`.
+    /// Inlined positions becomes [Location::CallSite].
+    fn convert_di_location(ctx: &Context, di_loc: LLVMMetadata) -> Location {
+        let loc = src_pos(
+            ctx,
+            llvm_di_location_get_scope(di_loc),
+            llvm_di_location_get_line(di_loc),
+            llvm_di_location_get_column(di_loc),
+        );
+        match llvm_di_location_get_inlined_at(di_loc) {
+            // TODO: Wrap `loc` in a [Location::Named] with the name of the subprogram
+            // of its scope. The C-API has no getter for this name.
+            Some(caller) => Location::CallSite {
+                callee: Box::new(loc),
+                caller: Box::new(convert_di_location(ctx, caller)),
+            },
+            None => loc,
+        }
+    }
+
+    /// Set the location of `m_inst` from the debug location of `inst`.
+    fn convert_instruction_debug_loc(ctx: &Context, inst: LLVMValue, m_inst: Ptr<Operation>) {
+        if let Some(di_loc) = llvm_instruction_get_debug_loc(inst) {
+            let loc = convert_di_location(ctx, di_loc);
+            m_inst.deref_mut(ctx).set_loc(loc);
+        }
+    }
+
+    /// Set the location of `m_func` from the subprogram of `function`.
+    fn convert_function_debug_loc(ctx: &Context, function: LLVMValue, m_func: Ptr<Operation>) {
+        if let Some(subprogram) = llvm_get_subprogram(function) {
+            let line = llvm_di_subprogram_get_line(subprogram);
+            // TODO: Wrap `loc` in a [Location::Named] with the name of `subprogram`.
+            // The C-API has no getter for this name.
+            let loc = src_pos(ctx, subprogram, line, 0);
+            m_func.deref_mut(ctx).set_loc(loc);
+        }
     }
 
     /// Convert the module's named metadata (`!llvm.module.flags = !{!0, !1}`).

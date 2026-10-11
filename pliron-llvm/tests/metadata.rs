@@ -269,35 +269,41 @@ fn metadata_to_llvm_ir() -> Result<()> {
     Ok(())
 }
 
-/// Debug info metadata cannot be represented, so it is dropped (with a warning) and
-/// everything else about the module still converts.
+/// Debug locations must convert to op locations.
 #[test]
-fn debug_info_metadata_is_dropped() -> Result<()> {
+fn debug_info_metadata_from_llvm_ir() -> Result<()> {
     let input = r#"
       @g = global i32 0
 
       define void @f(i32 %n) !dbg !4 {
-        %a = add i32 %n, 1, !my.kind !7
-        ret void
+        %a = add i32 %n, 1, !my.kind !7, !dbg !8
+        ret void, !dbg !12
       }
 
       !llvm.dbg.cu = !{!0}
       !llvm.module.flags = !{!3}
 
       !0 = distinct !DICompileUnit(language: DW_LANG_C11, file: !1, producer: "pliron test", emissionKind: FullDebug)
-      !1 = !DIFile(filename: "t.c", directory: "/")
+      !1 = !DIFile(filename: "t.c", directory: "/src")
       !3 = !{i32 2, !"Debug Info Version", i32 3}
       !4 = distinct !DISubprogram(name: "f", scope: !1, file: !1, line: 1, type: !5, spFlags: DISPFlagDefinition, unit: !0)
       !5 = !DISubroutineType(types: !6)
       !6 = !{null}
       !7 = !{!"a tuple that survives", !1}
+      !8 = !DILocation(line: 7, column: 9, scope: !9, inlinedAt: !11)
+      !9 = distinct !DISubprogram(name: "inner", scope: !10, file: !10, line: 6, type: !5, spFlags: DISPFlagDefinition, unit: !0)
+      !10 = !DIFile(filename: "inner.c", directory: "/lib")
+      !11 = !DILocation(line: 2, column: 3, scope: !4)
+      !12 = !DILocation(line: 10, column: 1, scope: !13)
+      !13 = !DILexicalBlockFile(scope: !4, file: !14, discriminator: 0)
+      !14 = !DIFile(filename: "/abs/other.c", directory: "/src")
     "#;
 
     let ctx = &mut Context::new();
     let (module_op, printed) = from_llvm_ir(ctx, input)?;
 
-    // The generic node referring to a `DIFile` goes with it.
-    // `!dbg` and `!llvm.dbg.cu` are gone entirely too.
+    // The other debug info metadata is not supported yet, so it is dropped:
+    // `!llvm.dbg.cu`, and the generic node referring to a `DIFile`.
     expect![[r#"
         builtin.module @metadata_test 
         {
@@ -310,13 +316,15 @@ fn debug_info_metadata_is_dropped() -> Result<()> {
               ^entry_block2v1(v0: builtin.integer i32):
                 v1 = llvm.constant <builtin.integer <1: i32>> : builtin.integer i32;
                 a_v2 = llvm.add v0, v1 <{nsw=false,nuw=false}>: builtin.integer i32 !0;
-                llvm.return 
-            }
-        } !1
+                llvm.return  !1
+            } !2
+        } !3
 
         outlined_attributes:
-        !0 = [builtin_given_names = builtin.given_names [a]]
-        !1 = [llvm_named_metadata = llvm.named_md ["llvm.module.flags" = [#1]], llvm_metadata_defs = llvm.md_table [
+        !0 = @[callsite("/lib/inner.c": line: 7, column: 9 at "/src/t.c": line: 2, column: 3)], [builtin_given_names = builtin.given_names [a]]
+        !1 = @["/abs/other.c": line: 10, column: 1], []
+        !2 = @["/src/t.c": line: 1, column: 0], []
+        !3 = [llvm_named_metadata = llvm.named_md ["llvm.module.flags" = [#1]], llvm_metadata_defs = llvm.md_table [
           #0 = !{},
           #1 = !{builtin.integer <2: i32>, !"Debug Info Version", builtin.integer <3: i32>}
         ]]
