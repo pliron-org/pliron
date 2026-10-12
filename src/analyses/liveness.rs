@@ -555,8 +555,7 @@ impl<T: RegionLiveness> Liveness<T> {
     ///
     // `value` is reported as live at `point` if one of these is true:
     // 1. `value` has a use in the region that contains `point`, or in a region reachable from it.
-    // 2. `op` itself reads `value` while its regions run
-    //    ([operands_used_in_regions](RegionBranchOpInterface::operands_used_in_regions)).
+    // 2. An edge from this region or a reachable region reads `value`.
     // 3. `value` is live after `op`.
     fn is_live_in_region_branch_op(
         &mut self,
@@ -585,20 +584,25 @@ impl<T: RegionLiveness> Liveness<T> {
             })
             .expect("`op` must contain the query point");
 
-        // Rule 1: A use in `region`, or in a region reachable from it.
-        if core::iter::once(region)
+        let reachable_regions: Vec<_> = core::iter::once(region)
             .chain(region_branch.reachable_regions(ctx, region))
-            .any(|reachable_region| Self::has_use_in_region_subtree(ctx, value, reachable_region))
+            .collect();
+
+        // Rule 1: A use in `region`, or in a region reachable from it.
+        if reachable_regions
+            .iter()
+            .any(|&reachable_region| Self::has_use_in_region_subtree(ctx, value, reachable_region))
         {
             return Some(true);
         }
 
-        // Rule 2: `op` itself reads `value` while its regions run.
-        if region_branch
-            .operands_used_in_regions(ctx)
-            .iter()
-            .any(|operand| operand.get_def(ctx) == value)
-        {
+        // Rule 2: An edge from this region or a reachable region reads `value`.
+        if reachable_regions.iter().any(|&source_region| {
+            region_branch
+                .operands_read_from_region(ctx, source_region)
+                .iter()
+                .any(|operand| operand.get_def(ctx) == value)
+        }) {
             return Some(true);
         }
 
@@ -767,7 +771,7 @@ mod tests {
         operation::Operation,
         pass::AnalysisManager,
         region::Region,
-        value::{Use, Value},
+        value::Value,
     };
 
     #[pliron_op(name = "test.liveness_node", format, verifier = "succ")]
@@ -849,10 +853,12 @@ mod tests {
 
     /// A loop
     /// - operand 0 is the initial value of body argument 0.
-    /// - operand 1 is a bound (it flows nowhere).
+    /// - operand 1 is read on entry and after the exit region (it flows nowhere).
     /// - operand 2 is the initial value of body argument 1.
+    ///   The op reads it again on the back edge.
     /// - The body's tail terminator passes its two operands back to the body arguments,
-    ///   or exits the op.
+    ///   or enters the exit region.
+    /// - The exit region's tail terminator exits the op.
     #[pliron_op(name = "test.liveness_loop", format, verifier = "succ")]
     struct LoopOp;
 
@@ -860,6 +866,8 @@ mod tests {
     /// - control enters one of its two regions
     /// - each region's tail terminator exits the op.
     /// - No values flow.
+    /// - Operand 0 is read on entry.
+    /// - Operand 1 is read only on the edge out of the first region.
     #[pliron_op(name = "test.liveness_if", format, verifier = "succ")]
     struct IfOp;
 
@@ -878,6 +886,7 @@ mod tests {
         fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge> {
             let op = self.get_operation();
             let body = op.deref(ctx).get_region(0);
+            let exit = op.deref(ctx).get_region(1);
             let entry = body.deref(ctx).get_head().unwrap();
             let body_args = [
                 entry.deref(ctx).get_argument(0),
@@ -897,28 +906,39 @@ mod tests {
                     from: RegionBranchPoint::Parent,
                     to: RegionSuccessor::Region(body),
                     flows: flows_from(op, [0, 2]),
+                    reads: vec![
+                        op.deref(ctx).get_operand_as_use(0),
+                        op.deref(ctx).get_operand_as_use(1),
+                    ],
                 },
                 RegionEdge {
                     from: RegionBranchPoint::Parent,
                     to: RegionSuccessor::After,
                     flows: vec![],
+                    reads: vec![
+                        op.deref(ctx).get_operand_as_use(0),
+                        op.deref(ctx).get_operand_as_use(1),
+                    ],
                 },
                 RegionEdge {
                     from: RegionBranchPoint::Terminator(terminator),
                     to: RegionSuccessor::Region(body),
                     flows: flows_from(terminator, [0, 1]),
+                    reads: vec![op.deref(ctx).get_operand_as_use(2)],
                 },
                 RegionEdge {
                     from: RegionBranchPoint::Terminator(terminator),
+                    to: RegionSuccessor::Region(exit),
+                    flows: vec![],
+                    reads: vec![],
+                },
+                RegionEdge {
+                    from: RegionBranchPoint::Terminator(tail_terminator(ctx, exit)),
                     to: RegionSuccessor::After,
                     flows: vec![],
+                    reads: vec![op.deref(ctx).get_operand_as_use(1)],
                 },
             ]
-        }
-
-        fn operands_used_in_regions(&self, ctx: &Context) -> Vec<Use<Value>> {
-            let op = self.get_operation().deref(ctx);
-            vec![op.get_operand_as_use(1), op.get_operand_as_use(2)]
         }
     }
 
@@ -936,18 +956,20 @@ mod tests {
                     from: RegionBranchPoint::Parent,
                     to: RegionSuccessor::Region(region),
                     flows: vec![],
+                    reads: vec![op.deref(ctx).get_operand_as_use(0)],
                 });
                 edges.push(RegionEdge {
                     from: RegionBranchPoint::Terminator(tail_terminator(ctx, region)),
                     to: RegionSuccessor::After,
                     flows: vec![],
+                    reads: if region == op.deref(ctx).get_region(0) {
+                        vec![op.deref(ctx).get_operand_as_use(1)]
+                    } else {
+                        vec![]
+                    },
                 });
             }
             edges
-        }
-
-        fn operands_used_in_regions(&self, _ctx: &Context) -> Vec<Use<Value>> {
-            vec![]
         }
     }
 
@@ -977,7 +999,7 @@ mod tests {
 
     /// Inside a loop body, a value must be live if
     /// - the body uses it (the body runs again),
-    /// - if the loop itself reads it while the body runs,
+    /// - an edge from the body or a reachable region reads it,
     /// - if it is used after the loop.
     ///
     /// A value that is only an initial value of the loop must not be live.
@@ -999,7 +1021,7 @@ mod tests {
             vec![],
             vec![init, bound, reread_init],
             vec![],
-            1,
+            2,
         );
         loop_op.insert_at_back(entry, ctx);
         let body = BasicBlock::new(ctx, None, vec![i64_ty.into(), i64_ty.into()]);
@@ -1015,7 +1037,36 @@ mod tests {
             0,
         );
         terminator.insert_at_back(body, ctx);
+        let exit = BasicBlock::new(ctx, None, vec![]);
+        exit.insert_at_back(loop_op.deref(ctx).get_region(1), ctx);
+        insert_br(ctx, exit, vec![]);
         insert_use(ctx, entry, after);
+
+        let op_dyn = Operation::get_op_dyn(loop_op, ctx);
+        <LoopOp as RegionBranchOpInterface>::verify(op_dyn.as_ref(), ctx).unwrap();
+        let branch = op_cast::<dyn RegionBranchOpInterface>(op_dyn.as_ref()).unwrap();
+        let read_values = |reads: Vec<crate::value::Use<Value>>| {
+            reads
+                .into_iter()
+                .map(|operand| operand.get_def(ctx))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            read_values(branch.operands_read_from(ctx, RegionBranchPoint::Parent)),
+            vec![init, bound]
+        );
+        assert_eq!(
+            read_values(branch.operands_read_from(ctx, RegionBranchPoint::Terminator(terminator))),
+            vec![reread_init]
+        );
+        assert_eq!(
+            read_values(branch.operands_read_to(ctx, RegionSuccessor::After)),
+            vec![init, bound]
+        );
+        assert_eq!(
+            read_values(branch.operands_read_from_region(ctx, loop_op.deref(ctx).get_region(0))),
+            vec![reread_init]
+        );
 
         let start = OpInsertionPoint::AtBlockStart(body);
         let end = OpInsertionPoint::BeforeOperation(terminator);
@@ -1024,7 +1075,13 @@ mod tests {
             &func,
             &[
                 (init, start, false),
+                // The bound is read after the reachable exit region.
                 (bound, start, true),
+                (bound, end, true),
+                (bound, OpInsertionPoint::AtBlockStart(exit), true),
+                (bound, OpInsertionPoint::AtBlockEnd(exit), true),
+                (reread_init, OpInsertionPoint::AtBlockStart(exit), false),
+                (in_body, OpInsertionPoint::AtBlockStart(exit), false),
                 // It flows into the body, and the loop also reads it later.
                 (reread_init, start, true),
                 (in_body, start, true),
@@ -1042,8 +1099,17 @@ mod tests {
         let (func, entry) = new_test_func(ctx, "region_branch_if");
 
         let (_, in_else) = insert_def(ctx, entry);
+        let (_, condition) = insert_def(ctx, entry);
+        let (_, after_then) = insert_def(ctx, entry);
 
-        let if_op = Operation::new(ctx, IfOp::get_concrete_op_info(), vec![], vec![], vec![], 2);
+        let if_op = Operation::new(
+            ctx,
+            IfOp::get_concrete_op_info(),
+            vec![],
+            vec![condition, after_then],
+            vec![],
+            2,
+        );
         if_op.insert_at_back(entry, ctx);
         let then_block = BasicBlock::new(ctx, None, vec![]);
         then_block.insert_at_back(if_op.deref(ctx).get_region(0), ctx);
@@ -1059,6 +1125,14 @@ mod tests {
             &[
                 (in_else, OpInsertionPoint::AtBlockStart(then_block), false),
                 (in_else, OpInsertionPoint::AtBlockStart(else_block), true),
+                (condition, OpInsertionPoint::AtBlockStart(then_block), false),
+                (condition, OpInsertionPoint::AtBlockStart(else_block), false),
+                (after_then, OpInsertionPoint::AtBlockStart(then_block), true),
+                (
+                    after_then,
+                    OpInsertionPoint::AtBlockStart(else_block),
+                    false,
+                ),
             ],
         );
     }
