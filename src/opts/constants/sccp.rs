@@ -178,7 +178,12 @@ fn process_val(val: Value, ctx: &Context, state: &mut SccpState) {
             .deref(ctx)
             .get_parent_block()
             .expect("ops that use values have parents");
-        if matches!(state.get_block_state(user_block), BlockState::Reachable) {
+        // Only process ops in reachable blocks.
+        // Ops whose blocks are already on the queue for processing are skipped.
+        // Such ops may have unprocessed (`Constness::Undetermined`) operands.
+        if matches!(state.get_block_state(user_block), BlockState::Reachable)
+            && !state.is_block_pending(user_block)
+        {
             process_op(user, ctx, state);
         }
     }

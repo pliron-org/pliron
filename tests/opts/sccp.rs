@@ -755,3 +755,117 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
         }"#]].assert_eq(&after);
     Ok(())
 }
+
+#[test]
+fn sccp_processes_newly_reachable_block_in_order() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i32 (builtin.integer i32, builtin.integer i1) variadic = false> [] {
+      ^entry(x: builtin.integer i32, c: builtin.integer i1):
+      t = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+      f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      llvm.cond_br if c ^a() else ^b()
+
+      ^a():
+      llvm.br ^j(t)
+
+      ^b():
+      llvm.br ^j(f)
+
+      ^j(v: builtin.integer i1):
+      llvm.cond_br if v ^s() else ^r()
+
+      ^r():
+      llvm.return x
+
+      ^s():
+      w = llvm.add x, x <{nsw=false,nuw=false}> : builtin.integer i32;
+      y = llvm.select v ? w : x : builtin.integer i32;
+      llvm.return y
+    }
+  "#;
+
+    // When `v` drops to NotAConstant, its `cond_br` makes `^s` feasible. The
+    // `select` in `^s` also uses `v`, but SCCP must not process it before `w`,
+    // which `^s` defines first.
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32(builtin.integer i32, builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i32, c_v1: builtin.integer i1) !0:
+            t_v2 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            f_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !2;
+            llvm.cond_br if c_v1 ^a_block4v1() else ^b_block5v1() !3
+
+          ^a_block4v1() !4:
+            llvm.br ^j_block3v3(t_v2) !5
+
+          ^b_block5v1() !6:
+            llvm.br ^j_block3v3(f_v3) !7
+
+          ^j_block3v3(v_v4: builtin.integer i1) !8:
+            llvm.cond_br if v_v4 ^s_block6v3() else ^r_block7v1() !9
+
+          ^r_block7v1() !10:
+            llvm.return x_v0 !11
+
+          ^s_block6v3() !12:
+            w_v5 = llvm.add x_v0, x_v0 <{nsw=false,nuw=false}>: builtin.integer i32 !13;
+            y_v6 = llvm.select  v_v4 ? w_v5 : x_v0 : builtin.integer i32 !14;
+            llvm.return y_v6 !15
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn sccp_processes_newly_reachable_loop_exit_in_order() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i32 (builtin.integer i32) variadic = false> [] {
+      ^entry(x: builtin.integer i32):
+      t = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
+      llvm.br ^h(t)
+
+      ^h(v: builtin.integer i1):
+      llvm.cond_br if v ^l() else ^b()
+
+      ^l():
+      f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      llvm.br ^h(f)
+
+      ^b():
+      a = llvm.add x, x <{nsw=false,nuw=false}> : builtin.integer i32;
+      s = llvm.select v ? a : x : builtin.integer i32;
+      llvm.return s
+    }
+  "#;
+
+    // The back edge drops `v` to NotAConstant, so its `cond_br` makes `^b`
+    // feasible. The `select` in `^b` also uses `v`, but SCCP must not process
+    // it before `a`, which `^b` defines first.
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32(builtin.integer i32) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i32) !0:
+            t_v1 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !1;
+            llvm.br ^h_block3v1(t_v1) !2
+
+          ^h_block3v1(v_v2: builtin.integer i1) !3:
+            llvm.cond_br if v_v2 ^l_block5v1() else ^b_block2v5() !4
+
+          ^l_block5v1() !5:
+            f_v3 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !6;
+            llvm.br ^h_block3v1(f_v3) !7
+
+          ^b_block2v5() !8:
+            a_v4 = llvm.add x_v0, x_v0 <{nsw=false,nuw=false}>: builtin.integer i32 !9;
+            s_v5 = llvm.select  v_v2 ? a_v4 : x_v0 : builtin.integer i32 !10;
+            llvm.return s_v5 !11
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}

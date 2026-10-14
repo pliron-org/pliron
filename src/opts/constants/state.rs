@@ -257,6 +257,11 @@ impl SccpState {
             .unwrap_or(BlockState::Unreachable)
     }
 
+    /// Is `block` on the block worklist, pending processing?
+    pub(super) fn is_block_pending(&self, block: Ptr<BasicBlock>) -> bool {
+        self.block_worklist.contains(&block)
+    }
+
     /// Pop an arbitrary block from the block worklist, if any.
     pub(super) fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
         self.block_worklist.pop()
