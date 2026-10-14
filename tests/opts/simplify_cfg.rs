@@ -106,6 +106,64 @@ fn simplify_cfg_culls_unreachable_block() -> Result<()> {
     Ok(())
 }
 
+/// A block containing an operation that marks it as an additional CFG entry,
+/// together with blocks reachable from it, must survive unreachable-block
+/// elimination.
+#[test]
+fn simplify_cfg_preserves_unreachable_additional_entry_and_successors() -> Result<()> {
+    let input = r#"
+    builtin.module @m {
+      ^module_block():
+      llvm.func @f: llvm.func <llvm.ptr (0) () variadic = false> [] {
+        ^entry():
+        addr = llvm.blockaddress <function = @f, tag = <42: i64>> : llvm.ptr (0);
+        llvm.return addr
+
+        ^address_taken():
+        llvm.blocktag <id = <42: i64>>;
+        llvm.br ^tail()
+
+        ^tail():
+        marker = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
+        llvm.unreachable
+      }
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    assert!(after.contains("llvm.blocktag"));
+    assert!(after.contains("<99: i64>"));
+    Ok(())
+}
+
+/// An additional CFG entry has an implicit predecessor that is not represented
+/// by an ordinary CFG edge, so it must not be merged into an ordinary
+/// predecessor even when that is its only explicit predecessor.
+#[test]
+fn simplify_cfg_does_not_merge_additional_entry_into_predecessor() -> Result<()> {
+    let input = r#"
+    builtin.module @m {
+      ^module_block():
+      llvm.func @f: llvm.func <llvm.ptr (0) () variadic = false> [] {
+        ^entry():
+        addr = llvm.blockaddress <function = @f, tag = <42: i64>> : llvm.ptr (0);
+        llvm.br ^address_taken()
+
+        ^address_taken():
+        llvm.blocktag <id = <42: i64>>;
+        llvm.return addr
+      }
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    assert!(after.contains("llvm.br"));
+    assert!(after.contains("llvm.blocktag"));
+    Ok(())
+}
+
 /// A conditional branch on a constant `i1` should fold to an unconditional
 /// branch to the taken target, after which the untaken block becomes
 /// unreachable and is culled.
