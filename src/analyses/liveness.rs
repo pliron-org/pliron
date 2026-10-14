@@ -323,8 +323,8 @@ impl RegionLiveness for LivenessTq {
         query_block: Ptr<BasicBlock>,
     ) -> bool {
         let def_block = value
-            .get_defining_block(ctx)
-            .expect("Value must have a defining block for liveness queries");
+            .get_parent_block(ctx)
+            .expect("Value definition must be in a block for liveness queries");
 
         assert!(
             query_block.deref(ctx).get_parent_region() == Some(self.region)
@@ -382,8 +382,8 @@ impl RegionLiveness for LivenessTq {
         query_block: Ptr<BasicBlock>,
     ) -> bool {
         let def_block = value
-            .get_defining_block(ctx)
-            .expect("Value must have a defining block for liveness queries");
+            .get_parent_block(ctx)
+            .expect("Value definition must be in a block for liveness queries");
 
         assert!(
             query_block.deref(ctx).get_parent_region() == Some(self.region)
@@ -618,8 +618,8 @@ impl<T: RegionLiveness> Liveness<T> {
         value: Value,
         point: OpInsertionPoint,
     ) -> bool {
-        let Some(def_block) = value.get_defining_block(ctx) else {
-            // With no defining block, the value can't be live anywhere that we can check.
+        let Some(def_block) = value.get_parent_block(ctx) else {
+            // If the definition is not in a block, the value can't be live anywhere that we can check.
             return false;
         };
         let Some(query_block) = point.get_insertion_block(ctx) else {

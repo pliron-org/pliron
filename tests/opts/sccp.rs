@@ -678,10 +678,18 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
       ^entry():
       outer_three = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
       outer_four = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64;
+      outer_true = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1;
       test.test_region {
         ^region_entry():
         inner_sum = llvm.add outer_three, outer_four <{nsw=false,nuw=false}> : builtin.integer i64;
-        llvm.return inner_sum
+        inner_three = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        llvm.cond_br if outer_true ^from_inner() else ^from_outer()
+        ^from_inner():
+        llvm.br ^join(inner_three)
+        ^from_outer():
+        llvm.br ^join(outer_four)
+        ^join(joined: builtin.integer i64):
+        llvm.return joined
       };
       done = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64;
       llvm.return done
@@ -715,7 +723,8 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
     // Even though `outer_three` and `outer_four` are syntactically
     // `builtin.constant` ops, the analysis must treat them as NotAConstant when
     // they appear free inside the analysis root, so the inner `llvm.add` must
-    // *not* fold.
+    // *not* fold. For the same reason, `joined` must not become the constant 3
+    // that only the `from_inner` edge carries.
     assert_eq!(status, IRStatus::Unchanged);
     expect![[r#"
         llvm.func @f: llvm.func <builtin.integer i64() variadic = false>
@@ -724,14 +733,25 @@ fn sccp_treats_free_variables_as_non_constant() -> Result<()> {
           ^entry_block1v1() !0:
             outer_three_v0 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !1;
             outer_four_v1 = builtin.constant <builtin.integer <4: i64>> : builtin.integer i64 !2;
+            outer_true_v2 = builtin.constant <builtin.integer <1: i1>> : builtin.integer i1 !3;
             test.test_region 
             {
-              ^region_entry_block2v1() !3:
-                inner_sum_v2 = llvm.add outer_three_v0, outer_four_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !4;
-                llvm.return inner_sum_v2 !5
-            } !6;
-            done_v3 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !7;
-            llvm.return done_v3 !8
+              ^region_entry_block2v1() !4:
+                inner_sum_v3 = llvm.add outer_three_v0, outer_four_v1 <{nsw=false,nuw=false}>: builtin.integer i64 !5;
+                inner_three_v4 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !6;
+                llvm.cond_br if outer_true_v2 ^from_inner_block5v1() else ^from_outer_block6v1() !7
+
+              ^from_inner_block5v1() !8:
+                llvm.br ^join_block4v3(inner_three_v4) !9
+
+              ^from_outer_block6v1() !10:
+                llvm.br ^join_block4v3(outer_four_v1) !11
+
+              ^join_block4v3(joined_v5: builtin.integer i64) !12:
+                llvm.return joined_v5 !13
+            } !14;
+            done_v6 = builtin.constant <builtin.integer <99: i64>> : builtin.integer i64 !15;
+            llvm.return done_v6 !16
         }"#]].assert_eq(&after);
     Ok(())
 }

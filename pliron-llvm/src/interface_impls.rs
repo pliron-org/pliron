@@ -21,6 +21,7 @@ use pliron::{
     derive::op_interface_impl,
     irbuild::{IRStatus, inserter::Inserter, rewriter::Rewriter},
     op::Op,
+    operation::Operation,
     opts::{
         constants::{BranchOpFoldInterface, ConstFoldInterface},
         dce::{BlockArgRemoval, SideEffects},
@@ -40,7 +41,7 @@ use pliron::{
 use crate::{
     attributes::{
         AggregateAttr, FCmpPredicateAttr, FastmathFlags, FastmathFlagsAttr, ICmpPredicateAttr,
-        IntegerOverflowFlagsAttr, SplatAttr,
+        IntegerOverflowFlagsAttr, PoisonAttr, SplatAttr, UndefAttr,
     },
     op_interfaces::{FastMathFlags, IntBinArithOpWithOverflowFlag, NNegFlag, PointerTypeResult},
     ops::{
@@ -49,7 +50,8 @@ use crate::{
         FPToSIOp, FPToUIOp, FPTruncOp, FRemOp, FSubOp, FreezeOp, FuncOp, GetElementPtrOp, ICmpOp,
         InsertElementOp, InsertValueOp, IntToPtrOp, LShrOp, LoadOp, MulOp, OrOp, PoisonOp,
         PtrToIntOp, SDivOp, SExtOp, SIToFPOp, SRemOp, SelectOp, ShlOp, ShuffleVectorOp, StoreOp,
-        SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, XorOp, ZExtOp, ZeroOp,
+        SubOp, SwitchOp, TruncOp, UDivOp, UIToFPOp, URemOp, UndefOp, UnreachableOp, XorOp, ZExtOp,
+        ZeroOp,
     },
     types::VectorType,
 };
@@ -269,6 +271,81 @@ impl ConstFoldInterface for ConstantOp {
     }
 }
 
+/// Is `attr` an `undef` or a `poison` value?
+fn is_undef_or_poison_attr(attr: &dyn Attribute) -> bool {
+    attr.downcast_ref::<UndefAttr>().is_some() || attr.downcast_ref::<PoisonAttr>().is_some()
+}
+
+/// Constant fold an operation whose result LLVM defines to be `poison`
+/// whenever any operand is `poison`.
+///
+/// `fold` is called with each `poison` operand set to `None`.
+/// Each result of `fold` becomes:
+///   - `Some(c)`: `Some(c)`. The constant is independent of `poison` operands.
+///   - `None`: `Some(PoisonAttr)` if any operand is `poison`, else `None`.
+fn check_fold_poison_propagating_op(
+    op: Ptr<Operation>,
+    ctx: &Context,
+    ops: &[Option<AttrObj>],
+    fold: impl FnOnce(&[Option<AttrObj>]) -> Vec<Option<AttrObj>>,
+) -> Vec<Option<AttrObj>> {
+    let is_poison = |attr: &Option<AttrObj>| {
+        attr.as_ref()
+            .is_some_and(|attr| attr.downcast_ref::<PoisonAttr>().is_some())
+    };
+    if !ops.iter().any(is_poison) {
+        return fold(ops);
+    }
+    let non_poison_ops: Vec<_> = ops
+        .iter()
+        .map(|attr| if is_poison(attr) { None } else { attr.clone() })
+        .collect();
+    let result_types: Vec<_> = op
+        .deref(ctx)
+        .results()
+        .map(|res| res.get_type(ctx))
+        .collect();
+    fold(&non_poison_ops)
+        .into_iter()
+        .zip(result_types)
+        .map(|(folded, ty)| folded.or_else(|| Some(Box::new(PoisonAttr(ty)) as AttrObj)))
+        .collect()
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for PoisonOp {
+    fn check_fold(&self, ctx: &Context, _ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let ty = self.get_result(ctx).get_type(ctx);
+        vec![Some(Box::new(PoisonAttr(ty)) as AttrObj)]
+    }
+
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _ops: &[Option<AttrObj>],
+        _rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
+    }
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for UndefOp {
+    fn check_fold(&self, ctx: &Context, _ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let ty = self.get_result(ctx).get_type(ctx);
+        vec![Some(Box::new(UndefAttr(ty)) as AttrObj)]
+    }
+
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _ops: &[Option<AttrObj>],
+        _rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
+    }
+}
+
 /// Constant fold this binary integer operation, taking integer overflow flags
 /// into account.
 ///
@@ -301,11 +378,13 @@ fn check_fold_int_bin_op_with_overflow(
 #[op_interface_impl]
 impl ConstFoldInterface for AddOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op_with_overflow(
-            ops,
-            self.integer_overflow_flag(ctx),
-            APInt::add_overflow,
-        )
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_bin_op_with_overflow(
+                ops,
+                self.integer_overflow_flag(ctx),
+                APInt::add_overflow,
+            )
+        })
     }
     fn fold_in_place(
         &self,
@@ -320,11 +399,13 @@ impl ConstFoldInterface for AddOp {
 #[op_interface_impl]
 impl ConstFoldInterface for SubOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op_with_overflow(
-            ops,
-            self.integer_overflow_flag(ctx),
-            APInt::sub_overflow,
-        )
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_bin_op_with_overflow(
+                ops,
+                self.integer_overflow_flag(ctx),
+                APInt::sub_overflow,
+            )
+        })
     }
     fn fold_in_place(
         &self,
@@ -339,11 +420,13 @@ impl ConstFoldInterface for SubOp {
 #[op_interface_impl]
 impl ConstFoldInterface for MulOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op_with_overflow(
-            ops,
-            self.integer_overflow_flag(ctx),
-            APInt::mul_overflow,
-        )
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_bin_op_with_overflow(
+                ops,
+                self.integer_overflow_flag(ctx),
+                APInt::mul_overflow,
+            )
+        })
     }
     fn fold_in_place(
         &self,
@@ -358,23 +441,25 @@ impl ConstFoldInterface for MulOp {
 #[op_interface_impl]
 impl ConstFoldInterface for ShlOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        match get_int_bin_operands(ops) {
-            Some((lhs, rhs)) => {
-                let shamt = rhs.value();
-                let lhs_bw: usize = lhs.value().bw();
-                let lhs_bw: APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
-                if shamt.ult(&lhs_bw) {
-                    check_fold_int_bin_op_with_overflow(
-                        ops,
-                        self.integer_overflow_flag(ctx),
-                        APInt::shl_overflow,
-                    )
-                } else {
-                    vec![None]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            match get_int_bin_operands(ops) {
+                Some((lhs, rhs)) => {
+                    let shamt = rhs.value();
+                    let lhs_bw: usize = lhs.value().bw();
+                    let lhs_bw: APInt = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                    if shamt.ult(&lhs_bw) {
+                        check_fold_int_bin_op_with_overflow(
+                            ops,
+                            self.integer_overflow_flag(ctx),
+                            APInt::shl_overflow,
+                        )
+                    } else {
+                        vec![None]
+                    }
                 }
+                None => vec![None],
             }
-            None => vec![None],
-        }
+        })
     }
     fn fold_in_place(
         &self,
@@ -403,11 +488,13 @@ fn check_fold_int_bin_op(
 
 #[op_interface_impl]
 impl ConstFoldInterface for UDivOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        match get_int_bin_operands(ops) {
-            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
-            _ => check_fold_int_bin_op(ops, APInt::udiv),
-        }
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            match get_int_bin_operands(ops) {
+                Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+                _ => check_fold_int_bin_op(ops, APInt::udiv),
+            }
+        })
     }
     fn fold_in_place(
         &self,
@@ -428,11 +515,13 @@ fn is_signed_div_ub(lhs: &APInt, rhs: &APInt) -> bool {
 
 #[op_interface_impl]
 impl ConstFoldInterface for SDivOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        match get_int_bin_operands(ops) {
-            Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
-            _ => check_fold_int_bin_op(ops, APInt::sdiv),
-        }
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            match get_int_bin_operands(ops) {
+                Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
+                _ => check_fold_int_bin_op(ops, APInt::sdiv),
+            }
+        })
     }
     fn fold_in_place(
         &self,
@@ -446,11 +535,13 @@ impl ConstFoldInterface for SDivOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for URemOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        match get_int_bin_operands(ops) {
-            Some((_, rhs)) if rhs.value().is_zero() => vec![None],
-            _ => check_fold_int_bin_op(ops, APInt::urem),
-        }
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            match get_int_bin_operands(ops) {
+                Some((_, rhs)) if rhs.value().is_zero() => vec![None],
+                _ => check_fold_int_bin_op(ops, APInt::urem),
+            }
+        })
     }
     fn fold_in_place(
         &self,
@@ -464,11 +555,13 @@ impl ConstFoldInterface for URemOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for SRemOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        match get_int_bin_operands(ops) {
-            Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
-            _ => check_fold_int_bin_op(ops, APInt::srem),
-        }
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            match get_int_bin_operands(ops) {
+                Some((lhs, rhs)) if is_signed_div_ub(&lhs.value(), &rhs.value()) => vec![None],
+                _ => check_fold_int_bin_op(ops, APInt::srem),
+            }
+        })
     }
     fn fold_in_place(
         &self,
@@ -482,19 +575,21 @@ impl ConstFoldInterface for SRemOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for AndOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        assert!(ops.len() == 2);
-        for op in ops.iter().flatten() {
-            let Some(int) = op.downcast_ref::<IntegerAttr>() else {
-                return vec![None];
-            };
-            if int.value().is_zero() {
-                let zero = APInt::zero(NonZero::new(int.value().bw()).expect("zero bitwidth"));
-                let res = Box::new(IntegerAttr::new(int.get_type(), zero)) as AttrObj;
-                return vec![Some(res)];
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            assert!(ops.len() == 2);
+            for op in ops.iter().flatten() {
+                let Some(int) = op.downcast_ref::<IntegerAttr>() else {
+                    return vec![None];
+                };
+                if int.value().is_zero() {
+                    let zero = APInt::zero(NonZero::new(int.value().bw()).expect("zero bitwidth"));
+                    let res = Box::new(IntegerAttr::new(int.get_type(), zero)) as AttrObj;
+                    return vec![Some(res)];
+                }
             }
-        }
-        check_fold_int_bin_op(ops, APInt::and)
+            check_fold_int_bin_op(ops, APInt::and)
+        })
     }
 
     fn fold_in_place(
@@ -509,20 +604,22 @@ impl ConstFoldInterface for AndOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for OrOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        assert!(ops.len() == 2);
-        for op in ops.iter().flatten() {
-            let Some(int) = op.downcast_ref::<IntegerAttr>() else {
-                return vec![None];
-            };
-            let bw = NonZero::new(int.value().bw()).expect("zero bitwidth");
-            if int.value() == APInt::umax(bw) {
-                let all_ones = APInt::umax(bw);
-                let res = Box::new(IntegerAttr::new(int.get_type(), all_ones)) as AttrObj;
-                return vec![Some(res)];
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            assert!(ops.len() == 2);
+            for op in ops.iter().flatten() {
+                let Some(int) = op.downcast_ref::<IntegerAttr>() else {
+                    return vec![None];
+                };
+                let bw = NonZero::new(int.value().bw()).expect("zero bitwidth");
+                if int.value() == APInt::umax(bw) {
+                    let all_ones = APInt::umax(bw);
+                    let res = Box::new(IntegerAttr::new(int.get_type(), all_ones)) as AttrObj;
+                    return vec![Some(res)];
+                }
             }
-        }
-        check_fold_int_bin_op(ops, APInt::or)
+            check_fold_int_bin_op(ops, APInt::or)
+        })
     }
 
     fn fold_in_place(
@@ -537,8 +634,10 @@ impl ConstFoldInterface for OrOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for XorOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_bin_op(ops, APInt::xor)
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_bin_op(ops, APInt::xor)
+        })
     }
 
     fn fold_in_place(
@@ -553,21 +652,23 @@ impl ConstFoldInterface for XorOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for LShrOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
-        // must not be folded.
-        match get_int_bin_operands(ops) {
-            Some((lhs, rhs)) => {
-                let lhs_bw = lhs.value().bw();
-                let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
-                if rhs.value().ult(&lhs_bw) {
-                    check_fold_int_bin_op(ops, APInt::lshr)
-                } else {
-                    vec![None]
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
+            // must not be folded.
+            match get_int_bin_operands(ops) {
+                Some((lhs, rhs)) => {
+                    let lhs_bw = lhs.value().bw();
+                    let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                    if rhs.value().ult(&lhs_bw) {
+                        check_fold_int_bin_op(ops, APInt::lshr)
+                    } else {
+                        vec![None]
+                    }
                 }
+                None => vec![None],
             }
-            None => vec![None],
-        }
+        })
     }
     fn fold_in_place(
         &self,
@@ -581,21 +682,23 @@ impl ConstFoldInterface for LShrOp {
 
 #[op_interface_impl]
 impl ConstFoldInterface for AShrOp {
-    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
-        // must not be folded.
-        match get_int_bin_operands(ops) {
-            Some((lhs, rhs)) => {
-                let lhs_bw = lhs.value().bw();
-                let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
-                if rhs.value().ult(&lhs_bw) {
-                    check_fold_int_bin_op(ops, APInt::ashr)
-                } else {
-                    vec![None]
+    fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            // A shift amount >= the bitwidth is undefined behavior in LLVM, so it
+            // must not be folded.
+            match get_int_bin_operands(ops) {
+                Some((lhs, rhs)) => {
+                    let lhs_bw = lhs.value().bw();
+                    let lhs_bw = APInt::from_usize(lhs_bw, NonZero::new(lhs_bw).unwrap());
+                    if rhs.value().ult(&lhs_bw) {
+                        check_fold_int_bin_op(ops, APInt::ashr)
+                    } else {
+                        vec![None]
+                    }
                 }
+                None => vec![None],
             }
-            None => vec![None],
-        }
+        })
     }
     fn fold_in_place(
         &self,
@@ -627,11 +730,13 @@ fn eval_icmp(pred: &ICmpPredicateAttr, lhs: &APInt, rhs: &APInt) -> bool {
 #[op_interface_impl]
 impl ConstFoldInterface for ICmpOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let Some((lhs, rhs)) = get_int_bin_operands(ops) else {
-            return vec![None];
-        };
-        let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
-        vec![Some(bool_attr(ctx, result))]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            let Some((lhs, rhs)) = get_int_bin_operands(ops) else {
+                return vec![None];
+            };
+            let result = eval_icmp(&self.predicate(ctx), &lhs.value(), &rhs.value());
+            vec![Some(bool_attr(ctx, result))]
+        })
     }
     fn fold_in_place(
         &self,
@@ -739,17 +844,19 @@ fn constant_vector_index(index: &IntegerAttr, length: usize) -> Option<usize> {
 #[op_interface_impl]
 impl ConstFoldInterface for ExtractElementOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let [Some(vector), Some(index)] = ops else {
-            assert!(ops.len() == 2);
-            return vec![None];
-        };
-        let Some(index) = index.downcast_ref::<IntegerAttr>() else {
-            return vec![None];
-        };
-        let folded = fixed_vector_shape(ctx, &**vector)
-            .and_then(|(_, length)| constant_vector_index(index, length))
-            .map(|index| fixed_vector_element(&**vector, index) as AttrObj);
-        vec![folded]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            let [Some(vector), Some(index)] = ops else {
+                assert!(ops.len() == 2);
+                return vec![None];
+            };
+            let Some(index) = index.downcast_ref::<IntegerAttr>() else {
+                return vec![None];
+            };
+            let folded = fixed_vector_shape(ctx, &**vector)
+                .and_then(|(_, length)| constant_vector_index(index, length))
+                .map(|index| fixed_vector_element(&**vector, index) as AttrObj);
+            vec![folded]
+        })
     }
     fn fold_in_place(
         &self,
@@ -818,14 +925,16 @@ fn extract_from_aggregate_attr(aggregate: &AggregateAttr, indices: &[u32]) -> Op
 #[op_interface_impl]
 impl ConstFoldInterface for ExtractValueOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let [Some(aggregate)] = ops else {
-            assert!(ops.len() == 1);
-            return vec![None];
-        };
-        let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
-            return vec![None];
-        };
-        vec![extract_from_aggregate_attr(aggregate, &self.indices(ctx))]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            let [Some(aggregate)] = ops else {
+                assert!(ops.len() == 1);
+                return vec![None];
+            };
+            let Some(aggregate) = aggregate.downcast_ref::<AggregateAttr>() else {
+                return vec![None];
+            };
+            vec![extract_from_aggregate_attr(aggregate, &self.indices(ctx))]
+        })
     }
     fn fold_in_place(
         &self,
@@ -924,7 +1033,9 @@ fn check_fold_int_cast(
 #[op_interface_impl]
 impl ConstFoldInterface for SExtOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::sext)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::sext)
+        })
     }
     fn fold_in_place(
         &self,
@@ -939,16 +1050,18 @@ impl ConstFoldInterface for SExtOp {
 #[op_interface_impl]
 impl ConstFoldInterface for ZExtOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        // `zext nneg` asserts the operand is non-negative; if it isn't, the
-        // result is poison, so we must not fold it to a concrete value.
-        if self.nneg(ctx)
-            && let [Some(operand)] = ops
-            && let Some(operand) = operand.downcast_ref::<IntegerAttr>()
-            && operand.value().is_negative()
-        {
-            return vec![None];
-        }
-        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::zext)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            // `zext nneg` asserts the operand is non-negative; if it isn't, the
+            // result is poison, so we must not fold it to a concrete value.
+            if self.nneg(ctx)
+                && let [Some(operand)] = ops
+                && let Some(operand) = operand.downcast_ref::<IntegerAttr>()
+                && operand.value().is_negative()
+            {
+                return vec![None];
+            }
+            check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::zext)
+        })
     }
     fn fold_in_place(
         &self,
@@ -963,7 +1076,9 @@ impl ConstFoldInterface for ZExtOp {
 #[op_interface_impl]
 impl ConstFoldInterface for TruncOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::trunc)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_cast(ctx, ops, self.result_type(ctx), APInt::trunc)
+        })
     }
     fn fold_in_place(
         &self,
@@ -1025,7 +1140,9 @@ fn check_fold_float_to_int(
 #[op_interface_impl]
 impl ConstFoldInterface for FPToSIOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_to_int(ctx, ops, self.result_type(ctx), true)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_to_int(ctx, ops, self.result_type(ctx), true)
+        })
     }
     fn fold_in_place(
         &self,
@@ -1040,7 +1157,9 @@ impl ConstFoldInterface for FPToSIOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FPToUIOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_to_int(ctx, ops, self.result_type(ctx), false)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_to_int(ctx, ops, self.result_type(ctx), false)
+        })
     }
     fn fold_in_place(
         &self,
@@ -1104,7 +1223,9 @@ fn check_fold_int_to_float(
 #[op_interface_impl]
 impl ConstFoldInterface for SIToFPOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_to_float(ctx, ops, self.result_type(ctx), true, false)
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_to_float(ctx, ops, self.result_type(ctx), true, false)
+        })
     }
     fn fold_in_place(
         &self,
@@ -1119,7 +1240,9 @@ impl ConstFoldInterface for SIToFPOp {
 #[op_interface_impl]
 impl ConstFoldInterface for UIToFPOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_int_to_float(ctx, ops, self.result_type(ctx), false, self.nneg(ctx))
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_int_to_float(ctx, ops, self.result_type(ctx), false, self.nneg(ctx))
+        })
     }
     fn fold_in_place(
         &self,
@@ -1201,7 +1324,9 @@ fn check_fold_float_cast(
 #[op_interface_impl]
 impl ConstFoldInterface for FPExtOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
+        })
     }
     fn fold_in_place(
         &self,
@@ -1216,7 +1341,9 @@ impl ConstFoldInterface for FPExtOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FPTruncOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_cast(ctx, ops, self.result_type(ctx), self.fast_math_flags(ctx))
+        })
     }
     fn fold_in_place(
         &self,
@@ -1231,20 +1358,22 @@ impl ConstFoldInterface for FPTruncOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FNegOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let [Some(operand)] = ops else {
-            assert!(ops.len() == 1);
-            return vec![None];
-        };
-        let Some(float_val) = attr_cast::<dyn FloatAttr>(&**operand) else {
-            return vec![None];
-        };
-        let negated = float_val.neg();
-        // Negation cannot create or destroy NaN/Inf, so checking the operand
-        // covers the result too.
-        if fast_math_forbids_fold(self.fast_math_flags(ctx), &[float_val]) {
-            return vec![None];
-        }
-        vec![Some(negated as AttrObj)]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            let [Some(operand)] = ops else {
+                assert!(ops.len() == 1);
+                return vec![None];
+            };
+            let Some(float_val) = attr_cast::<dyn FloatAttr>(&**operand) else {
+                return vec![None];
+            };
+            let negated = float_val.neg();
+            // Negation cannot create or destroy NaN/Inf, so checking the operand
+            // covers the result too.
+            if fast_math_forbids_fold(self.fast_math_flags(ctx), &[float_val]) {
+                return vec![None];
+            }
+            vec![Some(negated as AttrObj)]
+        })
     }
     fn fold_in_place(
         &self,
@@ -1288,8 +1417,10 @@ fn check_fold_float_bin_op(
 #[op_interface_impl]
 impl ConstFoldInterface for FAddOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
-            lhs.add(rhs).value
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+                lhs.add(rhs).value
+            })
         })
     }
     fn fold_in_place(
@@ -1305,8 +1436,10 @@ impl ConstFoldInterface for FAddOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FSubOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
-            lhs.sub(rhs).value
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+                lhs.sub(rhs).value
+            })
         })
     }
     fn fold_in_place(
@@ -1322,8 +1455,10 @@ impl ConstFoldInterface for FSubOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FMulOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
-            lhs.mul(rhs).value
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+                lhs.mul(rhs).value
+            })
         })
     }
     fn fold_in_place(
@@ -1339,8 +1474,10 @@ impl ConstFoldInterface for FMulOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FDivOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
-            lhs.div(rhs).value
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+                lhs.div(rhs).value
+            })
         })
     }
     fn fold_in_place(
@@ -1356,8 +1493,10 @@ impl ConstFoldInterface for FDivOp {
 #[op_interface_impl]
 impl ConstFoldInterface for FRemOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
-            lhs.rem(rhs).value
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            check_fold_float_bin_op(ops, self.fast_math_flags(ctx), |lhs, rhs| {
+                lhs.rem(rhs).value
+            })
         })
     }
     fn fold_in_place(
@@ -1396,15 +1535,17 @@ fn eval_fcmp(pred: &FCmpPredicateAttr, lhs: &dyn FloatAttr, rhs: &dyn FloatAttr)
 #[op_interface_impl]
 impl ConstFoldInterface for FCmpOp {
     fn check_fold(&self, ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
-        let Some((lhs, rhs)) = get_float_bin_operands(ops) else {
-            return vec![None];
-        };
-        // Only the operands can violate fast-math assumptions.
-        if fast_math_forbids_fold(self.fast_math_flags(ctx), &[lhs, rhs]) {
-            return vec![None];
-        }
-        let result = eval_fcmp(&self.predicate(ctx), lhs, rhs);
-        vec![Some(bool_attr(ctx, result))]
+        check_fold_poison_propagating_op(self.get_operation(), ctx, ops, |ops| {
+            let Some((lhs, rhs)) = get_float_bin_operands(ops) else {
+                return vec![None];
+            };
+            // Only the operands can violate fast-math assumptions.
+            if fast_math_forbids_fold(self.fast_math_flags(ctx), &[lhs, rhs]) {
+                return vec![None];
+            }
+            let result = eval_fcmp(&self.predicate(ctx), lhs, rhs);
+            vec![Some(bool_attr(ctx, result))]
+        })
     }
     fn fold_in_place(
         &self,
@@ -1468,6 +1609,63 @@ impl ConstFoldInterface for SelectOp {
     }
 }
 
+/// Is `attr` an `undef` or a `poison` value, or does it contain one?
+fn attr_contains_undef_or_poison(attr: &dyn Attribute) -> bool {
+    if is_undef_or_poison_attr(attr) {
+        return true;
+    }
+    if let Some(aggregate) = attr.downcast_ref::<AggregateAttr>() {
+        return aggregate
+            .elements()
+            .iter()
+            .any(|element| attr_contains_undef_or_poison(&**element as &dyn Attribute));
+    }
+    if let Some(splat) = attr.downcast_ref::<SplatAttr>() {
+        return attr_contains_undef_or_poison(splat.element() as &dyn Attribute);
+    }
+    false
+}
+
+#[op_interface_impl]
+impl ConstFoldInterface for FreezeOp {
+    fn check_fold(&self, _ctx: &Context, ops: &[Option<AttrObj>]) -> Vec<Option<AttrObj>> {
+        let [operand] = ops else {
+            assert!(ops.len() == 1);
+            return vec![None];
+        };
+        // A constant without `undef` or `poison` parts is its own frozen value.
+        vec![
+            operand
+                .as_ref()
+                .filter(|attr| !attr_contains_undef_or_poison(&***attr))
+                .cloned(),
+        ]
+    }
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        ops: &[Option<AttrObj>],
+        rw: &mut dyn Rewriter,
+    ) -> IRStatus {
+        let is_undef_or_poison = ops[0]
+            .as_ref()
+            .is_some_and(|attr| is_undef_or_poison_attr(&**attr));
+        if !is_undef_or_poison {
+            return self.fold_with_materialization(ctx, ops, rw);
+        }
+        // All uses of a frozen `undef` or `poison` see one arbitrary value.
+        // Zero is a valid choice for that value.
+        let result = self.get_result(ctx);
+        if !result.is_used(ctx) {
+            return IRStatus::Unchanged;
+        }
+        let zero = ZeroOp::new(ctx, result.get_type(ctx));
+        rw.append_operation(ctx, zero.get_operation());
+        rw.replace_value_uses_with(ctx, result, zero.get_result(ctx));
+        IRStatus::Changed
+    }
+}
+
 #[op_interface_impl]
 impl BranchOpFoldInterface for BrOp {
     fn check_fold(&self, ctx: &Context, _operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
@@ -1483,6 +1681,27 @@ impl BranchOpFoldInterface for BrOp {
     }
 }
 
+/// Is the branch condition (the first operand) `undef` or `poison`?
+/// Branching on such a value is undefined behavior, so no successor is feasible.
+fn is_undef_or_poison_condition(operands: &[Option<AttrObj>]) -> bool {
+    operands
+        .first()
+        .and_then(|cond| cond.as_ref())
+        .is_some_and(|cond| is_undef_or_poison_attr(&**cond))
+}
+
+/// Replace the branch `op` with `llvm.unreachable`.
+fn replace_with_unreachable(
+    ctx: &mut Context,
+    op: Ptr<Operation>,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let unreachable = UnreachableOp::new(ctx).get_operation();
+    rewriter.insert_operation(ctx, unreachable);
+    rewriter.replace_operation(ctx, op, unreachable);
+    IRStatus::Changed
+}
+
 impl CondBrOp {
     /// Returns the possible successor indices based on the condition operand.
     fn possible_successor_indices(
@@ -1490,13 +1709,19 @@ impl CondBrOp {
         ctx: &Context,
         operands: &[Option<AttrObj>],
     ) -> Vec<usize> {
-        let Some(cond_attr) = operands.first().unwrap().as_ref() else {
+        if is_undef_or_poison_condition(operands) {
+            return vec![];
+        }
+        // Any other constant that is not an integer gives no information.
+        let Some(cond_int) = operands
+            .first()
+            .unwrap()
+            .as_ref()
+            .and_then(|cond_attr| cond_attr.downcast_ref::<IntegerAttr>())
+        else {
             let num_successors = self.get_operation().deref(ctx).successors().count();
             return (0..num_successors).collect();
         };
-        let cond_int = cond_attr
-            .downcast_ref::<IntegerAttr>()
-            .expect("CondBrOp condition operand must be an IntegerAttr");
         let taken = if cond_int.value().is_zero() { 1 } else { 0 };
         vec![taken]
     }
@@ -1520,11 +1745,11 @@ impl BranchOpFoldInterface for CondBrOp {
         operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
-        let possible_successor_indices = self.possible_successor_indices(ctx, operand_attrs);
-        if possible_successor_indices.len() != 1 {
-            return IRStatus::Unchanged;
+        let successor_ind = match self.possible_successor_indices(ctx, operand_attrs)[..] {
+            [] => return replace_with_unreachable(ctx, self.get_operation(), rewriter),
+            [successor_ind] => successor_ind,
+            _ => return IRStatus::Unchanged,
         };
-        let successor_ind = possible_successor_indices[0];
         let successors: Vec<Ptr<BasicBlock>> =
             self.get_operation().deref(ctx).successors().collect();
         let new_op = BrOp::new(
@@ -1545,13 +1770,18 @@ impl BranchOpFoldInterface for SwitchOp {
     fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
         let successors: Vec<Ptr<BasicBlock>> =
             self.get_operation().deref(ctx).successors().collect();
-        let Some(cond_attr) = operands.first().and_then(|o| o.as_ref()) else {
+        if is_undef_or_poison_condition(operands) {
+            return vec![];
+        }
+        // Any other constant that is not an integer gives no information.
+        let Some(cond_int) = operands
+            .first()
+            .and_then(|o| o.as_ref())
+            .and_then(|cond_attr| cond_attr.downcast_ref::<IntegerAttr>())
+            .map(|cond_int| cond_int.value())
+        else {
             return successors;
         };
-        let cond_int = cond_attr
-            .downcast_ref::<IntegerAttr>()
-            .expect("Switch condition operand must be an IntegerAttr")
-            .value();
         // Successor 0 is the default destination; successors 1..N correspond to case_values[0..N-1].
         let case_values = self
             .get_attr_llvm_switch_case_values(ctx)
@@ -1571,13 +1801,18 @@ impl BranchOpFoldInterface for SwitchOp {
         operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
-        let Some(cond_attr) = operand_attrs.first().unwrap().as_ref() else {
+        if is_undef_or_poison_condition(operand_attrs) {
+            return replace_with_unreachable(ctx, self.get_operation(), rewriter);
+        }
+        let Some(cond_int) = operand_attrs
+            .first()
+            .unwrap()
+            .as_ref()
+            .and_then(|cond_attr| cond_attr.downcast_ref::<IntegerAttr>())
+            .map(|cond_int| cond_int.value())
+        else {
             return IRStatus::Unchanged;
         };
-        let cond_int = cond_attr
-            .downcast_ref::<IntegerAttr>()
-            .expect("Switch condition operand must be an IntegerAttr")
-            .value();
         let successor_ind = {
             let case_values = self
                 .get_attr_llvm_switch_case_values(ctx)

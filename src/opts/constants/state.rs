@@ -8,8 +8,8 @@ use crate::{
     basic_block::BasicBlock,
     common_traits::Named,
     context::{Context, Ptr},
+    graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     irfmt::printers::enclosed,
-    linked_list::ContainsLinkedList,
     operation::Operation,
     printable::{self, Printable},
     utils::table::{HMap, ISet},
@@ -129,7 +129,7 @@ pub(super) struct SccpState {
     /// Blocks not present as keys are assumed to be unreachable.
     block_states: HMap<Ptr<BasicBlock>, BlockState>,
     /// Maps each [Value] to information about whether the [Value] is known to be const
-    /// [Value]s not present are assumed to be undetermined.
+    /// All local [Value]s are initialized to [Constness::Undetermined].
     val_states: HMap<Value, Constness>,
     /// After a [BasicBlock] has been marked as reachable, we must traverse
     /// each of its operations and process them to draw inferences.
@@ -152,6 +152,28 @@ impl SccpState {
             block_worklist: ISet::default(),
             val_worklist: ISet::default(),
         };
+        walk_op(
+            ctx,
+            &mut (&mut state.val_states, root_op),
+            &WALKCONFIG_PREORDER_FORWARD,
+            root_op,
+            |ctx, (values, root_op), node| match node {
+                // SCCP does not process the root (treating its results as `NotAConstant`).
+                IRNode::Operation(op) if op == *root_op => {}
+                IRNode::Operation(op) => values.extend(
+                    op.deref(ctx)
+                        .results()
+                        .map(|value| (value, Constness::Undetermined)),
+                ),
+                IRNode::BasicBlock(block) => values.extend(
+                    block
+                        .deref(ctx)
+                        .arguments()
+                        .map(|value| (value, Constness::Undetermined)),
+                ),
+                IRNode::Region(_) => {}
+            },
+        );
         state.seed_nested_regions(root_op, ctx);
         state
     }
@@ -163,7 +185,7 @@ impl SccpState {
     pub(super) fn seed_nested_regions(&mut self, op: Ptr<Operation>, ctx: &Context) {
         let regions: Vec<_> = op.deref(ctx).regions().collect();
         for region in regions {
-            let Some(entry) = region.deref(ctx).get_head() else {
+            let Some(entry) = region.deref(ctx).get_entry_block() else {
                 continue;
             };
             self.merge_block_state(ctx, entry, BlockState::Reachable);
@@ -224,7 +246,7 @@ impl SccpState {
         self.val_states
             .get(&val)
             .cloned()
-            .unwrap_or(Constness::Undetermined)
+            .unwrap_or(Constness::NotAConstant)
     }
 
     /// Get the [BlockState] of `block`.

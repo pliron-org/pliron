@@ -69,9 +69,13 @@ fn operand_attrs(op: Ptr<Operation>, ctx: &Context, state: &SccpState) -> Vec<Op
             Constness::Constant { val } => Some(val.clone()),
             Constness::NotAConstant => None,
             Constness::Undetermined => {
-                // This means `v` was defined in a scope outside of the root operation
-                // we're applying sccp to. These variables aren't really Undetermined;
-                // we just never added them to the state.
+                assert!(
+                    !v.get_parent_region(ctx)
+                        .unwrap()
+                        .deref(ctx)
+                        .has_ssa_dominance(ctx),
+                    "SCCP must process a definition before its uses in an SSA dominance region"
+                );
                 None
             }
         })

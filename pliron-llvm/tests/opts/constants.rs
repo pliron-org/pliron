@@ -1488,6 +1488,8 @@ fn insert_value_does_not_fold() -> Result<()> {
         v5 = builtin.constant <builtin.integer <5: i32>> : builtin.integer i32;
         non_constant_aggregate = llvm.insert_value a [1], v5 : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
         non_constant_value = llvm.insert_value s [1], v : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        poison_aggregate = llvm.poison : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
+        partly_poison = llvm.insert_value poison_aggregate [1], v5 : llvm.struct <{ builtin.integer i32, builtin.integer i32 } : Unpacked>;
         llvm.return non_constant_value
       }
     "#;
@@ -1619,6 +1621,8 @@ fn insert_element_does_not_fold() -> Result<()> {
         non_constant_vector = llvm.insertelement v, e99, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
         non_constant_element = llvm.insertelement agg, e, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
         non_constant_index = llvm.insertelement agg, e99, i : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        poison_vector = llvm.poison : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        partly_poison = llvm.insertelement poison_vector, e99, one : llvm.vector <Fixed x 3 x builtin.integer i32>;
         llvm.return non_constant_index
       }
     "#;
@@ -1683,6 +1687,8 @@ fn shuffle_vector_does_not_fold() -> Result<()> {
         poison_lane = llvm.shuffle_vector a, b, [0, -1, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
         non_constant_lhs = llvm.shuffle_vector x, b, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
         non_constant_rhs = llvm.shuffle_vector a, y, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        poison_vector = llvm.poison : llvm.vector <Fixed x 3 x builtin.integer i32>;
+        partly_poison = llvm.shuffle_vector a, poison_vector, [0, 4, 2] : llvm.vector <Fixed x 3 x builtin.integer i32>;
         llvm.return non_constant_rhs
       }
     "#;
@@ -2320,11 +2326,204 @@ fn select_does_not_fold() -> Result<()> {
         a = builtin.constant <builtin.integer <10: i64>> : builtin.integer i64;
         b = builtin.constant <builtin.integer <20: i64>> : builtin.integer i64;
         distinct_operands = llvm.select cond ? a : b : builtin.integer i64;
+        poison = llvm.poison : builtin.integer i64;
+        poison_arm = llvm.select cond ? poison : a : builtin.integer i64;
         vector_condition = llvm.select vector_cond ? v0 : v1 : llvm.vector <Fixed x 4 x builtin.integer i32>;
         llvm.return distinct_operands
       }
     "#;
     let (status, _after) = run_sccp_on_text(input)?;
     assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// poison operands
+// ---------------------------------------------------------------------------
+
+#[test]
+fn poison_operands_fold_to_poison() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 (builtin.integer i32) variadic = false> [] {
+        ^entry(x: builtin.integer i32):
+        poison = llvm.poison : builtin.integer i32;
+        zero = builtin.constant <builtin.integer <0: i32>> : builtin.integer i32;
+        sum = llvm.add x, poison <{nsw=false,nuw=false}> : builtin.integer i32;
+        masked = llvm.and poison, zero : builtin.integer i32;
+        quotient = llvm.udiv x, poison : builtin.integer i32;
+        compare = llvm.icmp poison <EQ> x : builtin.integer i1;
+        extended = llvm.sext poison to builtin.integer i64;
+        llvm.return sum
+      }
+    "#;
+
+    // Each result must be `poison`, except `masked`: `and` with zero gives zero
+    // for every value of the other operand, so `masked` must fold to zero.
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32(builtin.integer i32) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i32) !0:
+            poison_v1 = llvm.poison : builtin.integer i32 !1;
+            zero_v2 = builtin.constant <builtin.integer <0: i32>> : builtin.integer i32 !2;
+            sum_v8 = llvm.poison : builtin.integer i32 !3;
+            sum_v3 = llvm.add x_v0, poison_v1 <{nsw=false,nuw=false}>: builtin.integer i32 !4;
+            masked_v9 = builtin.constant <builtin.integer <0: i32>> : builtin.integer i32 !5;
+            masked_v4 = llvm.and poison_v1, zero_v2 : builtin.integer i32 !6;
+            quotient_v10 = llvm.poison : builtin.integer i32 !7;
+            quotient_v5 = llvm.udiv x_v0, poison_v1 : builtin.integer i32 !8;
+            compare_v11 = llvm.poison : builtin.integer i1 !9;
+            compare_v6 = llvm.icmp poison_v1 <EQ> x_v0 : builtin.integer i1 !10;
+            extended_v12 = llvm.poison : builtin.integer i64 !11;
+            extended_v7 = llvm.sext poison_v1 to builtin.integer i64 !12;
+            llvm.return sum_v8 !13
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.freeze
+// ---------------------------------------------------------------------------
+
+#[test]
+fn freeze_folds_constants() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i32 () variadic = false> [] {
+        ^entry():
+        seven = builtin.constant <builtin.integer <7: i32>> : builtin.integer i32;
+        one = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32;
+        poison = llvm.poison : builtin.integer i32;
+        undef = llvm.undef : builtin.integer i32;
+        partly_poison = builtin.constant <llvm.aggregate <[llvm.poison builtin.integer i32, builtin.integer <1: i32>] : llvm.array [2 x builtin.integer i32]>> : llvm.array [2 x builtin.integer i32];
+        poison_attr = llvm.extract_value partly_poison [0] : builtin.integer i32;
+        frozen_seven = llvm.freeze seven : builtin.integer i32;
+        frozen_poison = llvm.freeze poison : builtin.integer i32;
+        frozen_undef = llvm.freeze undef : builtin.integer i32;
+        frozen_poison_attr = llvm.freeze poison_attr : builtin.integer i32;
+        eight = llvm.add frozen_seven, one <{nsw=false,nuw=false}> : builtin.integer i32;
+        s1 = llvm.add frozen_poison, frozen_undef <{nsw=false,nuw=false}> : builtin.integer i32;
+        s2 = llvm.add s1, frozen_poison_attr <{nsw=false,nuw=false}> : builtin.integer i32;
+        s3 = llvm.add s2, eight <{nsw=false,nuw=false}> : builtin.integer i32;
+        llvm.return s3
+      }
+    "#;
+
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i32() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            seven_v0 = builtin.constant <builtin.integer <7: i32>> : builtin.integer i32 !1;
+            one_v1 = builtin.constant <builtin.integer <1: i32>> : builtin.integer i32 !2;
+            poison_v2 = llvm.poison : builtin.integer i32 !3;
+            undef_v3 = llvm.undef : builtin.integer i32 !4;
+            partly_poison_v4 = builtin.constant <llvm.aggregate <[llvm.poison builtin.integer i32, builtin.integer <1: i32>] : llvm.array [2 x builtin.integer i32]>> : llvm.array [2 x builtin.integer i32] !5;
+            poison_attr_v14 = llvm.poison : builtin.integer i32 !6;
+            poison_attr_v5 = llvm.extract_value partly_poison_v4[0] : builtin.integer i32 !7;
+            frozen_seven_v15 = builtin.constant <builtin.integer <7: i32>> : builtin.integer i32 !8;
+            frozen_seven_v6 = llvm.freeze seven_v0 : builtin.integer i32 !9;
+            frozen_poison_v16 = llvm.zero : builtin.integer i32 !10;
+            frozen_poison_v7 = llvm.freeze poison_v2 : builtin.integer i32 !11;
+            frozen_undef_v17 = llvm.zero : builtin.integer i32 !12;
+            frozen_undef_v8 = llvm.freeze undef_v3 : builtin.integer i32 !13;
+            frozen_poison_attr_v18 = llvm.zero : builtin.integer i32 !14;
+            frozen_poison_attr_v9 = llvm.freeze poison_attr_v14 : builtin.integer i32 !15;
+            eight_v19 = builtin.constant <builtin.integer <8: i32>> : builtin.integer i32 !16;
+            eight_v10 = llvm.add frozen_seven_v15, one_v1 <{nsw=false,nuw=false}>: builtin.integer i32 !17;
+            s1_v11 = llvm.add frozen_poison_v16, frozen_undef_v17 <{nsw=false,nuw=false}>: builtin.integer i32 !18;
+            s2_v12 = llvm.add s1_v11, frozen_poison_attr_v18 <{nsw=false,nuw=false}>: builtin.integer i32 !19;
+            s3_v13 = llvm.add s2_v12, eight_v19 <{nsw=false,nuw=false}>: builtin.integer i32 !20;
+            llvm.return s3_v13 !21
+        }"#]].assert_eq(&after);
+    Ok(())
+}
+
+#[test]
+fn freeze_does_not_fold() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <llvm.array [2 x builtin.integer i32] (builtin.integer i32) variadic = false> [] {
+        ^entry(x: builtin.integer i32):
+        partly_poison = builtin.constant <llvm.aggregate <[llvm.poison builtin.integer i32, builtin.integer <1: i32>] : llvm.array [2 x builtin.integer i32]>> : llvm.array [2 x builtin.integer i32];
+        poison = llvm.poison : builtin.integer i32;
+        non_constant = llvm.freeze x : builtin.integer i32;
+        frozen_partly_poison = llvm.freeze partly_poison : llvm.array [2 x builtin.integer i32];
+        unused = llvm.freeze poison : builtin.integer i32;
+        llvm.return frozen_partly_poison
+      }
+    "#;
+
+    let (status, _after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// llvm.cond_br / llvm.switch
+// ---------------------------------------------------------------------------
+
+#[test]
+fn branches_on_poison_condition_have_no_feasible_successor() -> Result<()> {
+    let input = r#"
+      llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i32) variadic = false> [] {
+        ^entry(x: builtin.integer i32):
+        poison_i1 = llvm.poison : builtin.integer i1;
+        poison_i32 = builtin.constant <llvm.poison builtin.integer i32> : builtin.integer i32;
+        one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        two = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64;
+        llvm.switch x, ^join(one)
+        [
+          { <0: i32> : ^on_poison_i1() },
+          { <1: i32> : ^on_poison_i32() }
+        ]
+        ^on_poison_i1():
+        llvm.cond_br if poison_i1 ^join(two) else ^join(two)
+        ^on_poison_i32():
+        llvm.switch poison_i32, ^join(two)
+        [
+          { <0: i32> : ^join(two) }
+        ]
+        ^join(joined: builtin.integer i64):
+        llvm.return joined
+      }
+    "#;
+
+    // Branching on `poison` is undefined behavior, so the branches on `poison_i1`
+    // and `poison_i32` must have no feasible successor. Only the edge from
+    // `^entry` reaches `^join`, so `joined` must become the constant 1.
+    let (status, after) = run_sccp_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i32) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i32) !0:
+            poison_i1_v1 = llvm.poison : builtin.integer i1 !1;
+            poison_i32_v2 = builtin.constant <llvm.poison builtin.integer i32> : builtin.integer i32 !2;
+            one_v3 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !3;
+            two_v4 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !4;
+            llvm.switch x_v0, ^join_block4v3(one_v3)
+            [
+              { <0: i32>: ^on_poison_i1_block5v1() },
+              { <1: i32>: ^on_poison_i32_block3v3() }
+            ] !5
+
+          ^on_poison_i1_block5v1() !6:
+            llvm.cond_br if poison_i1_v1 ^join_block4v3(two_v4) else ^join_block4v3(two_v4) !7
+
+          ^on_poison_i32_block3v3() !8:
+            llvm.switch poison_i32_v2, ^join_block4v3(two_v4)
+            [
+              { <0: i32>: ^join_block4v3(two_v4) }
+            ] !9
+
+          ^join_block4v3(joined_v5: builtin.integer i64) !10:
+            joined_v6 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !11;
+            llvm.return joined_v6 !12
+        }"#]].assert_eq(&after);
     Ok(())
 }

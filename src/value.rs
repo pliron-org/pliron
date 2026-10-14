@@ -22,6 +22,7 @@ use crate::{
     location::{Located, Location},
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
+    region::Region,
     result::Result,
     r#type::{TypeHandle, Typed},
     utils::table::SmallSet,
@@ -289,12 +290,18 @@ impl Value {
         }
     }
 
-    /// Get the defining block of this value.
-    pub fn get_defining_block(&self, ctx: &Context) -> Option<Ptr<BasicBlock>> {
+    /// Get the block that contains the definition of this value.
+    pub fn get_parent_block(&self, ctx: &Context) -> Option<Ptr<BasicBlock>> {
         match self.defining_entity {
             DefiningEntity::Op(op) => op.deref(ctx).get_parent_block(),
             DefiningEntity::Block(block) => Some(block),
         }
+    }
+
+    /// Get the region that contains the definition of this value.
+    pub fn get_parent_region(&self, ctx: &Context) -> Option<Ptr<Region>> {
+        self.get_parent_block(ctx)
+            .and_then(|block| block.deref(ctx).get_parent_region())
     }
 }
 

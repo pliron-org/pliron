@@ -233,6 +233,66 @@ fn simplify_cfg_culls_untaken_cases_of_constant_switch() -> Result<()> {
     Ok(())
 }
 
+/// Branching on `poison` is undefined behavior, so a `cond_br` or a `llvm.switch`
+/// on a `poison` condition must fold to `llvm.unreachable`. Its successors then
+/// become unreachable and must be eliminated.
+#[test]
+fn simplify_cfg_folds_branches_on_poison_condition_to_unreachable() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+      ^entry(c: builtin.integer i1):
+      poison_i1 = llvm.poison : builtin.integer i1;
+      poison_i32 = builtin.constant <llvm.poison builtin.integer i32> : builtin.integer i32;
+      llvm.cond_br if c ^on_poison_i32() else ^on_poison_i1()
+
+      ^on_poison_i32():
+      llvm.switch poison_i32, ^default()
+      [
+        { <0: i32> : ^bb0() }
+      ]
+
+      ^default():
+      d = builtin.constant <builtin.integer <100: i64>> : builtin.integer i64;
+      llvm.return d
+
+      ^bb0():
+      z0 = builtin.constant <builtin.integer <0: i64>> : builtin.integer i64;
+      llvm.return z0
+
+      ^on_poison_i1():
+      llvm.cond_br if poison_i1 ^t() else ^f()
+
+      ^t():
+      t1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      llvm.return t1
+
+      ^f():
+      f2 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64;
+      llvm.return f2
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(c_v0: builtin.integer i1) !0:
+            poison_i1_v1 = llvm.poison : builtin.integer i1 !1;
+            poison_i32_v2 = builtin.constant <llvm.poison builtin.integer i32> : builtin.integer i32 !2;
+            llvm.cond_br if c_v0 ^on_poison_i32_block4v1() else ^on_poison_i1_block5v3() !3
+
+          ^on_poison_i32_block4v1() !4:
+            llvm.unreachable  !5
+
+          ^on_poison_i1_block5v3() !6:
+            llvm.unreachable  !7
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
 /// A `cond_br` on a non-constant condition cannot be folded, so both of its
 /// successors stay live. Each successor has a `cond_br` on a *constant*
 /// condition that folds to an unconditional branch into a shared join block.

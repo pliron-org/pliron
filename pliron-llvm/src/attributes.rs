@@ -40,7 +40,7 @@ use pliron::{
 };
 
 use crate::{
-    ops::ConstantOp,
+    ops::{ConstantOp, PoisonOp, UndefOp},
     types::{ArrayType, PointerType, StructType, VectorType},
 };
 
@@ -383,6 +383,13 @@ impl TypedAttrInterface for UndefAttr {
     }
 }
 
+#[attr_interface_impl]
+impl MaterializableAttr for UndefAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        UndefOp::new(ctx, self.0).get_operation()
+    }
+}
+
 /// The `poison` value of a type.
 #[pliron_attr(name = "llvm.poison", format = "$0", verifier = "succ")]
 #[derive(PartialEq, Eq, Clone, Debug, Hash)]
@@ -392,6 +399,13 @@ pub struct PoisonAttr(pub TypeHandle);
 impl TypedAttrInterface for PoisonAttr {
     fn get_type(&self, _ctx: &Context) -> TypeHandle {
         self.0
+    }
+}
+
+#[attr_interface_impl]
+impl MaterializableAttr for PoisonAttr {
+    fn materialize(&self, ctx: &mut Context) -> Ptr<Operation> {
+        PoisonOp::new(ctx, self.0).get_operation()
     }
 }
 
