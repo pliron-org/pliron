@@ -289,6 +289,14 @@ impl Operation {
         self.results.iter().flat_map(|res| res.def.uses())
     }
 
+    /// Get a reference to the [Location] of this operation.
+    ///
+    /// Unlike [Located::loc], this does not clone the [Location],
+    /// which can be a deep tree (for example, a chain of call sites).
+    pub fn loc_ref(&self) -> &Location {
+        &self.loc
+    }
+
     /// Get type of the idx'th result. Panics on invalid index.
     pub fn get_type(&self, idx: usize) -> TypeHandle {
         self.results[idx].ty
