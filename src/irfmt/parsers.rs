@@ -17,9 +17,11 @@ use crate::{
     },
     context::Ptr,
     identifier::Identifier,
-    location::{Located, Location},
+    location::Location,
     operation::Operation,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
+    parsable::{
+        IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation, parser_combinator,
+    },
     printable::ListSeparator,
     result::Result,
     r#type::TypeHandle,

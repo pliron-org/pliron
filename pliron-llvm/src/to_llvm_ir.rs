@@ -30,7 +30,7 @@ use pliron::{
     identifier::Identifier,
     input_err, input_err_noloc, input_error, input_error_noloc,
     linked_list::ContainsLinkedList,
-    location::{Located, Location},
+    location::Location,
     op::{Op, op_cast},
     operation::Operation,
     printable::Printable,

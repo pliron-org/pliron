@@ -109,7 +109,7 @@ use thiserror::Error;
 
 use crate::{
     context::Context,
-    location::{Located, Location},
+    location::Location,
     printable::{Printable, State},
     std_deps::backtrace::{Backtrace, BacktraceStatus},
     utils::trait_cast::any_to_trait,
@@ -197,12 +197,14 @@ impl From<fmt::Error> for Error {
     }
 }
 
-impl Located for Error {
-    fn loc(&self) -> Location {
-        self.loc.clone()
+impl Error {
+    /// Get a reference to this error's [Location].
+    pub fn loc(&self) -> &Location {
+        &self.loc
     }
 
-    fn set_loc(&mut self, loc: Location) {
+    /// Set this error's [Location].
+    pub fn set_loc(&mut self, loc: Location) {
         self.loc = loc;
     }
 }
@@ -262,7 +264,7 @@ macro_rules! create_error {
         $crate::result::Error {
             kind: $kind,
             err: $crate::alloc::boxed::Box::new($err),
-            loc: $loc,
+            loc: $crate::location::Location::from($loc),
             backtrace: $crate::std_deps::backtrace::Backtrace::capture(),
         }
     };

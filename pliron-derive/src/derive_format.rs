@@ -722,7 +722,7 @@ trait ParsableBuilder<State: Default> {
                     use ::pliron::parsable::IntoParseResult;
                     use ::pliron::combine::Parser;
                     use ::pliron::input_err;
-                    use ::pliron::location::Located;
+                    use ::pliron::parsable::StreamLocation;
                     let cur_loc = state_stream.loc();
 
                     #body

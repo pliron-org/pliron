@@ -63,7 +63,7 @@ use crate::{
         },
         printers::{iter_with_sep, iter_with_sep_by},
     },
-    location::{Located, Location},
+    location::Location,
     operation::{Operation, verify_operation},
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
     printable::{self, Printable},
@@ -245,7 +245,7 @@ pub trait Op: Downcast + Verify + Printable + DynClone {
 
     /// Get Op's location
     fn loc(&self, ctx: &Context) -> Location {
-        self.get_operation().deref(ctx).loc()
+        self.get_operation().deref(ctx).loc().clone()
     }
 }
 impl_downcast!(Op);

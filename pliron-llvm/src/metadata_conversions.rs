@@ -17,7 +17,7 @@ pub mod from_llvm_ir {
         combine::stream::position::SourcePosition,
         context::{Context, Ptr},
         input_error_noloc,
-        location::{Located, Location, Source},
+        location::{Location, Source},
         operation::Operation,
         result::Result,
         std_deps::path::PathBuf,
@@ -511,7 +511,7 @@ pub mod to_llvm_ir {
             interruptible::{WalkResult, immutable::walk_op, walk_advance, walk_break},
         },
         input_err_noloc, input_error_noloc,
-        location::{Located, Location, Source},
+        location::{Location, Source},
         op::Op,
         operation::Operation,
         printable::Printable,
@@ -1026,11 +1026,10 @@ pub mod to_llvm_ir {
                 let IRNode::Operation(op) = node else {
                     return walk_advance();
                 };
-                let loc = op.deref(ctx).loc();
-                if loc.is_unknown() {
+                if op.deref(ctx).loc().is_unknown() {
                     walk_advance()
                 } else {
-                    walk_break(loc)
+                    walk_break(op.deref(ctx).loc().clone())
                 }
             },
         );
@@ -1077,9 +1076,9 @@ pub mod to_llvm_ir {
         let Some(di) = cctx.md.di.as_mut() else {
             return;
         };
-        let loc = op.deref(ctx).loc();
+        let op_ref = op.deref(ctx);
         let di_loc = di.subprogram.map(|subprogram| {
-            di.translate(ctx, llvm_ctx, &loc, subprogram, None)
+            di.translate(ctx, llvm_ctx, op_ref.loc(), subprogram, None)
                 .unwrap_or_else(|| {
                     llvm_di_builder_create_debug_location(llvm_ctx, 0, 0, subprogram, None)
                 })

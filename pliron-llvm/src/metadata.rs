@@ -35,7 +35,7 @@
 //! don't need to be responsible for metadata, it's automatically taken care of).
 //!
 //! Debug locations (`DILocation`, and the file and line of a function's `DISubprogram`)
-//! are represented as op [Location]s.
+//! are represented as op [Location](pliron::location::Location)s.
 //!
 //! TODO: Only generic nodes (LLVM's `MDTuple`) are supported. LLVM's other specialized
 //! debug info nodes (`DICompileUnit`, `DIType`, ...) need extensions in [MdNodeAttr];
@@ -66,10 +66,9 @@ use pliron::{
         parsers::{delimited_list_parser, list_parser},
         printers::iter_with_sep,
     },
-    location::{Located, Location},
     op::Op,
     operation::Operation,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation},
     printable::{self, ListSeparator, Printable, indented_nl},
     result::{Error, Result},
     symbol_table::SymbolTableCollection,
@@ -667,8 +666,7 @@ pub enum MdAddErr {
 /// A non-`distinct` node already in the table isn't added again.
 pub fn add_metadata_node(ctx: &Context, op: Ptr<Operation>, node: MdNodeAttr) -> Result<MdNodeId> {
     let Some(module_op) = find_enclosing_module(ctx, op) else {
-        let loc = op.deref(ctx).loc();
-        return arg_err!(loc, MdAddErr::NoEnclosingModule);
+        return arg_err!(op.deref(ctx).loc(), MdAddErr::NoEnclosingModule);
     };
     let mut table = get_metadata_table(ctx, module_op).unwrap_or_default();
     let node_id = table.push_uniqued(node);
@@ -706,7 +704,6 @@ fn check_symbols_resolve(
     module_op: ModuleOp,
     symbol_tables: &mut SymbolTableCollection,
     attr: &dyn Attribute,
-    loc: &Location,
 ) -> Result<()> {
     if let Some(symbol_addr) = attr.downcast_ref::<SymbolAddrAttr>() {
         let symbol = symbol_addr.symbol();
@@ -715,16 +712,16 @@ fn check_symbols_resolve(
             .is_none()
         {
             verify_err!(
-                loc.clone(),
+                module_op.get_operation().deref(ctx).loc(),
                 MetadataVerifyErr::UndefinedSymbol(symbol.to_string())
             )?;
         }
     } else if let Some(aggregate) = attr.downcast_ref::<AggregateAttr>() {
         for element in aggregate.elements() {
-            check_symbols_resolve(ctx, module_op, symbol_tables, &**element, loc)?;
+            check_symbols_resolve(ctx, module_op, symbol_tables, &**element)?;
         }
     } else if let Some(splat) = attr.downcast_ref::<SplatAttr>() {
-        check_symbols_resolve(ctx, module_op, symbol_tables, splat.element(), loc)?;
+        check_symbols_resolve(ctx, module_op, symbol_tables, splat.element())?;
     }
     Ok(())
 }
@@ -738,11 +735,13 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
     let module_op_ptr = module_op.get_operation();
     let table = get_metadata_table(ctx, module_op).unwrap_or_default();
     let num_nodes = table.len() as MdNodeId;
-    let loc = module_op_ptr.deref(ctx).loc();
 
-    let check = |node: MdNodeId, loc: Location| -> Result<()> {
+    let check = |node: MdNodeId| -> Result<()> {
         if node >= num_nodes {
-            verify_err!(loc, MetadataVerifyErr::DanglingNodeRef(node))?;
+            verify_err!(
+                module_op_ptr.deref(ctx).loc(),
+                MetadataVerifyErr::DanglingNodeRef(node)
+            )?;
         }
         Ok(())
     };
@@ -751,15 +750,15 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
     for (_, node) in table.iter() {
         for operand in node.operands() {
             match operand {
-                MdOperandAttr::Node(id) => check(*id, loc.clone())?,
+                MdOperandAttr::Node(id) => check(*id)?,
                 MdOperandAttr::Constant(attr) => {
                     verify_attr(&**attr, ctx).map_err(|mut err| {
                         if err.loc.is_unknown() {
-                            err.set_loc(loc.clone());
+                            err.set_loc(module_op_ptr.deref(ctx).loc().clone());
                         }
                         err
                     })?;
-                    check_symbols_resolve(ctx, module_op, &mut symbol_tables, &**attr, &loc)?
+                    check_symbols_resolve(ctx, module_op, &mut symbol_tables, &**attr)?
                 }
                 MdOperandAttr::Null | MdOperandAttr::String(_) => (),
             }
@@ -769,7 +768,7 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
     if let Some(named) = get_named_metadata(ctx, module_op) {
         for (_, nodes) in named.iter() {
             for node in nodes {
-                check(*node, loc.clone())?;
+                check(*node)?;
             }
         }
     }
@@ -790,14 +789,16 @@ pub fn verify_metadata(ctx: &Context, module_op: ModuleOp) -> Result<()> {
             let Some(attachments) = get_attachments(ctx, op) else {
                 return walk_advance();
             };
-            let loc = op.deref(ctx).loc();
             if !*has_table && !attachments.is_empty() {
-                return walk_break(verify_error!(loc, MetadataVerifyErr::NoTable));
+                return walk_break(verify_error!(
+                    op.deref(ctx).loc(),
+                    MetadataVerifyErr::NoTable
+                ));
             }
             for (_, node) in attachments.iter() {
                 if node >= *num_nodes {
                     return walk_break(verify_error!(
-                        loc.clone(),
+                        op.deref(ctx).loc(),
                         MetadataVerifyErr::DanglingNodeRef(node)
                     ));
                 }

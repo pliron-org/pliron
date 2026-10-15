@@ -19,7 +19,7 @@ use crate::{
     context::{Context, Ptr},
     identifier::Identifier,
     linked_list::{ContainsLinkedList, LinkedList},
-    location::{Located, Location},
+    location::Location,
     operation::{DefUseVerifyErr, Operation},
     printable::Printable,
     region::Region,
@@ -264,8 +264,8 @@ impl Value {
     /// Get this value's location
     pub fn loc(&self, ctx: &Context) -> Location {
         match self.defining_entity {
-            DefiningEntity::Op(op) => op.deref(ctx).loc(),
-            DefiningEntity::Block(block) => block.deref(ctx).loc(),
+            DefiningEntity::Op(op) => op.deref(ctx).loc().clone(),
+            DefiningEntity::Block(block) => block.deref(ctx).loc().clone(),
         }
     }
 

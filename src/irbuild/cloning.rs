@@ -32,7 +32,6 @@ use crate::{
         rewriter::{Rewriter, ScopedRewriter},
     },
     linked_list::ContainsLinkedList,
-    location::Located,
     operation::Operation,
     region::Region,
     r#type::Typed,
@@ -138,7 +137,7 @@ fn clone_op_shell(op: Ptr<Operation>, ctx: &mut Context, mapper: &mut IrMapping)
             op_ref.get_num_operands(),
             op_ref.num_regions(),
             op_ref.attributes.clone(),
-            op_ref.loc(),
+            op_ref.loc().clone(),
         )
     };
 
@@ -242,7 +241,7 @@ pub fn clone_blocks_into(
                 arg_types,
                 block_ref.label.clone(),
                 block_ref.attributes.clone(),
-                block_ref.loc(),
+                block_ref.loc().clone(),
             )
         };
         let new_block = rewriter.create_block(

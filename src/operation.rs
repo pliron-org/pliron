@@ -31,9 +31,9 @@ use crate::{
         parsers::{list_parser, location, spaced},
     },
     linked_list::{LinkedList, private},
-    location::{Located, Location},
+    location::Location,
     op::{ConcreteOpInfo, Op, OpId, OpObj, op_impls},
-    parsable::{self, Parsable, ParseResult, StateStream},
+    parsable::{self, Parsable, ParseResult, StateStream, StreamLocation},
     printable::{self, Printable},
     region::Region,
     result::Result,
@@ -289,12 +289,14 @@ impl Operation {
         self.results.iter().flat_map(|res| res.def.uses())
     }
 
-    /// Get a reference to the [Location] of this operation.
-    ///
-    /// Unlike [Located::loc], this does not clone the [Location],
-    /// which can be a deep tree (for example, a chain of call sites).
-    pub fn loc_ref(&self) -> &Location {
+    /// Get a reference to this operation's [Location].
+    pub fn loc(&self) -> &Location {
         &self.loc
+    }
+
+    /// Set this operation's [Location].
+    pub fn set_loc(&mut self, loc: Location) {
+        self.loc = loc;
     }
 
     /// Get type of the idx'th result. Panics on invalid index.
@@ -656,8 +658,10 @@ impl<T: DefUseParticipant + DefTrait> Operand<T> {
             _dummy: PhantomData,
         };
         if !def.get_defnode_ref(ctx).has_use_of(&r#use) {
-            let loc = user_op.deref(ctx).loc();
-            verify_err!(loc, DefUseVerifyErr::OperandNotUseOfDef)
+            verify_err!(
+                user_op.deref(ctx).loc(),
+                DefUseVerifyErr::OperandNotUseOfDef
+            )
         } else {
             Ok(())
         }
@@ -711,9 +715,8 @@ pub fn verify_value_dominance(ir: Ptr<Operation>, ctx: &Context) -> Result<()> {
         for r#use in value.uses(ctx) {
             let user_op = r#use.user_op();
             if !dom_info.value_strictly_dominates_op(ctx, value, user_op) {
-                let loc = user_op.deref(ctx).loc();
                 return walk_break(verify_error!(
-                    loc,
+                    user_op.deref(ctx).loc(),
                     DefUseVerifyErr::UseNotDominatedByDef(value.unique_name(ctx))
                 ));
             }
@@ -821,16 +824,6 @@ impl Printable for Operation {
         }
 
         Ok(())
-    }
-}
-
-impl Located for Operation {
-    fn loc(&self) -> Location {
-        self.loc.clone()
-    }
-
-    fn set_loc(&mut self, loc: Location) {
-        self.loc = loc;
     }
 }
 

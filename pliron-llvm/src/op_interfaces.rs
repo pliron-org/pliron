@@ -31,7 +31,7 @@ use pliron::{
         types::{IntegerType, Signedness},
     },
     context::Context,
-    location::{Located, Location},
+    location::Location,
     op::{Op, op_cast},
     operation::Operation,
     result::Result,

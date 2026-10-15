@@ -17,7 +17,6 @@ use crate::{
         listener::RewriteListener,
     },
     linked_list::{ContainsLinkedList, LinkedList},
-    location::Located,
     op::Op,
     operation::Operation,
     region::Region,
@@ -221,7 +220,7 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
             && self.config.set_loc_on_operation_replacement
             && new_op.deref(ctx).loc().is_unknown()
         {
-            new_op.deref_mut(ctx).set_loc(op.deref(ctx).loc());
+            new_op.deref_mut(ctx).set_loc(op.deref(ctx).loc().clone());
         }
         let new_values = new_op.deref(ctx).results().collect();
         self.replace_operation_with_values(ctx, op, new_values);

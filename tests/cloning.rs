@@ -34,7 +34,7 @@ use pliron::{
         listener::{DummyListener, Recorder, RecorderEvent},
         rewriter::IRRewriter,
     },
-    location::{Located, Location},
+    location::Location,
     op::Op,
     operation::{Operation, verify_operation},
     printable::Printable,

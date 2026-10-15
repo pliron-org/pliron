@@ -18,7 +18,6 @@ use pliron::{
         parsers::{delimited_list_parser, location, spaced, type_parser},
         printers::{enclosed, list_with_sep},
     },
-    location::Located,
     parsable::{IntoParseResult, Parsable, ParseResult, StateStream},
     printable::{self, ListSeparator, Printable},
     result::Result,

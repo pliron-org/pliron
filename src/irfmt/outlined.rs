@@ -16,9 +16,9 @@ use crate::{
     dict_key,
     identifier::Identifier,
     input_err, input_error,
-    location::{Located, Location},
+    location::Location,
     operation::Operation,
-    parsable::{Parsable, StateStream},
+    parsable::{Parsable, StateStream, StreamLocation},
     printable::{self, Printable},
     result::Result,
     utils::{
@@ -172,7 +172,7 @@ pub(crate) fn print_outlines(
         print_once_attrs: &mut IMap<AttrObj, usize>,
         print_once_attr_indices: &mut usize,
         attributes: &AttributeDict,
-        loc: Location,
+        loc: &Location,
     ) -> core::fmt::Result {
         if !loc.is_unknown() {
             write!(f, "@[{}], ", loc.print(ctx, state))?;

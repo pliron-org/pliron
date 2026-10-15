@@ -351,10 +351,10 @@ impl Parsable for Location {
     }
 }
 
-/// Any object that has an associated location.
-pub trait Located {
-    fn loc(&self) -> Location;
-    fn set_loc(&mut self, loc: Location);
+impl From<&Location> for Location {
+    fn from(loc: &Location) -> Self {
+        loc.clone()
+    }
 }
 
 /// Recursively set the [Location] of every operation and block

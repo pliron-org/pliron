@@ -11,10 +11,9 @@ use crate::{
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
     linked_list::{ContainsLinkedList, private},
-    location::Located,
     op::op_cast,
     operation::Operation,
-    parsable::{self, IntoParseResult, Parsable, ParseResult},
+    parsable::{self, IntoParseResult, Parsable, ParseResult, StreamLocation},
     printable::{self, ListSeparator, Printable, fmt_indented_newline, fmt_iter},
     result::Result,
 };

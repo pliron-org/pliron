@@ -45,8 +45,9 @@ use crate::{
     arg_error_noloc,
     combine::{Parser, parser::char},
     impl_printable_for_display, input_error,
-    location::Located,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, parser_combinator},
+    parsable::{
+        IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation, parser_combinator,
+    },
     result::Result,
 };
 

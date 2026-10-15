@@ -28,7 +28,7 @@ use crate::{
     identifier::Identifier,
     input_err,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
-    location::{self, Located, Location, Source},
+    location::{Location, Source},
     op::op_impls,
     operation::Operation,
     result::{self, Result},
@@ -89,16 +89,18 @@ pub type StateStream<'a> = Stream<
     State<'a>,
 >;
 
-impl Located for StateStream<'_> {
-    fn loc(&self) -> location::Location {
-        location::Location::SrcPos {
+/// Get a parser stream's current [Location].
+pub trait StreamLocation {
+    /// Get the [Location] of the current position in the stream.
+    fn loc(&self) -> Location;
+}
+
+impl StreamLocation for StateStream<'_> {
+    fn loc(&self) -> Location {
+        Location::SrcPos {
             src: self.state.src,
             pos: self.position(),
         }
-    }
-
-    fn set_loc(&mut self, _loc: Location) {
-        panic!("Cannot set location of parser");
     }
 }
 
@@ -262,7 +264,7 @@ pub fn parse_from_str<'a, P: Parser<StateStream<'a>>>(
     ctx: &'a mut Context,
     input: &'a str,
 ) -> Result<P::Output> {
-    let source = location::Source::InMemory;
+    let source = Source::InMemory;
     let state_stream = state_stream_from_iterator(input.chars(), State::new(ctx, source));
     match parser.parse(state_stream) {
         Ok((parsed_res, _)) => Ok(parsed_res),
@@ -296,7 +298,7 @@ pub fn parse_from_file<'a, P: Parser<StateStream<'a>>>(
     ctx: &'a mut Context,
     path: &'a Path,
 ) -> Result<P::Output> {
-    let source = location::Source::new_from_file(ctx, path);
+    let source = Source::new_from_file(ctx, path);
 
     // An owned iterator over the file's chars, to please the borrow checker.
     struct FileChars<'a> {

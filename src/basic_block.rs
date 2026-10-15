@@ -26,10 +26,10 @@ use crate::{
         printers::{iter_with_sep, iter_with_sep_by},
     },
     linked_list::{ContainsLinkedList, LinkedList, private},
-    location::{Located, Location},
+    location::Location,
     op::op_impls,
     operation::{DefUseVerifyErr, OpDbg, Operation, OperationParserConfig},
-    parsable::{self, IntoParseResult, Parsable, ParseResult},
+    parsable::{self, IntoParseResult, Parsable, ParseResult, StreamLocation},
     printable::{self, ListSeparator, Printable, indented_nl},
     region::Region,
     result::Result,
@@ -158,6 +158,16 @@ impl BasicBlock {
     /// This corresponds to the [given_name](Named::given_name) of this block.
     pub fn set_label(&mut self, label: Option<Identifier>) {
         self.label = label;
+    }
+
+    /// Get a reference to this block's [Location].
+    pub fn loc(&self) -> &Location {
+        &self.loc
+    }
+
+    /// Set this block's [Location].
+    pub fn set_loc(&mut self, loc: Location) {
+        self.loc = loc;
     }
 
     /// Get parent region.
@@ -313,16 +323,6 @@ impl BasicBlock {
             ptr.unlink(ctx);
         }
         ArenaObj::dealloc(ptr, ctx);
-    }
-}
-
-impl Located for BasicBlock {
-    fn loc(&self) -> Location {
-        self.loc.clone()
-    }
-
-    fn set_loc(&mut self, loc: Location) {
-        self.loc = loc;
     }
 }
 

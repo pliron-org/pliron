@@ -14,7 +14,7 @@ use crate::{
     graph::walkers::interruptible::{WalkResult, walk_advance, walk_break},
     identifier::Identifier,
     linked_list::ContainsLinkedList,
-    location::{Located, Location},
+    location::Location,
     op::{Op, op_cast, op_impls},
     operation::{OpDbg, Operation},
     printable::{self, Printable},
@@ -1127,18 +1127,18 @@ pub trait SymbolTableInterface: SingleBlockRegionInterface + OneRegionInterface 
         let op = op_cast::<dyn SymbolTableInterface>(op).unwrap();
 
         // Check that every symbol is defined only once.
-        let mut seen = HMap::<Identifier, Location>::default();
+        let mut seen = HMap::<Identifier, Ptr<Operation>>::default();
         let table_ops_block = op.get_body(ctx, 0);
         for op in table_ops_block.deref(ctx).iter(ctx) {
             if let Some(sym_op) =
                 op_cast::<dyn SymbolOpInterface>(Operation::get_op_dyn(op, ctx).as_ref())
             {
                 let sym = sym_op.get_symbol_name(ctx);
-                if let Some(prev_loc) = seen.insert(sym.clone(), op.deref(ctx).loc()) {
+                if let Some(prev_op) = seen.insert(sym.clone(), op) {
                     return verify_err!(
                         op.deref(ctx).loc(),
                         verify_error!(
-                            prev_loc,
+                            prev_op.deref(ctx).loc(),
                             SymbolTableInterfaceErr::SymbolRedefined(sym.to_string())
                         )
                     );
@@ -1671,7 +1671,7 @@ fn resolve_index_range(m: u32, n: i32, len: usize) -> IndexRange {
 ///     Gets the index of that entity, and its type.
 fn verify_index_range_types<E1: AnyError, E2: AnyError>(
     ctx: &Context,
-    loc: Location,
+    loc: &Location,
     entities: impl Iterator<Item = Value> + Clone,
     range: (u32, i32),
     check: impl Fn(&dyn Type) -> bool,

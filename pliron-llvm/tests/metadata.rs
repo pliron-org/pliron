@@ -24,7 +24,7 @@ use pliron::{
     identifier::Identifier,
     init_env_logger_for_tests,
     linked_list::ContainsLinkedList,
-    location::{Located, Location, Source},
+    location::{Location, Source},
     op::Op,
     operation::Operation,
     printable::Printable,

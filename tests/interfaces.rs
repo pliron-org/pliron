@@ -27,7 +27,7 @@ use pliron::{
     },
     ident,
     identifier::Identifier,
-    location::{Located, Location, Source},
+    location::{Location, Source},
     op::{Op, OpObj, op_cast, verify_op},
     operation::{Operation, verify_operation},
     parsable::{Parsable, ParseResult, StateStream, parse_from_str},
