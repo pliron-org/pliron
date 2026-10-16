@@ -259,7 +259,7 @@ impl Printable for StructType {
                 list_with_sep(fields, ListSeparator::CharSpace(',')),
             )
             .fmt(ctx, state, f)?;
-            write!(f, " : {}", layout.disp(ctx))?;
+            write!(f, " : {}", layout.print(ctx, state))?;
         }
 
         // Done processing this struct. Remove it from the stack.

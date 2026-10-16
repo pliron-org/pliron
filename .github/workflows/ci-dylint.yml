@@ -1,0 +1,62 @@
+name: "CI: Dylint"
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  dylint:
+    name: Dylint Lints
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+
+    - uses: dtolnay/rust-toolchain@stable
+
+    - uses: Swatinem/rust-cache@v2
+      with:
+        workspaces: |
+          .
+          lints/pliron_lints
+
+    - name: Configure apt archive cache directory
+      run: |
+        mkdir -p ~/.cache/apt-archives
+        echo 'Dir::Cache::Archives "'"$HOME"'/.cache/apt-archives";' | sudo tee /etc/apt/apt.conf.d/99-archives-cache
+
+    - name: Cache LLVM apt packages
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/apt-archives
+        key: llvm-23-apt-archives-${{ runner.os }}
+
+    - name: Setup LLVM
+      run: |
+        wget https://apt.llvm.org/llvm.sh
+        chmod +x llvm.sh
+        sudo ./llvm.sh 23 all
+        # apt falls back to downloading as root when the sandboxed `_apt`
+        # user can't write into our redirected (non-standard) cache dir,
+        # leaving root-owned files that the later cache-save step (running
+        # unprivileged) can't read. Reclaim ownership so caching works.
+        sudo chown -R "$(id -u):$(id -g)" ~/.cache/apt-archives
+
+    - name: Install Dylint
+      run: cargo install --locked cargo-dylint dylint-link
+
+    - name: Install the lint toolchain
+      # Installs the nightly pinned in `lints/pliron_lints/rust-toolchain.toml`.
+      working-directory: lints/pliron_lints
+      run: rustup toolchain install
+
+    - name: Lint UI tests
+      working-directory: lints/pliron_lints
+      run: cargo test
+
+    - name: Lint the workspace
+      run: DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all -- --workspace --all-targets
