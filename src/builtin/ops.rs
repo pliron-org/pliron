@@ -139,7 +139,7 @@ impl Parsable for ModuleOp {
             .map(|(name, attributes, _region)| -> OpObj {
                 let ctx = &mut state_stream.state.ctx;
                 op.deref_mut(ctx).attributes = attributes.unwrap_or_default();
-                let opop = ModuleOp { op };
+                let opop = Self { op };
                 opop.set_symbol_name(ctx, name);
                 OpObj::new(opop)
             })
@@ -153,7 +153,7 @@ impl ModuleOp {
     /// The returned module has a single [crate::region::Region] with a single (BasicBlock)[crate::basic_block::BasicBlock].
     pub fn new(ctx: &mut Context, name: Identifier) -> ModuleOp {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        let opop = ModuleOp { op };
+        let opop = Self { op };
         opop.set_symbol_name(ctx, name);
 
         // Create an empty block.
@@ -193,7 +193,7 @@ impl FuncOp {
         let body = BasicBlock::new(ctx, Some(ident!("entry")), arg_types);
         body.insert_at_front(region, ctx);
 
-        let opop = FuncOp { op };
+        let opop = Self { op };
         opop.set_symbol_name(ctx, name);
         opop.set_attr_builtin_func_type(ctx, ty_attr);
 
@@ -280,7 +280,7 @@ impl Parsable for FuncOp {
                 let ctx = &mut state_stream.state.ctx;
                 op.deref_mut(ctx).attributes = attributes.unwrap_or_default();
                 let ty_attr = TypeAttr::new(fty);
-                let opop = FuncOp { op };
+                let opop = Self { op };
                 opop.set_symbol_name(ctx, fname);
                 opop.set_attr_builtin_func_type(ctx, ty_attr);
                 OpObj::new(opop)
@@ -386,7 +386,7 @@ impl ConstantOp {
             vec![],
             0,
         );
-        let op = ConstantOp { op };
+        let op = Self { op };
         op.set_attr_builtin_constant_value(ctx, value);
         op
     }
@@ -465,6 +465,6 @@ impl ForwardRefOp {
             vec![],
             0,
         );
-        ForwardRefOp { op }
+        Self { op }
     }
 }

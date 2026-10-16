@@ -142,7 +142,7 @@ impl ToTokens for ImplOp {
                 }
 
                 fn from_operation(op: ::pliron::context::Ptr<::pliron::operation::Operation>) -> Self {
-                    #name { op }
+                    Self { op }
                 }
 
                 fn get_opid(&self) -> ::pliron::op::OpId {
@@ -490,7 +490,7 @@ mod tests {
                 fn from_operation(
                     op: ::pliron::context::Ptr<::pliron::operation::Operation>,
                 ) -> Self {
-                    TestOp { op }
+                    Self { op }
                 }
                 fn get_opid(&self) -> ::pliron::op::OpId {
                     Self::get_opid_static()

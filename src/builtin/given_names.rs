@@ -256,7 +256,7 @@ mod tests {
     impl ZeroOp {
         pub fn new(ctx: &mut Context) -> Self {
             let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
-            ZeroOp {
+            Self {
                 op: Operation::new(
                     ctx,
                     Self::get_concrete_op_info(),

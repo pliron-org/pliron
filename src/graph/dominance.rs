@@ -1372,7 +1372,7 @@ mod tests {
             let region = op.deref(ctx).get_region(0);
             let block = BasicBlock::new(ctx, None, vec![]);
             block.insert_at_front(region, ctx);
-            ScopeOp { op }
+            Self { op }
         }
 
         fn get_entry_block(&self, ctx: &Context) -> Ptr<BasicBlock> {

@@ -7,9 +7,10 @@ use pliron::basic_block::BasicBlock;
 use pliron::builtin::ops::ConstantOp;
 use pliron::builtin::types::IntegerType;
 use pliron::context::{Context, Ptr};
-use pliron::derive::{pliron_attr, pliron_type};
+use pliron::derive::{pliron_attr, pliron_op, pliron_type};
 use pliron::linked_list::ContainsLinkedList;
 use pliron::location::Location;
+use pliron::op::Op;
 use pliron::operation::Operation;
 use pliron::parsable::{Parsable, ParseResult, StateStream};
 use pliron::printable::{Printable, State};
@@ -345,8 +346,36 @@ struct OpHolder {
     target: Ptr<Operation>,
 }
 
+#[pliron_op(name = "test.my_op", format, verifier = "succ")]
+struct MyOp {}
+
+impl MyOp {
+    // `explicit_op_construction` must report an error and suggest `Self`.
+    fn new_with_name(ctx: &mut Context) -> Self {
+        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
+        MyOp { op }
+    }
+
+    // `explicit_op_construction` must not report an error: the constructor uses `Self`.
+    fn new_with_self(ctx: &mut Context) -> Self {
+        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
+        Self { op }
+    }
+}
+
+// `explicit_op_construction` must report an error and tell to use `Operation::get_op`.
+fn wrap_op(op: Ptr<Operation>) -> MyOp {
+    MyOp { op }
+}
+
+// `explicit_op_construction` must not report an error: `Operation::get_op` checks the operation.
+fn get_my_op(op: Ptr<Operation>, ctx: &Context) -> Option<MyOp> {
+    Operation::get_op::<MyOp>(op, ctx)
+}
+
 fn main() {
     let _ = OpHolder { target: op_ptr() }.target;
+    let _ = (MyOp::new_with_name, MyOp::new_with_self, wrap_op, get_my_op);
     let _ = (
         borrow_and_context,
         ref_borrow_and_context,

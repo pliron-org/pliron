@@ -12,6 +12,7 @@ extern crate rustc_session;
 extern crate rustc_span;
 extern crate rustc_trait_selection;
 
+mod explicit_op_construction;
 mod ir_borrow_with_context;
 mod ir_entity_in_type_or_attr;
 mod ir_ref_in_scrutinee;
@@ -24,10 +25,14 @@ dylint_linting::dylint_library!();
 pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint::LintStore) {
     dylint_linting::init_config(sess);
     lint_store.register_lints(&[
+        explicit_op_construction::EXPLICIT_OP_CONSTRUCTION,
         ir_borrow_with_context::IR_BORROW_WITH_CONTEXT,
         ir_entity_in_type_or_attr::IR_ENTITY_IN_TYPE_OR_ATTR,
         ir_ref_in_scrutinee::IR_REF_IN_SCRUTINEE,
     ]);
+    lint_store.register_late_lint_pass(Box::new(|_| {
+        Box::new(explicit_op_construction::ExplicitOpConstruction)
+    }));
     lint_store.register_late_lint_pass(Box::new(|_| {
         Box::new(ir_borrow_with_context::IrBorrowWithContext)
     }));

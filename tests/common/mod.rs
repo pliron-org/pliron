@@ -46,7 +46,7 @@ impl ReturnOp {
             vec![],
             0,
         );
-        ReturnOp { op }
+        Self { op }
     }
 }
 
@@ -77,7 +77,7 @@ impl ConstantOp {
             .attributes
             .0
             .insert(constant_op::ATTR_KEY_VALUE.clone(), Box::new(int_attr));
-        ConstantOp { op }
+        Self { op }
     }
 
     pub fn get_value(&self, ctx: &Context) -> AttrObj {

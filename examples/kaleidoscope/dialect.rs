@@ -54,7 +54,7 @@ impl ConstantOp {
             vec![],
             0,
         );
-        let op = ConstantOp { op };
+        let op = Self { op };
         op.set_attr_value(ctx, value_attr);
         op
     }
@@ -100,7 +100,7 @@ impl DeclOp {
             vec![],
             0,
         );
-        let op = DeclOp { op };
+        let op = Self { op };
         op.set_attr_var_type(ctx, TypeAttr::new(var_ty));
         op
     }
@@ -136,7 +136,7 @@ impl LoadOp {
             vec![],
             0,
         );
-        LoadOp { op }
+        Self { op }
     }
 
     pub fn slot(&self, ctx: &Context) -> Value {
@@ -165,7 +165,7 @@ impl StoreOp {
             vec![],
             0,
         );
-        StoreOp { op }
+        Self { op }
     }
 
     pub fn slot(&self, ctx: &Context) -> Value {
@@ -225,7 +225,7 @@ impl BinOp {
             vec![],
             0,
         );
-        let op = BinOp { op };
+        let op = Self { op };
         op.set_attr_kind(ctx, kind);
         op
     }
@@ -263,7 +263,7 @@ pub struct YieldOp;
 impl YieldOp {
     pub fn new(ctx: &mut Context) -> Self {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        YieldOp { op }
+        Self { op }
     }
 }
 
@@ -293,7 +293,7 @@ impl IfOp {
             vec![],
             2,
         );
-        IfOp { op }
+        Self { op }
     }
 
     pub fn condition(&self, ctx: &Context) -> Value {
@@ -335,7 +335,7 @@ impl WhileOp {
             vec![],
             1,
         );
-        WhileOp { op }
+        Self { op }
     }
 
     pub fn cond_ptr(&self, ctx: &Context) -> Value {
@@ -367,7 +367,7 @@ impl ReturnOp {
             vec![],
             0,
         );
-        ReturnOp { op }
+        Self { op }
     }
 
     pub fn value(&self, ctx: &Context) -> Value {
@@ -420,7 +420,7 @@ impl CallOp {
             vec![],
             0,
         );
-        let op = CallOp { op };
+        let op = Self { op };
         op.set_attr_callee(ctx, callee);
         op
     }
