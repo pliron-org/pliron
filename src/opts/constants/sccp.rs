@@ -48,7 +48,6 @@ use crate::{
         listener::Recorder,
         rewriter::{IRRewriter, Rewriter},
     },
-    linked_list::ContainsLinkedList,
     op::op_cast,
     operation::{OpDbg, Operation},
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
@@ -165,7 +164,7 @@ fn process_op(op: Ptr<Operation>, ctx: &Context, state: &mut SccpState) {
 /// Infer (into `state`) what we can from the operations of `block` given
 /// the current information in `state`.
 fn process_block(block: Ptr<BasicBlock>, ctx: &Context, state: &mut SccpState) {
-    for op in block.deref(ctx).iter(ctx) {
+    for op in block.iter(ctx) {
         process_op(op, ctx, state);
     }
 }

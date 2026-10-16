@@ -1,0 +1,28 @@
+[package]
+name = "pliron_lints"
+version = "0.1.0"
+description = "Dylint lints for pliron and code built on it"
+edition = "2024"
+license = "Apache-2.0"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "21baba9c10c5d179915cae82e6247bc2337872fb" }
+dylint_linting = "6.0"
+
+[dev-dependencies]
+dylint_testing = "6.0"
+pliron = { path = "../.." }
+
+[[example]]
+name = "ui"
+path = "ui/main.rs"
+
+[package.metadata.rust-analyzer]
+rustc_private = true
+
+# This crate needs a pinned nightly toolchain. It is not a member of the root workspace.
+[workspace]

@@ -2112,7 +2112,7 @@ fn convert_block(
     let block_llvm = cctx.block_map[&block];
     llvm_position_builder_at_end(&cctx.builder, block_llvm);
 
-    for opr in block.deref(ctx).iter(ctx) {
+    for opr in block.iter(ctx) {
         let op = Operation::get_op_dyn(opr, ctx);
         let op = op.as_ref();
         let Some(op_conv) = op_cast::<dyn ToLLVMValue>(op) else {
@@ -2177,7 +2177,8 @@ fn convert_function(
             block.deref(ctx).unique_name(ctx).as_ref(),
         );
         llvm_position_builder_at_end(&cctx.builder, llvm_block);
-        for arg in block.deref(ctx).arguments() {
+        let args: Vec<_> = block.deref(ctx).arguments().collect();
+        for arg in args {
             let arg_type = convert_type(ctx, llvm_ctx, &mut cctx.types, arg.get_type(ctx))?;
             let phi = llvm_build_phi(&cctx.builder, arg_type, arg.unique_name(ctx).as_ref());
             cctx.value_map.insert(arg, phi);
@@ -2856,7 +2857,7 @@ fn convert_module_contents(
     llvm_position_builder_at_end(&cctx.scratch_builder, scratch_function_entry);
 
     // Create new functions and map them.
-    for op in module.get_body(ctx, 0).deref(ctx).iter(ctx) {
+    for op in module.get_body(ctx, 0).iter(ctx) {
         if let Some(func_op) = Operation::get_op::<FuncOp>(op, ctx) {
             let func_ty = func_op.get_type(ctx).deref(ctx);
             let func_ty_to_llvm = type_cast::<dyn ToLLVMType>(&*func_ty).ok_or_else(|| {
@@ -2902,7 +2903,7 @@ fn convert_module_contents(
     // the instructions converted below attach metadata, so this goes in between.
     convert_module_metadata(ctx, llvm_ctx, cctx, module)?;
 
-    for op in module.get_body(ctx, 0).deref(ctx).iter(ctx) {
+    for op in module.get_body(ctx, 0).iter(ctx) {
         if let Some(func_op) = Operation::get_op::<FuncOp>(op, ctx) {
             let func_llvm = cctx.function_map[&func_op.get_symbol_name(ctx)];
             convert_md_attachments(ctx, llvm_ctx, cctx, op, func_llvm)?;

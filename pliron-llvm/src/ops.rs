@@ -4613,7 +4613,8 @@ impl Printable for CallIntrinsicOp {
         f: &mut core::fmt::Formatter<'_>,
     ) -> core::fmt::Result {
         // [result = ] llvm.call_intrinsic @name <FastMathFlags> (operands) : type
-        if let Some(res) = self.op.deref(ctx).results().next() {
+        let first_res = self.op.deref(ctx).results().next();
+        if let Some(res) = first_res {
             write!(f, "{} = ", res.print(ctx, state))?;
         }
 

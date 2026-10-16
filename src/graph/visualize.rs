@@ -215,22 +215,22 @@ fn graphviz_callback(
     match node {
         IRNode::Operation(op) => {
             let oper_index = graph_state.get_operation_index(op);
-            let operation_identifier =
-                if let Some(parent_block_identifier) = op.deref(ctx).get_parent_block() {
-                    format!("{}", parent_block_identifier.deref(ctx).unique_name(ctx))
-                } else {
-                    let label = format!("{}", operation::OpDbg { op, ctx });
-                    write!(
-                        graph_state.f,
-                        " operation_{} [
+            let parent_block = op.deref(ctx).get_parent_block();
+            let operation_identifier = if let Some(parent_block_identifier) = parent_block {
+                format!("{}", parent_block_identifier.deref(ctx).unique_name(ctx))
+            } else {
+                let label = format!("{}", operation::OpDbg { op, ctx });
+                write!(
+                    graph_state.f,
+                    " operation_{} [
                     shape=box,
                     style=filled, fillcolor=lightgreen, label={}];\n",
-                        oper_index,
-                        DotLabel(&label),
-                    )
-                    .to_walk_result()?;
-                    format!("operation_{}", oper_index)
-                };
+                    oper_index,
+                    DotLabel(&label),
+                )
+                .to_walk_result()?;
+                format!("operation_{}", oper_index)
+            };
 
             for region in op.deref(ctx).regions() {
                 let entry_block_identifier: String = region
@@ -251,7 +251,7 @@ fn graphviz_callback(
         IRNode::BasicBlock(block) => {
             let block_identifier: String = block.deref(ctx).unique_name(ctx).into();
             let mut label = format!("^{block_identifier} :\n");
-            for oper in block.deref(ctx).iter(ctx) {
+            for oper in block.iter(ctx) {
                 writeln!(&mut label, "{}", operation::OpDbg { op: oper, ctx })
                     .expect("writing to a String cannot fail");
             }
@@ -264,7 +264,8 @@ fn graphviz_callback(
                 DotLabel(&label),
             )
             .to_walk_result()?;
-            for succ in block.deref(ctx).succs(ctx) {
+            let succs = block.deref(ctx).succs(ctx);
+            for succ in succs {
                 let succ_identifier: String = succ.deref(ctx).unique_name(ctx).into();
                 writeln!(graph_state.f, "{}->{};", block_identifier, succ_identifier)
                     .to_walk_result()?;

@@ -732,13 +732,15 @@ pub fn verify_value_dominance(ir: Ptr<Operation>, ctx: &Context) -> Result<()> {
     ) -> WalkResult<pliron::result::Error> {
         match ir_node {
             IRNode::Operation(opr) => {
-                for result in opr.deref(ctx).results() {
+                let results: Vec<_> = opr.deref(ctx).results().collect();
+                for result in results {
                     check_value_use(ctx, dom_info, result)?;
                 }
                 walk_advance()
             }
             IRNode::BasicBlock(block) => {
-                for arg in block.deref(ctx).arguments() {
+                let args: Vec<_> = block.deref(ctx).arguments().collect();
+                for arg in args {
                     check_value_use(ctx, dom_info, arg)?;
                 }
                 walk_advance()

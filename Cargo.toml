@@ -100,3 +100,7 @@ dyn-clone = "1.0.20"
 name = "kaleidoscope"
 path = "examples/kaleidoscope/main.rs"
 test = true
+
+# Lints. Run with `cargo dylint --all`.
+[workspace.metadata.dylint]
+libraries = [{ path = "lints/pliron_lints" }]

@@ -50,6 +50,16 @@ pub trait ContainsLinkedList<T: LinkedList>: private::ContainsLinkedList<T> {
     }
 }
 
+impl<T: ArenaObj> Ptr<T> {
+    /// Get an iterator over the items of the list in the pointee.
+    pub fn iter<'a, U: LinkedList>(&self, ctx: &'a Context) -> Iter<'a, U>
+    where
+        T: ContainsLinkedList<U>,
+    {
+        self.deref(ctx).iter(ctx)
+    }
+}
+
 /// An iterator over the elements of a [LinkedList]
 pub struct Iter<'a, T: LinkedList> {
     next: Option<Ptr<T>>,
@@ -499,6 +509,22 @@ pub(crate) mod tests {
             "\nExpected: {:?}\nvs\nFound: {:?}",
             gold_rev,
             root_rev_vec,
+        );
+        // Check that
+        // 1. `Ptr::iter` gives the same items.
+        // 2. The root is not borrowed during the iteration.
+        let root_ptr_vec: Vec<_> = root
+            .iter(ctx)
+            .map(|n| {
+                assert!(root.try_deref_mut(ctx).is_ok());
+                n.deref(ctx).data
+            })
+            .collect();
+        assert!(
+            root_ptr_vec == gold,
+            "\nExpected: {:?}\nvs\nFound: {:?}",
+            gold,
+            root_ptr_vec
         );
     }
 

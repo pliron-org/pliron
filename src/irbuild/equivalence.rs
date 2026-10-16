@@ -566,7 +566,7 @@ fn hash_blocks_full(
     }
 
     for block in blocks {
-        for op in block.deref(ctx).iter(ctx) {
+        for op in block.iter(ctx) {
             hash_op_full(ctx, numbering, op, ignore_config, state);
         }
     }

@@ -219,7 +219,7 @@ fn compute_candidate_live_in_and_defining_blocks(
     for block in user_blocks {
         let mut has_store = false;
         let mut load_before_store = false;
-        for op in block.deref(ctx).iter(ctx) {
+        for op in block.iter(ctx) {
             let op_obj = Operation::get_op_dyn(op, ctx);
             let Some(op_promotable) = op_cast::<dyn PromotableOpInterface>(op_obj.as_ref()) else {
                 continue;

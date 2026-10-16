@@ -204,12 +204,12 @@ pub fn find_ancestor_op_of_op_in_region(
 
 /// Returns the closest strict ancestor of `op` that is of the concrete [Op] type `T`
 pub fn find_ancestor_of_op_type<T: Op>(ctx: &Context, op: Ptr<Operation>) -> Option<T> {
-    let mut cur = op;
-    while let Some(parent_op) = cur.deref(ctx).get_parent_op(ctx) {
+    let mut cur = op.deref(ctx).get_parent_op(ctx);
+    while let Some(parent_op) = cur {
         if let Some(parent_op) = Operation::get_op::<T>(parent_op, ctx) {
             return Some(parent_op);
         }
-        cur = parent_op;
+        cur = parent_op.deref(ctx).get_parent_op(ctx);
     }
     None
 }
@@ -219,13 +219,13 @@ pub fn find_ancestor_of_op_interface<I: ?Sized + OpInterfaceMarker + DynClone + 
     ctx: &Context,
     op: Ptr<Operation>,
 ) -> Option<Box<I>> {
-    let mut cur = op;
-    while let Some(parent_op) = cur.deref(ctx).get_parent_op(ctx) {
+    let mut cur = op.deref(ctx).get_parent_op(ctx);
+    while let Some(parent_op) = cur {
         let parent_op_dyn = Operation::get_op_dyn(parent_op, ctx);
         if let Some(parent_op) = op_cast::<I>(parent_op_dyn.as_ref()) {
             return Some(clone_box(parent_op));
         }
-        cur = parent_op;
+        cur = parent_op.deref(ctx).get_parent_op(ctx);
     }
     None
 }
@@ -237,11 +237,13 @@ pub fn find_ancestor_block_of_block_in_region(
     mut block: Ptr<BasicBlock>,
     target_region: Ptr<Region>,
 ) -> Option<Ptr<BasicBlock>> {
-    while let Some(ancestor_region) = block.deref(ctx).get_parent_region() {
+    let mut cur = block.deref(ctx).get_parent_region();
+    while let Some(ancestor_region) = cur {
         if ancestor_region == target_region {
             return Some(block);
         }
         block = ancestor_region.deref(ctx).get_parent_block(ctx)?;
+        cur = block.deref(ctx).get_parent_region();
     }
     None
 }
@@ -264,11 +266,13 @@ pub fn find_ancestor_op_of_op_in_block(
     mut op: Ptr<Operation>,
     target_block: Ptr<BasicBlock>,
 ) -> Option<Ptr<Operation>> {
-    while let Some(parent_block) = op.deref(ctx).get_parent_block() {
+    let mut parent = op.deref(ctx).get_parent_block();
+    while let Some(parent_block) = parent {
         if parent_block == target_block {
             return Some(op);
         }
         op = parent_block.deref(ctx).get_parent_op(ctx)?;
+        parent = op.deref(ctx).get_parent_block();
     }
     None
 }

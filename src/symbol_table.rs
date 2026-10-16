@@ -22,7 +22,6 @@ use crate::{
         inserter::{IRInserter, Inserter, OpInsertionPoint},
         listener::DummyListener,
     },
-    linked_list::ContainsLinkedList,
     op::op_cast,
     operation::Operation,
     printable::Printable,
@@ -62,7 +61,7 @@ impl SymbolTable {
         // Go through the all operations in symbol_table_op and build a table.
         let mut symbol_table = HMap::<Identifier, Box<dyn SymbolOpInterface>>::default();
         let table_ops_block = symbol_table_op.get_body(ctx, 0);
-        for op in table_ops_block.deref(ctx).iter(ctx) {
+        for op in table_ops_block.iter(ctx) {
             if let Some(sym_op) =
                 op_cast::<dyn SymbolOpInterface>(Operation::get_op_dyn(op, ctx).as_ref())
             {

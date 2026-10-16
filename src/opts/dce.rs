@@ -212,7 +212,8 @@ pub fn dce(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
                 }
             }
             IRNode::BasicBlock(block) => {
-                for arg in block.deref(ctx).arguments() {
+                let args: Vec<_> = block.deref(ctx).arguments().collect();
+                for arg in args {
                     let cand = DCECandidate::BlockArg(arg);
                     if is_safe_to_erase(cand, ctx) {
                         log::trace!("Adding to DCE cemetery: {}", cand.disp(ctx));

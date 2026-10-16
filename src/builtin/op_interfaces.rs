@@ -1109,7 +1109,7 @@ pub enum SymbolTableInterfaceErr {
 pub trait SymbolTableInterface: SingleBlockRegionInterface + OneRegionInterface {
     /// Lookup a symbol in this symbol table op. Linear search.
     fn lookup(&self, ctx: &Context, sym: &Identifier) -> Option<Ptr<Operation>> {
-        for op in self.get_body(ctx, 0).deref(ctx).iter(ctx) {
+        for op in self.get_body(ctx, 0).iter(ctx) {
             if let Some(sym_op) =
                 op_cast::<dyn SymbolOpInterface>(Operation::get_op_dyn(op, ctx).as_ref())
                 && &sym_op.get_symbol_name(ctx) == sym
@@ -1129,7 +1129,7 @@ pub trait SymbolTableInterface: SingleBlockRegionInterface + OneRegionInterface 
         // Check that every symbol is defined only once.
         let mut seen = HMap::<Identifier, Ptr<Operation>>::default();
         let table_ops_block = op.get_body(ctx, 0);
-        for op in table_ops_block.deref(ctx).iter(ctx) {
+        for op in table_ops_block.iter(ctx) {
             if let Some(sym_op) =
                 op_cast::<dyn SymbolOpInterface>(Operation::get_op_dyn(op, ctx).as_ref())
             {

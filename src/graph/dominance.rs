@@ -679,7 +679,8 @@ impl DomInfo {
         match a.defining_entity() {
             DefiningEntity::Op(op) => self.op_strictly_dominates_op(ctx, op, b),
             DefiningEntity::Block(a_block) => {
-                if let Some(b_parent_block) = b.deref(ctx).get_parent_block() {
+                let parent_block = b.deref(ctx).get_parent_block();
+                if let Some(b_parent_block) = parent_block {
                     let a_block_region = a_block
                         .deref(ctx)
                         .get_parent_region()
