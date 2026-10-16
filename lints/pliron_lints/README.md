@@ -2,6 +2,52 @@
 
 [Dylint](https://github.com/trailofbits/dylint) lints for pliron and code built on it.
 
+## Lints
+
+The examples below are for illustration. Each lint is documented in its module.
+
+`ir_borrow_with_context` (warn): a function takes a borrow of an IR object and also a
+`Context`, so the object stays borrowed for the full call.
+
+```rust
+fn visit(op: &Operation, ctx: &Context) { /* ... */ }
+```
+
+`ir_ref_in_scrutinee` (warn): a `Ref` temporary in a `for`, `match`, `if let` or `while let`
+header stays alive during a body that uses the `Context`.
+
+```rust
+for op in block.deref(ctx).iter(ctx) {
+    process_op(op, ctx);
+}
+```
+
+`ir_entity_in_type_or_attr` (deny): a type or an attribute holds an `Operation`, a
+`BasicBlock` or a `Region`.
+
+```rust
+#[pliron_attr(name = "test.target", format)]
+struct TargetAttr {
+    target: Ptr<Operation>,
+}
+```
+
+`explicit_op_construction` (deny): an `Op` is constructed with its name instead of `Self` or
+`Operation::get_op`.
+
+```rust
+let my_op = MyOp { op };
+```
+
+`disp_in_printable` (warn): `disp` in an `impl Printable` prints with a default `State`
+instead of the `State` of `fmt`.
+
+```rust
+fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    write!(f, "{}", self.ty.disp(ctx))
+}
+```
+
 ## Running the lints
 
 Install Dylint tools:
