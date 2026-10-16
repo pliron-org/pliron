@@ -8,6 +8,7 @@
 //! checked side by side.
 
 use common::{ConstantOp, ReturnOp, const_ret_in_mod};
+use expect_test::expect;
 use pliron::{
     attribute::Attribute,
     basic_block::BasicBlock,
@@ -26,7 +27,10 @@ use pliron::{
     ident,
     identifier::Identifier,
     irbuild::{
-        cloning::{IrMapping, clone_blocks_into, clone_operation},
+        cloning::{
+            CloneErr, IrMapping, clone_blocks_into, clone_blocks_into_context, clone_operation,
+            clone_operation_into_context,
+        },
         equivalence::{
             EqResult, IgnoreConfig, basic_block_eq, basic_block_hash, operation_eq, operation_hash,
             region_eq, region_hash,
@@ -38,7 +42,7 @@ use pliron::{
     op::Op,
     operation::{Operation, verify_operation},
     printable::Printable,
-    result::Result,
+    result::{ErrorKind, Result},
     utils::apint::{APInt, bw},
 };
 
@@ -420,7 +424,11 @@ fn clone_blocks_notifies_rewriter_listener() -> Result<()> {
     Ok(())
 }
 
-/// References to external (outside the cloned region) values must remain as-is.
+/// Check that 
+/// - a clone in the same context keeps references to external
+///   (outside the cloned region) values as-is
+/// - a clone in a different context uses the mapped value or,
+///   without a mapping, fails.
 #[test]
 fn clone_blocks_keeps_external_value_shared() -> Result<()> {
     let ctx = &mut Context::new();
@@ -479,6 +487,53 @@ fn clone_blocks_keeps_external_value_shared() -> Result<()> {
         basic_block_hash(ctx, block_b, &ignore),
         basic_block_hash(ctx, b2, &ignore),
     );
+
+    // In a different context, the clone of B must return the value mapped for `c`.
+    let dst_ctx = &mut Context::new();
+    let dst_i64_ty = IntegerType::get(dst_ctx, 64, Signedness::Signed);
+    let dst_func_ty = FunctionType::get(dst_ctx, vec![], vec![dst_i64_ty.into()]);
+    let dst_func = FuncOp::new(dst_ctx, ident!("foo"), dst_func_ty);
+    let dst_region = dst_func.get_region(dst_ctx);
+    let dst_c = ConstantOp::new(dst_ctx, 7);
+    dst_c
+        .get_operation()
+        .insert_at_back(dst_func.get_entry_block(dst_ctx), dst_ctx);
+    let dst_c_val = dst_c.get_result(dst_ctx);
+
+    let mut dst_mapper = IrMapping::new();
+    dst_mapper.map_value(c_val, dst_c_val);
+    clone_blocks_into_context(
+        &[block_b],
+        dst_region,
+        ctx,
+        dst_ctx,
+        &mut rewriter,
+        &mut dst_mapper,
+    )?;
+    let dst_b = dst_mapper
+        .lookup_block(block_b)
+        .expect("B should be mapped");
+    let dst_b_term = dst_b
+        .deref(dst_ctx)
+        .get_terminator(dst_ctx)
+        .expect("B' terminator");
+    assert_eq!(dst_b_term.deref(dst_ctx).get_operand(0), dst_c_val);
+
+    // In a different context, the clone of B must fail without a mapping for `c`.
+    let err = clone_blocks_into_context(
+        &[block_b],
+        dst_region,
+        ctx,
+        dst_ctx,
+        &mut rewriter,
+        &mut IrMapping::new(),
+    )
+    .unwrap_err();
+    assert!(matches!(err.kind, ErrorKind::InvalidArgument));
+    assert!(matches!(
+        err.err.downcast_ref::<CloneErr>(),
+        Some(CloneErr::UnmappedValue)
+    ));
 
     Ok(())
 }
@@ -557,10 +612,12 @@ fn clone_is_equivalent_to_original() -> Result<()> {
     Ok(())
 }
 
+/// Check that a clone hashes equal to its original, both for a clone in the same
+/// context and for a clone in a different context.
 #[test]
 fn clone_hashes_equal_to_original() -> Result<()> {
     let ctx = &mut Context::new();
-    let (_module, func, _const_op, _ret_op) = const_ret_in_mod(ctx)?;
+    let (func, _const_op) = branch_and_return_fn(ctx, "m", 7)?;
 
     let mut rewriter = IRRewriter::<DummyListener>::default();
     let cloned_func = clone_operation(
@@ -578,6 +635,32 @@ fn clone_hashes_equal_to_original() -> Result<()> {
         operation_hash(ctx, func.get_operation(), &ignore),
         operation_hash(ctx, cloned_func, &ignore),
     );
+
+    // The function is self contained, so its hash must not depend on the context.
+    let dst_ctx = &mut Context::new();
+    let dst_func = clone_operation_into_context(
+        func.get_operation(),
+        ctx,
+        dst_ctx,
+        &mut rewriter,
+        &mut IrMapping::new(),
+    )?;
+    verify_operation(dst_func, dst_ctx)?;
+    assert_eq!(
+        operation_hash(ctx, func.get_operation(), &ignore),
+        operation_hash(dst_ctx, dst_func, &ignore),
+    );
+    expect![[r#"
+        builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
+        {
+          ^entry_block1v1():
+            v0 = test.constant builtin.integer <7: si64>;
+            test.br () [^block2v1] []: <() -> ()>
+
+          ^block2v1():
+            test.return v0
+        }"#]]
+    .assert_eq(&dst_func.disp(dst_ctx).to_string());
 
     Ok(())
 }

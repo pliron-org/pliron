@@ -25,8 +25,9 @@ use core::hash::{Hash, Hasher};
 use pliron_derive::{attr_interface, type_interface};
 
 use crate::{
-    attribute::{AttrObj, Attribute, attr_cast},
+    attribute::{AttrObj, Attribute, AttributeDict, attr_cast},
     context::Context,
+    identifier::Identifier,
     parsable::{Parsable, parse_from_str},
     printable::Printable,
     result::Result,
@@ -122,6 +123,16 @@ impl CloneIntoContext for AttrObj {
             let printed = self.disp(src_ctx).to_string();
             parse_from_str(AttrObj::parser(()), dst_ctx, &printed)
         }
+    }
+}
+
+impl CloneIntoContext for AttributeDict {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Self> {
+        self.0
+            .iter()
+            .map(|(key, attr)| Ok((key.clone(), attr.clone_into_context(src_ctx, dst_ctx)?)))
+            .collect::<Result<_>>()
+            .map(AttributeDict)
     }
 }
 
@@ -244,7 +255,7 @@ impl_stable_hash_for_hash!(
     u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String
 );
 impl_clone_into_context_for_clone!(
-    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String
+    u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char, String, Identifier
 );
 
 impl<T: StableHash> StableHash for Option<T> {
