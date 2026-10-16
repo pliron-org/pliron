@@ -25,7 +25,7 @@ const IR_ENTITY_PATHS: [[&str; 3]; 3] = [
 ];
 
 /// Return true if the definition path of `did` (including the crate name) is `path`.
-fn def_path_is(cx: &LateContext<'_>, did: DefId, path: &[&str]) -> bool {
+pub fn def_path_is(cx: &LateContext<'_>, did: DefId, path: &[&str]) -> bool {
     let tcx = cx.tcx;
     let segments: Vec<_> = core::iter::once(tcx.crate_name(did.krate))
         .chain(

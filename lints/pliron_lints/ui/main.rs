@@ -1,16 +1,27 @@
 //! Test cases for the pliron lints. Each function states the expected result.
 
 use std::cell::Ref;
+use std::marker::PhantomData;
 
 use pliron::basic_block::BasicBlock;
 use pliron::builtin::ops::ConstantOp;
 use pliron::builtin::types::IntegerType;
 use pliron::context::{Context, Ptr};
+use pliron::derive::{pliron_attr, pliron_type};
 use pliron::linked_list::ContainsLinkedList;
 use pliron::location::Location;
 use pliron::operation::Operation;
+use pliron::parsable::{Parsable, ParseResult, StateStream};
+use pliron::printable::{Printable, State};
+use pliron::region::Region;
+use pliron::r#type::TypedHandle;
+use pliron::value::Value;
 
 fn use_ctx(_ctx: &Context) {}
+
+fn op_ptr() -> Ptr<Operation> {
+    unimplemented!()
+}
 
 // `ir_borrow_with_context` must warn: `&Operation` and `&Context`.
 fn borrow_and_context(op: &Operation, ctx: &Context) -> usize {
@@ -211,7 +222,131 @@ fn for_with_regions_ref_mut(op: Ptr<Operation>, ctx: &Context) -> usize {
     count
 }
 
+/// Empty `Printable` and `Parsable` implementations for the test types and attributes below.
+macro_rules! empty_printable_parsable {
+    ($name:ident, $parsed:ty) => {
+        impl Printable for $name {
+            fn fmt(
+                &self,
+                _ctx: &Context,
+                _state: &State,
+                _f: &mut core::fmt::Formatter<'_>,
+            ) -> core::fmt::Result {
+                Ok(())
+            }
+        }
+
+        impl Parsable for $name {
+            type Arg = ();
+            type Parsed = $parsed;
+            fn parse<'a>(
+                _state_stream: &mut StateStream<'a>,
+                _arg: Self::Arg,
+            ) -> ParseResult<'a, Self::Parsed> {
+                unimplemented!()
+            }
+        }
+    };
+}
+
+// `ir_entity_in_type_or_attr` must report an error: the attribute holds a `Ptr<Operation>`.
+#[pliron_attr(name = "test.op_ptr_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct OpPtrAttr {
+    target: Ptr<Operation>,
+}
+empty_printable_parsable!(OpPtrAttr, Self);
+
+// `ir_entity_in_type_or_attr` must report an error: each `Value` holds a `Ptr<Operation>` or a
+// `Ptr<BasicBlock>`.
+#[pliron_type(name = "test.values_type", verifier = "succ")]
+#[derive(PartialEq, Eq, Debug, Hash)]
+struct ValuesType {
+    values: Vec<Value>,
+}
+empty_printable_parsable!(ValuesType, TypedHandle<Self>);
+
+// `ir_entity_in_type_or_attr` must report an error: an `Op` holds its `Ptr<Operation>`.
+#[pliron_attr(name = "test.op_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Hash)]
+struct OpAttr {
+    constant: ConstantOp,
+}
+
+impl core::fmt::Debug for OpAttr {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str("OpAttr")
+    }
+}
+empty_printable_parsable!(OpAttr, Self);
+
+// `ir_entity_in_type_or_attr` must report an error: the attribute holds a `Ptr<BasicBlock>`.
+#[pliron_attr(name = "test.block_ptr_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct BlockPtrAttr {
+    target: Ptr<BasicBlock>,
+}
+empty_printable_parsable!(BlockPtrAttr, Self);
+
+// `ir_entity_in_type_or_attr` must report an error: the type holds a `Ptr<Region>` in an
+// `Option`.
+#[pliron_type(name = "test.region_ptr_type", verifier = "succ")]
+#[derive(PartialEq, Eq, Debug, Hash)]
+struct RegionPtrType {
+    region: Option<Ptr<Region>>,
+}
+empty_printable_parsable!(RegionPtrType, TypedHandle<Self>);
+
+// `ir_entity_in_type_or_attr` must not report an error: `PhantomData` holds nothing.
+#[pliron_attr(name = "test.phantom_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct PhantomAttr {
+    marker: PhantomData<Ptr<Operation>>,
+}
+empty_printable_parsable!(PhantomAttr, Self);
+
+/// A marker that stores nothing of its type argument.
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct Marker<T>(PhantomData<T>);
+
+// `ir_entity_in_type_or_attr` must not report an error: `Marker` stores no `Ptr<Operation>`.
+#[pliron_attr(name = "test.marker_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct MarkerAttr {
+    marker: Marker<Ptr<Operation>>,
+}
+empty_printable_parsable!(MarkerAttr, Self);
+
+/// A trait whose associated type gives the type of the stored data.
+trait Storage {
+    type Data: PartialEq + Clone + core::fmt::Debug + core::hash::Hash;
+}
+
+impl Storage for () {
+    type Data = Ptr<Operation>;
+}
+
+/// Stores data of the type given by `T::Data`.
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct Indirect<T: Storage> {
+    data: T::Data,
+}
+
+// `ir_entity_in_type_or_attr` must report an error: `<() as Storage>::Data` is `Ptr<Operation>`.
+#[pliron_attr(name = "test.indirect_attr", verifier = "succ")]
+#[derive(PartialEq, Clone, Debug, Hash)]
+struct IndirectAttr {
+    indirect: Indirect<()>,
+}
+empty_printable_parsable!(IndirectAttr, Self);
+
+// `ir_entity_in_type_or_attr` must not report an error: the struct is not a type or an attribute.
+struct OpHolder {
+    target: Ptr<Operation>,
+}
+
 fn main() {
+    let _ = OpHolder { target: op_ptr() }.target;
     let _ = (
         borrow_and_context,
         ref_borrow_and_context,
