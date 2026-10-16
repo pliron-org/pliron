@@ -22,6 +22,7 @@ use crate::{
     irbuild::decontext::{CloneIntoContext, StableHash},
     parsable::{Parsable, ParseResult, StateStream},
     printable::{self, Printable},
+    result::Result,
     storage_uniquer::TypeValueHash,
 };
 
@@ -186,9 +187,9 @@ impl<T: Any + Hash + Eq + Send + StableHash> StableHash for Uniqued<T> {
 }
 
 impl<T: Any + Hash + Eq + Send + CloneIntoContext> CloneIntoContext for Uniqued<T> {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Self {
-        let value = self.get(src_ctx).clone_into_context(src_ctx, dst_ctx);
-        Self::new(dst_ctx, value)
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Self> {
+        let value = self.get(src_ctx).clone_into_context(src_ctx, dst_ctx)?;
+        Ok(Self::new(dst_ctx, value))
     }
 }
 

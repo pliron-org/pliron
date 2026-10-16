@@ -38,6 +38,7 @@ use crate::{
     operation::Operation,
     parsable::Parsable,
     printable::{self, Printable},
+    result::Result,
     std_deps::path::PathBuf,
     uniqued_any::{self, UniquedKey},
     utils::table::ISet,
@@ -120,14 +121,14 @@ impl StableHashTrait for Source {
 }
 
 impl CloneIntoContextTrait for Source {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Source {
-        match self {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Source> {
+        Ok(match self {
             Source::File(key) => {
                 let path = uniqued_any::get(src_ctx, *key).clone();
                 Source::File(uniqued_any::save(dst_ctx, path))
             }
             Source::InMemory => Source::InMemory,
-        }
+        })
     }
 }
 

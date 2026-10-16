@@ -1184,7 +1184,9 @@ pub fn stable_hash(input: TokenStream) -> TokenStream {
 ///
 /// let src_ctx = Context::new();
 /// let mut dst_ctx = Context::new();
-/// let cloned = Wrapper { inner: 42u64 }.clone_into_context(&src_ctx, &mut dst_ctx);
+/// let cloned = Wrapper { inner: 42u64 }
+///     .clone_into_context(&src_ctx, &mut dst_ctx)
+///     .unwrap();
 /// assert_eq!(cloned.inner, 42);
 /// ```
 ///
@@ -1231,7 +1233,7 @@ pub fn clone_into_context(input: TokenStream) -> TokenStream {
 /// let src_ctx = Context::new();
 /// let mut dst_ctx = Context::new();
 /// let a: AttrObj = Box::new(PointAttr { x: 1 });
-/// let a2 = a.clone_into_context(&src_ctx, &mut dst_ctx);
+/// let a2 = a.clone_into_context(&src_ctx, &mut dst_ctx).unwrap();
 /// assert_eq!(a.disp(&src_ctx).to_string(), a2.disp(&dst_ctx).to_string());
 /// ```
 #[proc_macro_derive(CloneAttributeIntoContext)]
@@ -1274,7 +1276,7 @@ pub fn clone_attribute_into_context(input: TokenStream) -> TokenStream {
 /// let src_ctx = Context::new();
 /// let mut dst_ctx = Context::new();
 /// let p = PointType::get(&src_ctx, 1).to_handle();
-/// let p2 = p.clone_into_context(&src_ctx, &mut dst_ctx);
+/// let p2 = p.clone_into_context(&src_ctx, &mut dst_ctx).unwrap();
 /// assert_eq!(p.disp(&src_ctx).to_string(), p2.disp(&dst_ctx).to_string());
 /// ```
 #[proc_macro_derive(CloneTypeIntoContext)]

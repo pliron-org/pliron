@@ -58,7 +58,9 @@ pub trait StableHash {
 /// to delegate to [Clone], when the type is not [Context] dependent.
 pub trait CloneIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Self;
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Self>
+    where
+        Self: Sized;
 }
 
 /// The [Attribute] interface version of [CloneIntoContext].
@@ -69,7 +71,7 @@ pub trait CloneIntoContext {
 #[attr_interface]
 pub trait CloneAttributeIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> AttrObj;
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<AttrObj>;
 
     fn verify(_attr: &dyn Attribute, _ctx: &Context) -> Result<()>
     where
@@ -87,7 +89,7 @@ pub trait CloneAttributeIntoContext {
 #[type_interface]
 pub trait CloneTypeIntoContext {
     /// Clone `self` from `src_ctx` into `dst_ctx`.
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> TypeHandle;
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<TypeHandle>;
 
     fn verify(_type: &dyn Type, _ctx: &Context) -> Result<()>
     where
@@ -110,7 +112,7 @@ impl StableHash for AttrObj {
 }
 
 impl CloneIntoContext for AttrObj {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> AttrObj {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<AttrObj> {
         let attr: &dyn Attribute = &**self;
         if let Some(cloner) = attr_cast::<dyn CloneAttributeIntoContext>(attr) {
             cloner.clone_into_context(src_ctx, dst_ctx)
@@ -118,7 +120,7 @@ impl CloneIntoContext for AttrObj {
             // No registered impl: fall back to printing in `src_ctx` and
             // parsing back in `dst_ctx`.
             let printed = self.disp(src_ctx).to_string();
-            parse_from_str(AttrObj::parser(()), dst_ctx, &printed).expect("Attribute failed parse")
+            parse_from_str(AttrObj::parser(()), dst_ctx, &printed)
         }
     }
 }
@@ -136,14 +138,14 @@ impl StableHash for TypeHandle {
 }
 
 impl CloneIntoContext for TypeHandle {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> TypeHandle {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<TypeHandle> {
         if let Some(cloner) = type_cast::<dyn CloneTypeIntoContext>(&*self.deref(src_ctx)) {
             cloner.clone_into_context(src_ctx, dst_ctx)
         } else {
             // No registered impl: fall back to printing in `src_ctx` and
             // parsing back in `dst_ctx`.
             let printed = self.disp(src_ctx).to_string();
-            parse_from_str(TypeHandle::parser(()), dst_ctx, &printed).expect("Type failed to parse")
+            parse_from_str(TypeHandle::parser(()), dst_ctx, &printed)
         }
     }
 }
@@ -218,7 +220,7 @@ macro_rules! impl_stable_hash_for_hash {
 /// let mut dst_ctx = Context::new();
 /// let p = Point { x: 1, y: 2 };
 /// // No `Context`-bound state in `Point`, so this just forwards to `Clone::clone`.
-/// let cloned = p.clone_into_context(&src_ctx, &mut dst_ctx);
+/// let cloned = p.clone_into_context(&src_ctx, &mut dst_ctx).unwrap();
 /// assert_eq!(cloned, p);
 /// ```
 #[macro_export]
@@ -230,8 +232,8 @@ macro_rules! impl_clone_into_context_for_clone {
                     &self,
                     _src_ctx: &$crate::context::Context,
                     _dst_ctx: &mut $crate::context::Context,
-                ) -> $ty {
-                    ::core::clone::Clone::clone(self)
+                ) -> $crate::result::Result<$ty> {
+                    ::core::result::Result::Ok(::core::clone::Clone::clone(self))
                 }
             }
         )*
@@ -258,9 +260,10 @@ impl<T: StableHash> StableHash for Option<T> {
 }
 
 impl<T: CloneIntoContext> CloneIntoContext for Option<T> {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Option<T> {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Option<T>> {
         self.as_ref()
             .map(|v| v.clone_into_context(src_ctx, dst_ctx))
+            .transpose()
     }
 }
 
@@ -274,7 +277,7 @@ impl<T: StableHash> StableHash for Vec<T> {
 }
 
 impl<T: CloneIntoContext> CloneIntoContext for Vec<T> {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Vec<T> {
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Vec<T>> {
         self.iter()
             .map(|v| v.clone_into_context(src_ctx, dst_ctx))
             .collect()
@@ -288,8 +291,10 @@ impl<T: StableHash> StableHash for Box<T> {
 }
 
 impl<T: CloneIntoContext> CloneIntoContext for Box<T> {
-    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Box<T> {
-        Box::new(self.as_ref().clone_into_context(src_ctx, dst_ctx))
+    fn clone_into_context(&self, src_ctx: &Context, dst_ctx: &mut Context) -> Result<Box<T>> {
+        Ok(Box::new(
+            self.as_ref().clone_into_context(src_ctx, dst_ctx)?,
+        ))
     }
 }
 
@@ -383,7 +388,7 @@ mod tests {
         assert_eq!(stable_hash_of(&ctx, &a1), stable_hash_of(&ctx, &a2));
         assert_ne!(stable_hash_of(&ctx, &a1), stable_hash_of(&ctx, &a3));
 
-        let a1_2 = a1.clone_into_context(&ctx, &mut dst_ctx);
+        let a1_2 = a1.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(a1.disp(&ctx).to_string(), a1_2.disp(&dst_ctx).to_string());
     }
 
@@ -398,12 +403,12 @@ mod tests {
         let mut dst_ctx = Context::new();
 
         let attr: AttrObj = Box::new(TestAttr { val: 10 });
-        let attr_2 = attr.clone_into_context(&ctx, &mut dst_ctx);
+        let attr_2 = attr.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert!(attr.disp(&ctx).to_string() == attr_2.disp(&dst_ctx).to_string());
 
         // Falls back to the print/parse path.
         let attr: AttrObj = Box::new(TestNoCloneIntoContextAttr);
-        let attr_2 = attr.clone_into_context(&ctx, &mut dst_ctx);
+        let attr_2 = attr.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert!(attr.disp(&ctx).to_string() == attr_2.disp(&dst_ctx).to_string());
     }
 
@@ -493,7 +498,7 @@ mod tests {
         assert_eq!(stable_hash_of(&ctx, &t1), stable_hash_of(&ctx, &t2));
         assert_ne!(stable_hash_of(&ctx, &t1), stable_hash_of(&ctx, &t3));
 
-        let t1_2 = t1.clone_into_context(&ctx, &mut dst_ctx);
+        let t1_2 = t1.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(t1.disp(&ctx).to_string(), t1_2.disp(&dst_ctx).to_string());
     }
 
@@ -513,12 +518,12 @@ mod tests {
         let mut dst_ctx = Context::new();
 
         let ty = TestType::get(&ctx, 32).to_handle();
-        let ty_2 = ty.clone_into_context(&ctx, &mut dst_ctx);
+        let ty_2 = ty.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(ty.disp(&ctx).to_string(), ty_2.disp(&dst_ctx).to_string());
 
         // Falls back to the print/parse path.
         let unreg_ty = TestNoCloneIntoContextType::get(&ctx).to_handle();
-        let unreg_ty_2 = unreg_ty.clone_into_context(&ctx, &mut dst_ctx);
+        let unreg_ty_2 = unreg_ty.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(
             unreg_ty.disp(&ctx).to_string(),
             unreg_ty_2.disp(&dst_ctx).to_string()
@@ -560,13 +565,15 @@ mod tests {
         let mut dst_ctx = Context::new();
 
         let file_src = Source::new_from_file(&ctx, "foo.mlir");
-        let cloned_src = file_src.clone_into_context(&ctx, &mut dst_ctx);
+        let cloned_src = file_src.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(
             file_src.disp(&ctx).to_string(),
             cloned_src.disp(&dst_ctx).to_string()
         );
 
-        let cloned = Source::InMemory.clone_into_context(&ctx, &mut dst_ctx);
+        let cloned = Source::InMemory
+            .clone_into_context(&ctx, &mut dst_ctx)
+            .unwrap();
         assert_eq!(cloned, Source::InMemory);
     }
 
@@ -620,7 +627,7 @@ mod tests {
                 pos: SourcePosition { line: 5, column: 6 },
             }),
         };
-        let cloned_loc = loc.clone_into_context(&ctx, &mut dst_ctx);
+        let cloned_loc = loc.clone_into_context(&ctx, &mut dst_ctx).unwrap();
         assert_eq!(
             loc.disp(&ctx).to_string(),
             cloned_loc.disp(&dst_ctx).to_string()

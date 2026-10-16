@@ -190,7 +190,7 @@ pub(crate) fn derive_clone_into_context(input: TokenStream) -> syn::Result<Token
         quote! {
             ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                 #name, _src_ctx, _dst_ctx,
-            )
+            )?
         }
     };
 
@@ -231,8 +231,8 @@ pub(crate) fn derive_clone_into_context(input: TokenStream) -> syn::Result<Token
                 &self,
                 _src_ctx: &::pliron::context::Context,
                 _dst_ctx: &mut ::pliron::context::Context,
-            ) -> #ident #ty_generics {
-                #cloned
+            ) -> ::pliron::result::Result<#ident #ty_generics> {
+                ::core::result::Result::Ok(#cloned)
             }
         }
     })
@@ -252,12 +252,12 @@ pub(crate) fn derive_clone_attribute_into_context(input: TokenStream) -> syn::Re
                 &self,
                 src_ctx: &::pliron::context::Context,
                 dst_ctx: &mut ::pliron::context::Context,
-            ) -> ::pliron::attribute::AttrObj {
-                ::pliron::alloc::boxed::Box::new(
+            ) -> ::pliron::result::Result<::pliron::attribute::AttrObj> {
+                ::core::result::Result::Ok(::pliron::alloc::boxed::Box::new(
                     ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                         self, src_ctx, dst_ctx,
-                    ),
-                )
+                    )?,
+                ))
             }
         }
     };
@@ -282,11 +282,13 @@ pub(crate) fn derive_clone_type_into_context(input: TokenStream) -> syn::Result<
                 &self,
                 src_ctx: &::pliron::context::Context,
                 dst_ctx: &mut ::pliron::context::Context,
-            ) -> ::pliron::r#type::TypeHandle {
+            ) -> ::pliron::result::Result<::pliron::r#type::TypeHandle> {
                 let cloned = ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                     self, src_ctx, dst_ctx,
-                );
-                <#ident as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into()
+                )?;
+                ::core::result::Result::Ok(
+                    <#ident as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into(),
+                )
             }
         }
     };
@@ -478,22 +480,22 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo {
-                    {
+                ) -> ::pliron::result::Result<Foo> {
+                    ::core::result::Result::Ok({
                         let Foo { a, b } = self;
                         Foo {
                             a: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                                 a,
                                 _src_ctx,
                                 _dst_ctx,
-                            ),
+                            )?,
                             b: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                                 b,
                                 _src_ctx,
                                 _dst_ctx,
-                            ),
+                            )?,
                         }
-                    }
+                    })
                 }
             }
         "#]]
@@ -512,11 +514,11 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo {
-                    {
+                ) -> ::pliron::result::Result<Foo> {
+                    ::core::result::Result::Ok({
                         let Foo = self;
                         Foo
-                    }
+                    })
                 }
             }
         "#]]
@@ -535,11 +537,11 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo {
-                    {
+                ) -> ::pliron::result::Result<Foo> {
+                    ::core::result::Result::Ok({
                         let Foo {} = self;
                         Foo {}
-                    }
+                    })
                 }
             }
         "#]]
@@ -558,11 +560,11 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo {
-                    {
+                ) -> ::pliron::result::Result<Foo> {
+                    ::core::result::Result::Ok({
                         let Foo() = self;
                         Foo()
-                    }
+                    })
                 }
             }
         "#]]
@@ -584,19 +586,21 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo {
-                    match self {
-                        Foo::A => Foo::A,
-                        Foo::B(field_0) => {
-                            Foo::B(
-                                ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
-                                    field_0,
-                                    _src_ctx,
-                                    _dst_ctx,
-                                ),
-                            )
-                        }
-                    }
+                ) -> ::pliron::result::Result<Foo> {
+                    ::core::result::Result::Ok(
+                        match self {
+                            Foo::A => Foo::A,
+                            Foo::B(field_0) => {
+                                Foo::B(
+                                    ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                        field_0,
+                                        _src_ctx,
+                                        _dst_ctx,
+                                    )?,
+                                )
+                            }
+                        },
+                    )
                 }
             }
         "#]]
@@ -617,17 +621,17 @@ mod tests {
                     &self,
                     _src_ctx: &::pliron::context::Context,
                     _dst_ctx: &mut ::pliron::context::Context,
-                ) -> Foo<T> {
-                    {
+                ) -> ::pliron::result::Result<Foo<T>> {
+                    ::core::result::Result::Ok({
                         let Foo { a } = self;
                         Foo {
                             a: ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                                 a,
                                 _src_ctx,
                                 _dst_ctx,
-                            ),
+                            )?,
                         }
-                    }
+                    })
                 }
             }
         "#]]
@@ -648,12 +652,14 @@ mod tests {
                     &self,
                     src_ctx: &::pliron::context::Context,
                     dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::attribute::AttrObj {
-                    ::pliron::alloc::boxed::Box::new(
-                        ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
-                            self,
-                            src_ctx,
-                            dst_ctx,
+                ) -> ::pliron::result::Result<::pliron::attribute::AttrObj> {
+                    ::core::result::Result::Ok(
+                        ::pliron::alloc::boxed::Box::new(
+                            ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
+                                self,
+                                src_ctx,
+                                dst_ctx,
+                            )?,
                         ),
                     )
                 }
@@ -714,13 +720,15 @@ mod tests {
                     &self,
                     src_ctx: &::pliron::context::Context,
                     dst_ctx: &mut ::pliron::context::Context,
-                ) -> ::pliron::r#type::TypeHandle {
+                ) -> ::pliron::result::Result<::pliron::r#type::TypeHandle> {
                     let cloned = ::pliron::irbuild::decontext::CloneIntoContext::clone_into_context(
                         self,
                         src_ctx,
                         dst_ctx,
-                    );
-                    <Foo as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into()
+                    )?;
+                    ::core::result::Result::Ok(
+                        <Foo as ::pliron::r#type::Type>::instantiate(cloned, dst_ctx).into(),
+                    )
                 }
             }
             ::pliron::type_to_trait!((Foo, ::pliron::irbuild::decontext::CloneTypeIntoContext));
