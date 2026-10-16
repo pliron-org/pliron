@@ -374,3 +374,42 @@ pub fn scrutinee_guard_temporaries<'tcx>(
     });
     temporaries
 }
+
+/// Return true if `pat` binds the identifier `name`.
+pub fn pat_binds(pat: &rustc_hir::Pat<'_>, name: &str) -> bool {
+    let mut found = false;
+    pat.walk_always(|p| {
+        if let rustc_hir::PatKind::Binding(_, _, ident, _) = p.kind
+            && ident.as_str() == name
+        {
+            found = true;
+        }
+    });
+    found
+}
+
+/// Return true if `node` binds the identifier `name`
+pub fn binds_name<'tcx>(cx: &LateContext<'tcx>, node: &'tcx Expr<'tcx>, name: &str) -> bool {
+    for_each_expr(cx.tcx, node, |e| {
+        let binds = match e.kind {
+            ExprKind::Let(let_expr) => pat_binds(let_expr.pat, name),
+            ExprKind::Block(block, _) => block.stmts.iter().any(|stmt| {
+                matches!(stmt.kind, rustc_hir::StmtKind::Let(local) if pat_binds(local.pat, name))
+            }),
+            ExprKind::Closure(closure) => cx
+                .tcx
+                .hir_body(closure.body)
+                .params
+                .iter()
+                .any(|param| pat_binds(param.pat, name)),
+            ExprKind::Match(_, arms, _) => arms.iter().any(|arm| pat_binds(arm.pat, name)),
+            _ => false,
+        };
+        if binds {
+            ControlFlow::Break(())
+        } else {
+            ControlFlow::Continue(())
+        }
+    })
+    .is_some()
+}

@@ -15,7 +15,7 @@ use pliron::operation::Operation;
 use pliron::parsable::{Parsable, ParseResult, StateStream};
 use pliron::printable::{Printable, State};
 use pliron::region::Region;
-use pliron::r#type::TypedHandle;
+use pliron::r#type::{TypeHandle, TypedHandle};
 use pliron::value::Value;
 
 fn use_ctx(_ctx: &Context) {}
@@ -373,9 +373,102 @@ fn get_my_op(op: Ptr<Operation>, ctx: &Context) -> Option<MyOp> {
     Operation::get_op::<MyOp>(op, ctx)
 }
 
+/// Holds a type to print.
+struct DispDirect(TypeHandle);
+
+impl Printable for DispDirect {
+    // `disp_in_printable` must warn and suggest `print(ctx, state)`.
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let _ = state;
+        write!(f, "{}", self.0.disp(ctx))
+    }
+}
+
+/// Holds a type to print.
+struct DispInClosure(TypeHandle);
+
+impl Printable for DispInClosure {
+    // `disp_in_printable` must warn for the `disp` in the closure.
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let _ = state;
+        let text = || self.0.disp(ctx).to_string();
+        write!(f, "{}", text())
+    }
+}
+
+/// Holds a type to print.
+struct DispUnusedState(TypeHandle);
+
+impl Printable for DispUnusedState {
+    // `disp_in_printable` must warn, and the suggestion must use `_state`.
+    fn fmt(
+        &self,
+        ctx: &Context,
+        _state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(f, "{}", self.0.disp(ctx))
+    }
+}
+
+/// Holds a type to print.
+struct DispShadowedState(TypeHandle);
+
+impl Printable for DispShadowedState {
+    // `disp_in_printable` must warn without a code suggestion: `state` is bound again.
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let _ = state;
+        let state = 0;
+        write!(f, "{state} {}", self.0.disp(ctx))
+    }
+}
+
+/// Holds a type to print.
+struct PrintWithState(TypeHandle);
+
+impl Printable for PrintWithState {
+    // `disp_in_printable` must not warn: `print` passes the `State`.
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        write!(f, "{}", self.0.print(ctx, state))
+    }
+}
+
+// `disp_in_printable` must not warn: the function is not in an `impl Printable`.
+fn disp_outside_printable(ty: TypeHandle, ctx: &Context) -> String {
+    ty.disp(ctx).to_string()
+}
+
 fn main() {
     let _ = OpHolder { target: op_ptr() }.target;
     let _ = (MyOp::new_with_name, MyOp::new_with_self, wrap_op, get_my_op);
+    let _ = (
+        disp_outside_printable,
+        DispDirect,
+        DispInClosure,
+        DispUnusedState,
+        DispShadowedState,
+        PrintWithState,
+    );
     let _ = (
         borrow_and_context,
         ref_borrow_and_context,

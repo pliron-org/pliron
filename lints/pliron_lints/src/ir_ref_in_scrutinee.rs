@@ -1,4 +1,6 @@
-use crate::utils::{Guard, first_risky_context_use, scrutinee_guard_temporaries};
+use crate::utils::{
+    Guard, binds_name, first_risky_context_use, pat_binds, scrutinee_guard_temporaries,
+};
 use clippy_utils::diagnostics::span_lint_and_then;
 use clippy_utils::higher;
 use clippy_utils::source::{indent_of, snippet_with_applicability, walk_span_to_context};
@@ -6,7 +8,7 @@ use clippy_utils::visitors::for_each_expr;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{Applicability, Diag};
 use rustc_hir::def::Res;
-use rustc_hir::{Expr, ExprKind, MatchSource, Node, PatKind, QPath};
+use rustc_hir::{Expr, ExprKind, MatchSource, Node, QPath};
 use rustc_lint::{LateContext, LateLintPass, LintContext};
 use rustc_session::{declare_lint, impl_lint_pass};
 use rustc_span::edition::Edition;
@@ -340,44 +342,18 @@ fn name_is_used(cx: &LateContext<'_>, name: &str) -> bool {
     };
     let body = cx.tcx.hir_body(body_id);
     let in_params = body.params.iter().any(|param| pat_binds(param.pat, name));
-    in_params
-        || for_each_expr(cx.tcx, body.value, |e| {
-            let used = match e.kind {
-                ExprKind::Path(QPath::Resolved(None, path)) => {
-                    matches!(path.res, Res::Local(_))
-                        && path.segments.last().is_some_and(|seg| seg.ident.as_str() == name)
-                }
-                ExprKind::Let(let_expr) => pat_binds(let_expr.pat, name),
-                ExprKind::Block(block, _) => block.stmts.iter().any(|stmt| {
-                    matches!(stmt.kind, rustc_hir::StmtKind::Let(local) if pat_binds(local.pat, name))
-                }),
-                ExprKind::Closure(closure) => cx
-                    .tcx
-                    .hir_body(closure.body)
-                    .params
-                    .iter()
-                    .any(|param| pat_binds(param.pat, name)),
-                ExprKind::Match(_, arms, _) => arms.iter().any(|arm| pat_binds(arm.pat, name)),
-                _ => false,
-            };
-            if used {
-                ControlFlow::Break(())
-            } else {
-                ControlFlow::Continue(())
-            }
-        })
-        .is_some()
-}
-
-/// Return true if `pat` binds the identifier `name`.
-fn pat_binds(pat: &rustc_hir::Pat<'_>, name: &str) -> bool {
-    let mut found = false;
-    pat.walk_always(|p| {
-        if let PatKind::Binding(_, _, ident, _) = p.kind
-            && ident.as_str() == name
+    let uses_local = for_each_expr(cx.tcx, body.value, |e| match e.kind {
+        ExprKind::Path(QPath::Resolved(None, path))
+            if matches!(path.res, Res::Local(_))
+                && path
+                    .segments
+                    .last()
+                    .is_some_and(|seg| seg.ident.as_str() == name) =>
         {
-            found = true;
+            ControlFlow::Break(())
         }
-    });
-    found
+        _ => ControlFlow::Continue(()),
+    })
+    .is_some();
+    in_params || uses_local || binds_name(cx, body.value, name)
 }

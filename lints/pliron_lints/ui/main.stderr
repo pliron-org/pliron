@@ -319,5 +319,33 @@ LL |     MyOp { op }
    |
    = help: use `Operation::get_op::<MyOp>(op, ctx)`, which checks that the operation is a `MyOp`
 
-error: aborting due to 8 previous errors; 16 warnings emitted
+warning: `disp` prints with a default `State`, not the `State` of `fmt`
+  --> $DIR/main.rs:388:25
+   |
+LL |         write!(f, "{}", self.0.disp(ctx))
+   |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
+   |
+   = note: `#[warn(disp_in_printable)]` on by default
+
+warning: `disp` prints with a default `State`, not the `State` of `fmt`
+  --> $DIR/main.rs:404:23
+   |
+LL |         let text = || self.0.disp(ctx).to_string();
+   |                       ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
+
+warning: `disp` prints with a default `State`, not the `State` of `fmt`
+  --> $DIR/main.rs:420:25
+   |
+LL |         write!(f, "{}", self.0.disp(ctx))
+   |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, _state)`
+
+warning: `disp` prints with a default `State`, not the `State` of `fmt`
+  --> $DIR/main.rs:437:33
+   |
+LL |         write!(f, "{state} {}", self.0.disp(ctx))
+   |                                 ^^^^^^^^^^^^^^^^
+   |
+   = help: use `print` with the `State` of `fmt`; the body of `fmt` binds the name `state` again
+
+error: aborting due to 8 previous errors; 20 warnings emitted
 
