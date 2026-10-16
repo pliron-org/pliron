@@ -424,7 +424,7 @@ fn clone_blocks_notifies_rewriter_listener() -> Result<()> {
     Ok(())
 }
 
-/// Check that 
+/// Check that
 /// - a clone in the same context keeps references to external
 ///   (outside the cloned region) values as-is
 /// - a clone in a different context uses the mapped value or,
