@@ -55,15 +55,7 @@ pub trait BinArithOp: SameOperandsAndResultType + OneResultInterface + NOpdsInte
     where
         Self: Sized,
     {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![lhs.get_type(ctx)],
-            vec![lhs, rhs],
-            vec![],
-            0,
-        );
-        Self::from_operation(op)
+        Operation::new_op::<Self>(ctx, vec![lhs.get_type(ctx)], vec![lhs, rhs], vec![], 0)
     }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
@@ -408,15 +400,7 @@ pub trait CastOpInterface: OneResultInterface + OneOpdInterface {
     where
         Self: Sized,
     {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_type],
-            vec![operand],
-            vec![],
-            0,
-        );
-        Self::from_operation(op)
+        Operation::new_op::<Self>(ctx, vec![res_type], vec![operand], vec![], 0)
     }
 
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>

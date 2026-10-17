@@ -186,7 +186,26 @@ impl Display for OpId {
     }
 }
 
-pub(crate) type ConcreteOpInfo = (fn(Ptr<Operation>) -> OpObj, core::any::TypeId);
+pub(crate) type ConcreteOpInfo = (
+    fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
+    core::any::TypeId,
+);
+
+/// Private token for unchecked [Op] constructors
+/// ([Op::wrap_operation] and [Op::from_operation]).
+///
+/// Consumer crates can use the checked [Op] constructors
+/// [Operation::get_op] and [Operation::new_op].
+pub struct UncheckedOpToken(());
+
+impl UncheckedOpToken {
+    /// Create a token.
+    ///
+    /// **Warning**: Must be used only where the operation's concrete [Op] is known.
+    pub(crate) fn new() -> Self {
+        UncheckedOpToken(())
+    }
+}
 
 /// A wrapper around [Operation] for Op(code) specific work.
 /// All per-instance data must be in the underyling Operation,
@@ -201,7 +220,7 @@ pub trait Op: Downcast + Verify + Printable + DynClone {
     /// Create a new [OpObj], by boxing [Op].
     ///
     /// **WARNING**: Does not check that the operation is of the correct OpId.
-    fn wrap_operation(op: Ptr<Operation>) -> OpObj
+    fn wrap_operation(op: Ptr<Operation>, token: UncheckedOpToken) -> OpObj
     where
         Self: Sized;
 
@@ -209,7 +228,7 @@ pub trait Op: Downcast + Verify + Printable + DynClone {
     /// Create a concrete [Op] from an [Operation].
     ///
     /// **WARNING**: Does not check that the operation is of the correct OpId.
-    fn from_operation(op: Ptr<Operation>) -> Self
+    fn from_operation(op: Ptr<Operation>, token: UncheckedOpToken) -> Self
     where
         Self: Sized;
 
@@ -476,7 +495,7 @@ fn canonical_syntax_parse_impl<'a>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
     concrete_op: fn() -> ConcreteOpInfo,
-    wrap_op: fn(Ptr<Operation>) -> OpObj,
+    wrap_op: fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
 ) -> ParseResult<'a, OpObj> {
     // Results and opid have already been parsed. Continue after that.
     let mut without_regions = delimited_list_parser('(', ')', ',', ssa_opd_parser())
@@ -533,7 +552,7 @@ fn canonical_syntax_parse_impl<'a>(
     zero_or_more_parser(Region::parser(op))
         .parse_stream(state_stream)
         .into_result()?;
-    Ok(wrap_op(op)).into_parse_result()
+    Ok(wrap_op(op, UncheckedOpToken::new())).into_parse_result()
 }
 
 /// Parser for an [Op] in canonical syntax.
@@ -589,7 +608,7 @@ impl OpBox {
     pub fn downcast<T: Op>(self) -> Option<T> {
         self.as_ref()
             .downcast_ref::<T>()
-            .map(|op| T::from_operation(op.get_operation()))
+            .map(|op| T::from_operation(op.get_operation(), UncheckedOpToken::new()))
     }
 }
 

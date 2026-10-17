@@ -32,7 +32,7 @@ use crate::{
     },
     linked_list::{LinkedList, private},
     location::Location,
-    op::{ConcreteOpInfo, Op, OpId, OpObj, op_impls},
+    op::{ConcreteOpInfo, Op, OpId, OpObj, UncheckedOpToken, op_impls},
     parsable::{self, Parsable, ParseResult, StateStream, StreamLocation},
     printable::{self, Printable},
     region::Region,
@@ -154,6 +154,25 @@ impl LinkedList for Operation {
 }
 
 impl Operation {
+    /// Create a new, unlinked (i.e., not in a basic block) [Op] of type `T`.
+    pub fn new_op<T: Op>(
+        ctx: &mut Context,
+        result_types: Vec<TypeHandle>,
+        operands: Vec<Value>,
+        successors: Vec<Ptr<BasicBlock>>,
+        num_regions: usize,
+    ) -> T {
+        let op = Self::new(
+            ctx,
+            T::get_concrete_op_info(),
+            result_types,
+            operands,
+            successors,
+            num_regions,
+        );
+        T::from_operation(op, UncheckedOpToken::new())
+    }
+
     /// Create a new, unlinked (i.e., not in a basic block) operation.
     pub fn new(
         ctx: &mut Context,
@@ -478,12 +497,13 @@ impl Operation {
     /// Create an [OpObj] corresponding to self.
     /// [get_op](Self::get_op) is more efficient if the concrete type is known.
     pub fn get_op_dyn(ptr: Ptr<Self>, ctx: &Context) -> OpObj {
-        (ptr.deref(ctx).concrete_op.0)(ptr)
+        let wrap_operation = ptr.deref(ctx).concrete_op.0;
+        wrap_operation(ptr, UncheckedOpToken::new())
     }
 
     /// Creates the concrete [Op] corresponding to self.
     pub fn get_op<T: Op>(ptr: Ptr<Self>, ctx: &Context) -> Option<T> {
-        Self::is_op::<T>(ptr, ctx).then_some(T::from_operation(ptr))
+        Self::is_op::<T>(ptr, ctx).then(|| T::from_operation(ptr, UncheckedOpToken::new()))
     }
 
     /// Is this operation an instance of the concrete [Op] `T`?

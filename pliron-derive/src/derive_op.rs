@@ -137,11 +137,17 @@ impl ToTokens for ImplOp {
                     self.op
                 }
 
-                fn wrap_operation(op: ::pliron::context::Ptr<::pliron::operation::Operation>) -> ::pliron::op::OpObj {
-                    ::pliron::op::OpObj::new(Self::from_operation(op))
+                fn wrap_operation(
+                    op: ::pliron::context::Ptr<::pliron::operation::Operation>,
+                    token: ::pliron::op::UncheckedOpToken,
+                ) -> ::pliron::op::OpObj {
+                    ::pliron::op::OpObj::new(Self::from_operation(op, token))
                 }
 
-                fn from_operation(op: ::pliron::context::Ptr<::pliron::operation::Operation>) -> Self {
+                fn from_operation(
+                    op: ::pliron::context::Ptr<::pliron::operation::Operation>,
+                    _token: ::pliron::op::UncheckedOpToken,
+                ) -> Self {
                     Self { op }
                 }
 
@@ -484,11 +490,13 @@ mod tests {
                 }
                 fn wrap_operation(
                     op: ::pliron::context::Ptr<::pliron::operation::Operation>,
+                    token: ::pliron::op::UncheckedOpToken,
                 ) -> ::pliron::op::OpObj {
-                    ::pliron::op::OpObj::new(Self::from_operation(op))
+                    ::pliron::op::OpObj::new(Self::from_operation(op, token))
                 }
                 fn from_operation(
                     op: ::pliron::context::Ptr<::pliron::operation::Operation>,
+                    _token: ::pliron::op::UncheckedOpToken,
                 ) -> Self {
                     Self { op }
                 }
