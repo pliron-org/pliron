@@ -32,13 +32,26 @@ struct TargetAttr {
 }
 ```
 
-`explicit_op_construction` (deny) and `self_op_construction` (warn):
-an `Op` is constructed with a struct expression instead of `Operation::new_op`
-or `Operation::get_op`.
+`explicit_op_construction` (deny), `self_op_construction` (warn) and
+`new_op_outside_constructor` (warn): an `Op` is constructed incorrectly. A constructor of the
+`Op` must use `Operation::new_op`. Other code must use the constructor or `Operation::get_op`.
 
 ```rust
-let my_op = MyOp { op }; // explicit_op_construction
-Self { op }              // self_op_construction
+// explicit_op_construction
+let my_op = MyOp { op };
+// self_op_construction
+Self { op }
+// new_op_outside_constructor
+let my_op = Operation::new_op::<MyOp>(ctx, vec![], vec![], vec![], 0);
+```
+
+`op_layout` (deny): an `Op` type is not `#[repr(transparent)] struct { op: Ptr<Operation> }`.
+
+```rust
+struct MyOp {
+    op: Ptr<Operation>,
+    extra: u32,
+}
 ```
 
 `disp_in_printable` (warn): `disp` in an `impl Printable` prints with a default `State`

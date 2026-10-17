@@ -1,11 +1,11 @@
 warning: this `Operation` stays borrowed for the full call of a function that also takes a `Context`
-  --> $DIR/main.rs:28:27
+  --> $DIR/main.rs:29:27
    |
 LL | fn borrow_and_context(op: &Operation, ctx: &Context) -> usize {
    |                           ^^^^^^^^^^
    |
 note: a second borrow of the `Operation` is possible through this `Context`
-  --> $DIR/main.rs:28:44
+  --> $DIR/main.rs:29:44
    |
 LL | fn borrow_and_context(op: &Operation, ctx: &Context) -> usize {
    |                                            ^^^^^^^^
@@ -14,13 +14,13 @@ LL | fn borrow_and_context(op: &Operation, ctx: &Context) -> usize {
    = note: `#[warn(ir_borrow_with_context)]` on by default
 
 warning: this `Operation` stays borrowed for the full call of a function that also takes a `Context`
-  --> $DIR/main.rs:34:31
+  --> $DIR/main.rs:35:31
    |
 LL | fn ref_borrow_and_context(op: Ref<Operation>, ctx: &Context) -> usize {
    |                               ^^^^^^^^^^^^^^
    |
 note: a second borrow of the `Operation` is possible through this `Context`
-  --> $DIR/main.rs:34:52
+  --> $DIR/main.rs:35:52
    |
 LL | fn ref_borrow_and_context(op: Ref<Operation>, ctx: &Context) -> usize {
    |                                                    ^^^^^^^^
@@ -28,7 +28,7 @@ LL | fn ref_borrow_and_context(op: Ref<Operation>, ctx: &Context) -> usize {
    = help: take a `Ptr<Operation>` instead, and call `deref` only around each read
 
 warning: this `Ref<BasicBlock>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:61:16
+  --> $DIR/main.rs:62:16
    |
 LL |     for _op in block.deref(ctx).iter(ctx) {
    |                ^^^^^^^^^^^^^^^^----------
@@ -36,7 +36,7 @@ LL |     for _op in block.deref(ctx).iter(ctx) {
    |                help: use `Ptr::iter`, which does not keep the `BasicBlock` borrowed: `block.iter(ctx)`
    |
 note: the `Context` is used here while the `BasicBlock` is still borrowed
-  --> $DIR/main.rs:62:17
+  --> $DIR/main.rs:63:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -44,13 +44,13 @@ LL |         use_ctx(ctx);
    = note: `#[warn(ir_ref_in_scrutinee)]` on by default
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `while let`
-  --> $DIR/main.rs:85:29
+  --> $DIR/main.rs:86:29
    |
 LL |     while let Some(block) = op.deref(ctx).get_parent_block() {
    |                             ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:86:17
+  --> $DIR/main.rs:87:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -58,13 +58,13 @@ LL |         use_ctx(ctx);
    = help: the value does not borrow the `Ref`: bind it to a `let` that is dropped before the body runs
 
 warning: this `RefMut<BasicBlock>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:107:15
+  --> $DIR/main.rs:108:15
    |
 LL |     for op in block.deref_mut(ctx).iter(ctx) {
    |               ^^^^^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `BasicBlock` is still borrowed
-  --> $DIR/main.rs:109:31
+  --> $DIR/main.rs:110:31
    |
 LL |         count += parent.deref(ctx).get_num_arguments();
    |                               ^^^
@@ -76,7 +76,7 @@ LL ~     for op in items {
    |
 
 warning: this `Ref<dyn TypedAttrInterface>` temporary stays alive until the end of the `if let`
-  --> $DIR/main.rs:125:26
+  --> $DIR/main.rs:126:26
    |
 LL |       if let Some(width) = op
    |  __________________________^
@@ -84,7 +84,7 @@ LL | |         .get_value(ctx)
    | |_______________________^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:132:17
+  --> $DIR/main.rs:133:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -98,13 +98,13 @@ LL ~     if let Some(width) = value
    |
 
 warning: this `Ref<AttributeDict>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:140:18
+  --> $DIR/main.rs:141:18
    |
 LL |     for _attr in Ref::map(op.deref(ctx), |op| &op.attributes).0.values() {
    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:141:17
+  --> $DIR/main.rs:142:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -112,13 +112,13 @@ LL |         use_ctx(ctx);
    = help: bind the value to a `let` before the `for`; if the value borrows the `Ref`, collect it into a `Vec`
 
 warning: this `Ref<BasicBlock>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:147:18
+  --> $DIR/main.rs:148:18
    |
 LL |     for _succ in block.deref(ctx).succs(ctx) {
    |                  ^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `BasicBlock` is still borrowed
-  --> $DIR/main.rs:148:17
+  --> $DIR/main.rs:149:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -130,13 +130,13 @@ LL ~     for _succ in succs {
    |
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `if let`
-  --> $DIR/main.rs:155:27
+  --> $DIR/main.rs:156:27
    |
 LL |     if let Some(_block) = op.deref(ctx).get_parent_block() {
    |                           ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:156:17
+  --> $DIR/main.rs:157:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -148,13 +148,13 @@ LL ~     if let Some(_block) = parent_block {
    |
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:162:20
+  --> $DIR/main.rs:163:20
    |
 LL |     for _result in op.deref(ctx).results() {
    |                    ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:163:17
+  --> $DIR/main.rs:164:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -162,13 +162,13 @@ LL |         use_ctx(ctx);
    = help: the value borrows the `Ref`: collect the values that you need into a `Vec` before the `for`
 
 warning: this `Ref<BasicBlock>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:170:17
+  --> $DIR/main.rs:171:17
    |
 LL |     for _arg in block.deref(ctx).arguments() {
    |                 ^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `BasicBlock` is still borrowed
-  --> $DIR/main.rs:171:17
+  --> $DIR/main.rs:172:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -176,13 +176,13 @@ LL |         use_ctx(ctx);
    = help: the value borrows the `Ref`: collect the values that you need into a `Vec` before the `for`
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:185:21
+  --> $DIR/main.rs:186:21
    |
 LL |     for _operand in op.deref(ctx).operands_as_uses() {
    |                     ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:186:17
+  --> $DIR/main.rs:187:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -190,13 +190,13 @@ LL |         use_ctx(ctx);
    = help: the value borrows the `Ref`: collect the values that you need into a `Vec` before the `for`
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:193:18
+  --> $DIR/main.rs:194:18
    |
 LL |     for r#use in op.deref(ctx).uses() {
    |                  ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:195:40
+  --> $DIR/main.rs:196:40
    |
 LL |         Operation::drop_all_uses(user, ctx);
    |                                        ^^^
@@ -204,13 +204,13 @@ LL |         Operation::drop_all_uses(user, ctx);
    = help: the value borrows the `Ref`: collect the values that you need into a `Vec` before the `for`
 
 warning: this `Ref<Operation>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:203:43
+  --> $DIR/main.rs:204:43
    |
 LL |     for (_out, result) in outs.iter().zip(op.deref(ctx).results()) {
    |                                           ^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:204:39
+  --> $DIR/main.rs:205:39
    |
 LL |         Operation::push_operand(user, ctx, result);
    |                                       ^^^
@@ -218,13 +218,13 @@ LL |         Operation::push_operand(user, ctx, result);
    = help: the value borrows the `Ref`: collect the values that you need into a `Vec` before the `for`
 
 warning: this `Ref<BasicBlock>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:211:18
+  --> $DIR/main.rs:212:18
    |
 LL |     for _succ in block.deref(ctx).succs(ctx).iter() {
    |                  ^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `BasicBlock` is still borrowed
-  --> $DIR/main.rs:212:17
+  --> $DIR/main.rs:213:17
    |
 LL |         use_ctx(ctx);
    |                 ^^^
@@ -236,13 +236,13 @@ LL ~     for _succ in succs.iter() {
    |
 
 warning: this `RefMut<Operation>` temporary stays alive until the end of the `for`
-  --> $DIR/main.rs:220:20
+  --> $DIR/main.rs:221:20
    |
 LL |     for _region in op.deref_mut(ctx).regions() {
    |                    ^^^^^^^^^^^^^^^^^
    |
 note: the `Context` is used here while the `Operation` is still borrowed
-  --> $DIR/main.rs:221:27
+  --> $DIR/main.rs:222:27
    |
 LL |         count += op.deref(ctx).num_regions();
    |                           ^^^
@@ -250,7 +250,7 @@ LL |         count += op.deref(ctx).num_regions();
    = help: the value borrows the `RefMut`: collect the values that you need into a `Vec` before the `for`
 
 error: the attribute `OpPtrAttr` holds a `Ptr<Operation>` in field `target`
-  --> $DIR/main.rs:257:13
+  --> $DIR/main.rs:258:13
    |
 LL |     target: Ptr<Operation>,
    |             ^^^^^^^^^^^^^^
@@ -259,7 +259,7 @@ LL |     target: Ptr<Operation>,
    = note: `#[deny(ir_entity_in_type_or_attr)]` on by default
 
 error: the type `ValuesType` holds a `Ptr<Operation>` in field `values`
-  --> $DIR/main.rs:266:13
+  --> $DIR/main.rs:267:13
    |
 LL |     values: Vec<Value>,
    |             ^^^^^^^^^^
@@ -268,7 +268,7 @@ LL |     values: Vec<Value>,
    = help: refer to the IR object by name (for example a symbol), or keep the data in the operation
 
 error: the attribute `OpAttr` holds a `Ptr<Operation>` in field `constant`
-  --> $DIR/main.rs:274:15
+  --> $DIR/main.rs:275:15
    |
 LL |     constant: ConstantOp,
    |               ^^^^^^^^^^
@@ -277,7 +277,7 @@ LL |     constant: ConstantOp,
    = help: refer to the IR object by name (for example a symbol), or keep the data in the operation
 
 error: the attribute `BlockPtrAttr` holds a `Ptr<BasicBlock>` in field `target`
-  --> $DIR/main.rs:288:13
+  --> $DIR/main.rs:289:13
    |
 LL |     target: Ptr<BasicBlock>,
    |             ^^^^^^^^^^^^^^^
@@ -285,7 +285,7 @@ LL |     target: Ptr<BasicBlock>,
    = help: refer to the IR object by name (for example a symbol), or keep the data in the operation
 
 error: the type `RegionPtrType` holds a `Ptr<Region>` in field `region`
-  --> $DIR/main.rs:297:13
+  --> $DIR/main.rs:298:13
    |
 LL |     region: Option<Ptr<Region>>,
    |             ^^^^^^^^^^^^^^^^^^^
@@ -293,7 +293,7 @@ LL |     region: Option<Ptr<Region>>,
    = help: refer to the IR object by name (for example a symbol), or keep the data in the operation
 
 error: the attribute `IndirectAttr` holds a `Ptr<Operation>` in field `indirect`
-  --> $DIR/main.rs:340:15
+  --> $DIR/main.rs:341:15
    |
 LL |     indirect: Indirect<()>,
    |               ^^^^^^^^^^^^
@@ -302,16 +302,16 @@ LL |     indirect: Indirect<()>,
    = help: refer to the IR object by name (for example a symbol), or keep the data in the operation
 
 error: explicit construction of the `Op` `MyOp`
-  --> $DIR/main.rs:356:9
+  --> $DIR/main.rs:357:9
    |
 LL |         MyOp { op }
    |         ^^^^^^^^^^^
    |
-   = help: in a constructor of the `Op`, use `Operation::new_op::<Self>(..)`, which creates the operation and the `Op` together
+   = help: use `Operation::get_op::<MyOp>(op, ctx)`, which checks that the operation is a `MyOp`
    = note: `#[deny(explicit_op_construction)]` on by default
 
 warning: construction of an `Op` with `Self { op }`
-  --> $DIR/main.rs:362:9
+  --> $DIR/main.rs:363:9
    |
 LL |         Self { op }
    |         ^^^^^^^^^^^
@@ -327,8 +327,34 @@ LL |     MyOp { op }
    |
    = help: use `Operation::get_op::<MyOp>(op, ctx)`, which checks that the operation is a `MyOp`
 
+warning: `Operation::new_op` creates a `MyOp` outside a constructor of `MyOp`
+  --> $DIR/main.rs:379:5
+   |
+LL |     Operation::new_op::<MyOp>(ctx, vec![], vec![], vec![], 0)
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `MyOp::new`
+   = note: `#[warn(new_op_outside_constructor)]` on by default
+
+error: the `Op` `BadLayoutOp` is not `#[repr(transparent)] struct { op: Ptr<Operation> }`
+  --> $DIR/main.rs:439:1
+   |
+LL | struct BadLayoutOp {
+   | ^^^^^^^^^^^^^^^^^^
+   |
+   = help: define the `Op` with `#[pliron_op]`
+   = note: `#[deny(op_layout)]` on by default
+
+error: the `Op` `GenericBadLayoutOp` is not `#[repr(transparent)] struct { op: Ptr<Operation> }`
+  --> $DIR/main.rs:448:1
+   |
+LL | struct GenericBadLayoutOp<T> {
+   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: define the `Op` with `#[pliron_op]`
+
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:394:25
+  --> $DIR/main.rs:471:25
    |
 LL |         write!(f, "{}", self.0.disp(ctx))
    |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
@@ -336,24 +362,24 @@ LL |         write!(f, "{}", self.0.disp(ctx))
    = note: `#[warn(disp_in_printable)]` on by default
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:410:23
+  --> $DIR/main.rs:487:23
    |
 LL |         let text = || self.0.disp(ctx).to_string();
    |                       ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:426:25
+  --> $DIR/main.rs:503:25
    |
 LL |         write!(f, "{}", self.0.disp(ctx))
    |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, _state)`
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:443:33
+  --> $DIR/main.rs:520:33
    |
 LL |         write!(f, "{state} {}", self.0.disp(ctx))
    |                                 ^^^^^^^^^^^^^^^^
    |
    = help: use `print` with the `State` of `fmt`; the body of `fmt` binds the name `state` again
 
-error: aborting due to 8 previous errors; 21 warnings emitted
+error: aborting due to 10 previous errors; 22 warnings emitted
 

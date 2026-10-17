@@ -6,11 +6,12 @@ use std::marker::PhantomData;
 use pliron::basic_block::BasicBlock;
 use pliron::builtin::ops::ConstantOp;
 use pliron::builtin::types::IntegerType;
+use pliron::common_traits::Verify;
 use pliron::context::{Context, Ptr};
 use pliron::derive::{pliron_attr, pliron_op, pliron_type};
 use pliron::linked_list::ContainsLinkedList;
 use pliron::location::Location;
-use pliron::op::Op;
+use pliron::op::{Op, OpId, OpObj, UncheckedOpToken};
 use pliron::operation::Operation;
 use pliron::parsable::{Parsable, ParseResult, StateStream};
 use pliron::printable::{Printable, State};
@@ -350,7 +351,7 @@ struct OpHolder {
 struct MyOp {}
 
 impl MyOp {
-    // `explicit_op_construction` must report an error and tell to use `Operation::new_op`.
+    // `explicit_op_construction` must report an error and tell to use `Operation::get_op`.
     fn new_with_name(ctx: &mut Context) -> Self {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
         MyOp { op }
@@ -362,9 +363,8 @@ impl MyOp {
         Self { op }
     }
 
-    // `explicit_op_construction` and `self_op_construction` must not report: the constructor
-    // uses `Operation::new_op`.
-    fn new_with_new_op(ctx: &mut Context) -> Self {
+    // Constructor using `Operation::new_op` must not report any warnings or errors.
+    fn new(ctx: &mut Context) -> Self {
         Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
@@ -373,6 +373,83 @@ impl MyOp {
 fn wrap_op(op: Ptr<Operation>) -> MyOp {
     MyOp { op }
 }
+
+// `new_op_outside_constructor` must warn and tell to use `MyOp::new`.
+fn new_my_op_outside(ctx: &mut Context) -> MyOp {
+    Operation::new_op::<MyOp>(ctx, vec![], vec![], vec![], 0)
+}
+
+// `new_op_outside_constructor` must not warn: `T` is generic, not a concrete `Op`.
+fn new_generic_op<T: Op>(ctx: &mut Context) -> T {
+    Operation::new_op::<T>(ctx, vec![], vec![], vec![], 0)
+}
+
+/// Hand-written `Verify`, `Printable` and `Op` implementations for the test types below.
+macro_rules! manual_op_impl {
+    ($ty:ty) => {
+        impl Verify for $ty {
+            fn verify(&self, _ctx: &Context) -> pliron::result::Result<()> {
+                Ok(())
+            }
+        }
+
+        impl Printable for $ty {
+            fn fmt(
+                &self,
+                _ctx: &Context,
+                _state: &State,
+                _f: &mut core::fmt::Formatter<'_>,
+            ) -> core::fmt::Result {
+                Ok(())
+            }
+        }
+
+        impl Op for $ty {
+            fn get_operation(&self) -> Ptr<Operation> {
+                let _ = &self.extra;
+                self.op
+            }
+
+            fn wrap_operation(_op: Ptr<Operation>, _token: UncheckedOpToken) -> OpObj {
+                unimplemented!()
+            }
+
+            fn from_operation(_op: Ptr<Operation>, _token: UncheckedOpToken) -> Self {
+                unimplemented!()
+            }
+
+            fn get_opid(&self) -> OpId {
+                unimplemented!()
+            }
+
+            fn get_opid_static() -> OpId {
+                unimplemented!()
+            }
+
+            fn verify_interfaces(&self, _ctx: &Context) -> pliron::result::Result<()> {
+                Ok(())
+            }
+        }
+    };
+}
+
+// `op_layout` must report an error: the `Op` has a field other than `op: Ptr<Operation>`.
+// `op_layout` must not report an error for `MyOp`, which `#[pliron_op]` defines.
+#[derive(Clone)]
+struct BadLayoutOp {
+    op: Ptr<Operation>,
+    extra: u32,
+}
+manual_op_impl!(BadLayoutOp);
+
+// `op_layout` must report an error: only `GenericBadLayoutOp<u32>` implements `Op`, and it has a
+// field other than `op: Ptr<Operation>`.
+#[derive(Clone)]
+struct GenericBadLayoutOp<T> {
+    op: Ptr<Operation>,
+    extra: T,
+}
+manual_op_impl!(GenericBadLayoutOp<u32>);
 
 // `explicit_op_construction` must not report an error: `Operation::get_op` checks the operation.
 fn get_my_op(op: Ptr<Operation>, ctx: &Context) -> Option<MyOp> {
@@ -469,7 +546,11 @@ fn main() {
     let _ = (
         MyOp::new_with_name,
         MyOp::new_with_self,
-        MyOp::new_with_new_op,
+        MyOp::new,
+        new_my_op_outside,
+        new_generic_op::<MyOp>,
+        BadLayoutOp::get_opid_static,
+        GenericBadLayoutOp::<u32>::get_opid_static,
         wrap_op,
         get_my_op,
     );
