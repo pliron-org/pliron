@@ -1,7 +1,7 @@
-use crate::utils::{def_path_is, ir_entity_name};
+use crate::utils::{
+    ATTRIBUTE_TRAIT, OP_TRAIT, TYPE_TRAIT, implements_pliron_trait, pliron_trait_ids, ptr_entity,
+};
 use clippy_utils::diagnostics::span_lint_and_then;
-use clippy_utils::paths::{PathNS, lookup_path_str};
-use clippy_utils::ty::implements_trait;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Item, ItemKind, VariantData};
@@ -55,9 +55,9 @@ impl<'tcx> LateLintPass<'tcx> for IrEntityInTypeOrAttr {
             .type_of(def_id)
             .instantiate_identity()
             .skip_norm_wip();
-        let kind = if implements_pliron_trait(cx, ty, "pliron::type::Type") {
+        let kind = if implements_pliron_trait(cx, ty, TYPE_TRAIT) {
             "type"
-        } else if implements_pliron_trait(cx, ty, "pliron::attribute::Attribute") {
+        } else if implements_pliron_trait(cx, ty, ATTRIBUTE_TRAIT) {
             "attribute"
         } else {
             return;
@@ -92,16 +92,9 @@ impl<'tcx> LateLintPass<'tcx> for IrEntityInTypeOrAttr {
     }
 }
 
-/// Return true if `ty` implements the trait at `path`.
-fn implements_pliron_trait<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>, path: &str) -> bool {
-    lookup_path_str(cx.tcx, PathNS::Type, path)
-        .into_iter()
-        .any(|trait_id| implements_trait(cx, ty, trait_id, &[]))
-}
-
 /// Return true if the trait `trait_id` is `pliron::op::Op` or extends it.
 fn is_op_trait(cx: &LateContext<'_>, trait_id: DefId) -> bool {
-    let op_traits = lookup_path_str(cx.tcx, PathNS::Type, "pliron::op::Op");
+    let op_traits = pliron_trait_ids(cx, OP_TRAIT);
     supertrait_def_ids(cx.tcx, trait_id).any(|id| op_traits.contains(&id))
 }
 
@@ -128,9 +121,7 @@ fn find_ir_entity<'tcx>(
             if adt.is_phantom_data() {
                 return None;
             }
-            if def_path_is(cx, adt.did(), &["pliron", "context", "Ptr"])
-                && let Some(entity) = ir_entity_name(cx, args.type_at(0))
-            {
+            if let Some(entity) = ptr_entity(cx, ty) {
                 return Some(format!("Ptr<{entity}>"));
             }
             let krate = cx.tcx.crate_name(adt.did().krate);

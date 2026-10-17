@@ -1,6 +1,5 @@
-use crate::utils::binds_name;
+use crate::utils::{PRINTABLE_TRAIT, binds_name, pliron_trait_ids};
 use clippy_utils::diagnostics::span_lint_and_then;
-use clippy_utils::paths::{PathNS, lookup_path_str};
 use clippy_utils::source::snippet_with_applicability;
 use rustc_errors::Applicability;
 use rustc_hir::def::DefKind;
@@ -46,8 +45,7 @@ impl<'tcx> LateLintPass<'tcx> for DispInPrintable {
         if segment.ident.as_str() != "disp" || expr.span.in_external_macro(cx.sess().source_map()) {
             return;
         }
-        let printable_traits =
-            lookup_path_str(cx.tcx, PathNS::Type, "pliron::printable::Printable");
+        let printable_traits = pliron_trait_ids(cx, PRINTABLE_TRAIT);
         let is_printable_disp = cx
             .typeck_results()
             .type_dependent_def_id(expr.hir_id)

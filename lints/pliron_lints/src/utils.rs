@@ -6,7 +6,7 @@ use clippy_utils::ty::implements_trait;
 use clippy_utils::visitors::{Descend, Visitable, for_each_expr};
 use rustc_hir::def::DefKind;
 use rustc_hir::def_id::DefId;
-use rustc_hir::{Expr, ExprKind, Node, UnOp};
+use rustc_hir::{Expr, ExprKind, HirId, Node, UnOp};
 use rustc_lint::LateContext;
 use rustc_middle::ty::adjustment::{Adjust, DerefAdjustKind};
 use rustc_middle::ty::print::with_forced_trimmed_paths;
@@ -16,6 +16,18 @@ use std::ops::ControlFlow;
 
 /// Definition path of `pliron::context::Context`.
 const CONTEXT_PATH: [&str; 3] = ["pliron", "context", "Context"];
+
+/// Definition path of `pliron::context::Ptr`.
+const PTR_PATH: [&str; 3] = ["pliron", "context", "Ptr"];
+
+/// Path of the `Op` trait.
+pub const OP_TRAIT: &str = "pliron::op::Op";
+/// Path of the `Printable` trait.
+pub const PRINTABLE_TRAIT: &str = "pliron::printable::Printable";
+/// Path of the `Type` trait.
+pub const TYPE_TRAIT: &str = "pliron::type::Type";
+/// Path of the `Attribute` trait.
+pub const ATTRIBUTE_TRAIT: &str = "pliron::attribute::Attribute";
 
 /// Definition paths of the IR entities.
 const IR_ENTITY_PATHS: [[&str; 3]; 3] = [
@@ -42,6 +54,40 @@ pub fn def_path_is(cx: &LateContext<'_>, did: DefId, path: &[&str]) -> bool {
             .all(|(segment, expected)| segment.as_str() == *expected)
 }
 
+/// Return the [DefId]s of the pliron trait at `path`.
+pub fn pliron_trait_ids(cx: &LateContext<'_>, path: &str) -> Vec<DefId> {
+    lookup_path_str(cx.tcx, PathNS::Type, path)
+}
+
+/// Return true if `ty` implements the pliron trait at `path`.
+pub fn implements_pliron_trait<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>, path: &str) -> bool {
+    pliron_trait_ids(cx, path)
+        .into_iter()
+        .any(|trait_id| implements_trait(cx, ty, trait_id, &[]))
+}
+
+/// Return true if `ty` implements the `pliron::op::Op` trait.
+pub fn is_op<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> bool {
+    implements_pliron_trait(cx, ty, OP_TRAIT)
+}
+
+/// Return true if the method called by the expression `hir_id` is defined in pliron.
+pub fn is_pliron_method(cx: &LateContext<'_>, hir_id: HirId) -> bool {
+    cx.typeck_results()
+        .type_dependent_def_id(hir_id)
+        .is_some_and(|did| cx.tcx.crate_name(did.krate).as_str() == "pliron")
+}
+
+/// If `ty` is `Ptr<T>` and `T` is an IR entity, return the entity name.
+pub fn ptr_entity<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<&'static str> {
+    match ty.kind() {
+        ty::Adt(adt, args) if def_path_is(cx, adt.did(), &PTR_PATH) => {
+            ir_entity_name(cx, args.type_at(0))
+        }
+        _ => None,
+    }
+}
+
 /// Return true if `ty`, after all references are removed, is `pliron::context::Context`.
 pub fn is_context<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> bool {
     match ty.peel_refs().kind() {
@@ -61,24 +107,42 @@ pub fn ir_entity_name<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<&'st
         .map(|path| path[2])
 }
 
-/// If `ty` is `core::cell::Ref` or `core::cell::RefMut`, return its name.
-pub fn refcell_guard_name<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<&'static str> {
+/// If `ty` is `core::cell::Ref` or `core::cell::RefMut`, return its kind.
+pub fn refcell_guard_kind<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<GuardKind> {
     let ty::Adt(adt, _) = ty.kind() else {
         return None;
     };
     if cx.tcx.is_diagnostic_item(sym::RefCellRef, adt.did()) {
-        Some("Ref")
+        Some(GuardKind::Ref)
     } else if cx.tcx.is_diagnostic_item(sym::RefCellRefMut, adt.did()) {
-        Some("RefMut")
+        Some(GuardKind::RefMut)
     } else {
         None
     }
 }
 
+/// The type of a `RefCell` guard.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum GuardKind {
+    /// `core::cell::Ref`
+    Ref,
+    /// `core::cell::RefMut`
+    RefMut,
+}
+
+impl core::fmt::Display for GuardKind {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        f.write_str(match self {
+            GuardKind::Ref => "Ref",
+            GuardKind::RefMut => "RefMut",
+        })
+    }
+}
+
 /// A `Ref` or `RefMut` of an IR entity, described for diagnostics.
 pub struct Guard {
-    /// The guard type: `Ref` or `RefMut`.
-    pub kind: &'static str,
+    /// The guard type.
+    pub kind: GuardKind,
     /// The guard type with its target.
     pub name: String,
     /// The IR entity borrowed by the guard.
@@ -97,7 +161,7 @@ impl Guard {
     /// Note text for the run-time effect of a borrow during the use of the `Context`.
     pub fn panic_note(&self) -> String {
         // A `RefMut` also makes a shared borrow panic.
-        let calls = if self.kind == "RefMut" {
+        let calls = if self.kind == GuardKind::RefMut {
             "a `deref` or `deref_mut`"
         } else {
             "a `deref_mut`"
@@ -113,7 +177,7 @@ impl Guard {
 /// A `Ref` whose IR entity is not known (for example a `Ref` of a type) gives `None`.
 pub fn refcell_guard<'tcx>(cx: &LateContext<'tcx>, e: &'tcx Expr<'tcx>) -> Option<Guard> {
     let ty = cx.typeck_results().expr_ty(e);
-    let kind = refcell_guard_name(cx, ty)?;
+    let kind = refcell_guard_kind(cx, ty)?;
     let ty::Adt(_, args) = ty.kind() else {
         return None;
     };
@@ -166,7 +230,7 @@ fn guard_entity<'tcx>(cx: &LateContext<'tcx>, e: &'tcx Expr<'tcx>) -> Option<&'s
 
 /// If `ty` is a guard, or an `Option` or `Result` of a guard, return the guard type.
 fn guard_in<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
-    if refcell_guard_name(cx, ty).is_some() {
+    if refcell_guard_kind(cx, ty).is_some() {
         return Some(ty);
     }
     let ty::Adt(adt, args) = ty.kind() else {
@@ -175,7 +239,7 @@ fn guard_in<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<Ty<'tcx>> {
     let is_wrapper = cx.tcx.is_diagnostic_item(sym::Option, adt.did())
         || cx.tcx.is_diagnostic_item(sym::Result, adt.did());
     let inner = args.types().next()?;
-    (is_wrapper && refcell_guard_name(cx, inner).is_some()).then_some(inner)
+    (is_wrapper && refcell_guard_kind(cx, inner).is_some()).then_some(inner)
 }
 
 /// Return true if `func` is `Ref::map`, `Ref::filter_map`, `RefMut::map` or `RefMut::filter_map`.
@@ -191,7 +255,7 @@ fn is_guard_map<'tcx>(cx: &LateContext<'tcx>, func: &'tcx Expr<'tcx>) -> bool {
     }
     let impl_did = cx.tcx.parent(did);
     matches!(cx.tcx.def_kind(impl_did), DefKind::Impl { .. })
-        && refcell_guard_name(
+        && refcell_guard_kind(
             cx,
             cx.tcx
                 .type_of(impl_did)
@@ -199,13 +263,6 @@ fn is_guard_map<'tcx>(cx: &LateContext<'tcx>, func: &'tcx Expr<'tcx>) -> bool {
                 .skip_norm_wip(),
         )
         .is_some()
-}
-
-/// Return true if `ty` implements the `pliron::op::Op` trait.
-fn is_op<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> bool {
-    lookup_path_str(cx.tcx, PathNS::Type, "pliron::op::Op")
-        .into_iter()
-        .any(|op_trait| implements_trait(cx, ty, op_trait, &[]))
 }
 
 /// If `ty` borrows an IR entity, return the entity name.
@@ -219,7 +276,7 @@ pub fn ir_entity_borrow<'tcx>(cx: &LateContext<'tcx>, ty: Ty<'tcx>) -> Option<&'
         return Some(name);
     }
     if let ty::Adt(_, args) = peeled.kind()
-        && refcell_guard_name(cx, peeled).is_some()
+        && refcell_guard_kind(cx, peeled).is_some()
     {
         return ir_entity_name(cx, args.type_at(1));
     }
@@ -244,7 +301,7 @@ pub fn first_risky_context_use<'tcx>(
             return true;
         };
         // A shared borrow does not conflict with a `Ref`.
-        let shared_with_ref = guard.kind == "Ref" && call.shared;
+        let shared_with_ref = guard.kind == GuardKind::Ref && call.shared;
         // An object of a different IR entity type is in a different `RefCell`.
         let other_entity = call.entity.is_some_and(|entity| entity != guard.entity);
         !(shared_with_ref || other_entity)
@@ -292,21 +349,10 @@ fn pliron_deref_call<'tcx>(cx: &LateContext<'tcx>, e: &'tcx Expr<'tcx>) -> Optio
         "deref_mut" | "try_deref_mut" => false,
         _ => return None,
     };
-    if !args.iter().any(|arg| arg.hir_id == e.hir_id)
-        || !cx
-            .typeck_results()
-            .type_dependent_def_id(parent.hir_id)
-            .is_some_and(|did| cx.tcx.crate_name(did.krate).as_str() == "pliron")
-    {
+    if !args.iter().any(|arg| arg.hir_id == e.hir_id) || !is_pliron_method(cx, parent.hir_id) {
         return None;
     }
-    let entity = match cx.typeck_results().expr_ty(receiver).peel_refs().kind() {
-        ty::Adt(_, args) if !args.is_empty() => args
-            .types()
-            .next()
-            .and_then(|target| ir_entity_name(cx, target)),
-        _ => None,
-    };
+    let entity = ptr_entity(cx, cx.typeck_results().expr_ty(receiver).peel_refs());
     Some(DerefCall { shared, entity })
 }
 

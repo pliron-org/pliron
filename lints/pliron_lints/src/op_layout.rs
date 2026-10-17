@@ -1,6 +1,5 @@
-use crate::utils::{def_path_is, ir_entity_name};
+use crate::utils::{OP_TRAIT, pliron_trait_ids, ptr_entity};
 use clippy_utils::diagnostics::span_lint_and_help;
-use clippy_utils::paths::{PathNS, lookup_path_str};
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Impl, Item, ItemKind};
@@ -63,8 +62,7 @@ impl<'tcx> LateLintPass<'tcx> for OpLayout {
             return;
         };
         let trait_ref = trait_ref.instantiate_identity().skip_norm_wip();
-        let op_traits = lookup_path_str(cx.tcx, PathNS::Type, "pliron::op::Op");
-        if !op_traits.contains(&trait_ref.def_id) {
+        if !pliron_trait_ids(cx, OP_TRAIT).contains(&trait_ref.def_id) {
             return;
         }
         // The implementing type, with the arguments of this `impl` (for example `MyOp<u32>`).
@@ -112,11 +110,5 @@ fn has_op_layout<'tcx>(cx: &LateContext<'tcx>, ty: ty::Ty<'tcx>) -> bool {
     if field.name.as_str() != "op" {
         return false;
     }
-    let field_ty = field.ty(cx.tcx, args).skip_norm_wip();
-    matches!(
-        field_ty.kind(),
-        ty::Adt(ptr, ptr_args)
-            if def_path_is(cx, ptr.did(), &["pliron", "context", "Ptr"])
-                && ir_entity_name(cx, ptr_args.type_at(0)) == Some("Operation")
-    )
+    ptr_entity(cx, field.ty(cx.tcx, args).skip_norm_wip()) == Some("Operation")
 }

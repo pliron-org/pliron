@@ -1,8 +1,6 @@
-use crate::utils::def_path_is;
+use crate::utils::{def_path_is, is_op};
 use clippy_utils::diagnostics::span_lint_and_then;
-use clippy_utils::paths::{PathNS, lookup_path_str};
 use clippy_utils::sym;
-use clippy_utils::ty::implements_trait;
 use rustc_hir::def::Res;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Expr, ExprKind, QPath};
@@ -109,10 +107,7 @@ impl<'tcx> LateLintPass<'tcx> for ExplicitOpConstruction {
         let ty::Adt(adt, _) = op_ty.kind() else {
             return;
         };
-        let is_op = lookup_path_str(cx.tcx, PathNS::Type, "pliron::op::Op")
-            .into_iter()
-            .any(|op_trait| implements_trait(cx, op_ty, op_trait, &[]));
-        if !is_op {
+        if !is_op(cx, op_ty) {
             return;
         }
         if uses_self {

@@ -1,5 +1,6 @@
 use crate::utils::{
-    Guard, binds_name, first_risky_context_use, pat_binds, scrutinee_guard_temporaries,
+    Guard, GuardKind, binds_name, first_risky_context_use, is_pliron_method, pat_binds,
+    scrutinee_guard_temporaries,
 };
 use clippy_utils::diagnostics::span_lint_and_then;
 use clippy_utils::higher;
@@ -248,7 +249,7 @@ fn is_component_iterator<'tcx>(
     temporary: &'tcx Expr<'tcx>,
     guard: &Guard,
 ) -> bool {
-    if guard.kind != "Ref" {
+    if guard.kind != GuardKind::Ref {
         return false;
     }
     let Node::Expr(call) = cx.tcx.parent_hir_node(temporary.hir_id) else {
@@ -261,10 +262,7 @@ fn is_component_iterator<'tcx>(
         && COMPONENT_ITERATORS
             .iter()
             .any(|(method, entity)| segment.ident.as_str() == *method && guard.entity == *entity)
-        && cx
-            .typeck_results()
-            .type_dependent_def_id(call.hir_id)
-            .is_some_and(|did| cx.tcx.crate_name(did.krate).as_str() == "pliron")
+        && is_pliron_method(cx, call.hir_id)
 }
 
 /// The methods that `Ptr` also has: the method name, the IR entity of the receiver, and
@@ -286,14 +284,9 @@ fn ptr_method_on_deref<'tcx>(
     let ExprKind::MethodCall(deref_segment, ptr, [deref_ctx_arg], _) = temporary.kind else {
         return None;
     };
-    let in_pliron = |hir_id| {
-        cx.typeck_results()
-            .type_dependent_def_id(hir_id)
-            .is_some_and(|did| cx.tcx.crate_name(did.krate).as_str() == "pliron")
-    };
     if deref_segment.ident.as_str() != "deref"
-        || !in_pliron(temporary.hir_id)
-        || !in_pliron(call.hir_id)
+        || !is_pliron_method(cx, temporary.hir_id)
+        || !is_pliron_method(cx, call.hir_id)
         || call.span.from_expansion()
     {
         return None;
