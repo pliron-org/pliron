@@ -121,14 +121,8 @@ impl Parsable for ModuleOp {
                 op_interfaces::NResultsVerifyErr(0, results.len())
             )?
         }
-        let op = Operation::new(
-            state_stream.state.ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![],
-            vec![],
-            0,
-        );
+        let opop = Operation::new_op::<Self>(state_stream.state.ctx, vec![], vec![], vec![], 0);
+        let op = opop.get_operation();
         let mut parser = (
             spaced(token('@').with(Identifier::parser(()))),
             spaced(optional(AttributeDict::parser(()))),
@@ -139,7 +133,6 @@ impl Parsable for ModuleOp {
             .map(|(name, attributes, _region)| -> OpObj {
                 let ctx = &mut state_stream.state.ctx;
                 op.deref_mut(ctx).attributes = attributes.unwrap_or_default();
-                let opop = Self { op };
                 opop.set_symbol_name(ctx, name);
                 OpObj::new(opop)
             })
@@ -152,8 +145,7 @@ impl ModuleOp {
     /// The underlying [Operation] is not linked to a [BasicBlock].
     /// The returned module has a single [crate::region::Region] with a single (BasicBlock)[crate::basic_block::BasicBlock].
     pub fn new(ctx: &mut Context, name: Identifier) -> ModuleOp {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        let opop = Self { op };
+        let opop = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1);
         opop.set_symbol_name(ctx, name);
 
         // Create an empty block.
@@ -185,7 +177,8 @@ impl FuncOp {
     /// The returned function has a single region with an empty `entry` block.
     pub fn new(ctx: &mut Context, name: Identifier, ty: TypedHandle<FunctionType>) -> Self {
         let ty_attr = TypeAttr::new(ty.into());
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
+        let opop = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1);
+        let op = opop.get_operation();
 
         // Create an empty entry block.
         let arg_types = ty.deref(ctx).arg_types().clone();
@@ -193,7 +186,6 @@ impl FuncOp {
         let body = BasicBlock::new(ctx, Some(ident!("entry")), arg_types);
         body.insert_at_front(region, ctx);
 
-        let opop = Self { op };
         opop.set_symbol_name(ctx, name);
         opop.set_attr_builtin_func_type(ctx, ty_attr);
 
@@ -257,14 +249,8 @@ impl Parsable for FuncOp {
             )?
         }
 
-        let op = Operation::new(
-            state_stream.state.ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![],
-            vec![],
-            0,
-        );
+        let opop = Operation::new_op::<Self>(state_stream.state.ctx, vec![], vec![], vec![], 0);
+        let op = opop.get_operation();
 
         let mut parser = (
             spaced(token('@').with(Identifier::parser(()))).skip(spaced(token(':'))),
@@ -280,7 +266,6 @@ impl Parsable for FuncOp {
                 let ctx = &mut state_stream.state.ctx;
                 op.deref_mut(ctx).attributes = attributes.unwrap_or_default();
                 let ty_attr = TypeAttr::new(fty);
-                let opop = Self { op };
                 opop.set_symbol_name(ctx, fname);
                 opop.set_attr_builtin_func_type(ctx, ty_attr);
                 OpObj::new(opop)
@@ -378,15 +363,7 @@ impl ConstantOp {
     /// Create a new [ConstantOp].
     pub fn new(ctx: &mut Context, value: Box<dyn TypedAttrInterface>) -> Self {
         let result_type = value.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], vec![], vec![], 0);
         op.set_attr_builtin_constant_value(ctx, value);
         op
     }
@@ -457,14 +434,6 @@ impl ForwardRefOp {
     /// Create a new [ForwardRefOp].
     pub fn new(ctx: &mut Context) -> Self {
         let ty = UnitType::get(ctx).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![ty], vec![], vec![], 0)
     }
 }

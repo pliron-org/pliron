@@ -46,15 +46,7 @@ impl ConstantOp {
     pub fn new_i64(ctx: &mut Context, value: i64) -> Self {
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signless);
         let value_attr = IntegerAttr::new(i64_ty, APInt::from_i64(value, bw(64)));
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![i64_ty.into()],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![i64_ty.into()], vec![], vec![], 0);
         op.set_attr_value(ctx, value_attr);
         op
     }
@@ -92,15 +84,7 @@ impl DeclOp {
     /// is stored in the `var_type` attribute.
     pub fn new(ctx: &mut Context, var_ty: TypeHandle) -> Self {
         let ptr_ty = PointerType::get(ctx, 0).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ptr_ty],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![ptr_ty], vec![], vec![], 0);
         op.set_attr_var_type(ctx, TypeAttr::new(var_ty));
         op
     }
@@ -128,15 +112,7 @@ pub struct LoadOp;
 
 impl LoadOp {
     pub fn new(ctx: &mut Context, slot: Value, result_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![slot],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_ty], vec![slot], vec![], 0)
     }
 
     pub fn slot(&self, ctx: &Context) -> Value {
@@ -157,15 +133,7 @@ pub struct StoreOp;
 
 impl StoreOp {
     pub fn new(ctx: &mut Context, slot: Value, value: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![slot, value],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![slot, value], vec![], 0)
     }
 
     pub fn slot(&self, ctx: &Context) -> Value {
@@ -217,15 +185,7 @@ impl BinOp {
     /// Creates a new `BinOp` of the specified kind with the given operands.
     pub fn new(ctx: &mut Context, kind: BinOpKind, lhs: Value, rhs: Value) -> Self {
         let result_ty = lhs.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![lhs, rhs],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_ty], vec![lhs, rhs], vec![], 0);
         op.set_attr_kind(ctx, kind);
         op
     }
@@ -262,8 +222,7 @@ pub struct YieldOp;
 
 impl YieldOp {
     pub fn new(ctx: &mut Context) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 
@@ -285,15 +244,7 @@ pub struct IfOp;
 
 impl IfOp {
     pub fn new(ctx: &mut Context, cond: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![cond],
-            vec![],
-            2,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![cond], vec![], 2)
     }
 
     pub fn condition(&self, ctx: &Context) -> Value {
@@ -327,15 +278,7 @@ pub struct WhileOp;
 
 impl WhileOp {
     pub fn new(ctx: &mut Context, cond_ptr: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![cond_ptr],
-            vec![],
-            1,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![cond_ptr], vec![], 1)
     }
 
     pub fn cond_ptr(&self, ctx: &Context) -> Value {
@@ -359,15 +302,7 @@ pub struct ReturnOp;
 
 impl ReturnOp {
     pub fn new(ctx: &mut Context, value: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![value], vec![], 0)
     }
 
     pub fn value(&self, ctx: &Context) -> Value {
@@ -412,15 +347,7 @@ impl CallOp {
         args: Vec<Value>,
         result_ty: TypeHandle,
     ) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            args,
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_ty], args, vec![], 0);
         op.set_attr_callee(ctx, callee);
         op
     }

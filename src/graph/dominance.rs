@@ -1367,12 +1367,13 @@ mod tests {
     struct ScopeOp;
     impl ScopeOp {
         fn new(ctx: &mut Context) -> ScopeOp {
-            let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
+            let opop = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1);
+            let op = opop.get_operation();
             // Create an entry block in the region.
             let region = op.deref(ctx).get_region(0);
             let block = BasicBlock::new(ctx, None, vec![]);
             block.insert_at_front(region, ctx);
-            Self { op }
+            opop
         }
 
         fn get_entry_block(&self, ctx: &Context) -> Ptr<BasicBlock> {

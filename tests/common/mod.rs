@@ -38,15 +38,7 @@ use pliron::{
 pub struct ReturnOp;
 impl ReturnOp {
     pub fn new(ctx: &mut Context, value: Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![value], vec![], 0)
     }
 }
 
@@ -65,19 +57,13 @@ impl ConstantOp {
     pub fn new(ctx: &mut Context, value: u64) -> Self {
         let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
         let int_attr = IntegerAttr::new(i64_ty, APInt::from_u64(value, bw(64)));
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![i64_ty.into()],
-            vec![],
-            vec![],
-            0,
-        );
+        let opop = Operation::new_op::<Self>(ctx, vec![i64_ty.into()], vec![], vec![], 0);
+        let op = opop.get_operation();
         op.deref_mut(ctx)
             .attributes
             .0
             .insert(constant_op::ATTR_KEY_VALUE.clone(), Box::new(int_attr));
-        Self { op }
+        opop
     }
 
     pub fn get_value(&self, ctx: &Context) -> AttrObj {

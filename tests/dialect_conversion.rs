@@ -43,15 +43,7 @@ pub struct ProducerOp;
 impl ProducerOp {
     fn new(ctx: &mut Context, width: u32) -> Self {
         let ty = IntegerType::get(ctx, width, Signedness::Signed).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![ty], vec![], vec![], 0)
     }
 }
 
@@ -65,15 +57,7 @@ pub struct ConsumerOp;
 
 impl ConsumerOp {
     fn new(ctx: &mut Context, value: pliron::value::Value) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![value], vec![], 0)
     }
 }
 
@@ -88,15 +72,7 @@ pub struct CycleOp;
 impl CycleOp {
     fn new_unconnected(ctx: &mut Context, width: u32) -> Self {
         let ty = IntegerType::get(ctx, width, Signedness::Signed).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![ty], vec![], vec![], 0)
     }
 
     fn new(ctx: &mut Context, width: u32, operand: pliron::value::Value) -> Self {
@@ -120,15 +96,7 @@ pub struct ForwardToSuccOp;
 
 impl ForwardToSuccOp {
     fn new(ctx: &mut Context, value: pliron::value::Value, succ: Ptr<BasicBlock>) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value],
-            vec![succ],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![value], vec![succ], 0)
     }
 }
 

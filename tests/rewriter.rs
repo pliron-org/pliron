@@ -237,15 +237,8 @@ pub struct GlobalOp;
 impl GlobalOp {
     /// Create a new [GlobalOp].
     pub fn new(ctx: &mut Context, name: Identifier, val: IntegerAttr) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![PointerType::get(ctx).into()],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op =
+            Operation::new_op::<Self>(ctx, vec![PointerType::get(ctx).into()], vec![], vec![], 0);
         op.set_symbol_name(ctx, name);
         op.set_attr_test_global_op_const_val(ctx, val);
         op
@@ -268,16 +261,7 @@ pub struct LoadOp;
 impl LoadOp {
     /// Create a new [LoadOp]
     pub fn new(ctx: &mut Context, ptr: Value, res_ty: TypeHandle) -> Self {
-        Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![res_ty],
-                vec![ptr],
-                vec![],
-                0,
-            ),
-        }
+        Operation::new_op::<Self>(ctx, vec![res_ty], vec![ptr], vec![], 0)
     }
 }
 

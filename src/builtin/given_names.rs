@@ -256,16 +256,7 @@ mod tests {
     impl ZeroOp {
         pub fn new(ctx: &mut Context) -> Self {
             let i64_ty = IntegerType::get(ctx, 64, Signedness::Signed);
-            Self {
-                op: Operation::new(
-                    ctx,
-                    Self::get_concrete_op_info(),
-                    vec![i64_ty.into()],
-                    vec![],
-                    vec![],
-                    0,
-                ),
-            }
+            Operation::new_op::<Self>(ctx, vec![i64_ty.into()], vec![], vec![], 0)
         }
     }
 

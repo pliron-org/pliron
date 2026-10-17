@@ -78,8 +78,7 @@ impl Parsable for ZeroResultOp {
 
 impl ZeroResultOp {
     fn new(ctx: &mut Context) -> ZeroResultOp {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -152,8 +151,7 @@ trait TestOpInterface2: TestOpInterface {
 struct VerifyIntrOp {}
 impl VerifyIntrOp {
     fn new(ctx: &mut Context) -> VerifyIntrOp {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -226,8 +224,7 @@ trait TestOpInterfaceGeneric3<T: Clone>:
 struct VerifyIntrOpGeneric {}
 impl VerifyIntrOpGeneric {
     fn new(ctx: &mut Context) -> VerifyIntrOpGeneric {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -303,8 +300,7 @@ trait TestOpInterfaceConstGeneric3<const N: usize>:
 struct VerifyIntrOpConstGeneric {}
 impl VerifyIntrOpConstGeneric {
     fn new(ctx: &mut Context) -> VerifyIntrOpConstGeneric {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -877,8 +873,7 @@ trait TestNoInbuiltVerifyInterface {
 struct NoInbuiltVerifyOp {}
 impl NoInbuiltVerifyOp {
     fn new(ctx: &mut Context) -> NoInbuiltVerifyOp {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -905,8 +900,7 @@ fn test_no_inbuilt_verify() -> Result<()> {
 struct NoInbuiltVerifyOp2 {}
 impl NoInbuiltVerifyOp2 {
     fn new(ctx: &mut Context) -> NoInbuiltVerifyOp2 {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 1);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 1)
     }
 }
 
@@ -1098,8 +1092,7 @@ pub struct CanonicalOp;
 
 impl CanonicalOp {
     pub fn new(ctx: &mut Context) -> CanonicalOp {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 

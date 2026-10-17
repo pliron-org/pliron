@@ -117,15 +117,7 @@ pub struct ReturnOp;
 impl ReturnOp {
     /// Create a new [ReturnOp]
     pub fn new(ctx: &mut Context, value: Option<Value>) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            value.into_iter().collect(),
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], value.into_iter().collect(), vec![], 0)
     }
 
     /// Get the returned value, if it exists.
@@ -186,8 +178,7 @@ pub struct UnreachableOp;
 impl UnreachableOp {
     /// Create a new [UnreachableOp]
     pub fn new(ctx: &mut Context) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 
@@ -388,15 +379,7 @@ impl ICmpOp {
             bool_ty.into()
         };
 
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![lhs, rhs],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![res_ty], vec![lhs, rhs], vec![], 0);
         op.set_attr_llvm_icmp_predicate(ctx, pred);
         op
     }
@@ -500,15 +483,7 @@ impl AllocaOp {
     /// Create a new [AllocaOp]
     pub fn new(ctx: &mut Context, elem_type: TypeHandle, size: Value, address_space: u32) -> Self {
         let ptr_ty = PointerType::get(ctx, address_space).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ptr_ty],
-            vec![size],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![ptr_ty], vec![size], vec![], 0);
         op.set_attr_llvm_alloca_element_type(ctx, TypeAttr::new(elem_type));
         op
     }
@@ -681,16 +656,7 @@ impl BranchOpInterface for BrOp {
 impl BrOp {
     /// Create anew [BrOp].
     pub fn new(ctx: &mut Context, dest: Ptr<BasicBlock>, dest_opds: Vec<Value>) -> Self {
-        Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![],
-                dest_opds,
-                vec![dest],
-                0,
-            ),
-        }
+        Operation::new_op::<Self>(ctx, vec![], dest_opds, vec![dest], 0)
     }
 }
 
@@ -727,16 +693,7 @@ impl CondBrOp {
         let (operands, segment_sizes) =
             Self::compute_segment_sizes(vec![vec![condition], true_dest_opds, false_dest_opds]);
 
-        let op = Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![],
-                operands,
-                vec![true_dest, false_dest],
-                0,
-            ),
-        };
+        let op = Operation::new_op::<Self>(ctx, vec![], operands, vec![true_dest, false_dest], 0);
 
         // Set the operand segment sizes attribute.
         op.set_operand_segment_sizes(ctx, segment_sizes);
@@ -1126,16 +1083,7 @@ impl SwitchOp {
 
         let case_dests = cases.iter().map(|case| case.dest);
         let successors = vec![default_dest].into_iter().chain(case_dests).collect();
-        let op = Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![],
-                operands,
-                successors,
-                0,
-            ),
-        };
+        let op = Operation::new_op::<Self>(ctx, vec![], operands, successors, 0);
 
         // Set the operand segment sizes attribute.
         op.set_operand_segment_sizes(ctx, segment_sizes);
@@ -1421,16 +1369,7 @@ impl IndirectBrOp {
         let (operands, segment_sizes) = Self::compute_segment_sizes(operand_segments);
 
         let successors = dests.iter().map(|(dest, _)| *dest).collect();
-        let op = Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![],
-                operands,
-                successors,
-                0,
-            ),
-        };
+        let op = Operation::new_op::<Self>(ctx, vec![], operands, successors, 0);
 
         // Set the operand segment sizes attribute.
         op.set_operand_segment_sizes(ctx, segment_sizes);
@@ -1650,16 +1589,8 @@ impl GetElementPtrOp {
                 }
             }
         }
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            opds,
-            vec![],
-            0,
-        );
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], opds, vec![], 0);
         let src_elem_type = TypeAttr::new(src_elem_type);
-        let op = Self { op };
 
         op.set_attr_llvm_gep_indices(ctx, GepIndicesAttr(attr));
         op.set_attr_llvm_gep_src_elem_type(ctx, src_elem_type);
@@ -1764,16 +1695,7 @@ pub struct LoadOp;
 impl LoadOp {
     /// Create a new [LoadOp]
     pub fn new(ctx: &mut Context, ptr: Value, res_ty: TypeHandle) -> Self {
-        Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![res_ty],
-                vec![ptr],
-                vec![],
-                0,
-            ),
-        }
+        Operation::new_op::<Self>(ctx, vec![res_ty], vec![ptr], vec![], 0)
     }
 }
 
@@ -1807,16 +1729,7 @@ pub struct StoreOp;
 impl StoreOp {
     /// Create a new [StoreOp]
     pub fn new(ctx: &mut Context, value: Value, ptr: Value) -> Self {
-        Self {
-            op: Operation::new(
-                ctx,
-                Self::get_concrete_op_info(),
-                vec![],
-                vec![value, ptr],
-                vec![],
-                0,
-            ),
-        }
+        Operation::new_op::<Self>(ctx, vec![], vec![value, ptr], vec![], 0)
     }
 }
 
@@ -1862,15 +1775,7 @@ impl AtomicRmwOp {
     ) -> Self {
         use pliron::r#type::Typed;
         let res_ty = val.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![ptr, val],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![res_ty], vec![ptr, val], vec![], 0);
         op.set_attr_llvm_rmw_kind(ctx, kind);
         op.set_attr_llvm_rmw_ordering(ctx, ordering);
         op.set_syncscope(ctx, syncscope);
@@ -1955,15 +1860,7 @@ impl AtomicCmpxchgOp {
         let res_ty =
             StructType::get_unnamed(ctx, (vec![val_ty, bool_ty.into()], StructLayout::Unpacked))
                 .into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![ptr, cmp, new_val],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![res_ty], vec![ptr, cmp, new_val], vec![], 0);
         op.set_attr_llvm_cas_success_ordering(ctx, success_ordering);
         op.set_attr_llvm_cas_failure_ordering(ctx, failure_ordering);
         op.set_syncscope(ctx, syncscope);
@@ -2006,8 +1903,7 @@ impl Verify for FenceOp {
 impl FenceOp {
     /// Create a new [FenceOp].
     pub fn new(ctx: &mut Context, ordering: AtomicOrderingAttr, syncscope: SyncScopeAttr) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0);
         op.set_attr_llvm_fence_ordering(ctx, ordering);
         op.set_syncscope(ctx, syncscope);
         op
@@ -2073,15 +1969,7 @@ impl AtomicLoadOp {
         ordering: AtomicOrderingAttr,
         syncscope: SyncScopeAttr,
     ) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![ptr],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![res_ty], vec![ptr], vec![], 0);
         op.set_attr_llvm_ld_ordering(ctx, ordering);
         op.set_syncscope(ctx, syncscope);
         op
@@ -2143,15 +2031,7 @@ impl AtomicStoreOp {
         ordering: AtomicOrderingAttr,
         syncscope: SyncScopeAttr,
     ) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![value, ptr],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![], vec![value, ptr], vec![], 0);
         op.set_attr_llvm_st_ordering(ctx, ordering);
         op.set_syncscope(ctx, syncscope);
         op
@@ -2220,15 +2100,7 @@ impl InlineAsmOp {
         constraints: &str,
         side_effects: bool,
     ) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            inputs,
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_ty], inputs, vec![], 0);
         op.set_attr_llvm_inline_asm_template(ctx, StringAttr::new(asm_template.to_string()));
         op.set_attr_llvm_inline_asm_constraints(ctx, StringAttr::new(constraints.to_string()));
         op.set_attr_llvm_inline_asm_side_effects(ctx, BoolAttr::new(side_effects));
@@ -2270,29 +2142,13 @@ impl CallOp {
         let res_ty = callee_ty.deref(ctx).result_type();
         let op = match callee {
             CallOpCallable::Direct(cval) => {
-                let op = Operation::new(
-                    ctx,
-                    Self::get_concrete_op_info(),
-                    vec![res_ty],
-                    args,
-                    vec![],
-                    0,
-                );
-                let op = Self { op };
+                let op = Operation::new_op::<Self>(ctx, vec![res_ty], args, vec![], 0);
                 op.set_attr_llvm_call_callee(ctx, IdentifierAttr::new(cval));
                 op
             }
             CallOpCallable::Indirect(csym) => {
                 args.insert(0, csym);
-                let op = Operation::new(
-                    ctx,
-                    Self::get_concrete_op_info(),
-                    vec![res_ty],
-                    args,
-                    vec![],
-                    0,
-                );
-                Self { op }
+                Operation::new_op::<Self>(ctx, vec![res_ty], args, vec![], 0)
             }
         };
         op.set_callee_type(ctx, callee_ty.into());
@@ -2566,15 +2422,7 @@ impl ConstantOp {
     /// Create a new [ConstantOp] holding `value`.
     pub fn new(ctx: &mut Context, value: Box<dyn TypedAttrInterface>) -> Self {
         let result_type = value.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], vec![], vec![], 0);
         op.set_attr_llvm_constant_value(ctx, value);
         op
     }
@@ -2647,15 +2495,7 @@ pub struct UndefOp;
 impl UndefOp {
     /// Create a new [UndefOp].
     pub fn new(ctx: &mut Context, result_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_ty], vec![], vec![], 0)
     }
 }
 
@@ -2677,15 +2517,7 @@ pub struct PoisonOp;
 impl PoisonOp {
     /// Create a new [PoisonOp].
     pub fn new(ctx: &mut Context, result_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_ty], vec![], vec![], 0)
     }
 }
 
@@ -2714,15 +2546,7 @@ impl FreezeOp {
     pub fn new(ctx: &mut Context, value: Value) -> Self {
         use pliron::r#type::Typed;
         let result_ty = value.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![value],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_ty], vec![value], vec![], 0)
     }
 }
 
@@ -2744,15 +2568,7 @@ pub struct ZeroOp;
 impl ZeroOp {
     /// Create a new [ZeroOp].
     pub fn new(ctx: &mut Context, result_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_ty], vec![], vec![], 0)
     }
 }
 
@@ -2796,8 +2612,7 @@ pub struct GlobalOp;
 impl GlobalOp {
     /// Create a new [GlobalOp]. An initializer region can be added later if needed.
     pub fn new(ctx: &mut Context, name: Identifier, ty: TypeHandle) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0);
         op.set_symbol_name(ctx, name);
         op.set_attr_llvm_global_type(ctx, TypeAttr::new(ty));
         op
@@ -3084,15 +2899,7 @@ impl AddressOfOp {
     /// Create a new [AddressOfOp].
     pub fn new(ctx: &mut Context, global_name: Identifier, address_space: u32) -> Self {
         let result_type = PointerType::get(ctx, address_space).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], vec![], vec![], 0);
         op.set_attr_llvm_global_name(ctx, IdentifierAttr::new(global_name));
         op
     }
@@ -3205,8 +3012,7 @@ impl Verify for BlockTagOp {
 
 impl BlockTagOp {
     pub fn new(ctx: &mut Context, tag: u64) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0);
         let tag_ty = IntegerType::get(ctx, 64, Signedness::Signless);
         op.set_attr_llvm_block_tag_id(
             ctx,
@@ -3253,15 +3059,7 @@ impl BlockAddressOp {
     /// Create a new [BlockAddressOp] referring to a specific block (function_name, tag).
     pub fn new(ctx: &mut Context, function_name: Identifier, tag: u64, address_space: u32) -> Self {
         let result_type = PointerType::get(ctx, address_space).into();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], vec![], vec![], 0);
         let tag_ty = IntegerType::get(ctx, 64, Signedness::Signless);
         op.set_attr_llvm_block_address_function(ctx, IdentifierAttr::new(function_name));
         op.set_attr_llvm_block_address_tag(
@@ -3815,15 +3613,8 @@ impl InsertValueOp {
         use pliron::r#type::Typed;
 
         let result_type = aggregate.get_type(ctx);
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![aggregate, value],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op =
+            Operation::new_op::<Self>(ctx, vec![result_type], vec![aggregate, value], vec![], 0);
         op.set_attr_llvm_insert_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
         op
     }
@@ -3929,15 +3720,7 @@ impl ExtractValueOp {
     pub fn new(ctx: &mut Context, aggregate: Value, indices: Vec<u32>) -> Result<Self> {
         use pliron::r#type::Typed;
         let result_type = Self::indexed_type(ctx, aggregate.get_type(ctx), &indices)?;
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![aggregate],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_type], vec![aggregate], vec![], 0);
         op.set_attr_llvm_extract_value_indices(ctx, InsertExtractValueIndicesAttr(indices));
         Ok(op)
     }
@@ -4043,15 +3826,13 @@ impl InsertElementOp {
         use pliron::r#type::Typed;
 
         let result_type = vector.get_type(ctx);
-        let op = Operation::new(
+        Operation::new_op::<Self>(
             ctx,
-            Self::get_concrete_op_info(),
             vec![result_type],
             vec![vector, element, index],
             vec![],
             0,
-        );
-        Self { op }
+        )
     }
 
     /// Get the vector type of the InsertElementOp.
@@ -4120,15 +3901,7 @@ impl ExtractElementOp {
             .expect("ExtractElementOp vector operand must be a vector type")
             .elem_type();
 
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_type],
-            vec![vector, index],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![result_type], vec![vector, index], vec![], 0)
     }
 
     /// Get the vector type of the ExtractElementOp.
@@ -4228,9 +4001,8 @@ impl ShuffleVectorOp {
                 .expect("ShuffleVectorOp mask length too large"),
             kind,
         );
-        let op = Operation::new(
+        let op = Operation::new_op::<Self>(
             ctx,
-            Self::get_concrete_op_info(),
             vec![result_type.into()],
             vec![vector1, vector2],
             vec![],
@@ -4238,7 +4010,6 @@ impl ShuffleVectorOp {
         );
 
         let mask_attr = ShuffleVectorMaskAttr(mask);
-        let op = Self { op };
         op.set_attr_llvm_shuffle_vector_mask(ctx, mask_attr);
         op
     }
@@ -4279,15 +4050,13 @@ impl SelectOp {
         use pliron::r#type::Typed;
 
         let result_type = true_val.get_type(ctx);
-        let op = Operation::new(
+        Operation::new_op::<Self>(
             ctx,
-            Self::get_concrete_op_info(),
             vec![result_type],
             vec![cond, true_val, false_val],
             vec![],
             0,
-        );
-        Self { op }
+        )
     }
 
     /// Create a new [SelectOp] with fast-math flags set.
@@ -4398,15 +4167,7 @@ impl FNegOp {
         fast_math_flags: FastmathFlagsAttr,
     ) -> Self {
         use pliron::r#type::Typed;
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![arg.get_type(ctx)],
-            vec![arg],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![arg.get_type(ctx)], vec![arg], vec![], 0);
         op.set_fast_math_flags(ctx, fast_math_flags);
         op
     }
@@ -4512,15 +4273,7 @@ impl FCmpOp {
             let kind = vector.kind();
             result_ty = VectorType::get(ctx, result_ty, num_elements, kind).into();
         }
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![result_ty],
-            vec![lhs, rhs],
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![result_ty], vec![lhs, rhs], vec![], 0);
         op.set_attr_llvm_fcmp_predicate(ctx, pred);
         op
     }
@@ -4590,15 +4343,7 @@ impl CallIntrinsicOp {
         operands: Vec<Value>,
     ) -> Self {
         let res_ty = intrinsic_type.deref(ctx).result_type();
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            operands,
-            vec![],
-            0,
-        );
-        let op = Self { op };
+        let op = Operation::new_op::<Self>(ctx, vec![res_ty], operands, vec![], 0);
         op.set_attr_llvm_intrinsic_name(ctx, intrinsic_name);
         op.set_attr_llvm_intrinsic_type(ctx, TypeAttr::new(intrinsic_type.into()));
         op
@@ -4787,15 +4532,7 @@ impl Verify for VAArgOp {
 impl VAArgOp {
     /// Create a new [VAArgOp].
     pub fn new(ctx: &mut Context, list: Value, ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ty],
-            vec![list],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![ty], vec![list], vec![], 0)
     }
 }
 
@@ -4824,8 +4561,7 @@ impl FuncOp {
     /// Create a new empty [FuncOp].
     pub fn new(ctx: &mut Context, name: Identifier, ty: TypedHandle<FuncType>) -> Self {
         let ty_attr = TypeAttr::new(ty.into());
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        let opop = Self { op };
+        let opop = Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0);
         opop.set_symbol_name(ctx, name);
         opop.set_attr_llvm_func_type(ctx, ty_attr);
 
@@ -4921,14 +4657,8 @@ impl Parsable for FuncOp {
             )?
         }
 
-        let op = Operation::new(
-            state_stream.state.ctx,
-            Self::get_concrete_op_info(),
-            vec![],
-            vec![],
-            vec![],
-            0,
-        );
+        let opop = Operation::new_op::<Self>(state_stream.state.ctx, vec![], vec![], vec![], 0);
+        let op = opop.get_operation();
 
         let mut parser = (
             spaced(token('@').with(Identifier::parser(()))).skip(spaced(token(':'))),
@@ -4944,7 +4674,6 @@ impl Parsable for FuncOp {
                 let ctx = &mut state_stream.state.ctx;
                 op.deref_mut(ctx).attributes = attrs;
                 let ty_attr = TypeAttr::new(fty);
-                let opop = Self { op };
                 opop.set_symbol_name(ctx, fname);
                 opop.set_attr_llvm_func_type(ctx, ty_attr);
                 OpObj::new(opop)
