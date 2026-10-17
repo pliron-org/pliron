@@ -305,14 +305,22 @@ error: explicit construction of the `Op` `MyOp`
   --> $DIR/main.rs:356:9
    |
 LL |         MyOp { op }
-   |         ----^^^^^^^
-   |         |
-   |         help: in a constructor of the `Op`, use `Self`: `Self`
+   |         ^^^^^^^^^^^
    |
+   = help: in a constructor of the `Op`, use `Operation::new_op::<Self>(..)`, which creates the operation and the `Op` together
    = note: `#[deny(explicit_op_construction)]` on by default
 
+warning: construction of an `Op` with `Self { op }`
+  --> $DIR/main.rs:362:9
+   |
+LL |         Self { op }
+   |         ^^^^^^^^^^^
+   |
+   = help: in a constructor of the `Op`, use `Operation::new_op::<Self>(..)`, which creates the operation and the `Op` together
+   = note: `#[warn(self_op_construction)]` on by default
+
 error: explicit construction of the `Op` `MyOp`
-  --> $DIR/main.rs:368:5
+  --> $DIR/main.rs:374:5
    |
 LL |     MyOp { op }
    |     ^^^^^^^^^^^
@@ -320,7 +328,7 @@ LL |     MyOp { op }
    = help: use `Operation::get_op::<MyOp>(op, ctx)`, which checks that the operation is a `MyOp`
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:388:25
+  --> $DIR/main.rs:394:25
    |
 LL |         write!(f, "{}", self.0.disp(ctx))
    |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
@@ -328,24 +336,24 @@ LL |         write!(f, "{}", self.0.disp(ctx))
    = note: `#[warn(disp_in_printable)]` on by default
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:404:23
+  --> $DIR/main.rs:410:23
    |
 LL |         let text = || self.0.disp(ctx).to_string();
    |                       ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, state)`
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:420:25
+  --> $DIR/main.rs:426:25
    |
 LL |         write!(f, "{}", self.0.disp(ctx))
    |                         ^^^^^^^^^^^^^^^^ help: use `print` with the `State` of `fmt`: `self.0.print(ctx, _state)`
 
 warning: `disp` prints with a default `State`, not the `State` of `fmt`
-  --> $DIR/main.rs:437:33
+  --> $DIR/main.rs:443:33
    |
 LL |         write!(f, "{state} {}", self.0.disp(ctx))
    |                                 ^^^^^^^^^^^^^^^^
    |
    = help: use `print` with the `State` of `fmt`; the body of `fmt` binds the name `state` again
 
-error: aborting due to 8 previous errors; 20 warnings emitted
+error: aborting due to 8 previous errors; 21 warnings emitted
 

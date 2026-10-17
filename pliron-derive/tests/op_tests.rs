@@ -41,15 +41,7 @@ struct ValueProducerOp;
 
 impl ValueProducerOp {
     fn new(ctx: &mut Context, ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![ty],
-            vec![],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![ty], vec![], vec![], 0)
     }
 
     fn result(&self, ctx: &Context) -> Value {
@@ -80,15 +72,7 @@ impl NamedGetterOp {
         out_ty: TypeHandle,
         aux_ty: TypeHandle,
     ) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![out_ty, aux_ty],
-            vec![lhs, mid, rhs],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![out_ty, aux_ty], vec![lhs, mid, rhs], vec![], 0)
     }
 }
 
@@ -104,15 +88,7 @@ struct TypedChecksOp;
 
 impl TypedChecksOp {
     fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![arg],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![res_ty], vec![arg], vec![], 0)
     }
 }
 
@@ -127,15 +103,7 @@ struct UntypedNamedOp;
 
 impl UntypedNamedOp {
     fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![arg],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![res_ty], vec![arg], vec![], 0)
     }
 }
 
@@ -151,15 +119,7 @@ struct SkipUntypedOp;
 
 impl SkipUntypedOp {
     fn new(ctx: &mut Context, arg: Value, res_ty: TypeHandle) -> Self {
-        let op = Operation::new(
-            ctx,
-            Self::get_concrete_op_info(),
-            vec![res_ty],
-            vec![arg],
-            vec![],
-            0,
-        );
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![res_ty], vec![arg], vec![], 0)
     }
 }
 
@@ -183,15 +143,13 @@ impl MixedSkipUntypedOp {
         res1_ty: TypeHandle,
         res2_ty: TypeHandle,
     ) -> Self {
-        let op = Operation::new(
+        Operation::new_op::<Self>(
             ctx,
-            Self::get_concrete_op_info(),
             vec![res0_ty, res1_ty, res2_ty],
             vec![op0, op1, op2],
             vec![],
             0,
-        );
-        Self { op }
+        )
     }
 }
 
@@ -359,8 +317,7 @@ struct AttrOp;
 
 impl AttrOp {
     fn new(ctx: &mut Context) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 
@@ -483,8 +440,7 @@ struct ComputeOp;
 
 impl ComputeOp {
     fn new(ctx: &mut Context) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 
@@ -500,8 +456,7 @@ impl ComputeInterface for ManualComputeOp {}
 
 impl ManualComputeOp {
     fn new(ctx: &mut Context) -> Self {
-        let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
-        Self { op }
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 

@@ -350,16 +350,22 @@ struct OpHolder {
 struct MyOp {}
 
 impl MyOp {
-    // `explicit_op_construction` must report an error and suggest `Self`.
+    // `explicit_op_construction` must report an error and tell to use `Operation::new_op`.
     fn new_with_name(ctx: &mut Context) -> Self {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
         MyOp { op }
     }
 
-    // `explicit_op_construction` must not report an error: the constructor uses `Self`.
+    // `self_op_construction` must warn and tell to use `Operation::new_op`.
     fn new_with_self(ctx: &mut Context) -> Self {
         let op = Operation::new(ctx, Self::get_concrete_op_info(), vec![], vec![], vec![], 0);
         Self { op }
+    }
+
+    // `explicit_op_construction` and `self_op_construction` must not report: the constructor
+    // uses `Operation::new_op`.
+    fn new_with_new_op(ctx: &mut Context) -> Self {
+        Operation::new_op::<Self>(ctx, vec![], vec![], vec![], 0)
     }
 }
 
@@ -460,7 +466,13 @@ fn disp_outside_printable(ty: TypeHandle, ctx: &Context) -> String {
 
 fn main() {
     let _ = OpHolder { target: op_ptr() }.target;
-    let _ = (MyOp::new_with_name, MyOp::new_with_self, wrap_op, get_my_op);
+    let _ = (
+        MyOp::new_with_name,
+        MyOp::new_with_self,
+        MyOp::new_with_new_op,
+        wrap_op,
+        get_my_op,
+    );
     let _ = (
         disp_outside_printable,
         DispDirect,

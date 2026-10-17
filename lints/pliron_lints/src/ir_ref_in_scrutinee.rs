@@ -16,7 +16,7 @@ use rustc_span::{Span, Symbol, SyntaxContext};
 use std::ops::ControlFlow;
 
 declare_lint! {
-    /// ### Warn about `Ref` temporaries in loop and `match` headers
+    /// ### Warn against `Ref` temporaries in loop and `match` headers
     ///
     /// The lint applies to the iterable of a `for` loop, and to the scrutinee of a `match`,
     /// `if let` or `while let`. It reports a `Ref` or `RefMut` temporary there only when

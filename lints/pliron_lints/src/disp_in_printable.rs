@@ -10,7 +10,7 @@ use rustc_session::{declare_lint, declare_lint_pass};
 use rustc_span::Ident;
 
 declare_lint! {
-    /// ### Warn about `disp` in an `impl Printable`
+    /// ### Warn against `disp` in an `impl Printable`
     ///
     /// The lint reports a call of `disp` in the `fmt` method of an `impl Printable`.
     /// `disp` prints with a default `State`, so the state of `fmt` (for example the

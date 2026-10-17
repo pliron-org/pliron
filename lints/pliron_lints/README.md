@@ -32,11 +32,13 @@ struct TargetAttr {
 }
 ```
 
-`explicit_op_construction` (deny): an `Op` is constructed with its name instead of `Self` or
-`Operation::get_op`.
+`explicit_op_construction` (deny) and `self_op_construction` (warn):
+an `Op` is constructed with a struct expression instead of `Operation::new_op`
+or `Operation::get_op`.
 
 ```rust
-let my_op = MyOp { op };
+let my_op = MyOp { op }; // explicit_op_construction
+Self { op }              // self_op_construction
 ```
 
 `disp_in_printable` (warn): `disp` in an `impl Printable` prints with a default `State`

@@ -28,6 +28,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
     lint_store.register_lints(&[
         disp_in_printable::DISP_IN_PRINTABLE,
         explicit_op_construction::EXPLICIT_OP_CONSTRUCTION,
+        explicit_op_construction::SELF_OP_CONSTRUCTION,
         ir_borrow_with_context::IR_BORROW_WITH_CONTEXT,
         ir_entity_in_type_or_attr::IR_ENTITY_IN_TYPE_OR_ATTR,
         ir_ref_in_scrutinee::IR_REF_IN_SCRUTINEE,

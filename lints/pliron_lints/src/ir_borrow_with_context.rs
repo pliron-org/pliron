@@ -9,7 +9,7 @@ use rustc_span::Span;
 use rustc_span::def_id::LocalDefId;
 
 declare_lint! {
-    /// ### Warn about IR object borrows in functions that take a `Context`
+    /// ### Warn against IR object borrows in functions that take a `Context`
     ///
     /// The lint reports a parameter of type `&Operation`, `&BasicBlock` or `&Region`
     /// (shared or mutable), or a `Ref` or `RefMut` of one of these types, when the same
