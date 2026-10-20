@@ -355,6 +355,36 @@ pub mod htable {
         {
             self.0.retain(f)
         }
+
+        /// Returns an unstable iterator over the map's key-value pairs.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_iter(&self) -> hashbrown::hash_map::Iter<'_, K, V> {
+            self.0.iter()
+        }
+
+        /// Returns an unstable mutable iterator over the map's key-value pairs.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_iter_mut(&mut self) -> hashbrown::hash_map::IterMut<'_, K, V> {
+            self.0.iter_mut()
+        }
+
+        /// Returns an unstable iterator over the map's keys.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_keys(&self) -> impl Iterator<Item = &K> + '_ {
+            self.0.keys()
+        }
+
+        /// Returns an unstable iterator over the map's values.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_values(&self) -> impl Iterator<Item = &V> + '_ {
+            self.0.values()
+        }
+
+        /// Returns an unstable mutable iterator over the map's values.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_values_mut(&mut self) -> impl Iterator<Item = &mut V> + '_ {
+            self.0.values_mut()
+        }
     }
 
     impl<K: Eq + Hash, V, Q> core::ops::Index<&Q> for HMap<K, V>
@@ -562,6 +592,12 @@ pub mod htable {
         /// `self` contains at least all the values in `other`.
         pub fn is_superset(&self, other: &Self) -> bool {
             self.0.is_superset(&other.0)
+        }
+
+        /// Returns an unstable iterator over the map's key-value pairs.
+        /// Ordering will different between runs and threads and cannot be relied on.
+        pub fn unstable_iter(&self) -> hashbrown::hash_set::Iter<'_, T> {
+            self.0.iter()
         }
     }
 
