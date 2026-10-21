@@ -63,6 +63,13 @@ fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::
 }
 ```
 
+`unstable_iteration` (warn): a use of an `unstable_*` method of `HMap` or `HSet`, which
+iterates in an order that is not specified.
+
+```rust
+let names: Vec<_> = map.unstable_values().collect();
+```
+
 ## Running the lints
 
 Install Dylint tools:

@@ -6,12 +6,12 @@
 //! * [itable] Provides [IMap] and [ISet]. They provide all standard hash table operations,
 //!   with deterministic iteration.
 //! * [htable] Provides [HMap] and [HSet]. They provide all standard hash table operations,
-//!   except iteration.
+//!   except stable iteration.
 //! * [smalltable] Provides [SmallMap] and [SmallSet], for tables that are usually small.
 //!
 //! All of these use [rustc_hash::FxBuildHasher], a fast, non-cryptographic hasher.
 //!
-//! If iteration is not required, use [htable] since it is faster and uses less memory.
+//! If stable iteration is not required, use [htable] since it is faster and uses less memory.
 //!
 //! Currently [itable] is backed by [indexmap], and [htable] is backed by [hashbrown].
 
@@ -174,7 +174,7 @@ pub mod htable {
         }
     }
 
-    /// A hash map with a fast, non-cryptographic hasher and no iteration support.
+    /// A hash map with a fast, non-cryptographic hasher and no stable iteration support.
     #[derive(Clone)]
     pub struct HMap<K, V>(hashbrown::HashMap<K, V, FxBuildHasher>);
 
@@ -356,32 +356,27 @@ pub mod htable {
             self.0.retain(f)
         }
 
-        /// Returns an unstable iterator over the map's key-value pairs.
-        /// Ordering will different between runs and threads and cannot be relied on.
-        pub fn unstable_iter(&self) -> hashbrown::hash_map::Iter<'_, K, V> {
+        /// Returns an iterator (without a specified order) over the map's key-value pairs.
+        pub fn unstable_iter(&self) -> impl Iterator<Item = (&K, &V)> + '_ {
             self.0.iter()
         }
 
-        /// Returns an unstable mutable iterator over the map's key-value pairs.
-        /// Ordering will different between runs and threads and cannot be relied on.
-        pub fn unstable_iter_mut(&mut self) -> hashbrown::hash_map::IterMut<'_, K, V> {
+        /// Returns a mutable iterator (without a specified order) over the map's key-value pairs.
+        pub fn unstable_iter_mut(&mut self) -> impl Iterator<Item = (&K, &mut V)> + '_ {
             self.0.iter_mut()
         }
 
-        /// Returns an unstable iterator over the map's keys.
-        /// Ordering will different between runs and threads and cannot be relied on.
+        /// Returns an iterator (without a specified order) over the map's keys.
         pub fn unstable_keys(&self) -> impl Iterator<Item = &K> + '_ {
             self.0.keys()
         }
 
-        /// Returns an unstable iterator over the map's values.
-        /// Ordering will different between runs and threads and cannot be relied on.
+        /// Returns an iterator (without a specified order) over the map's values.
         pub fn unstable_values(&self) -> impl Iterator<Item = &V> + '_ {
             self.0.values()
         }
 
-        /// Returns an unstable mutable iterator over the map's values.
-        /// Ordering will different between runs and threads and cannot be relied on.
+        /// Returns a mutable iterator (without a specified order) over the map's values.
         pub fn unstable_values_mut(&mut self) -> impl Iterator<Item = &mut V> + '_ {
             self.0.values_mut()
         }
@@ -429,7 +424,7 @@ pub mod htable {
         }
     }
 
-    /// A hash set with a fast, non-cryptographic hasher and no iteration support.
+    /// A hash set with a fast, non-cryptographic hasher and no stable iteration support.
     #[derive(Clone)]
     pub struct HSet<T>(hashbrown::HashSet<T, FxBuildHasher>);
 
@@ -594,9 +589,8 @@ pub mod htable {
             self.0.is_superset(&other.0)
         }
 
-        /// Returns an unstable iterator over the map's key-value pairs.
-        /// Ordering will different between runs and threads and cannot be relied on.
-        pub fn unstable_iter(&self) -> hashbrown::hash_set::Iter<'_, T> {
+        /// Returns an iterator (without a specified order) over the set's elements.
+        pub fn unstable_iter(&self) -> impl Iterator<Item = &T> + '_ {
             self.0.iter()
         }
     }
