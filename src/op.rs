@@ -186,7 +186,7 @@ impl Display for OpId {
     }
 }
 
-pub(crate) type ConcreteOpInfo = (
+pub type ConcreteOpInfo = (
     fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
     core::any::TypeId,
 );
