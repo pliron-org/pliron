@@ -664,3 +664,70 @@ fn simplify_cfg_collapses_straight_line_chain() -> Result<()> {
     .assert_eq(&after);
     Ok(())
 }
+
+/// Check that a `test.when` with a zero condition must be erased,
+/// and that the uses of its result must use the operand that bypasses its region.
+#[test]
+fn simplify_cfg_erases_region_branch_op_with_unreachable_regions() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+      ^entry(x: builtin.integer i64):
+      f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      r = test.when (f, x) {
+        ^body():
+        a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        test.yield a
+      } : builtin.integer i64;
+      llvm.return r
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            f_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
+            llvm.return x_v0 !2
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// Check that simplify-cfg must erase a `test.when` with an unreachable region, together
+/// with a `test.when` that is nested in that region and is a fold candidate too.
+#[test]
+fn simplify_cfg_erases_nested_region_branch_ops_with_unreachable_regions() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+      ^entry(x: builtin.integer i64):
+      f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      r = test.when (f, x) {
+        ^body():
+        g = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+        inner = test.when (g, x) {
+          ^inner_body():
+          a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+          test.yield a
+        } : builtin.integer i64;
+        test.yield inner
+      } : builtin.integer i64;
+      llvm.return r
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            f_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
+            llvm.return x_v0 !2
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
