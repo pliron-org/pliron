@@ -197,7 +197,8 @@ fn process_region_branch_edges(
         }
         match edge.to {
             RegionSuccessor::Region(region) => {
-                if let Some(entry) = region.deref(ctx).get_entry_block() {
+                let entry = region.deref(ctx).get_entry_block();
+                if let Some(entry) = entry {
                     state.mark_block_reachable(ctx, entry);
                 }
             }

@@ -179,7 +179,8 @@ impl SccpState {
 
     /// Mark the first operation of `block` as reachable.
     pub(super) fn mark_block_reachable(&mut self, ctx: &Context, block: Ptr<BasicBlock>) {
-        if let Some(first) = block.deref(ctx).get_head() {
+        let first = block.deref(ctx).get_head();
+        if let Some(first) = first {
             self.mark_reachable(ctx, first);
         }
     }
@@ -189,7 +190,8 @@ impl SccpState {
         if op == self.root_op {
             return;
         }
-        if let Some(next) = op.deref(ctx).get_next() {
+        let next = op.deref(ctx).get_next();
+        if let Some(next) = next {
             self.mark_reachable(ctx, next);
         }
     }
