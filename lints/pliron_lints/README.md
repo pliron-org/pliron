@@ -63,6 +63,16 @@ fn fmt(&self, ctx: &Context, state: &State, f: &mut fmt::Formatter<'_>) -> fmt::
 }
 ```
 
+`raw_hash_table` (deny) and `unstable_iteration` (warn): hash table iteration order
+is unspecified.
+
+```rust
+// raw_hash_table
+let names: hashbrown::HashMap<u32, String> = hashbrown::HashMap::new();
+// unstable_iteration
+let names: Vec<_> = map.unstable_values().collect();
+```
+
 ## Running the lints
 
 Install Dylint tools:

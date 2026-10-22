@@ -17,6 +17,7 @@ use pliron::parsable::{Parsable, ParseResult, StateStream};
 use pliron::printable::{Printable, State};
 use pliron::region::Region;
 use pliron::r#type::{TypeHandle, TypedHandle};
+use pliron::utils::table::{HMap, HSet, IMap};
 use pliron::value::Value;
 
 fn use_ctx(_ctx: &Context) {}
@@ -541,6 +542,58 @@ fn disp_outside_printable(ty: TypeHandle, ctx: &Context) -> String {
     ty.disp(ctx).to_string()
 }
 
+// `unstable_iteration` must warn for each `unstable_*` method of `HMap`.
+fn hmap_unstable_iteration(mut map: HMap<u32, u32>) -> usize {
+    let mut n = map.unstable_iter().count() + map.unstable_keys().count();
+    n += map.unstable_values().count();
+    n += map.unstable_iter_mut().count();
+    n + map.unstable_values_mut().count()
+}
+
+// `unstable_iteration` must warn for `HSet::unstable_iter`.
+fn hset_unstable_iteration(set: HSet<u32>) -> usize {
+    set.unstable_iter().count()
+}
+
+// `unstable_iteration` must warn for a call with a path.
+fn hmap_unstable_iteration_path(map: HMap<u32, u32>) -> usize {
+    HMap::unstable_keys(&map).count()
+}
+
+// `unstable_iteration` must not warn: the lint is allowed at this site.
+#[allow(unknown_lints, unstable_iteration)]
+fn hmap_unstable_iteration_allowed(map: HMap<u32, u32>) -> u32 {
+    map.unstable_values().sum()
+}
+
+// `unstable_iteration` must not warn: an `IMap` iterates in a deterministic order.
+fn imap_iteration(map: IMap<u32, u32>) -> usize {
+    map.values().count()
+}
+
+// `raw_hash_table` must deny each `hashbrown` table: the field, the signature and the
+// `HashMap::new` path.
+struct HashbrownHolder {
+    names: hashbrown::HashMap<u32, u32>,
+}
+
+fn hashbrown_tables(set: hashbrown::HashSet<u32>) -> HashbrownHolder {
+    let _ = set;
+    HashbrownHolder {
+        names: hashbrown::HashMap::new(),
+    }
+}
+
+// `raw_hash_table` must deny each `std` table, also in a turbofish.
+fn std_tables(map: &std::collections::HashMap<u32, u32>) -> usize {
+    map.keys().collect::<std::collections::HashSet<_>>().len()
+}
+
+// `raw_hash_table` must not deny the pliron tables.
+fn pliron_tables(map: HMap<u32, u32>, set: HSet<u32>) -> usize {
+    map.len() + set.len()
+}
+
 fn main() {
     let _ = OpHolder { target: op_ptr() }.target;
     let _ = (
@@ -562,6 +615,15 @@ fn main() {
         DispShadowedState,
         PrintWithState,
     );
+    let _ = (
+        hmap_unstable_iteration,
+        hset_unstable_iteration,
+        hmap_unstable_iteration_path,
+        hmap_unstable_iteration_allowed,
+        imap_iteration,
+    );
+    let _ = (hashbrown_tables, std_tables, pliron_tables);
+    let _ = |holder: HashbrownHolder| holder.names;
     let _ = (
         borrow_and_context,
         ref_borrow_and_context,
