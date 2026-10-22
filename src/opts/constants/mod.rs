@@ -7,7 +7,12 @@ use pliron_derive::op_interface;
 use crate::{
     attribute::{AttrObj, attr_cast},
     basic_block::BasicBlock,
-    builtin::{attr_interfaces::MaterializableAttr, op_interfaces::BranchOpInterface},
+    builtin::{
+        attr_interfaces::MaterializableAttr,
+        op_interfaces::{
+            BranchOpInterface, RegionBranchOpInterface, RegionBranchPoint, RegionSuccessor,
+        },
+    },
     context::{Context, Ptr},
     irbuild::{IRStatus, rewriter::Rewriter},
     op::Op,
@@ -85,7 +90,7 @@ pub trait ConstFoldInterface {
     }
 }
 
-/// Interface for ruling out branch destinations
+/// Interface for ruling out destinations of a [BranchOpInterface] op
 /// based on static information about branch conditions.
 #[op_interface]
 pub trait BranchOpFoldInterface: BranchOpInterface {
@@ -102,6 +107,46 @@ pub trait BranchOpFoldInterface: BranchOpInterface {
         &self,
         ctx: &mut Context,
         operand_attrs: &[Option<AttrObj>],
+        rewriter: &mut dyn Rewriter,
+    ) -> IRStatus;
+
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    where
+        Self: Sized,
+    {
+        Ok(())
+    }
+}
+
+/// Interface for ruling out control-flow edges of a [RegionBranchOpInterface] op
+/// based on static information about operands.
+#[op_interface]
+pub trait RegionBranchOpFoldInterface: RegionBranchOpInterface {
+    /// Return the possible successors of the edges that start at `point`.
+    ///
+    /// - `op_attrs` contains `Some(attr)` for each operand of this op
+    ///   that is known to be constant, where `attr` contains the known constant value.
+    /// - `terminator_attrs` does the same for the operands of the terminator at `point`.
+    ///   It is empty when `point` is [RegionBranchPoint::Parent].
+    ///
+    /// The result must be a subset of the successors of the edges that
+    /// [edges_from(point)](RegionBranchOpInterface::edges_from) returns.
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        point: RegionBranchPoint,
+        op_attrs: &[Option<AttrObj>],
+        terminator_attrs: &[Option<AttrObj>],
+    ) -> Vec<RegionSuccessor>;
+
+    /// Given a slice `op_attrs` corresponding to each operand, indicating a known
+    /// compile time constant value for that operand (if any), attempts to fold the op in
+    /// place using the provided `rewriter`. Assumes that `rewriter` is positioned just
+    /// before the op to be folded.
+    fn fold_in_place(
+        &self,
+        ctx: &mut Context,
+        op_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus;
 
