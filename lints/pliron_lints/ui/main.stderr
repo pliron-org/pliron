@@ -438,5 +438,46 @@ LL |     HMap::unstable_keys(&map).count()
    |
    = help: use `IMap` or `ISet` for a deterministic order; if the result is order independent, the lint must be explicitly allowed at this site
 
-error: aborting due to 10 previous errors; 29 warnings emitted
+error: use of `hashbrown::HashMap`
+  --> $DIR/main.rs:577:12
+   |
+LL |     names: hashbrown::HashMap<u32, u32>,
+   |            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `HMap`, or `IMap` for a deterministic iteration order
+   = note: `#[deny(raw_hash_table)]` on by default
+
+error: use of `hashbrown::HashSet`
+  --> $DIR/main.rs:580:26
+   |
+LL | fn hashbrown_tables(set: hashbrown::HashSet<u32>) -> HashbrownHolder {
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `HSet`, or `ISet` for a deterministic iteration order
+
+error: use of `hashbrown::HashMap`
+  --> $DIR/main.rs:583:16
+   |
+LL |         names: hashbrown::HashMap::new(),
+   |                ^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `HMap`, or `IMap` for a deterministic iteration order
+
+error: use of `std::collections::HashMap`
+  --> $DIR/main.rs:588:21
+   |
+LL | fn std_tables(map: &std::collections::HashMap<u32, u32>) -> usize {
+   |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `HMap`, or `IMap` for a deterministic iteration order
+
+error: use of `std::collections::HashSet`
+  --> $DIR/main.rs:589:26
+   |
+LL |     map.keys().collect::<std::collections::HashSet<_>>().len()
+   |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = help: use `HSet`, or `ISet` for a deterministic iteration order
+
+error: aborting due to 15 previous errors; 29 warnings emitted
 

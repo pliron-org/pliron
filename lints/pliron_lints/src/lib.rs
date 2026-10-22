@@ -18,6 +18,7 @@ mod ir_borrow_with_context;
 mod ir_entity_in_type_or_attr;
 mod ir_ref_in_scrutinee;
 mod op_layout;
+mod raw_hash_table;
 mod unstable_iteration;
 mod utils;
 
@@ -36,6 +37,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
         ir_entity_in_type_or_attr::IR_ENTITY_IN_TYPE_OR_ATTR,
         ir_ref_in_scrutinee::IR_REF_IN_SCRUTINEE,
         op_layout::OP_LAYOUT,
+        raw_hash_table::RAW_HASH_TABLE,
         unstable_iteration::UNSTABLE_ITERATION,
     ]);
     lint_store.register_late_lint_pass(Box::new(|_| Box::<op_layout::OpLayout>::default()));
@@ -52,6 +54,7 @@ pub fn register_lints(sess: &rustc_session::Session, lint_store: &mut rustc_lint
     lint_store.register_late_lint_pass(Box::new(|_| {
         Box::<ir_ref_in_scrutinee::IrRefInScrutinee>::default()
     }));
+    lint_store.register_late_lint_pass(Box::new(|_| Box::new(raw_hash_table::RawHashTable)));
     lint_store.register_late_lint_pass(Box::new(|_| {
         Box::new(unstable_iteration::UnstableIteration)
     }));

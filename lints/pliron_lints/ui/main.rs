@@ -571,6 +571,29 @@ fn imap_iteration(map: IMap<u32, u32>) -> usize {
     map.values().count()
 }
 
+// `raw_hash_table` must deny each `hashbrown` table: the field, the signature and the
+// `HashMap::new` path.
+struct HashbrownHolder {
+    names: hashbrown::HashMap<u32, u32>,
+}
+
+fn hashbrown_tables(set: hashbrown::HashSet<u32>) -> HashbrownHolder {
+    let _ = set;
+    HashbrownHolder {
+        names: hashbrown::HashMap::new(),
+    }
+}
+
+// `raw_hash_table` must deny each `std` table, also in a turbofish.
+fn std_tables(map: &std::collections::HashMap<u32, u32>) -> usize {
+    map.keys().collect::<std::collections::HashSet<_>>().len()
+}
+
+// `raw_hash_table` must not deny the pliron tables.
+fn pliron_tables(map: HMap<u32, u32>, set: HSet<u32>) -> usize {
+    map.len() + set.len()
+}
+
 fn main() {
     let _ = OpHolder { target: op_ptr() }.target;
     let _ = (
@@ -599,6 +622,8 @@ fn main() {
         hmap_unstable_iteration_allowed,
         imap_iteration,
     );
+    let _ = (hashbrown_tables, std_tables, pliron_tables);
+    let _ = |holder: HashbrownHolder| holder.names;
     let _ = (
         borrow_and_context,
         ref_borrow_and_context,
