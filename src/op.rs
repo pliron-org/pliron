@@ -186,9 +186,10 @@ impl Display for OpId {
     }
 }
 
-pub(crate) type ConcreteOpInfo = (
-    fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
-    core::any::TypeId,
+#[derive(Clone, Copy)]
+pub struct ConcreteOpInfo(
+    pub(crate) fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
+    pub(crate) core::any::TypeId,
 );
 
 /// Private token for unchecked [Op] constructors
@@ -237,7 +238,7 @@ pub trait Op: Downcast + Verify + Printable + DynClone {
     where
         Self: Sized,
     {
-        (Self::wrap_operation, core::any::TypeId::of::<Self>())
+        ConcreteOpInfo(Self::wrap_operation, core::any::TypeId::of::<Self>())
     }
 
     /// Get this Op's OpId
