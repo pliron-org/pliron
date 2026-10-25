@@ -6,58 +6,15 @@ use alloc::vec::Vec;
 use crate::{
     attribute::AttrObj,
     basic_block::BasicBlock,
-    common_traits::Named,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
     irfmt::printers::enclosed,
-    operation::Operation,
+    linked_list::{ContainsLinkedList, LinkedList},
+    operation::{OpDbg, Operation},
     printable::{self, Printable},
-    utils::table::{HMap, ISet},
+    utils::table::{HMap, HSet, ISet},
     value::Value,
 };
-
-/// Information about whether a block is reachable or not.
-#[derive(Clone, Debug)]
-pub(super) enum BlockState {
-    /// Block is reachable.
-    /// Lattice bottom
-    Reachable,
-    /// Block is unreachable.
-    /// Lattice top.
-    Unreachable,
-}
-
-impl Printable for BlockState {
-    fn fmt(
-        &self,
-        _ctx: &Context,
-        _state: &printable::State,
-        f: &mut core::fmt::Formatter<'_>,
-    ) -> core::fmt::Result {
-        match self {
-            BlockState::Reachable => write!(f, "Reachable"),
-            BlockState::Unreachable => write!(f, "Unreachable"),
-        }
-    }
-}
-
-impl BlockState {
-    fn leq(a: &BlockState, b: &BlockState) -> bool {
-        matches!(
-            (a, b),
-            (BlockState::Reachable, BlockState::Unreachable)
-                | (BlockState::Unreachable, BlockState::Unreachable)
-                | (BlockState::Reachable, BlockState::Reachable)
-        )
-    }
-
-    fn meet(a: &BlockState, b: &BlockState) -> BlockState {
-        match (a, b) {
-            (BlockState::Reachable, _) | (_, BlockState::Reachable) => BlockState::Reachable,
-            (BlockState::Unreachable, BlockState::Unreachable) => BlockState::Unreachable,
-        }
-    }
-}
 
 /// Represents compile-time knowledge about the "constantness" of a
 /// of a variable (SSA value)  during execution of the algorithm.
@@ -125,32 +82,26 @@ impl Constness {
 }
 
 pub(super) struct SccpState {
-    /// Maps each block to information about whether the block is reachable
-    /// Blocks not present as keys are assumed to be unreachable.
-    block_states: HMap<Ptr<BasicBlock>, BlockState>,
-    /// Maps each [Value] to information about whether the [Value] is known to be const
+    /// The outermost operation whose regions are analyzed.
+    root_op: Ptr<Operation>,
+    /// Maps each [Value] to its known [Constness].
     /// All local [Value]s are initialized to [Constness::Undetermined].
     val_states: HMap<Value, Constness>,
-    /// After a [BasicBlock] has been marked as reachable, we must traverse
-    /// each of its operations and process them to draw inferences.
-    /// This set contains all blocks marked as reachable but not yet traversed.
-    block_worklist: ISet<Ptr<BasicBlock>>,
-    /// When we infer information about the constness of a [Value], we must
-    /// process all its uses to try to infer more information about the constness
-    /// of its uses' results. This set contains such [Value]s that we have not yet
-    /// processed.
-    val_worklist: ISet<Value>,
+    /// Operations that the analysis has marked as reachable.
+    reachable_ops: HSet<Ptr<Operation>>,
+    /// Reachable operations that require further processing.
+    op_worklist: ISet<Ptr<Operation>>,
 }
 
 impl SccpState {
-    /// Creates an initial state for analyzing `root_op`. Marks all of `root_op`'s
-    /// regions' entry blocks as Reachable and their entry-block arguments as NotAConstant.
+    /// Creates an initial state for analyzing `root_op`. Marks the entry blocks of
+    /// `root_op`'s regions as reachable, and their arguments as `NotAConstant`.
     pub(super) fn new(root_op: Ptr<Operation>, ctx: &Context) -> SccpState {
         let mut state = SccpState {
-            block_states: HMap::default(),
+            root_op,
             val_states: HMap::default(),
-            block_worklist: ISet::default(),
-            val_worklist: ISet::default(),
+            reachable_ops: HSet::default(),
+            op_worklist: ISet::default(),
         };
         walk_op(
             ctx,
@@ -178,27 +129,26 @@ impl SccpState {
         state
     }
 
-    /// For ops that do not implement a `RegionBranchOpInterface` analog,
-    /// propagate information from the op to its nested regions conservatively
-    /// by marking each of their entry blocks as Reachable and each of their
-    /// entry blocks' arguments as NotAConstant.
+    /// Mark the entry blocks of `op`'s regions as reachable and
+    /// each of their block arguments as [Constness::NotAConstant].
     pub(super) fn seed_nested_regions(&mut self, op: Ptr<Operation>, ctx: &Context) {
         let regions: Vec<_> = op.deref(ctx).regions().collect();
         for region in regions {
             let Some(entry) = region.deref(ctx).get_entry_block() else {
                 continue;
             };
-            self.merge_block_state(ctx, entry, BlockState::Reachable);
             let entry_args: Vec<Value> = entry.deref(ctx).arguments().collect();
             for arg in entry_args {
                 self.merge_val_state(ctx, arg, Constness::NotAConstant);
             }
+            self.mark_block_reachable(ctx, entry);
         }
     }
 
-    /// Meet `incoming` with whatever [Constness] is currently stored at `val`,
-    /// storing the result. If the meet is strictly less than the previous stored value,
-    /// insert `val` into the value worklist so its users get re-processed.
+    /// Meet `incoming` with the currently known [Constness] of `val`:
+    ///   - Update `val`'s [Constness] with the meet.
+    ///   - If the meet is strictly below the previous [Constness], insert
+    ///     the reachable users of `val` into the operation worklist.
     pub(super) fn merge_val_state(&mut self, ctx: &Context, val: Value, incoming: Constness) {
         let old = self.get_val_state(val);
         let new = Constness::meet(&old, &incoming);
@@ -210,34 +160,39 @@ impl SccpState {
         if !Constness::leq(&old, &new) {
             log::trace!("Deflated state of {} to {}", val.disp(ctx), new.disp(ctx));
             self.val_states.insert(val, new);
-            self.val_worklist.insert(val);
+            for user in val.uses(ctx).into_iter().map(|u| u.user_op()) {
+                if self.is_reachable(user) {
+                    self.op_worklist.insert(user);
+                }
+            }
         }
     }
 
-    /// Meet `incoming` into whatever [BlockState] is currently stored at `block`,
-    /// storing the result. If the meet is strictly less than the previous stored value,
-    /// insert `block` into the block worklist.
-    pub(super) fn merge_block_state(
-        &mut self,
-        ctx: &Context,
-        block: Ptr<BasicBlock>,
-        incoming: BlockState,
-    ) {
-        let old = self.get_block_state(block);
-        let new = BlockState::meet(&old, &incoming);
-        log::trace!(
-            "Merging block state {} into block {}",
-            incoming.disp(ctx),
-            block.unique_name(ctx)
-        );
-        if !BlockState::leq(&old, &new) {
-            log::trace!(
-                "Deflated state of {} to {}",
-                block.unique_name(ctx),
-                new.disp(ctx)
-            );
-            self.block_states.insert(block, new);
-            self.block_worklist.insert(block);
+    /// Mark `op` as reachable. If it was unreachable before,
+    /// insert it into the operation worklist.
+    fn mark_reachable(&mut self, ctx: &Context, op: Ptr<Operation>) {
+        if self.reachable_ops.insert(op) {
+            log::trace!("Marked {} as reachable", OpDbg { op, ctx });
+            self.op_worklist.insert(op);
+        }
+    }
+
+    /// Mark the first operation of `block` as reachable.
+    pub(super) fn mark_block_reachable(&mut self, ctx: &Context, block: Ptr<BasicBlock>) {
+        let first = block.deref(ctx).get_head();
+        if let Some(first) = first {
+            self.mark_reachable(ctx, first);
+        }
+    }
+
+    /// Mark the operation after `op` (in its block) as reachable.
+    pub(super) fn mark_next_reachable(&mut self, ctx: &Context, op: Ptr<Operation>) {
+        if op == self.root_op {
+            return;
+        }
+        let next = op.deref(ctx).get_next();
+        if let Some(next) = next {
+            self.mark_reachable(ctx, next);
         }
     }
 
@@ -249,31 +204,21 @@ impl SccpState {
             .unwrap_or(Constness::NotAConstant)
     }
 
-    /// Get the [BlockState] of `block`.
-    pub(super) fn get_block_state(&self, block: Ptr<BasicBlock>) -> BlockState {
-        self.block_states
-            .get(&block)
-            .cloned()
-            .unwrap_or(BlockState::Unreachable)
+    /// Has the analysis marked `op` as reachable?
+    pub(super) fn is_reachable(&self, op: Ptr<Operation>) -> bool {
+        self.reachable_ops.contains(&op)
     }
 
-    /// Is `block` on the block worklist, pending processing?
-    pub(super) fn is_block_pending(&self, block: Ptr<BasicBlock>) -> bool {
-        self.block_worklist.contains(&block)
+    /// Has the analysis marked the first operation of `block` as reachable?
+    pub(super) fn is_block_reachable(&self, ctx: &Context, block: Ptr<BasicBlock>) -> bool {
+        block
+            .deref(ctx)
+            .get_head()
+            .is_some_and(|first| self.is_reachable(first))
     }
 
-    /// Pop an arbitrary block from the block worklist, if any.
-    pub(super) fn pop_block(&mut self) -> Option<Ptr<BasicBlock>> {
-        self.block_worklist.pop()
-    }
-
-    /// Pop an arbitrary value from the value worklist, if any.
-    pub(super) fn pop_val(&mut self) -> Option<Value> {
-        self.val_worklist.pop()
-    }
-
-    /// Are both block and value worklists empty?
-    pub(super) fn are_worklists_empty(&self) -> bool {
-        self.block_worklist.is_empty() && self.val_worklist.is_empty()
+    /// Pop an arbitrary operation (if any) from the operation worklist.
+    pub(super) fn pop_op(&mut self) -> Option<Ptr<Operation>> {
+        self.op_worklist.pop()
     }
 }

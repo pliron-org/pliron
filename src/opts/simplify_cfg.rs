@@ -3,15 +3,20 @@
 
 //! Control flow graph (CFG) simplification.
 //!
-//! This optimization performs three tasks in sequence:
+//! This optimization performs the following tasks:
 //!
-//! 1. It rewrites any conditional branch operation that implements [BranchOpFoldInterface] and
-//!    whose condition operand is defined as a constant to an unconditional branch.
+//! 1. It folds operations, by calling `fold_in_place` with known constant values of operands:
+//!    - [BranchOpFoldInterface]: This typically removes one or more successor edges.
+//!    - [RegionBranchOpFoldInterface]: This typically removes one or more regions,
+//!      or inlines them into the parent region.
 //!
-//! 2. It detects unreachable blocks by performing a DFS on every nested SSA region, removing
+//! 2. It erases a [RegionBranchOpFoldInterface] op when the op has no side effects
+//!    and none of its regions can execute.
+//!
+//! 3. It detects unreachable blocks by performing a DFS on every nested SSA region, removing
 //!    all unreachable blocks it detects.
 //!
-//! 3. It merges every pair of blocks `A` and `B`, where `B` is the sole successor of `A` and
+//! 4. It merges every pair of blocks `A` and `B`, where `B` is the sole successor of `A` and
 //!    `A` is the sole predecessor of `B`, removing `A`'s terminator and forwarding the actual
 //!    branch arguments of `A` into the formal arguments of `B`.
 
@@ -25,7 +30,7 @@ use alloc::{
 use crate::{
     attribute::AttrObj,
     basic_block::BasicBlock,
-    builtin::op_interfaces::BranchOpInterface,
+    builtin::op_interfaces::{BranchOpInterface, RegionBranchPoint, RegionSuccessor},
     context::{Context, Ptr},
     graph::{
         HasLabel,
@@ -40,7 +45,10 @@ use crate::{
     linked_list::{ContainsLinkedList, LinkedList},
     op::{op_cast, op_impls},
     operation::{OpDbg, Operation},
-    opts::constants::{BranchOpFoldInterface, ConstFoldInterface},
+    opts::{
+        constants::{BranchOpFoldInterface, ConstFoldInterface, RegionBranchOpFoldInterface},
+        dce::SideEffects,
+    },
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
     result::Result,
@@ -70,6 +78,58 @@ fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrO
         .operands()
         .map(|v| v.defining_op().and_then(|def| get_def_const(def, v)))
         .collect()
+}
+
+/// Erase `op` when:
+///   - it has no side effects (see [SideEffects]), and
+///   - the constant values of its operands (`attrs`) show that:
+///     - none of its regions can execute. That is, the only feasible edge is
+///       [RegionBranchPoint::Parent] to [RegionSuccessor::After].
+///     - each result that has uses receives an operand on that edge.
+///
+/// Each result that receives an operand on that edge is replaced with that operand.
+pub fn try_erase_region_branch_op(
+    op: &dyn RegionBranchOpFoldInterface,
+    attrs: &[Option<AttrObj>],
+    ctx: &mut Context,
+    rewriter: &mut dyn Rewriter,
+) -> IRStatus {
+    let opr = op.get_operation();
+    let op_dyn = Operation::get_op_dyn(opr, ctx);
+    if op_cast::<dyn SideEffects>(op_dyn.as_ref()).is_none_or(|op| op.has_side_effects(ctx)) {
+        return IRStatus::Unchanged;
+    }
+    let successors = op.check_fold(ctx, RegionBranchPoint::Parent, attrs, &[]);
+    if successors.is_empty() || successors.iter().any(|s| *s != RegionSuccessor::After) {
+        return IRStatus::Unchanged;
+    }
+    // Collect the edges from `op` to the point after it.
+    let parent_to_after_edges: Vec<_> = op
+        .edges_from(ctx, RegionBranchPoint::Parent)
+        .into_iter()
+        .filter(|edge| edge.to == RegionSuccessor::After)
+        .collect();
+    let [edge] = &parent_to_after_edges[..] else {
+        // With more than one such edge, it is not known which one is taken.
+        // No such edge means that `check_fold` broke its contract.
+        return IRStatus::Unchanged;
+    };
+    // A result with a use must receive a value on the edge.
+    // Without that, there is no value to replace the result with.
+    let receives = |result: &Value| edge.flows.iter().any(|(_, recv)| recv == result);
+    let results: Vec<Value> = opr.deref(ctx).results().collect();
+    if results
+        .iter()
+        .any(|result| result.num_uses(ctx) > 0 && !receives(result))
+    {
+        return IRStatus::Unchanged;
+    }
+    for (operand, result) in &edge.flows {
+        let bypass = operand.get_def(ctx);
+        rewriter.replace_value_uses_with(ctx, *result, bypass);
+    }
+    rewriter.erase_operation(ctx, opr);
+    IRStatus::Changed
 }
 
 /// Merge `succ` into `pred` when
@@ -303,13 +363,17 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
     let mut fold_candidates: Vec<(Ptr<Operation>, Vec<Option<AttrObj>>)> = Vec::new();
     walk_op(
         ctx,
-        &mut fold_candidates,
+        &mut (&mut fold_candidates, op),
         &WALKCONFIG_PREORDER_FORWARD,
         op,
-        |ctx, candidates, node| {
-            if let IRNode::Operation(op) = node {
+        |ctx, (candidates, root_op), node| {
+            if let IRNode::Operation(op) = node
+                && op != *root_op
+            {
                 let op_dyn = Operation::get_op_dyn(op, ctx);
-                if op_impls::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
+                if op_impls::<dyn BranchOpFoldInterface>(op_dyn.as_ref())
+                    || op_impls::<dyn RegionBranchOpFoldInterface>(op_dyn.as_ref())
+                {
                     candidates.push((op, constant_operand_attrs(op, ctx)));
                 }
             }
@@ -318,12 +382,13 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
 
     let mut rewriter = IRRewriter::<Recorder>::default();
     let mut status = IRStatus::Unchanged;
-    for (op, attrs) in fold_candidates {
+    // Fold nested operations first. A fold of a region branch operation can erase
+    // regions, together with the candidates in them.
+    for (op, attrs) in fold_candidates.into_iter().rev() {
         rewriter.set_insertion_point_before_operation(op);
         let op_dyn = Operation::get_op_dyn(op, ctx);
-        let fold_interface = op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()).unwrap();
         let log_message = if log::log_enabled!(log::Level::Debug) {
-            // Some implementations of `BranchOpFoldInterface` (such as with `BrOp`)
+            // Some implementations of the fold interfaces (such as `BrOp`'s)
             // will not actually fold the operation as they're already folded.
             // So we log the message only if there was an actual folding.
             let op_dbg = OpDbg { op, ctx };
@@ -336,7 +401,7 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
                 })
                 .collect();
             format!(
-                "Folding branch operation '{}' with inferred operand attributes {}",
+                "Folding operation '{}' with inferred operand attributes {}",
                 op_dbg,
                 attr_strs.join(", ")
             )
@@ -344,7 +409,17 @@ pub fn simplify_cfg(op: Ptr<Operation>, ctx: &mut Context) -> Result<IRStatus> {
             String::new()
         };
 
-        let fold_result = fold_interface.fold_in_place(ctx, &attrs, &mut rewriter);
+        let fold_result = match op_cast::<dyn BranchOpFoldInterface>(op_dyn.as_ref()) {
+            Some(fold_interface) => fold_interface.fold_in_place(ctx, &attrs, &mut rewriter),
+            None => {
+                let fold_interface = op_cast::<dyn RegionBranchOpFoldInterface>(op_dyn.as_ref())
+                    .expect("fold candidates implement a fold interface");
+                match try_erase_region_branch_op(fold_interface, &attrs, ctx, &mut rewriter) {
+                    IRStatus::Changed => IRStatus::Changed,
+                    IRStatus::Unchanged => fold_interface.fold_in_place(ctx, &attrs, &mut rewriter),
+                }
+            }
+        };
         if fold_result == IRStatus::Changed {
             log::debug!("{}", log_message);
         }

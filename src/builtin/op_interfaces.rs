@@ -890,7 +890,8 @@ pub trait OperandSegmentInterface {
 ///
 /// See MLIR's [RegionKind](https://mlir.llvm.org/docs/Interfaces/#regionkindinterfaces).
 pub enum RegionKind {
-    /// Represents a graph region without control flow semantics.
+    /// Represents a region without control flow semantics.
+    /// Such a region can have at most one basic block.
     Graph,
     /// Represents an [SSA-style control](https://mlir.llvm.org/docs/LangRef/#control-flow-and-ssacfg-regions)
     /// flow region with basic blocks and reachability.
@@ -908,13 +909,29 @@ pub trait RegionKindInterface {
         matches!(self.get_region_kind(idx), RegionKind::SSACFG)
     }
 
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let self_op =
+            op_cast::<dyn RegionKindInterface>(op).expect("Op must implement RegionKindInterface");
+        let operation = op.get_operation().deref(ctx);
+        for (idx, region) in operation.regions().enumerate() {
+            let num_blocks = region.deref(ctx).iter(ctx).count();
+            if matches!(self_op.get_region_kind(idx), RegionKind::Graph) && num_blocks > 1 {
+                return verify_err!(
+                    operation.loc(),
+                    GraphRegionNBlocksVerifyErr(idx, num_blocks)
+                );
+            }
+        }
         Ok(())
     }
 }
+
+#[derive(Error, Debug)]
+#[error("Graph region {} must have at most one block, but it has {}", .0, .1)]
+pub struct GraphRegionNBlocksVerifyErr(usize, usize);
 
 #[derive(Error, Debug)]
 #[error("Expected {} regions, found {}", .0, .1)]
