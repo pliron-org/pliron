@@ -549,7 +549,7 @@ impl Operation {
 
     /// Get [ConcreteOpInfo], useful for creating a [new](Operation::new) operation
     /// of the same kind.
-    pub(crate) fn concrete_op_info(&self) -> ConcreteOpInfo {
+    pub fn concrete_op_info(&self) -> ConcreteOpInfo {
         self.concrete_op
     }
 
