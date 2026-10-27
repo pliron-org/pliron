@@ -12,6 +12,10 @@ use crate::{
         reverse::{ReverseGraph, ReverseNode},
         strictly_precedes_in_block, traversals,
         visualize::DotLabel,
+        walkers::{
+            Direction,
+            interruptible::{WalkResult, walk_advance},
+        },
     },
     operation::Operation,
     pass::{Analysis, AnalysisManager},
@@ -89,7 +93,7 @@ where
 
 fn print_dominance_tree<G, GraphContext>(
     ctx: &GraphContext,
-    nodes: &IMap<G::Node, DomTreeNode<G, GraphContext>>,
+    tree: &IMap<G::Node, DomTreeNode<G, GraphContext>>,
     name: &str,
     has_sentinel: bool,
     state: &State,
@@ -104,7 +108,7 @@ where
         if has_sentinel {
             write!(f, "{}sentinel [label=\"sentinel\"];", indented_nl(state))?;
         }
-        for (i, node) in nodes.keys().enumerate() {
+        for (i, node) in tree.keys().enumerate() {
             write!(
                 f,
                 "{}n{i} [label={}];",
@@ -112,9 +116,9 @@ where
                 DotLabel(&node.label(ctx)),
             )?;
         }
-        for (i, node) in nodes.values().enumerate() {
+        for (i, node) in tree.values().enumerate() {
             if let Some(parent) = &node.parent {
-                let parent = nodes.get_index_of(parent).unwrap();
+                let parent = tree.get_index_of(parent).unwrap();
                 write!(f, "{}n{parent} -> n{i};", indented_nl(state))?;
             } else if has_sentinel {
                 write!(f, "{}sentinel -> n{i};", indented_nl(state))?;
@@ -329,6 +333,53 @@ where
     }
 }
 
+/// Depth-first non-recursive walk of `tree`, rooted at `roots`.
+fn walk_dominance_tree<G, GraphContext, State, B>(
+    tree: &IMap<G::Node, DomTreeNode<G, GraphContext>>,
+    roots: &[G::Node],
+    state: &mut State,
+    direction: Direction,
+    mut pre_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+    mut post_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+) -> WalkResult<B>
+where
+    G: ControlFlowGraph<GraphContext>,
+{
+    enum Visit<N> {
+        Pre(N),
+        Post(N),
+    }
+
+    // Push siblings such that pop() visits them in `direction` order.
+    fn push_siblings<N: Clone>(stack: &mut Vec<Visit<N>>, siblings: &[N], direction: Direction) {
+        match direction {
+            Direction::Forward => stack.extend(siblings.iter().rev().cloned().map(Visit::Pre)),
+            Direction::Reverse => stack.extend(siblings.iter().cloned().map(Visit::Pre)),
+        }
+    }
+
+    let mut stack = Vec::new();
+    push_siblings(&mut stack, roots, direction);
+    while let Some(visit) = stack.pop() {
+        match visit {
+            Visit::Pre(node) => {
+                if pre_callback(state, node.clone())?.is_skip() {
+                    continue;
+                }
+                let children = &tree[&node].children;
+                // Push the node again (below its children), for it to finish after its subtree.
+                stack.push(Visit::Post(node));
+                push_siblings(&mut stack, children, direction);
+            }
+            Visit::Post(node) => {
+                post_callback(state, node)?;
+            }
+        }
+    }
+
+    walk_advance()
+}
+
 impl<G, GraphContext> DomTree<G, GraphContext>
 where
     G: ControlFlowGraph<GraphContext>,
@@ -394,6 +445,38 @@ where
     /// Get an iterator over all nodes in the dominator tree
     pub fn nodes(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
         self.dominators_map.keys().cloned()
+    }
+
+    /// Depth-first walk of the dominator tree, with `direction`
+    /// specifying the order in which a node's children are walked.
+    ///
+    /// At each node
+    ///   - `pre_callback` is called before the children are walked.
+    ///   - `post_callback` is called after the children are walked.
+    ///
+    /// The return value of a callback controls the walk as follows:
+    ///   - [Break](core::ops::ControlFlow::Break): stops the walk and returns `B`.
+    ///   - [Skip](super::walkers::interruptible::WalkContinue::Skip):
+    ///     - from `pre_callback`: skips the walk of the node's children and the
+    ///       call to `post_callback` for the node.
+    ///     - from `post_callback`: has no effect.
+    ///   - [Advance](super::walkers::interruptible::WalkContinue::Advance):
+    ///     continues the walk.
+    pub fn walk<State, B>(
+        &self,
+        state: &mut State,
+        direction: Direction,
+        pre_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+        post_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+    ) -> WalkResult<B> {
+        walk_dominance_tree(
+            &self.dominators_map,
+            self.root.as_slice(),
+            state,
+            direction,
+            pre_callback,
+            post_callback,
+        )
     }
 }
 
@@ -465,6 +548,41 @@ where
     /// Get an iterator over all nodes (except the sentinel) in the post-dominator tree.
     pub fn nodes(&self) -> impl Iterator<Item = G::Node> + Clone + '_ {
         self.post_dominators_map.keys().cloned()
+    }
+
+    /// Depth-first walk of the post-dominator tree, with `direction`
+    /// specifying the order in which a node's children are walked.
+    ///
+    /// The walk starts at the [children of the sentinel](Self::sentinel_children),
+    /// without visiting the sentinel itself.
+    ///
+    /// At each node
+    ///   - `pre_callback` is called before the children are walked.
+    ///   - `post_callback` is called after the children are walked.
+    ///
+    /// The return value of a callback controls the walk as follows:
+    ///   - [Break](core::ops::ControlFlow::Break): stops the walk and returns `B`.
+    ///   - [Skip](super::walkers::interruptible::WalkContinue::Skip):
+    ///     - from `pre_callback`: skips the walk of the node's children and the
+    ///       call to `post_callback` for the node.
+    ///     - from `post_callback`: has no effect.
+    ///   - [Advance](super::walkers::interruptible::WalkContinue::Advance):
+    ///     continues the walk.
+    pub fn walk<State, B>(
+        &self,
+        state: &mut State,
+        direction: Direction,
+        pre_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+        post_callback: impl FnMut(&mut State, G::Node) -> WalkResult<B>,
+    ) -> WalkResult<B> {
+        walk_dominance_tree(
+            &self.post_dominators_map,
+            &self.sentinel_children,
+            state,
+            direction,
+            pre_callback,
+            post_callback,
+        )
     }
 }
 
@@ -752,10 +870,15 @@ mod tests {
         string::{String, ToString},
     };
 
+    use core::fmt::Write;
+
     use expect_test::expect;
 
     use super::*;
-    use crate::graph::{ControlFlowGraph, HasLabel};
+    use crate::graph::{
+        ControlFlowGraph, HasLabel,
+        walkers::interruptible::{walk_break, walk_skip},
+    };
 
     #[derive(Clone, Debug)]
     struct Node {
@@ -1013,6 +1136,147 @@ mod tests {
             dom.children(&3).collect::<ISet<_>>(),
             ISet::from_iter([4, 5, 6])
         );
+
+        // Check that the walk calls the callbacks before and after the walk of the children.
+        let mut trace = String::new();
+        let res = dom.walk(
+            &mut trace,
+            Direction::Forward,
+            |trace, node| {
+                writeln!(trace, "pre {node}").unwrap();
+                walk_advance::<()>()
+            },
+            |trace, node| {
+                writeln!(trace, "post {node}").unwrap();
+                walk_advance()
+            },
+        );
+        assert!(res.is_continue());
+        expect![[r#"
+            pre 0
+            pre 1
+            post 1
+            pre 2
+            pre 3
+            pre 5
+            post 5
+            pre 4
+            post 4
+            pre 6
+            pre 7
+            pre 9
+            post 9
+            pre 8
+            post 8
+            post 7
+            post 6
+            post 3
+            post 2
+            post 0
+        "#]]
+        .assert_eq(&trace);
+
+        // Check that a reverse walk visits the children in reverse order.
+        trace.clear();
+        let res = dom.walk(
+            &mut trace,
+            Direction::Reverse,
+            |trace, node| {
+                writeln!(trace, "pre {node}").unwrap();
+                walk_advance::<()>()
+            },
+            |trace, node| {
+                writeln!(trace, "post {node}").unwrap();
+                walk_advance()
+            },
+        );
+        assert!(res.is_continue());
+        expect![[r#"
+            pre 0
+            pre 2
+            pre 3
+            pre 6
+            pre 7
+            pre 8
+            post 8
+            pre 9
+            post 9
+            post 7
+            post 6
+            pre 4
+            post 4
+            pre 5
+            post 5
+            post 3
+            post 2
+            pre 1
+            post 1
+            post 0
+        "#]]
+        .assert_eq(&trace);
+
+        // Check that a skip from the pre-order callback skips the children
+        // and the post-order callback of the node.
+        trace.clear();
+        let res = dom.walk(
+            &mut trace,
+            Direction::Forward,
+            |trace, node| {
+                writeln!(trace, "pre {node}").unwrap();
+                if node == 3 {
+                    walk_skip::<()>()
+                } else {
+                    walk_advance()
+                }
+            },
+            |trace, node| {
+                writeln!(trace, "post {node}").unwrap();
+                walk_advance()
+            },
+        );
+        assert!(res.is_continue());
+        expect![[r#"
+            pre 0
+            pre 1
+            post 1
+            pre 2
+            pre 3
+            post 2
+            post 0
+        "#]]
+        .assert_eq(&trace);
+
+        // Check that a break from the post-order callback stops the walk.
+        trace.clear();
+        let res = dom.walk(
+            &mut trace,
+            Direction::Forward,
+            |trace, node| {
+                writeln!(trace, "pre {node}").unwrap();
+                walk_advance()
+            },
+            |trace, node| {
+                writeln!(trace, "post {node}").unwrap();
+                if node == 4 {
+                    walk_break(node)
+                } else {
+                    walk_advance()
+                }
+            },
+        );
+        assert_eq!(res.break_value(), Some(4));
+        expect![[r#"
+            pre 0
+            pre 1
+            post 1
+            pre 2
+            pre 3
+            pre 5
+            post 5
+            pre 4
+            post 4
+        "#]]
+        .assert_eq(&trace);
     }
 
     #[test]
@@ -1122,6 +1386,31 @@ mod tests {
         assert!(!post_dom.post_dominates(&1, &0));
         assert!(!post_dom.post_dominates(&2, &0));
         assert_eq!(post_dom.nearest_common_post_dominator(&1, &2), None);
+
+        // Check that the walk visits each child of the sentinel, but not the sentinel.
+        let mut trace = String::new();
+        let res = post_dom.walk(
+            &mut trace,
+            Direction::Forward,
+            |trace, node| {
+                writeln!(trace, "pre {node}").unwrap();
+                walk_advance::<()>()
+            },
+            |trace, node| {
+                writeln!(trace, "post {node}").unwrap();
+                walk_advance()
+            },
+        );
+        assert!(res.is_continue());
+        expect![[r#"
+            pre 1
+            post 1
+            pre 2
+            post 2
+            pre 0
+            post 0
+        "#]]
+        .assert_eq(&trace);
     }
 
     #[test]

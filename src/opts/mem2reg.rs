@@ -3,9 +3,9 @@
 
 //! Memory to register promotion optimization pass.
 
-use core::panic;
+use core::{ops::ControlFlow, panic};
 
-use alloc::{rc::Rc, vec::Vec};
+use alloc::vec::Vec;
 use pliron_derive::op_interface;
 
 use crate::{
@@ -15,7 +15,11 @@ use crate::{
     context::{Context, Ptr},
     graph::{
         dominance::{DomFrontierMap, DomInfo, DomTree},
-        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::immutable::walk_op},
+        walkers::{
+            Direction, IRNode, WALKCONFIG_PREORDER_FORWARD,
+            interruptible::{walk_advance, walk_break},
+            uninterruptible::immutable::walk_op,
+        },
     },
     irbuild::{
         IRStatus,
@@ -395,71 +399,85 @@ fn note_erased_ops(recorder: &mut Recorder, erased: &mut HSet<Ptr<Operation>>) {
     }
 }
 
-/// For each promotable allocation pointer, stores the current reaching definition.
-type ReachingDefMap = IMap<Value, Option<Value>>;
+/// State of the SSA rename walk over the dominator tree.
+struct RenameState<'a> {
+    ctx: &'a mut Context,
+    /// The stack of reaching definitions for each promotable allocation pointer.
+    reaching_defs: HMap<Value, Vec<Value>>,
+    /// Record (`block`, `ptr`) of each new reaching definition of `ptr` in `block`.
+    renames_in_block: Vec<(Ptr<BasicBlock>, Value)>,
+    /// The default value (if already created) for each promotable allocation pointer.
+    default_def_map: HMap<Value, Value>,
+}
+
+impl RenameState<'_> {
+    /// Push `def` as the current reaching definition of `ptr`.
+    fn push_def(&mut self, block: Ptr<BasicBlock>, ptr: Value, def: Value) {
+        self.reaching_defs.get_mut(&ptr).unwrap().push(def);
+        self.renames_in_block.push((block, ptr));
+    }
+
+    /// Pop all reaching definitions that were pushed in `block`.
+    ///
+    /// Only the top entries of [Self::renames_in_block]
+    /// are compared with `block` and popped.
+    fn pop_defs(&mut self, block: Ptr<BasicBlock>) {
+        while let Some((_, ptr)) = self
+            .renames_in_block
+            .pop_if(|(rename_block, _)| *rename_block == block)
+        {
+            self.reaching_defs.get_mut(&ptr).unwrap().pop();
+        }
+    }
+
+    /// Get the current reaching definition of `cand`.
+    /// Gets or creates the default value if there is no reaching definition.
+    fn current_def(&mut self, cand: &AllocCandidate) -> Result<Value> {
+        match self.reaching_defs[&cand.alloc_info.ptr].last() {
+            Some(&def) => Ok(def),
+            None => get_or_create_default_def(cand, self.ctx, &mut self.default_def_map),
+        }
+    }
+}
 
 /// Process one block during SSA rename for mem2reg.
 ///
-/// Builds per-candidate reaching-definition stacks from the incoming map,
-/// applies promotion rewrites in the block, fills successor phi operands,
-/// and returns the updated outgoing reaching definition for each candidate.
+/// Goes through the block from start to end and:
+/// - Records the current reaching definitions.
+/// - Promotes the uses of the allocations.
+/// - Fills the phi operands of the successors.
 fn process_rename_block(
-    ctx: &mut Context,
+    state: &mut RenameState,
     block: Ptr<BasicBlock>,
     new_phis_in_block: &HMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
-    incoming_reaching_def_map: &ReachingDefMap,
-    default_def_map: &mut HMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
-) -> Result<ReachingDefMap> {
-    let mut reaching_def_map = incoming_reaching_def_map
-        .iter()
-        .map(|(&ptr, maybe_def)| {
-            (ptr, {
-                let mut stack = Vec::new();
-                if let Some(def) = *maybe_def {
-                    stack.push(def);
-                }
-                stack
-            })
-        })
-        .collect::<IMap<_, _>>();
-
+) -> Result<()> {
     // Push phi args for this block.
     for &(ref cand, arg_idx) in new_phis_in_block.get(&block).into_iter().flatten() {
-        let new_val = block.deref(ctx).get_argument(arg_idx);
-        reaching_def_map
-            .get_mut(&cand.alloc_info.ptr)
-            .unwrap()
-            .push(new_val);
+        let new_val = block.deref(state.ctx).get_argument(arg_idx);
+        state.push_def(block, cand.alloc_info.ptr, new_val);
     }
 
-    let ops: Vec<Ptr<Operation>> = block.deref(ctx).iter(ctx).collect();
+    let ops: Vec<Ptr<Operation>> = block.deref(state.ctx).iter(state.ctx).collect();
     let mut erased_ops = HSet::default();
     for &op in &ops {
         if erased_ops.contains(&op) {
             continue;
         }
-        let op_obj = Operation::get_op_dyn(op, ctx);
+        let op_obj = Operation::get_op_dyn(op, state.ctx);
         let Some(piface) = op_cast::<dyn PromotableOpInterface>(op_obj.as_ref()) else {
             continue;
         };
 
         let mut promote_queue = Vec::new();
         for cand in alloc_candidates {
-            let ptr = cand.alloc_info.ptr;
-            match piface.promotion_kind(ctx, &cand.alloc_info) {
+            match piface.promotion_kind(state.ctx, &cand.alloc_info) {
                 PromotableOpKind::Load | PromotableOpKind::EliminatableUse => {
-                    let reaching_def_stack = reaching_def_map.get_mut(&ptr).unwrap();
-                    if reaching_def_stack.is_empty() {
-                        // No reaching definition: use default value
-                        let default_val = get_or_create_default_def(cand, ctx, default_def_map)?;
-                        reaching_def_stack.push(default_val);
-                    }
-                    let current_def = *reaching_def_stack.last().unwrap();
+                    let current_def = state.current_def(cand)?;
                     promote_queue.push((cand.alloc_info.clone(), current_def));
                 }
                 PromotableOpKind::Store(stored_val) => {
-                    reaching_def_map.get_mut(&ptr).unwrap().push(stored_val);
+                    state.push_def(block, cand.alloc_info.ptr, stored_val);
                     promote_queue.push((cand.alloc_info.clone(), stored_val));
                 }
                 // Intentionally no-op: this includes the common case where `op`
@@ -470,46 +488,35 @@ fn process_rename_block(
         if !promote_queue.is_empty() {
             let rewriter = &mut IRRewriter::default();
             rewriter.set_insertion_point_before_operation(op);
-            log::trace!("Promoting op {}", OpDbg { op, ctx });
-            piface.promote(ctx, &promote_queue, rewriter)?;
+            log::trace!("Promoting op {}", OpDbg { op, ctx: state.ctx });
+            piface.promote(state.ctx, &promote_queue, rewriter)?;
             note_erased_ops(rewriter.get_listener_mut(), &mut erased_ops);
         }
     }
 
     // Fill phi operands in successor branch ops.
-    let succs = block.deref(ctx).succs(ctx);
+    let succs = block.deref(state.ctx).succs(state.ctx);
     for (succ_idx, new_phis_in_succ) in succs.iter().enumerate().filter_map(|(succ_idx, succ)| {
         new_phis_in_block
             .get(succ)
             .map(|new_phis| (succ_idx, new_phis))
     }) {
         let term = block
-            .deref(ctx)
-            .get_terminator(ctx)
+            .deref(state.ctx)
+            .get_terminator(state.ctx)
             .expect("Block has successors but no terminator");
-        let term_obj = Operation::get_op_dyn(term, ctx);
+        let term_obj = Operation::get_op_dyn(term, state.ctx);
         let branch_iface = op_cast::<dyn BranchOpInterface>(term_obj.as_ref())
             .expect("Terminator must implement BranchOpInterface for phi blocks");
         for &(ref cand, arg_idx) in new_phis_in_succ {
-            let reaching_def_stack = reaching_def_map.get_mut(&cand.alloc_info.ptr).unwrap();
-            if reaching_def_stack.is_empty() {
-                // No reaching definition: use default value
-                let default_val = get_or_create_default_def(cand, ctx, default_def_map)?;
-                reaching_def_stack.push(default_val);
-            }
-            let current_def = *reaching_def_stack.last().unwrap();
-            let succ_opd_idx = branch_iface.add_successor_operand(ctx, succ_idx, current_def);
+            let current_def = state.current_def(cand)?;
+            let succ_opd_idx = branch_iface.add_successor_operand(state.ctx, succ_idx, current_def);
             // The operand index returned by add_successor_operand should match the phi argument index.
             assert!(succ_opd_idx == arg_idx, "Mismatched phi argument index");
         }
     }
 
-    let outgoing_reaching_def_map = reaching_def_map
-        .into_iter()
-        .map(|(ptr, stack)| (ptr, stack.last().copied()))
-        .collect();
-
-    Ok(outgoing_reaching_def_map)
+    Ok(())
 }
 
 /// Rename uses of allocation pointers to SSA values across the dominator tree,
@@ -517,37 +524,43 @@ fn process_rename_block(
 /// operands for each processed block.
 fn rename_blocks(
     ctx: &mut Context,
-    entry_block: Ptr<BasicBlock>,
     dom_tree: &DomTree<Ptr<Region>, Context>,
     new_phis_in_block: &HMap<Ptr<BasicBlock>, Vec<(AllocCandidate, usize)>>,
-    reaching_def_map: &ReachingDefMap,
-    default_def_map: &mut HMap<Value, Value>,
     alloc_candidates: &[AllocCandidate],
 ) -> Result<()> {
-    type RenameWorkItem = (Ptr<BasicBlock>, Rc<ReachingDefMap>);
-    let mut worklist: Vec<RenameWorkItem> = Vec::new();
-    worklist.push((entry_block, Rc::new(reaching_def_map.clone())));
+    // All candidates have an empty reaching defs stack initially.
+    let reaching_defs = alloc_candidates
+        .iter()
+        .map(|cand| (cand.alloc_info.ptr, Vec::new()))
+        .collect();
 
-    while let Some((block, incoming_reaching_def_map)) = worklist.pop() {
-        let outgoing_reaching_def_map = process_rename_block(
-            ctx,
-            block,
-            new_phis_in_block,
-            incoming_reaching_def_map.as_ref(),
-            default_def_map,
-            alloc_candidates,
-        )?;
-        let outgoing_reaching_def_map = Rc::new(outgoing_reaching_def_map);
+    let mut state = RenameState {
+        ctx,
+        reaching_defs,
+        renames_in_block: Vec::new(),
+        default_def_map: HMap::default(),
+    };
 
-        let mut children: Vec<Ptr<BasicBlock>> = dom_tree.children(&block).collect();
-        // Reverse so pop() preserves the original child iteration order.
-        children.reverse();
-        for child in children {
-            worklist.push((child, Rc::clone(&outgoing_reaching_def_map)));
-        }
+    let res = dom_tree.walk(
+        &mut state,
+        Direction::Forward,
+        |state, block| match process_rename_block(state, block, new_phis_in_block, alloc_candidates)
+        {
+            Ok(()) => walk_advance(),
+            Err(err) => walk_break(err),
+        },
+        |state, block| {
+            // The children of `block` have popped their definitions already,
+            // so the definitions of `block` (if any) are at the top.
+            state.pop_defs(block);
+            walk_advance()
+        },
+    );
+
+    match res {
+        ControlFlow::Break(err) => Err(err),
+        ControlFlow::Continue(_) => Ok(()),
     }
-
-    Ok(())
 }
 
 /// Perform memory to register promotion on regions within root.
@@ -622,27 +635,8 @@ pub fn mem2reg(
             }
         }
 
-        // Initialize reaching def map for this region's candidates.
-        let reaching_def_map: ReachingDefMap = alloc_candidates
-            .iter()
-            .map(|c| (c.alloc_info.ptr, None))
-            .collect();
-        let mut default_def_map: HMap<Value, Value> = HMap::default();
-
         // SSA rename via dominator tree walk, starting from the entry block.
-        let entry_block = region
-            .deref(ctx)
-            .get_head()
-            .expect("No entry block in region");
-        rename_blocks(
-            ctx,
-            entry_block,
-            dom_tree,
-            &new_phis_in_block,
-            &reaching_def_map,
-            &mut default_def_map,
-            &alloc_candidates,
-        )?;
+        rename_blocks(ctx, dom_tree, &new_phis_in_block, &alloc_candidates)?;
 
         // "Promote" (remove) the allocations themselves. Group them into
         // a single promote call per alloc op and then invoke the interface method.

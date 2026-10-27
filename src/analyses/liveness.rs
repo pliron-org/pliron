@@ -19,6 +19,7 @@ use crate::{
         find_ancestor_block_of_block_in_region, find_ancestor_op_of_op_in_block,
         find_ancestor_op_of_op_in_region,
         traversals::region::{DFSEdgeKind, DFSTraversal},
+        walkers::{Direction, interruptible::walk_advance},
     },
     irbuild::inserter::OpInsertionPoint,
     linked_list::{ContainsLinkedList, LinkedList},
@@ -149,36 +150,29 @@ impl LivenessTq {
         dom_tree: &DomTree<Ptr<Region>, Context>,
     ) -> Vec<BitSet> {
         let mut sdom_tree = vec![BitSet::default(); block_to_index.len()];
+        let _ = dom_tree.walk(
+            &mut sdom_tree,
+            Direction::Forward,
+            |_, _| walk_advance::<()>(),
+            |sdom_tree, block| {
+                let block_idx = block_to_index[&block];
+                // A post-order walk computes the sdom_tree of all children before their parent.
+                let child_indices: Vec<usize> = dom_tree
+                    .children(&block)
+                    .map(|child| block_to_index[&child])
+                    .collect();
 
-        fn recurser(
-            sdom_tree: &mut [BitSet],
-            block_to_index: &HMap<Ptr<BasicBlock>, usize>,
-            dom_tree: &DomTree<Ptr<Region>, Context>,
-            block: Ptr<BasicBlock>,
-        ) {
-            let block_idx = block_to_index[&block];
-            let children = dom_tree.children(&block).collect::<Vec<_>>();
-            let mut child_indices = Vec::with_capacity(children.len());
-
-            // Compute sdom_tree for each child.
-            for &child in &children {
-                recurser(sdom_tree, block_to_index, dom_tree, child);
-                let child_idx = block_to_index[&child];
-                child_indices.push(child_idx);
-            }
-
-            // Union the sdom_tree of all children.
-            let children_sdom_tree = child_indices.iter().map(|&child_idx| &sdom_tree[child_idx]);
-            // Add the children themselves
-            let children_nodes: BitSet = child_indices.iter().copied().collect();
-            // Union of children's sdom_tree plus the children themselves is the sdom_tree for this node.
-            let subtree = union_all(children_sdom_tree);
-            sdom_tree[block_idx] = (&subtree | &children_nodes).into();
-        }
-        let root = dom_tree
-            .root()
-            .expect("Dominator tree must have a root corresponding to the region entry block");
-        recurser(&mut sdom_tree, block_to_index, dom_tree, root);
+                // Union the sdom_tree of all children.
+                let children_sdom_tree =
+                    child_indices.iter().map(|&child_idx| &sdom_tree[child_idx]);
+                // Add the children themselves
+                let children_nodes: BitSet = child_indices.iter().copied().collect();
+                // Union of children's sdom_tree plus the children themselves is the sdom_tree for this node.
+                let subtree = union_all(children_sdom_tree);
+                sdom_tree[block_idx] = (&subtree | &children_nodes).into();
+                walk_advance()
+            },
+        );
         sdom_tree
     }
 

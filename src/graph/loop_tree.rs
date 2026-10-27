@@ -18,6 +18,7 @@ use crate::{
         ControlFlowGraph, HasLabel,
         dominance::{DomInfo, DomTree},
         traversals::region::DFSTraversal,
+        walkers::{Direction, interruptible::walk_advance},
     },
     operation::Operation,
     pass::{Analysis, AnalysisManager},
@@ -150,29 +151,32 @@ where
         "The dominator tree must have the graph entry as its root"
     );
 
-    // Dominator-tree DFS intervals give constant-time dominance tests:
+    // Compute dominator-tree DFS intervals. They enable constant-time dominance tests:
     // A dominates B if and only if start(A) <= start(B) < end(A).
-    let mut intervals = HMap::<G::Node, (usize, usize)>::default();
-    let mut dom_stack = Vec::new();
-    if let Some(root) = dom_tree.root() {
-        dom_stack.push((root, false));
+    struct IntervalsState<N> {
+        intervals: HMap<N, (usize, usize)>,
+        clock: usize,
     }
-    // Iterative DFS over the dominator tree rooted at root.
-    let mut clock = 0;
-    while let Some((node, finished)) = dom_stack.pop() {
-        if finished {
-            // Record the end time. It is larger than all start times in this subtree.
-            intervals.get_mut(&node).unwrap().1 = clock;
-        } else {
+    let mut state = IntervalsState {
+        intervals: HMap::<G::Node, (usize, usize)>::default(),
+        clock: 0,
+    };
+    let _ = dom_tree.walk(
+        &mut state,
+        Direction::Forward,
+        |state, node| {
             // Record the visit start time.
-            intervals.insert(node.clone(), (clock, 0));
-            clock += 1;
-            // Push the node again (below its children), for it to finish after its subtree.
-            dom_stack.push((node.clone(), true));
-            // Add tree children to the stack.
-            dom_stack.extend(dom_tree.children(&node).map(|child| (child, false)));
-        }
-    }
+            state.intervals.insert(node, (state.clock, 0));
+            state.clock += 1;
+            walk_advance::<()>()
+        },
+        |state, node| {
+            // Record the end time. It is larger than all start times in this subtree.
+            state.intervals.get_mut(&node).unwrap().1 = state.clock;
+            walk_advance()
+        },
+    );
+    let intervals = state.intervals;
 
     // Start with an empty loop tree.
     let mut tree = LoopTree {
