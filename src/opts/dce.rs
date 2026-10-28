@@ -60,7 +60,7 @@ pub trait SideEffects {
 
     /// Does region `region_idx` only define code?
     /// The operations in such a region do not execute as a result of this operation executing.
-    fn is_definition_region(&self, _region_idx: usize) -> bool {
+    fn is_definition_region(&self, _ctx: &Context, _region_idx: usize) -> bool {
         false
     }
 
@@ -151,7 +151,7 @@ fn is_definition_region(region: Ptr<Region>, ctx: &Context) -> bool {
     let region_idx = region.deref(ctx).find_index_in_parent(ctx);
     let parent_dyn = Operation::get_op_dyn(parent, ctx);
     op_cast::<dyn SideEffects>(parent_dyn.as_ref())
-        .is_some_and(|parent| parent.is_definition_region(region_idx))
+        .is_some_and(|parent| parent.is_definition_region(ctx, region_idx))
 }
 
 /// Can this [Value] be safely removed as per our DCE criteria?

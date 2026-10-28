@@ -72,7 +72,7 @@ impl SideEffects for ClosureOp {
         false
     }
 
-    fn is_definition_region(&self, _region_idx: usize) -> bool {
+    fn is_definition_region(&self, _ctx: &Context, _region_idx: usize) -> bool {
         true
     }
 }
