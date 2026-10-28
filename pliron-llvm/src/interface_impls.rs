@@ -101,8 +101,10 @@ impl PromotableAllocationInterface for AllocaOp {
 #[op_interface_impl]
 impl PromotableOpInterface for StoreOp {
     fn promotion_kind(&self, ctx: &Context, alloc_info: &AllocInfo) -> PromotableOpKind {
-        if self.get_operand_address(ctx) == alloc_info.ptr {
-            PromotableOpKind::Store(self.get_operand_value(ctx))
+        let value = self.get_operand_value(ctx);
+        // A store of the pointer itself lets the pointer escape.
+        if self.get_operand_address(ctx) == alloc_info.ptr && value != alloc_info.ptr {
+            PromotableOpKind::Store(value)
         } else {
             PromotableOpKind::NonPromotableUse
         }
