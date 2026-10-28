@@ -22,7 +22,7 @@ use pliron_llvm as _;
 // Define a custom test operation with a single-block region and no side effects
 // This is used to test DCE behavior when eliminating region-containing ops
 use pliron::{
-    builtin::op_interfaces::{NOpdsInterface, NResultsInterface},
+    builtin::op_interfaces::{NOpdsInterface, NResultsInterface, SymbolOpInterface},
     derive::pliron_op,
     opts::dce::SideEffects,
 };
@@ -36,8 +36,10 @@ pub struct PureRegionOp;
 
 #[pliron::derive::op_interface_impl]
 impl SideEffects for PureRegionOp {
-    fn has_side_effects(&self, _ctx: &Context) -> bool {
-        false // This op has no side effects, so it can be eliminated if unused
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        // This op has no side effects of its own. DCE can erase it when it is unused
+        // and the operations in its region have no side effects either.
+        false
     }
 }
 
@@ -55,6 +57,42 @@ impl BlockArgRemoval for PureRegionOp {
     }
 }
 
+/// An op that creates a closure. Its region is the body of the closure,
+/// which executes only when the closure is called.
+#[pliron_op(
+    name = "test.closure",
+    format = "region($0) `:` type($0)",
+    verifier = "succ"
+)]
+pub struct ClosureOp;
+
+#[pliron::derive::op_interface_impl]
+impl SideEffects for ClosureOp {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+
+    fn is_definition_region(&self, _region_idx: usize) -> bool {
+        true
+    }
+}
+
+/// A symbol that has no side effects.
+#[pliron_op(
+    name = "test.symbol",
+    format,
+    interfaces = [NOpdsInterface<0>, NResultsInterface<0>, SymbolOpInterface],
+    verifier = "succ"
+)]
+pub struct SymbolOp;
+
+#[pliron::derive::op_interface_impl]
+impl SideEffects for SymbolOp {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+}
+
 #[pliron_op(
   name = "test.multi_result_def",
   format = "`: ` types(CharSpace(`,`))",
@@ -65,7 +103,7 @@ pub struct MultiResultDefOp;
 
 #[pliron::derive::op_interface_impl]
 impl SideEffects for MultiResultDefOp {
-    fn has_side_effects(&self, _ctx: &Context) -> bool {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
         false
     }
 }
@@ -80,7 +118,7 @@ pub struct MultiUseSinkOp;
 
 #[pliron::derive::op_interface_impl]
 impl SideEffects for MultiUseSinkOp {
-    fn has_side_effects(&self, _ctx: &Context) -> bool {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
         false
     }
 }
@@ -460,6 +498,78 @@ fn dce_region_containing_dead_op_safely_ignores_inner_dead_code() -> Result<()> 
     Ok(())
 }
 
+/// Check that an unused `test.pure_region` must not be erased
+/// when an operation in its region has side effects.
+#[test]
+fn dce_keeps_region_op_with_side_effects_in_region() -> Result<()> {
+    let input = r#"
+    llvm.func @test: llvm.func <builtin.integer i64 () variadic = false> [] {
+      ^entry():
+      one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      p = llvm.alloca [builtin.integer i64 x one] : llvm.ptr (0);
+      unused = test.pure_region {
+        ^region_entry():
+          llvm.store *p <- one;
+          llvm.return
+      } : builtin.integer i64;
+      llvm.return one
+    }
+  "#;
+
+    let (status, after) = run_dce_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        llvm.func @test: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            one_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            p_v1 = llvm.alloca [builtin.integer i64 x one_v0]  : llvm.ptr (0) !2;
+            unused_v2 = test.pure_region 
+            {
+              ^region_entry_block2v1() !3:
+                llvm.store *p_v1 <- one_v0  !4;
+                llvm.return  !5
+            }:builtin.integer i64 !6;
+            llvm.return one_v0 !7
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// Check that an unused `test.closure` must be erased, also when an operation
+/// in its definition region has side effects.
+#[test]
+fn dce_removes_region_op_with_side_effects_in_definition_region() -> Result<()> {
+    let input = r#"
+    llvm.func @test: llvm.func <builtin.integer i64 () variadic = false> [] {
+      ^entry():
+      one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      p = llvm.alloca [builtin.integer i64 x one] : llvm.ptr (0);
+      unused = test.closure {
+        ^body():
+          llvm.store *p <- one;
+          llvm.return
+      } : builtin.integer i64;
+      llvm.return one
+    }
+  "#;
+
+    let (status, after) = run_dce_on_text(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @test: llvm.func <builtin.integer i64() variadic = false>
+          [] 
+        {
+          ^entry_block1v1() !0:
+            one_v0 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            p_v1 = llvm.alloca [builtin.integer i64 x one_v0]  : llvm.ptr (0) !2;
+            llvm.return one_v0 !3
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
 #[test]
 fn dce_eliminates_multi_result_op_after_same_op_and_successor_uses_die() -> Result<()> {
     let input = r#"
@@ -487,6 +597,29 @@ fn dce_eliminates_multi_result_op_after_same_op_and_successor_uses_die() -> Resu
           ^exit_block3v1() !2:
             live_v4 = builtin.constant <builtin.integer <99: si64>> : builtin.integer si64 !3;
             llvm.return live_v4 !4
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// Check that DCE must keep a symbol without SSA uses and without side effects,
+/// because symbol references can use it.
+#[test]
+fn dce_keeps_symbol_without_side_effects() -> Result<()> {
+    let input = r#"
+    builtin.module @m {
+      ^entry():
+      test.symbol () [] [builtin_sym_name: builtin.identifier sym]: <() -> ()>
+    }
+  "#;
+
+    let (status, after) = run_dce_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        builtin.module @m 
+        {
+          ^entry_block1v1() !0:
+            test.symbol () [] [builtin_sym_name: builtin.identifier sym]: <() -> ()> !1
         }"#]]
     .assert_eq(&after);
     Ok(())

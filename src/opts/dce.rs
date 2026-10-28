@@ -3,15 +3,13 @@
 
 //! Dead code elimination. Safely eliminate unused operations and block args.
 //!
-//! This pass removes operations that satisfy both the following conditions:
+//! This pass removes operations that satisfy all of the following conditions:
 //! 1. The operation has no side effects.
 //! 2. The operation does not implement [IsTerminatorInterface].
-//! 3. The operation's (SSA) results are not used by any other operation.
+//! 3. The operation does not implement [SymbolOpInterface].
+//! 4. The operation's (SSA) results are not used by any other operation.
 //!
-//! An operation is considered to have side effects if either:
-//! 1. It does not implement the [SideEffects] interface, or
-//! 2. It implements the [SideEffects] interface and returns
-//!    `true` for the `has_side_effects` method.
+//! An operation is considered to have side effects if [has_side_effects] returns `true`.
 //!
 //! This pass also removes block arguments with no uses and
 //! when the parent operation
@@ -23,12 +21,16 @@ use pliron_derive::op_interface;
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::{BranchOpInterface, IsTerminatorInterface},
+    builtin::op_interfaces::{BranchOpInterface, IsTerminatorInterface, SymbolOpInterface},
     context::{Context, Ptr},
     graph::{
         HasLabel,
         dominance::DomInfo,
-        walkers::{IRNode, WALKCONFIG_PREORDER_FORWARD, uninterruptible::mutable::walk_op},
+        walkers::{
+            IRNode, WALKCONFIG_PREORDER_FORWARD,
+            interruptible::{self, walk_advance, walk_break, walk_skip},
+            uninterruptible::mutable::walk_op,
+        },
     },
     irbuild::{
         IRStatus,
@@ -39,16 +41,28 @@ use crate::{
     operation::{OpDbg, Operation},
     pass::{AnalysisManager, Pass, PassResult},
     printable::Printable,
+    region::Region,
     result::Result,
     utils::table::HSet,
     value::{DefiningEntity, Value},
 };
 
 /// Convey the presence of side effects in an operation.
+///
+/// Also see [has_side_effects].
+///
+/// Note: Absence of side effects does not imply that the operation can be speculated (hoisted).
 #[op_interface]
 pub trait SideEffects {
-    /// Returns `true` if the operation has side effects, and `false` otherwise.
-    fn has_side_effects(&self, ctx: &Context) -> bool;
+    /// Can the operation have side effects on its own,
+    /// not considering the operations in its regions?
+    fn has_self_side_effects(&self, ctx: &Context) -> bool;
+
+    /// Does region `region_idx` only define code?
+    /// The operations in such a region do not execute as a result of this operation executing.
+    fn is_definition_region(&self, _region_idx: usize) -> bool {
+        false
+    }
 
     // Generally there's nothing to verify here. Can be overrided.
     fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
@@ -106,23 +120,54 @@ impl Printable for DCECandidate {
     }
 }
 
+/// Can `op` have side effects on its own, not considering the operations in its regions?
+pub fn has_self_side_effects(op: Ptr<Operation>, ctx: &Context) -> bool {
+    let op_dyn = Operation::get_op_dyn(op, ctx);
+    op_cast::<dyn SideEffects>(op_dyn.as_ref()).is_none_or(|op| op.has_self_side_effects(ctx))
+}
+
+/// Can `op`, or an operation in its regions (at any depth), have side effects?
+///
+/// Operations in [definition regions](SideEffects::is_definition_region)
+/// are not considered.
+pub fn has_side_effects(op: Ptr<Operation>, ctx: &Context) -> bool {
+    interruptible::immutable::walk_op(
+        ctx,
+        &mut (),
+        &WALKCONFIG_PREORDER_FORWARD,
+        op,
+        |ctx, _, node| match node {
+            IRNode::Operation(op) if has_self_side_effects(op, ctx) => walk_break(()),
+            IRNode::Region(region) if is_definition_region(region, ctx) => walk_skip(),
+            _ => walk_advance(),
+        },
+    )
+    .is_break()
+}
+
+/// Is `region` a [definition region](SideEffects::is_definition_region) of its parent operation?
+fn is_definition_region(region: Ptr<Region>, ctx: &Context) -> bool {
+    let parent = region.deref(ctx).get_parent_op();
+    let region_idx = region.deref(ctx).find_index_in_parent(ctx);
+    let parent_dyn = Operation::get_op_dyn(parent, ctx);
+    op_cast::<dyn SideEffects>(parent_dyn.as_ref())
+        .is_some_and(|parent| parent.is_definition_region(region_idx))
+}
+
 /// Can this [Value] be safely removed as per our DCE criteria?
 fn is_safe_to_erase(cand: DCECandidate, ctx: &Context) -> bool {
     match cand {
         DCECandidate::Op(def_op) => {
-            let def_op_ref = def_op.deref(ctx);
-            if def_op_ref.has_use() {
+            if def_op.deref(ctx).has_use() {
                 // If the operation has uses, we can't erase it.
                 return false;
             }
-            // Get the dynamic op interface to check for SideEffects
             let def_op_dyn = Operation::get_op_dyn(def_op, ctx);
-            // Determine if operation has side effects
-            let has_side_effects = op_cast::<dyn SideEffects>(&*def_op_dyn)
-                .is_none_or(|side_effects_op| side_effects_op.has_side_effects(ctx));
-            // Determine if the operation is a terminator
+            // Terminators decide control flow, so it is not safe to eliminate them.
             let is_terminator = op_impls::<dyn IsTerminatorInterface>(&*def_op_dyn);
-            !has_side_effects && !is_terminator
+            // A symbol can have non-SSA uses through symbol references.
+            let is_symbol = op_impls::<dyn SymbolOpInterface>(&*def_op_dyn);
+            !is_terminator && !is_symbol && !has_side_effects(def_op, ctx)
         }
         DCECandidate::BlockArg(arg) => {
             let block = arg.defining_block().expect("Expected a block argument");

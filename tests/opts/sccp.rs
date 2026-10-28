@@ -30,7 +30,7 @@ use pliron::{
     derive::{op_interface_impl, pliron_op},
     irbuild::rewriter::Rewriter,
     linked_list::ContainsLinkedList,
-    op::{Op, op_cast, op_impls},
+    op::Op,
     opts::{constants::RegionBranchOpFoldInterface, dce::SideEffects},
     region::Region,
     verify_err_noloc,
@@ -320,44 +320,70 @@ impl RegionBranchOpFoldInterface for LoopOp {
 )]
 pub struct WhenOp;
 
+/// Verify the region layout of a `test.when`-like `op`.
+fn verify_when_layout(op: Ptr<Operation>, ctx: &Context) -> Result<()> {
+    if op.deref(ctx).get_num_operands() != op.deref(ctx).get_num_results() + 1 {
+        return verify_err_noloc!(RegionBranchLayoutErr);
+    }
+    verify_tail_terminators(op, ctx, 0)
+}
+
+/// The edges of a `test.when`-like `op`.
+fn when_edges(op: Ptr<Operation>, ctx: &Context) -> Vec<RegionEdge> {
+    let region = op.deref(ctx).get_region(0);
+    let results: Vec<_> = op.deref(ctx).results().collect();
+    let cond = op.deref(ctx).get_operand_as_use(0);
+    let bypass: Vec<_> = op.deref(ctx).operands_as_uses().skip(1).collect();
+    let terminator = tail_terminator(ctx, region).unwrap();
+    let yielded: Vec<_> = terminator.deref(ctx).operands_as_uses().collect();
+    vec![
+        RegionEdge {
+            from: RegionBranchPoint::Parent,
+            to: RegionSuccessor::Region(region),
+            flows: vec![],
+            reads: vec![cond],
+        },
+        RegionEdge {
+            from: RegionBranchPoint::Parent,
+            to: RegionSuccessor::After,
+            flows: bypass.into_iter().zip(results.clone()).collect(),
+            reads: vec![cond],
+        },
+        RegionEdge {
+            from: RegionBranchPoint::Terminator(terminator),
+            to: RegionSuccessor::After,
+            flows: yielded.into_iter().zip(results).collect(),
+            reads: vec![],
+        },
+    ]
+}
+
+/// The feasible successors from `point` of a `test.when`-like `op`.
+fn when_check_fold(
+    op: Ptr<Operation>,
+    ctx: &Context,
+    point: RegionBranchPoint,
+    op_attrs: &[Option<AttrObj>],
+) -> Vec<RegionSuccessor> {
+    if let RegionBranchPoint::Terminator(_) = point {
+        return vec![RegionSuccessor::After];
+    }
+    let region = RegionSuccessor::Region(op.deref(ctx).get_region(0));
+    match known_int_is_zero(op_attrs.first()) {
+        Some(false) => vec![region],
+        Some(true) => vec![RegionSuccessor::After],
+        None => vec![region, RegionSuccessor::After],
+    }
+}
+
 #[op_interface_impl]
 impl RegionBranchOpInterface for WhenOp {
     fn verify_region_edges_layout(&self, ctx: &Context) -> Result<()> {
-        let op = self.get_operation();
-        if op.deref(ctx).get_num_operands() != op.deref(ctx).get_num_results() + 1 {
-            return verify_err_noloc!(RegionBranchLayoutErr);
-        }
-        verify_tail_terminators(op, ctx, 0)
+        verify_when_layout(self.get_operation(), ctx)
     }
 
     fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge> {
-        let op = self.get_operation();
-        let region = op.deref(ctx).get_region(0);
-        let results: Vec<_> = op.deref(ctx).results().collect();
-        let cond = op.deref(ctx).get_operand_as_use(0);
-        let bypass: Vec<_> = op.deref(ctx).operands_as_uses().skip(1).collect();
-        let terminator = tail_terminator(ctx, region).unwrap();
-        let yielded: Vec<_> = terminator.deref(ctx).operands_as_uses().collect();
-        vec![
-            RegionEdge {
-                from: RegionBranchPoint::Parent,
-                to: RegionSuccessor::Region(region),
-                flows: vec![],
-                reads: vec![cond],
-            },
-            RegionEdge {
-                from: RegionBranchPoint::Parent,
-                to: RegionSuccessor::After,
-                flows: bypass.into_iter().zip(results.clone()).collect(),
-                reads: vec![cond],
-            },
-            RegionEdge {
-                from: RegionBranchPoint::Terminator(terminator),
-                to: RegionSuccessor::After,
-                flows: yielded.into_iter().zip(results).collect(),
-                reads: vec![],
-            },
-        ]
+        when_edges(self.get_operation(), ctx)
     }
 }
 
@@ -370,15 +396,7 @@ impl RegionBranchOpFoldInterface for WhenOp {
         op_attrs: &[Option<AttrObj>],
         _terminator_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor> {
-        if let RegionBranchPoint::Terminator(_) = point {
-            return vec![RegionSuccessor::After];
-        }
-        let region = RegionSuccessor::Region(self.get_operation().deref(ctx).get_region(0));
-        match known_int_is_zero(op_attrs.first()) {
-            Some(false) => vec![region],
-            Some(true) => vec![RegionSuccessor::After],
-            None => vec![region, RegionSuccessor::After],
-        }
+        when_check_fold(self.get_operation(), ctx, point, op_attrs)
     }
 
     fn fold_in_place(
@@ -393,21 +411,58 @@ impl RegionBranchOpFoldInterface for WhenOp {
 
 #[op_interface_impl]
 impl SideEffects for WhenOp {
-    /// `test.when` has side effects only through the operations in its region,
-    /// other than its terminator.
-    fn has_side_effects(&self, ctx: &Context) -> bool {
-        let region = self.get_operation().deref(ctx).get_region(0);
-        let ops: Vec<_> = region
-            .deref(ctx)
-            .iter(ctx)
-            .flat_map(|block| block.deref(ctx).iter(ctx).collect::<Vec<_>>())
-            .collect();
-        ops.into_iter().any(|op| {
-            let op_dyn = Operation::get_op_dyn(op, ctx);
-            !op_impls::<dyn IsTerminatorInterface>(op_dyn.as_ref())
-                && op_cast::<dyn SideEffects>(op_dyn.as_ref())
-                    .is_none_or(|op| op.has_side_effects(ctx))
-        })
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+}
+
+#[op_interface_impl]
+impl SideEffects for YieldOp {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+}
+
+/// An op that is the same as [WhenOp], but has side effects of its own,
+/// because it does not implement [SideEffects].
+#[pliron_op(
+    name = "test.effectful_when",
+    format = "`(` operands(CharSpace(`,`)) `) ` region($0) ` : ` types(CharSpace(`,`))",
+    interfaces = [NRegionsInterface<1>],
+    verifier = "succ"
+)]
+pub struct EffectfulWhenOp;
+
+#[op_interface_impl]
+impl RegionBranchOpInterface for EffectfulWhenOp {
+    fn verify_region_edges_layout(&self, ctx: &Context) -> Result<()> {
+        verify_when_layout(self.get_operation(), ctx)
+    }
+
+    fn region_edges(&self, ctx: &Context) -> Vec<RegionEdge> {
+        when_edges(self.get_operation(), ctx)
+    }
+}
+
+#[op_interface_impl]
+impl RegionBranchOpFoldInterface for EffectfulWhenOp {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        point: RegionBranchPoint,
+        op_attrs: &[Option<AttrObj>],
+        _terminator_attrs: &[Option<AttrObj>],
+    ) -> Vec<RegionSuccessor> {
+        when_check_fold(self.get_operation(), ctx, point, op_attrs)
+    }
+
+    fn fold_in_place(
+        &self,
+        _ctx: &mut Context,
+        _op_attrs: &[Option<AttrObj>],
+        _rewriter: &mut dyn Rewriter,
+    ) -> IRStatus {
+        IRStatus::Unchanged
     }
 }
 

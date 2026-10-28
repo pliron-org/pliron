@@ -47,7 +47,7 @@ use crate::{
     operation::{OpDbg, Operation},
     opts::{
         constants::{BranchOpFoldInterface, ConstFoldInterface, RegionBranchOpFoldInterface},
-        dce::SideEffects,
+        dce::has_self_side_effects,
     },
     pass::{AnalysisManager, Pass, PassResult},
     region::Region,
@@ -81,7 +81,7 @@ fn constant_operand_attrs(op: Ptr<Operation>, ctx: &Context) -> Vec<Option<AttrO
 }
 
 /// Erase `op` when:
-///   - it has no side effects (see [SideEffects]), and
+///   - it has no side effects of its own (see [has_self_side_effects]), and
 ///   - the constant values of its operands (`attrs`) show that:
 ///     - none of its regions can execute. That is, the only feasible edge is
 ///       [RegionBranchPoint::Parent] to [RegionSuccessor::After].
@@ -95,8 +95,8 @@ pub fn try_erase_region_branch_op(
     rewriter: &mut dyn Rewriter,
 ) -> IRStatus {
     let opr = op.get_operation();
-    let op_dyn = Operation::get_op_dyn(opr, ctx);
-    if op_cast::<dyn SideEffects>(op_dyn.as_ref()).is_none_or(|op| op.has_side_effects(ctx)) {
+    // Since the regions do not execute, only the side effects of `op` itself matter.
+    if has_self_side_effects(opr, ctx) {
         return IRStatus::Unchanged;
     }
     let successors = op.check_fold(ctx, RegionBranchPoint::Parent, attrs, &[]);
