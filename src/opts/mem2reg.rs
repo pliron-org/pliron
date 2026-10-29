@@ -224,7 +224,7 @@ impl CandidateIndexMap {
     }
 }
 
-/// Compute per-candidate liveness anchors for mem2reg analysis.
+/// Compute the live-in blocks and the defining blocks of a candidate.
 ///
 /// Returns:
 /// - `live_in`: blocks where the candidate's value is live-in.

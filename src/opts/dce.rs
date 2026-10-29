@@ -21,7 +21,10 @@ use pliron_derive::op_interface;
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::op_interfaces::{BranchOpInterface, IsTerminatorInterface, SymbolOpInterface},
+    builtin::op_interfaces::{
+        BranchOpInterface, IsTerminatorInterface, RegionBranchOpInterface, RegionSuccessor,
+        SymbolOpInterface,
+    },
     context::{Context, Ptr},
     graph::{
         HasLabel,
@@ -45,7 +48,9 @@ use crate::{
     result::Result,
     utils::table::HSet,
     value::{DefiningEntity, Value},
+    verify_err,
 };
+use thiserror::Error;
 
 /// Convey the presence of side effects in an operation.
 ///
@@ -64,13 +69,40 @@ pub trait SideEffects {
         false
     }
 
-    // Generally there's nothing to verify here. Can be overrided.
-    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
+    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
+        let Some(region_branch) = op_cast::<dyn RegionBranchOpInterface>(op) else {
+            return Ok(());
+        };
+        region_branch.verify_region_edges_layout(ctx)?;
+        let side_effects = op_cast::<dyn SideEffects>(op).expect("Op must implement SideEffects");
+        let this = op.get_operation();
+        for edge in region_branch.region_edges(ctx) {
+            let RegionSuccessor::Region(region) = edge.to else {
+                continue;
+            };
+            // The verifier of `RegionBranchOpInterface` reports a region of another op.
+            if region.deref(ctx).get_parent_op() != this {
+                continue;
+            }
+            let region_idx = region.deref(ctx).find_index_in_parent(ctx);
+            if side_effects.is_definition_region(ctx, region_idx) {
+                return verify_err!(
+                    op.loc(ctx),
+                    SideEffectsVerifyErr::EdgeIntoDefinitionRegion(region_idx)
+                );
+            }
+        }
         Ok(())
     }
+}
+
+#[derive(Error, Debug)]
+pub enum SideEffectsVerifyErr {
+    #[error("A region edge must not enter definition region {0}")]
+    EdgeIntoDefinitionRegion(usize),
 }
 
 /// Safety for removal of block arguments.
