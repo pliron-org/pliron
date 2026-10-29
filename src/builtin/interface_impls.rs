@@ -38,7 +38,7 @@ impl ConstFoldInterface for ConstantOp {
 
 #[op_interface_impl]
 impl SideEffects for ConstantOp {
-    fn has_side_effects(&self, _ctx: &Context) -> bool {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
         false
     }
 }

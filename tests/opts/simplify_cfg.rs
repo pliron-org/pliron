@@ -665,8 +665,9 @@ fn simplify_cfg_collapses_straight_line_chain() -> Result<()> {
     Ok(())
 }
 
-/// Check that a `test.when` with a zero condition must be erased,
-/// and that the uses of its result must use the operand that bypasses its region.
+/// Check that a `test.when` with a zero condition must be erased, also when an operation
+/// in its region has side effects, and that the uses of its result must use the operand
+/// that bypasses its region.
 #[test]
 fn simplify_cfg_erases_region_branch_op_with_unreachable_regions() -> Result<()> {
     let input = r#"
@@ -676,6 +677,10 @@ fn simplify_cfg_erases_region_branch_op_with_unreachable_regions() -> Result<()>
       r = test.when (f, x) {
         ^body():
         a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        test.test_region {
+          ^inner():
+          llvm.return x
+        };
         test.yield a
       } : builtin.integer i64;
       llvm.return r
@@ -727,6 +732,43 @@ fn simplify_cfg_erases_nested_region_branch_ops_with_unreachable_regions() -> Re
           ^entry_block1v1(x_v0: builtin.integer i64) !0:
             f_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
             llvm.return x_v0 !2
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+/// Check that a `test.effectful_when` with a zero condition must not be erased,
+/// because it has side effects of its own.
+#[test]
+fn simplify_cfg_keeps_region_branch_op_with_own_side_effects() -> Result<()> {
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i64) variadic = false> [] {
+      ^entry(x: builtin.integer i64):
+      f = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1;
+      r = test.effectful_when (f, x) {
+        ^body():
+        a = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64;
+        test.yield a
+      } : builtin.integer i64;
+      llvm.return r
+    }
+  "#;
+
+    let (status, after) = run_simplify_cfg_on_text(input)?;
+    assert_eq!(status, IRStatus::Unchanged);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i64) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(x_v0: builtin.integer i64) !0:
+            f_v1 = builtin.constant <builtin.integer <0: i1>> : builtin.integer i1 !1;
+            r_v3 = test.effectful_when (f_v1, x_v0) 
+            {
+              ^body_block2v1() !2:
+                a_v2 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !3;
+                test.yield a_v2 !4
+            } : builtin.integer i64 !5;
+            llvm.return r_v3 !6
         }"#]]
     .assert_eq(&after);
     Ok(())
