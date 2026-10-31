@@ -157,8 +157,8 @@ fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &m
     }
 }
 
-/// Given the [Constness] of the operands of `region_branch` (`op_attrs`)
-/// and of the terminator at `point` (`terminator_attrs`):
+/// Given the [Constness] of the operands of `region_branch` (`operand_attrs`)
+/// and of the terminator at `point` (`terminator_operand_attrs`):
 ///   - compute the traversable edges that start from `point`
 ///   - forward operand [Constness] along these edges
 ///   - mark the targets of these edges as reachable:
@@ -167,8 +167,8 @@ fn process_branch_op(branch_op: &dyn BranchOpInterface, ctx: &Context, state: &m
 fn process_region_branch_edges(
     region_branch: &dyn RegionBranchOpInterface,
     point: RegionBranchPoint,
-    op_attrs: &[Option<AttrObj>],
-    terminator_attrs: &[Option<AttrObj>],
+    operand_attrs: &[Option<AttrObj>],
+    terminator_operand_attrs: &[Option<AttrObj>],
     ctx: &Context,
     state: &mut SccpState,
 ) {
@@ -177,7 +177,7 @@ fn process_region_branch_edges(
     let edges = region_branch.edges_from(ctx, point);
     let feasible_successors: Vec<RegionSuccessor> =
         match op_cast::<dyn RegionBranchOpFoldInterface>(op_dyn.as_ref()) {
-            Some(fold) => fold.check_fold(ctx, point, op_attrs, terminator_attrs),
+            Some(fold) => fold.check_fold(ctx, point, operand_attrs, terminator_operand_attrs),
             None => {
                 log::info!(
                     "Region branch operation '{}' does not implement RegionBranchOpFoldInterface,

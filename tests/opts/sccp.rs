@@ -152,15 +152,15 @@ impl RegionBranchOpFoldInterface for IfOp {
         &self,
         ctx: &Context,
         point: RegionBranchPoint,
-        op_attrs: &[Option<AttrObj>],
-        _terminator_attrs: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
+        _terminator_operand_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor> {
         if let RegionBranchPoint::Terminator(_) = point {
             return vec![RegionSuccessor::After];
         }
         let op = self.get_operation();
         let regions: Vec<_> = op.deref(ctx).regions().collect();
-        match known_int_is_zero(op_attrs.first()) {
+        match known_int_is_zero(operand_attrs.first()) {
             Some(false) => vec![RegionSuccessor::Region(regions[0])],
             Some(true) => vec![RegionSuccessor::Region(regions[1])],
             None => regions.into_iter().map(RegionSuccessor::Region).collect(),
@@ -170,7 +170,7 @@ impl RegionBranchOpFoldInterface for IfOp {
     fn fold_in_place(
         &self,
         _ctx: &mut Context,
-        _op_attrs: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
         _rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
         IRStatus::Unchanged
@@ -283,14 +283,14 @@ impl RegionBranchOpFoldInterface for LoopOp {
         &self,
         ctx: &Context,
         point: RegionBranchPoint,
-        _op_attrs: &[Option<AttrObj>],
-        terminator_attrs: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
+        terminator_operand_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor> {
         let body = RegionSuccessor::Region(self.get_operation().deref(ctx).get_region(0));
         if let RegionBranchPoint::Parent = point {
             return vec![body];
         }
-        match known_int_is_zero(terminator_attrs.first()) {
+        match known_int_is_zero(terminator_operand_attrs.first()) {
             Some(false) => vec![body],
             Some(true) => vec![RegionSuccessor::After],
             None => vec![body, RegionSuccessor::After],
@@ -300,7 +300,7 @@ impl RegionBranchOpFoldInterface for LoopOp {
     fn fold_in_place(
         &self,
         _ctx: &mut Context,
-        _op_attrs: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
         _rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
         IRStatus::Unchanged
@@ -363,13 +363,13 @@ fn when_check_fold(
     op: Ptr<Operation>,
     ctx: &Context,
     point: RegionBranchPoint,
-    op_attrs: &[Option<AttrObj>],
+    operand_attrs: &[Option<AttrObj>],
 ) -> Vec<RegionSuccessor> {
     if let RegionBranchPoint::Terminator(_) = point {
         return vec![RegionSuccessor::After];
     }
     let region = RegionSuccessor::Region(op.deref(ctx).get_region(0));
-    match known_int_is_zero(op_attrs.first()) {
+    match known_int_is_zero(operand_attrs.first()) {
         Some(false) => vec![region],
         Some(true) => vec![RegionSuccessor::After],
         None => vec![region, RegionSuccessor::After],
@@ -393,16 +393,16 @@ impl RegionBranchOpFoldInterface for WhenOp {
         &self,
         ctx: &Context,
         point: RegionBranchPoint,
-        op_attrs: &[Option<AttrObj>],
-        _terminator_attrs: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
+        _terminator_operand_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor> {
-        when_check_fold(self.get_operation(), ctx, point, op_attrs)
+        when_check_fold(self.get_operation(), ctx, point, operand_attrs)
     }
 
     fn fold_in_place(
         &self,
         _ctx: &mut Context,
-        _op_attrs: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
         _rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
         IRStatus::Unchanged
@@ -450,16 +450,16 @@ impl RegionBranchOpFoldInterface for EffectfulWhenOp {
         &self,
         ctx: &Context,
         point: RegionBranchPoint,
-        op_attrs: &[Option<AttrObj>],
-        _terminator_attrs: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
+        _terminator_operand_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor> {
-        when_check_fold(self.get_operation(), ctx, point, op_attrs)
+        when_check_fold(self.get_operation(), ctx, point, operand_attrs)
     }
 
     fn fold_in_place(
         &self,
         _ctx: &mut Context,
-        _op_attrs: &[Option<AttrObj>],
+        _operand_attrs: &[Option<AttrObj>],
         _rewriter: &mut dyn Rewriter,
     ) -> IRStatus {
         IRStatus::Unchanged

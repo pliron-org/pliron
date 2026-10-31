@@ -1673,7 +1673,11 @@ impl ConstFoldInterface for FreezeOp {
 
 #[op_interface_impl]
 impl BranchOpFoldInterface for BrOp {
-    fn check_fold(&self, ctx: &Context, _operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+    fn check_fold(
+        &self,
+        ctx: &Context,
+        _operand_attrs: &[Option<AttrObj>],
+    ) -> Vec<Ptr<BasicBlock>> {
         self.get_operation().deref(ctx).successors().collect()
     }
     fn fold_in_place(
@@ -1688,8 +1692,8 @@ impl BranchOpFoldInterface for BrOp {
 
 /// Is the branch condition (the first operand) `undef` or `poison`?
 /// Branching on such a value is undefined behavior, so no successor is feasible.
-fn is_undef_or_poison_condition(operands: &[Option<AttrObj>]) -> bool {
-    operands
+fn is_undef_or_poison_condition(operand_attrs: &[Option<AttrObj>]) -> bool {
+    operand_attrs
         .first()
         .and_then(|cond| cond.as_ref())
         .is_some_and(|cond| is_undef_or_poison_attr(&**cond))
@@ -1712,13 +1716,13 @@ impl CondBrOp {
     fn possible_successor_indices(
         &self,
         ctx: &Context,
-        operands: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
     ) -> Vec<usize> {
-        if is_undef_or_poison_condition(operands) {
+        if is_undef_or_poison_condition(operand_attrs) {
             return vec![];
         }
         // Any other constant that is not an integer gives no information.
-        let Some(cond_int) = operands
+        let Some(cond_int) = operand_attrs
             .first()
             .unwrap()
             .as_ref()
@@ -1734,11 +1738,11 @@ impl CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpFoldInterface for CondBrOp {
-    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+    fn check_fold(&self, ctx: &Context, operand_attrs: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
         let successors: Vec<Ptr<BasicBlock>> =
             self.get_operation().deref(ctx).successors().collect();
 
-        self.possible_successor_indices(ctx, operands)
+        self.possible_successor_indices(ctx, operand_attrs)
             .iter()
             .map(|ind| successors[*ind])
             .collect()
@@ -1772,14 +1776,14 @@ impl BranchOpFoldInterface for CondBrOp {
 
 #[op_interface_impl]
 impl BranchOpFoldInterface for SwitchOp {
-    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
+    fn check_fold(&self, ctx: &Context, operand_attrs: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>> {
         let successors: Vec<Ptr<BasicBlock>> =
             self.get_operation().deref(ctx).successors().collect();
-        if is_undef_or_poison_condition(operands) {
+        if is_undef_or_poison_condition(operand_attrs) {
             return vec![];
         }
         // Any other constant that is not an integer gives no information.
-        let Some(cond_int) = operands
+        let Some(cond_int) = operand_attrs
             .first()
             .and_then(|o| o.as_ref())
             .and_then(|cond_attr| cond_attr.downcast_ref::<IntegerAttr>())

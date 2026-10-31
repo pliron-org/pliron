@@ -94,10 +94,10 @@ pub trait ConstFoldInterface {
 /// based on static information about branch conditions.
 #[op_interface]
 pub trait BranchOpFoldInterface: BranchOpInterface {
-    /// Return the list of possible successor blocks given that `operands`
+    /// Return the list of possible successor blocks given that `operand_attrs`
     /// contains `Some(attr)` for each operand known to be constant, where `attr` contains
     /// the known constant value.
-    fn check_fold(&self, ctx: &Context, operands: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>>;
+    fn check_fold(&self, ctx: &Context, operand_attrs: &[Option<AttrObj>]) -> Vec<Ptr<BasicBlock>>;
 
     /// Given a slice `operand_attrs` corresponding to each operand, indicating a known
     /// compile time constant value for that operand (if any), attempts to fold the op in
@@ -124,9 +124,9 @@ pub trait BranchOpFoldInterface: BranchOpInterface {
 pub trait RegionBranchOpFoldInterface: RegionBranchOpInterface {
     /// Return the possible successors of the edges that start at `point`.
     ///
-    /// - `op_attrs` contains `Some(attr)` for each operand of this op
+    /// - `operand_attrs` contains `Some(attr)` for each operand of this op
     ///   that is known to be constant, where `attr` contains the known constant value.
-    /// - `terminator_attrs` does the same for the operands of the terminator at `point`.
+    /// - `terminator_operand_attrs` does the same for the operands of the terminator at `point`.
     ///   It is empty when `point` is [RegionBranchPoint::Parent].
     ///
     /// The result must be a subset of the successors of the edges that
@@ -135,18 +135,18 @@ pub trait RegionBranchOpFoldInterface: RegionBranchOpInterface {
         &self,
         ctx: &Context,
         point: RegionBranchPoint,
-        op_attrs: &[Option<AttrObj>],
-        terminator_attrs: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
+        terminator_operand_attrs: &[Option<AttrObj>],
     ) -> Vec<RegionSuccessor>;
 
-    /// Given a slice `op_attrs` corresponding to each operand, indicating a known
+    /// Given a slice `operand_attrs` corresponding to each operand, indicating a known
     /// compile time constant value for that operand (if any), attempts to fold the op in
     /// place using the provided `rewriter`. Assumes that `rewriter` is positioned just
     /// before the op to be folded.
     fn fold_in_place(
         &self,
         ctx: &mut Context,
-        op_attrs: &[Option<AttrObj>],
+        operand_attrs: &[Option<AttrObj>],
         rewriter: &mut dyn Rewriter,
     ) -> IRStatus;
 
