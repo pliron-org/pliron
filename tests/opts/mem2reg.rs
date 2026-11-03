@@ -222,7 +222,8 @@ pub struct ParallelOp;
 impl RegionBranchOpInterface for ParallelOp {
     fn verify_region_edges_layout(&self, ctx: &Context) -> Result<()> {
         let body = self.get_operation().deref(ctx).get_region(0);
-        match body.deref(ctx).get_tail() {
+        let tail = body.deref(ctx).get_tail();
+        match tail {
             Some(tail) if tail.deref(ctx).get_terminator(ctx).is_some() => Ok(()),
             _ => verify_err_noloc!(RegionBranchLayoutErr),
         }
