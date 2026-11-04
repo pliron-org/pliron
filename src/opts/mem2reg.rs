@@ -1,7 +1,42 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Memory to register promotion optimization pass.
+//! Memory to register promotion (mem2reg) optimization, aka SSA conversion.
+//!
+//! References:
+//!   - *Modern Compiler Implementation in C* - Appel, Section 19.1.
+//!   - *Efficiently Computing Static Single Assignment Form and the
+//!     Control Dependence Graph* (1991) - Cytron et al.
+//!
+//! - We build pruned SSA, a variant discussed by Cytron et al.
+//! - We use block arguments to capture a merge of values, instead of PHIs.
+//! - Candidates are pruned if they have:
+//!   - a use that is [not promotable](PromotableOpKind::NonPromotableUse),
+//!   - a use in a region that does not permit promotion,
+//!   - a use in an unreachable block, or
+//!   - a PHI whose operands can't all be filled.
+//! - The implementation is driven by the following interfaces:
+//!   [PromotableAllocationInterface], [PromotableOpInterface],
+//!   [RegionBranchOpInterface] and [PromotableRegionBranchOpInterface].
+//!
+//! For register promotion within a control-flow graph (CFG),
+//! [PromotableAllocationInterface] and [PromotableOpInterface] provide
+//! the details of whether an [Op] is load-like, store-like or alloca-like.
+//!
+//! Register promotion of uses (load / store) in nested sub-regions of
+//! an allocation relies on [RegionBranchOpInterface] and [PromotableRegionBranchOpInterface].
+//!
+//! [RegionBranchOpInterface::region_edges] describes both value and control flow between
+//! the regions of an operation. The PHI / block arg equivalent for capturing the merge
+//! of values is served by region entry-block args and the results of the region operation.
+//! The algorithm computes the additional entry-block args and results for promoted values.
+//!
+//! To actually mutate the IR for inserting these merge values:
+//! - [PromotableRegionBranchOpInterface::add_receivers] is called to add new receivers
+//!   (entry-block args / region op results) where values merge.
+//! - [PromotableRegionBranchOpInterface::add_carried_operand] is called to provide
+//!   the actual values (operands of a terminator or the parent region op) that flow into
+//!   the newly added merge values in `add_receivers`.
 
 use core::{ops::ControlFlow, panic};
 
