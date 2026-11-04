@@ -1686,6 +1686,75 @@ fn mem2reg_phi_in_if_region() -> Result<()> {
 }
 
 #[test]
+fn mem2reg_phi_in_if_region_without_load() -> Result<()> {
+    // Stores in two blocks of a `test.if` region must merge in a new argument of the
+    // block where they meet, also without a load in that block. The `test.yield` there
+    // must carry that argument to a load after the `test.if`.
+    let input = r#"
+    llvm.func @f: llvm.func <builtin.integer i64 (builtin.integer i1) variadic = false> [] {
+      ^entry(c: builtin.integer i1):
+      size = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+      alloc = llvm.alloca [builtin.integer i64 x size] : llvm.ptr (0);
+      v = builtin.constant <builtin.integer <9: i64>> : builtin.integer i64;
+      llvm.store *alloc <- v;
+      r = test.if c {
+        ^then():
+        llvm.cond_br if c ^then_a() else ^then_b()
+        ^then_a():
+        a = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+        llvm.store *alloc <- a;
+        llvm.br ^then_merge()
+        ^then_b():
+        b = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64;
+        llvm.store *alloc <- b;
+        llvm.br ^then_merge()
+        ^then_merge():
+        test.yield size
+      } else {
+        ^else():
+        test.yield size
+      } : builtin.integer i64;
+      out = llvm.load alloc : builtin.integer i64;
+      llvm.return out
+    }
+  "#;
+
+    let (status, after) = run_mem2reg(input)?;
+    assert_eq!(status, IRStatus::Changed);
+    expect![[r#"
+        llvm.func @f: llvm.func <builtin.integer i64(builtin.integer i1) variadic = false>
+          [] 
+        {
+          ^entry_block1v1(c_v0: builtin.integer i1) !0:
+            size_v1 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !1;
+            v_v3 = builtin.constant <builtin.integer <9: i64>> : builtin.integer i64 !2;
+            r_v6, alloc_v9 = test.if c_v0 
+            {
+              ^then_block2v1() !3:
+                llvm.cond_br if c_v0 ^then_a_block5v1() else ^then_b_block6v1() !4
+
+              ^then_a_block5v1() !5:
+                a_v4 = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64 !6;
+                llvm.br ^then_merge_block4v3(a_v4) !7
+
+              ^then_b_block6v1() !8:
+                b_v5 = builtin.constant <builtin.integer <2: i64>> : builtin.integer i64 !9;
+                llvm.br ^then_merge_block4v3(b_v5) !10
+
+              ^then_merge_block4v3(alloc_v8: builtin.integer i64) !11:
+                test.yield size_v1, alloc_v8 !12
+            } else 
+            {
+              ^else_block3v5() !13:
+                test.yield size_v1, v_v3 !14
+            } : builtin.integer i64, builtin.integer i64 !15;
+            llvm.return alloc_v9 !16
+        }"#]]
+    .assert_eq(&after);
+    Ok(())
+}
+
+#[test]
 fn mem2reg_not_promoted_when_store_is_in_parallel_region() -> Result<()> {
     // A store in the region of `test.parallel`, whose stores are not visible in its
     // successors, must block promotion.

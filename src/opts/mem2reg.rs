@@ -551,6 +551,57 @@ fn compute_user_blocks_info(
         }
     }
 
+    /// Record uses of `candidates`, as region-edge carried operands, in terminators of `region`.
+    fn record_terminator_uses(
+        ctx: &Context,
+        region: Ptr<Region>,
+        nested_uses: &NestedUses,
+        cand_index_map: &CandidateIndexMap,
+        user_blocks_info: &mut [IMap<Ptr<BasicBlock>, CandidateUserBlockInfo>],
+    ) {
+        let op = region.deref(ctx).get_parent_op();
+        let stored_cands: SmallVec<[usize; 2]> = nested_uses
+            .candidates_used_in_regions_of(op)
+            .filter(|&(_, has_stores)| has_stores)
+            .filter_map(|(ptr, _)| cand_index_map.0.get(&ptr).copied())
+            .collect();
+        if stored_cands.is_empty() {
+            return;
+        }
+
+        let op_obj = Operation::get_op_dyn(op, ctx);
+        let iface = op_cast::<dyn PromotableRegionBranchOpInterface>(op_obj.as_ref()).expect(
+            "Op with stores in its regions must implement PromotableRegionBranchOpInterface",
+        );
+        let carrying_blocks: ISet<Ptr<BasicBlock>> = iface
+            .region_edges(ctx)
+            .into_iter()
+            .filter_map(|edge| match edge.from {
+                RegionBranchPoint::Terminator(term) => term
+                    .deref(ctx)
+                    .get_parent_block()
+                    .filter(|block| block.deref(ctx).get_parent_region() == Some(region)),
+                RegionBranchPoint::Parent => None,
+            })
+            .collect();
+        for block in carrying_blocks {
+            for &cand_idx in &stored_cands {
+                let info = user_blocks_info[cand_idx].entry(block).or_default();
+                if !info.has_store {
+                    info.load_before_store = true;
+                }
+            }
+        }
+    }
+
+    record_terminator_uses(
+        ctx,
+        region,
+        nested_uses,
+        &cand_index_map,
+        &mut user_blocks_info,
+    );
+
     user_blocks_info
 }
 
