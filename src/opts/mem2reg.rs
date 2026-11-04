@@ -7,7 +7,6 @@ use core::{ops::ControlFlow, panic};
 
 use alloc::vec::Vec;
 use pliron_derive::op_interface;
-use smallvec::SmallVec;
 
 use crate::{
     basic_block::BasicBlock,
@@ -429,8 +428,8 @@ impl CandidateIndexMap {
     }
 
     /// Get the indices of the candidates that `op` uses, in ascending order.
-    fn candidates_accessed_by_op(&self, op: Ptr<Operation>, ctx: &Context) -> SmallVec<[usize; 2]> {
-        let mut accessed_cands: SmallVec<[usize; 2]> = op
+    fn candidates_accessed_by_op(&self, op: Ptr<Operation>, ctx: &Context) -> Vec<usize> {
+        let mut accessed_cands: Vec<usize> = op
             .deref(ctx)
             .operands()
             .filter_map(|opd| self.0.get(&opd).copied())
@@ -561,7 +560,7 @@ fn compute_user_blocks_info(
         user_blocks_info: &mut [IMap<Ptr<BasicBlock>, CandidateUserBlockInfo>],
     ) {
         let op = region.deref(ctx).get_parent_op();
-        let stored_cands: SmallVec<[usize; 2]> = nested_uses
+        let stored_cands: Vec<usize> = nested_uses
             .candidates_used_in_regions_of(op)
             .filter(|&(_, has_stores)| has_stores)
             .filter_map(|(ptr, _)| cand_index_map.0.get(&ptr).copied())
@@ -1231,7 +1230,7 @@ fn rename_in_regions_of(state: &mut RenameState, op: Ptr<Operation>) -> Result<(
         // Each candidate with a receiver in `region` starts with that receiver.
         // A candidate without one starts with the definition that reaches `op`,
         // which is already at the top of the stack.
-        let region_receivers: SmallVec<[(Value, Value); 2]> = state
+        let region_receivers: Vec<(Value, Value)> = state
             .new_receivers_in_op
             .get(&op)
             .into_iter()
