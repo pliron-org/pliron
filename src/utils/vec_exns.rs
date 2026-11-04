@@ -1,20 +1,25 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Extend functionality of Rust vectors.
+//! Extensions for library types
 
 use alloc::vec::Vec;
 use smallvec::{Array, SmallVec};
 
 /// This trait provides additionaly functionality for Rust vectors
 pub trait VecExtns<T> {
-    /// Insert a new element and get back its index in the container.
+    /// Insert `t` and get back its index in the container.
     fn push_back(&mut self, t: T) -> usize;
-    /// Insert a new element, constructed by calling `ctor`,
-    /// and get back its index in the container. `ctor` will
-    /// receve the index as a parameter. This is useful when the
-    /// element inserted needs to know its index.
+
+    /// Insert a new element, constructed by calling `ctor` with the element's index,
+    /// and get back its index in the container.
     fn push_back_with(&mut self, ctor: impl FnMut(usize) -> T) -> usize;
+
+    /// Insert `t` if it isn't already in the container.
+    /// Get back the index of the existing element or of the new element.
+    fn push_unique(&mut self, t: T) -> usize
+    where
+        T: PartialEq;
 
     /// Create and initialize a new vector.
     fn new_init<U: FnMut(usize) -> T>(size: usize, initf: U) -> Self;
@@ -33,6 +38,15 @@ impl<T> VecExtns<T> for Vec<T> {
         let idx = self.len();
         self.push(ctor(idx));
         idx
+    }
+
+    fn push_unique(&mut self, t: T) -> usize
+    where
+        T: PartialEq,
+    {
+        self.iter()
+            .position(|e| *e == t)
+            .unwrap_or_else(|| self.push_back(t))
     }
 
     fn new_init<U: FnMut(usize) -> T>(size: usize, mut initf: U) -> Self {
@@ -66,6 +80,15 @@ impl<A: Array> VecExtns<A::Item> for SmallVec<A> {
         idx
     }
 
+    fn push_unique(&mut self, t: A::Item) -> usize
+    where
+        A::Item: PartialEq,
+    {
+        self.iter()
+            .position(|e| *e == t)
+            .unwrap_or_else(|| self.push_back(t))
+    }
+
     fn new_init<U: FnMut(usize) -> A::Item>(size: usize, mut initf: U) -> Self {
         let mut v = SmallVec::<A>::with_capacity(size);
         for i in 0..size {
@@ -84,3 +107,22 @@ impl<A: Array> VecExtns<A::Item> for SmallVec<A> {
         }
     }
 }
+
+/// This trait provides additional functionality for Rust iterators.
+pub trait IterExtns: Iterator {
+    /// Collect the items into `C`, skipping items equal to one already collected.
+    fn collect_unique<C>(self) -> C
+    where
+        Self: Sized,
+        Self::Item: PartialEq,
+        C: VecExtns<Self::Item> + Default,
+    {
+        let mut collected = C::default();
+        for item in self {
+            collected.push_unique(item);
+        }
+        collected
+    }
+}
+
+impl<I: Iterator> IterExtns for I {}

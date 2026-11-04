@@ -701,6 +701,14 @@ impl DomInfo {
             .or_insert_with(|| compute_dominator_tree(ctx, &region))
     }
 
+    /// Get the cached dominator tree of `region`, if any.
+    pub fn get_cached_dom_tree(
+        &self,
+        region: Ptr<Region>,
+    ) -> Option<&DomTree<Ptr<Region>, Context>> {
+        self.0.get(&region)
+    }
+
     /// Does block `a` strictly dominate block `b`?
     ///
     /// Caches region dominator trees as a side effect.
