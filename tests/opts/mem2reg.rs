@@ -100,7 +100,7 @@ fn push_result(ctx: &Context, op: Ptr<Operation>, ty: TypeHandle) -> Value {
 
 #[op_interface_impl]
 impl PromotableRegionBranchOpInterface for IfOp {
-    fn stores_visible_in_successors(&self, _ctx: &Context) -> bool {
+    fn permits_store_promotion(&self, _ctx: &Context) -> bool {
         true
     }
 
@@ -133,7 +133,7 @@ impl PromotableRegionBranchOpInterface for IfOp {
 
 #[op_interface_impl]
 impl PromotableRegionBranchOpInterface for LoopOp {
-    fn stores_visible_in_successors(&self, _ctx: &Context) -> bool {
+    fn permits_store_promotion(&self, _ctx: &Context) -> bool {
         true
     }
 
@@ -176,7 +176,7 @@ impl PromotableRegionBranchOpInterface for LoopOp {
 
 #[op_interface_impl]
 impl PromotableRegionBranchOpInterface for WhenOp {
-    fn stores_visible_in_successors(&self, _ctx: &Context) -> bool {
+    fn permits_store_promotion(&self, _ctx: &Context) -> bool {
         true
     }
 
@@ -250,7 +250,7 @@ impl RegionBranchOpInterface for ParallelOp {
 
 #[op_interface_impl]
 impl PromotableRegionBranchOpInterface for ParallelOp {
-    fn stores_visible_in_successors(&self, _ctx: &Context) -> bool {
+    fn permits_store_promotion(&self, _ctx: &Context) -> bool {
         false
     }
 

@@ -150,11 +150,12 @@ pub trait PromotableOpInterface {
 /// - used in the regions of the op.
 #[op_interface]
 pub trait PromotableRegionBranchOpInterface: RegionBranchOpInterface {
-    /// Is the last value stored in a [region edge's](RegionBranchOpInterface::region_edges)
-    /// source always the value seen in its destination [RegionSuccessor]?
+    /// Can stores in the regions of this op be promoted?
     ///
-    /// An op whose regions can run concurrently usually returns false.
-    fn stores_visible_in_successors(&self, ctx: &Context) -> bool;
+    /// Some reasons to return false:
+    /// - The regions can run concurrently, so a stored value may not reach a successor.
+    /// - The op has no results or region arguments to receive a stored value.
+    fn permits_store_promotion(&self, ctx: &Context) -> bool;
 
     /// Add a receiver of type `ty` in each of the `successors`.
     /// Receivers may also be added in other successors, when they share an operand list.
@@ -249,7 +250,7 @@ fn prune_candidates(candidates: &mut Vec<AllocCandidate>, ctx: &Context) {
 ///
 /// Each such region must have SSA dominance, and its parent op must:
 /// - implement [PromotableRegionBranchOpInterface], and
-/// - have [stores visible in successors](PromotableRegionBranchOpInterface::stores_visible_in_successors)
+/// - [permit store promotion](PromotableRegionBranchOpInterface::permits_store_promotion)
 ///   if the use is a [PromotableOpKind::Store].
 fn enclosing_regions_permit_promotion(
     ctx: &Context,
@@ -262,7 +263,7 @@ fn enclosing_regions_permit_promotion(
         let parent_op_obj = Operation::get_op_dyn(region.deref(ctx).get_parent_op(), ctx);
         region.deref(ctx).has_ssa_dominance(ctx)
             && op_cast::<dyn PromotableRegionBranchOpInterface>(parent_op_obj.as_ref())
-                .is_some_and(|iface| !is_store || iface.stores_visible_in_successors(ctx))
+                .is_some_and(|iface| !is_store || iface.permits_store_promotion(ctx))
     })
 }
 
