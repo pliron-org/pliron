@@ -27,7 +27,10 @@ use crate::{
     printable::{ListSeparator, Printable},
     result::Result,
     r#type::{Type, TypeHandle, Typed},
-    utils::table::{HMap, HSet},
+    utils::{
+        table::{HMap, HSet},
+        vec_exns::VecExtns,
+    },
     value::{DefiningEntity, Value},
 };
 
@@ -285,11 +288,9 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
             );
         }
 
-        fn append_type_history(existing: &mut Vec<TypeHandle>, mut additional: Vec<TypeHandle>) {
-            for ty in additional.drain(..) {
-                if !existing.contains(&ty) {
-                    existing.push(ty);
-                }
+        fn append_type_history(existing: &mut Vec<TypeHandle>, additional: Vec<TypeHandle>) {
+            for ty in additional {
+                existing.push_unique(ty);
             }
         }
 

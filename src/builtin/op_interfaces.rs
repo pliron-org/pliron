@@ -25,6 +25,7 @@ use crate::{
     utils::{
         const_bound_n::LessThanN,
         table::{HMap, HSet},
+        vec_exns::IterExtns,
     },
     value::{DefiningEntity, Use, Value},
     verify_err, verify_error,
@@ -406,51 +407,30 @@ pub trait RegionBranchOpInterface {
 
     /// Get the operands that are read on edges from `point`.
     fn operands_read_from(&self, ctx: &Context, point: RegionBranchPoint) -> Vec<Use<Value>> {
-        let mut reads = Vec::new();
-        for operand in self
-            .edges_from(ctx, point)
+        self.edges_from(ctx, point)
             .into_iter()
             .flat_map(|edge| edge.reads)
-        {
-            if !reads.contains(&operand) {
-                reads.push(operand);
-            }
-        }
-        reads
+            .collect_unique()
     }
 
     /// Get the operands that are read on edges to `successor`.
     fn operands_read_to(&self, ctx: &Context, successor: RegionSuccessor) -> Vec<Use<Value>> {
-        let mut reads = Vec::new();
-        for operand in self
-            .edges_to(ctx, successor)
+        self.edges_to(ctx, successor)
             .into_iter()
             .flat_map(|edge| edge.reads)
-        {
-            if !reads.contains(&operand) {
-                reads.push(operand);
-            }
-        }
-        reads
+            .collect_unique()
     }
 
     /// Get the operands that are read on edges from terminators in `region`.
     fn operands_read_from_region(&self, ctx: &Context, region: Ptr<Region>) -> Vec<Use<Value>> {
-        let mut reads = Vec::new();
-        for edge in self.region_edges(ctx) {
-            let RegionBranchPoint::Terminator(terminator) = edge.from else {
-                continue;
-            };
-            if terminator.deref(ctx).get_parent_region(ctx) != Some(region) {
-                continue;
-            }
-            for operand in edge.reads {
-                if !reads.contains(&operand) {
-                    reads.push(operand);
-                }
-            }
-        }
-        reads
+        self.region_edges(ctx)
+            .into_iter()
+            .filter(|edge| {
+                matches!(edge.from, RegionBranchPoint::Terminator(terminator)
+                    if terminator.deref(ctx).get_parent_region(ctx) == Some(region))
+            })
+            .flat_map(|edge| edge.reads)
+            .collect_unique()
     }
 
     /// Get the [flows](RegionEdge::flows) of all edges, as `(operand, receiver)` pairs.
@@ -463,17 +443,11 @@ pub trait RegionBranchOpInterface {
 
     /// Get the receivers in `successor`, each once.
     fn successor_receivers(&self, ctx: &Context, successor: RegionSuccessor) -> Vec<Value> {
-        let mut receivers = Vec::new();
-        for (_, receiver) in self
-            .edges_to(ctx, successor)
+        self.edges_to(ctx, successor)
             .into_iter()
             .flat_map(|edge| edge.flows)
-        {
-            if !receivers.contains(&receiver) {
-                receivers.push(receiver);
-            }
-        }
-        receivers
+            .map(|(_, receiver)| receiver)
+            .collect_unique()
     }
 
     /// Get the operands that [flow](RegionEdge::flows) into `receiver`.
@@ -486,20 +460,17 @@ pub trait RegionBranchOpInterface {
 
     /// Get the regions that the terminators of `region` branch to.
     fn successor_regions(&self, ctx: &Context, region: Ptr<Region>) -> Vec<Ptr<Region>> {
-        let mut successors = Vec::new();
-        for edge in self.region_edges(ctx) {
-            let (RegionBranchPoint::Terminator(terminator), RegionSuccessor::Region(target)) =
-                (edge.from, edge.to)
-            else {
-                continue;
-            };
-            if terminator.deref(ctx).get_parent_region(ctx) == Some(region)
-                && !successors.contains(&target)
-            {
-                successors.push(target);
-            }
-        }
-        successors
+        self.region_edges(ctx)
+            .into_iter()
+            .filter_map(|edge| match (edge.from, edge.to) {
+                (RegionBranchPoint::Terminator(terminator), RegionSuccessor::Region(target))
+                    if terminator.deref(ctx).get_parent_region(ctx) == Some(region) =>
+                {
+                    Some(target)
+                }
+                _ => None,
+            })
+            .collect_unique()
     }
 
     /// Get the regions reachable from `region` through one or more edges between regions.
