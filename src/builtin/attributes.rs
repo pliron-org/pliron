@@ -671,6 +671,8 @@ impl TypedAttrInterface for TypeAttr {
     }
 }
 
+/// Number of operands in each
+/// [operand segment](crate::builtin::op_interfaces::OperandSegmentInterface).
 #[pliron_attr(
     name = "builtin.operand_segment_sizes",
     format = "`[` vec($0, CharSpace(`,`)) `]`",

@@ -66,7 +66,7 @@ use crate::{
     opts::constants::{BranchOpFoldInterface, ConstFoldInterface, RegionBranchOpFoldInterface},
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
-    utils::table::HSet,
+    utils::{table::HSet, vec_exns::IterExtns},
     value::{DefiningEntity, Value},
 };
 use alloc::vec::Vec;
@@ -246,14 +246,13 @@ fn process_region_branch_op(
 
     // Process the edges that start at reachable terminators again,
     // because their feasibility can depend on the operands of `region_branch`.
-    let mut terminators: Vec<Ptr<Operation>> = Vec::new();
-    for edge in &edges {
-        if let RegionBranchPoint::Terminator(terminator) = edge.from
-            && !terminators.contains(&terminator)
-        {
-            terminators.push(terminator);
-        }
-    }
+    let terminators: Vec<Ptr<Operation>> = edges
+        .iter()
+        .filter_map(|edge| match edge.from {
+            RegionBranchPoint::Terminator(terminator) => Some(terminator),
+            _ => None,
+        })
+        .collect_unique();
     for terminator in terminators {
         if state.is_reachable(terminator) {
             process_region_terminator(terminator, op, ctx, state);

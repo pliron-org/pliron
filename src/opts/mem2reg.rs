@@ -1,13 +1,47 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (c) The pliron contributors
 
-//! Memory to register promotion optimization pass.
+//! Memory to register promotion (mem2reg) optimization, aka SSA conversion.
+//!
+//! References:
+//!   - *Modern Compiler Implementation in C* - Appel, Section 19.1.
+//!   - *Efficiently Computing Static Single Assignment Form and the
+//!     Control Dependence Graph* (1991) - Cytron et al.
+//!
+//! - We build pruned SSA, a variant discussed by Cytron et al.
+//! - We use block arguments to capture a merge of values, instead of PHIs.
+//! - Candidates are pruned if they have:
+//!   - a use that is [not promotable](PromotableOpKind::NonPromotableUse),
+//!   - a use in a region that does not permit promotion,
+//!   - a use in an unreachable block, or
+//!   - a PHI whose operands can't all be filled.
+//! - The implementation is driven by the following interfaces:
+//!   [PromotableAllocationInterface], [PromotableOpInterface],
+//!   [RegionBranchOpInterface] and [PromotableRegionBranchOpInterface].
+//!
+//! For register promotion within a control-flow graph (CFG),
+//! [PromotableAllocationInterface] and [PromotableOpInterface] provide
+//! the details of whether an [Op] is load-like, store-like or alloca-like.
+//!
+//! Register promotion of uses (load / store) in nested sub-regions of
+//! an allocation relies on [RegionBranchOpInterface] and [PromotableRegionBranchOpInterface].
+//!
+//! [RegionBranchOpInterface::region_edges] describes both value and control flow between
+//! the regions of an operation. The PHI / block arg equivalent for capturing the merge
+//! of values is served by region entry-block args and the results of the region operation.
+//! The algorithm computes the additional entry-block args and results for promoted values.
+//!
+//! To actually mutate the IR for inserting these merge values:
+//! - [PromotableRegionBranchOpInterface::add_receivers] is called to add new receivers
+//!   (entry-block args / region op results) where values merge.
+//! - [PromotableRegionBranchOpInterface::add_carried_operand] is called to provide
+//!   the actual values (operands of a terminator or the parent region op) that flow into
+//!   the newly added merge values in `add_receivers`.
 
 use core::{ops::ControlFlow, panic};
 
 use alloc::vec::Vec;
 use pliron_derive::op_interface;
-use smallvec::SmallVec;
 
 use crate::{
     basic_block::BasicBlock,
@@ -429,8 +463,8 @@ impl CandidateIndexMap {
     }
 
     /// Get the indices of the candidates that `op` uses, in ascending order.
-    fn candidates_accessed_by_op(&self, op: Ptr<Operation>, ctx: &Context) -> SmallVec<[usize; 2]> {
-        let mut accessed_cands: SmallVec<[usize; 2]> = op
+    fn candidates_accessed_by_op(&self, op: Ptr<Operation>, ctx: &Context) -> Vec<usize> {
+        let mut accessed_cands: Vec<usize> = op
             .deref(ctx)
             .operands()
             .filter_map(|opd| self.0.get(&opd).copied())
@@ -561,7 +595,7 @@ fn compute_user_blocks_info(
         user_blocks_info: &mut [IMap<Ptr<BasicBlock>, CandidateUserBlockInfo>],
     ) {
         let op = region.deref(ctx).get_parent_op();
-        let stored_cands: SmallVec<[usize; 2]> = nested_uses
+        let stored_cands: Vec<usize> = nested_uses
             .candidates_used_in_regions_of(op)
             .filter(|&(_, has_stores)| has_stores)
             .filter_map(|(ptr, _)| cand_index_map.0.get(&ptr).copied())
@@ -1231,7 +1265,7 @@ fn rename_in_regions_of(state: &mut RenameState, op: Ptr<Operation>) -> Result<(
         // Each candidate with a receiver in `region` starts with that receiver.
         // A candidate without one starts with the definition that reaches `op`,
         // which is already at the top of the stack.
-        let region_receivers: SmallVec<[(Value, Value); 2]> = state
+        let region_receivers: Vec<(Value, Value)> = state
             .new_receivers_in_op
             .get(&op)
             .into_iter()
