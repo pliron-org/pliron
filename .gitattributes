@@ -1,0 +1,2 @@
+# Exclude LLVM IR test inputs from GitHub language statistics.
+pliron-llvm/tests/resources/*.ll linguist-detectable=false
