@@ -47,6 +47,7 @@ pub mod irbuild;
 pub mod irfmt;
 pub mod linked_list;
 pub mod location;
+pub mod lsp;
 pub mod op;
 pub mod operation;
 pub mod opts;

@@ -214,6 +214,10 @@ impl Parsable for Region {
             .name_tracker
             .enter_region(state_stream.state.ctx, parent_op)?;
 
+        if crate::lsp::recovering(&state_stream.state) {
+            return parse_region_recovering(state_stream, parent_op, loc);
+        }
+
         let block_list_parser = spaces().with(combine::many::<Vec<_>, _, _>(
             BasicBlock::parser(()).skip(spaces()),
         ));
@@ -251,4 +255,73 @@ impl Parsable for Region {
 
         result.into()
     }
+}
+
+/// pliron-lsp: parse the blocks of a region (after `enter_region`),
+/// recovering from errors. Records a [crate::lsp::Event::Region].
+fn parse_region_recovering<'a>(
+    state_stream: &mut parsable::StateStream<'a>,
+    parent_op: Ptr<Operation>,
+    loc: crate::location::Location,
+) -> ParseResult<'a, Ptr<Region>> {
+    use crate::combine::{Positioned, StreamOnce};
+    use crate::lsp::{Sync, peek_char, record_error, recover_from, skip_spaces, skip_to_sync};
+
+    let open = state_stream.position();
+    if let Err(e) = token('{').parse_stream(state_stream).into_result() {
+        let _ = state_stream
+            .state
+            .name_tracker
+            .exit_region(state_stream.state.ctx, parent_op, loc);
+        return Err(e);
+    }
+    let mut blocks: Vec<Ptr<BasicBlock>> = Vec::new();
+    let mut close = None;
+    loop {
+        skip_spaces(state_stream);
+        let pos = state_stream.position();
+        match peek_char(state_stream) {
+            None => {
+                record_error(state_stream, pos, "unclosed region: expected `}`".into());
+                break;
+            }
+            Some('}') => {
+                let _ = state_stream.uncons();
+                close = Some(pos);
+                break;
+            }
+            Some('^') => {
+                let res = BasicBlock::parser(())
+                    .parse_stream(state_stream)
+                    .into_result();
+                if let Ok(block) = recover_from(state_stream, res, false) {
+                    blocks.push(block);
+                }
+            }
+            Some(_) => {
+                record_error(
+                    state_stream,
+                    pos,
+                    "expected a block header (`^label(...):`) or `}`".into(),
+                );
+                if skip_to_sync(state_stream, false, false) == Sync::Eof {
+                    continue;
+                }
+            }
+        }
+    }
+    let region = Operation::add_region(parent_op, state_stream.state.ctx);
+    for block in blocks.iter() {
+        block.insert_at_back(region, state_stream.state.ctx);
+    }
+    crate::lsp::record(&mut state_stream.state, || crate::lsp::Event::Region {
+        region: Some(region),
+        open,
+        close,
+    });
+    state_stream
+        .state
+        .name_tracker
+        .exit_region(state_stream.state.ctx, parent_op, loc)?;
+    Ok(region).into_parse_result()
 }

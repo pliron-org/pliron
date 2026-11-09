@@ -386,24 +386,40 @@ impl Parsable for TypeHandle {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        let type_id_parser = spaced(TypeId::parser(()));
+        let type_id_parser = spaced((
+            crate::lsp::position(),
+            TypeId::parser(()),
+            crate::lsp::position(),
+        ));
 
-        let mut type_parser = type_id_parser.then(move |type_id: TypeId| {
-            // This clone is to satify the borrow checker.
-            let loc = loc.clone();
-            combine::parser(move |parsable_state: &mut StateStream<'a>| {
-                let state = &parsable_state.state;
-                let dialect = state
-                    .ctx
-                    .dialects
-                    .get(&type_id.dialect)
-                    .expect("Dialect name parsed but dialect isn't registered");
-                let Some(type_parser) = dialect.types.get(&type_id) else {
-                    input_err!(loc.clone(), "Unregistered type {}", type_id.disp(state.ctx))?
-                };
-                type_parser(parsable_state, &())
-            })
-        });
+        let mut type_parser =
+            type_id_parser.then(move |(start, type_id, id_end): (_, TypeId, _)| {
+                // This clone is to satify the borrow checker.
+                let loc = loc.clone();
+                combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                    let state = &parsable_state.state;
+                    let dialect = state
+                        .ctx
+                        .dialects
+                        .get(&type_id.dialect)
+                        .expect("Dialect name parsed but dialect isn't registered");
+                    let Some(type_parser) = dialect.types.get(&type_id).copied() else {
+                        input_err!(loc.clone(), "Unregistered type {}", type_id.disp(state.ctx))?
+                    };
+                    let res = type_parser(parsable_state, &());
+                    if let Ok((ty, _)) = &res {
+                        let ty = *ty;
+                        let end = combine::Positioned::position(parsable_state);
+                        crate::lsp::record(&mut parsable_state.state, || crate::lsp::Event::Type {
+                            ty,
+                            start,
+                            id_end,
+                            end,
+                        });
+                    }
+                    res
+                })
+            });
 
         type_parser.parse_stream(state_stream).into_result()
     }
@@ -512,25 +528,40 @@ impl<T: Type + Parsable<Arg = (), Parsed = TypedHandle<T>>> Parsable for TypedHa
         arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        spaced(TypeId::parser(()))
-            .then(move |type_id| {
-                let loc = loc.clone();
-                combine::parser(move |parsable_state: &mut StateStream<'a>| {
-                    if type_id != T::get_type_id_static() {
-                        let ctx = &*parsable_state.state.ctx;
-                        input_err!(
-                            loc.clone(),
-                            TypedHandleErr {
-                                expected: T::get_type_id_static().disp(ctx).to_string(),
-                                provided: type_id.disp(ctx).to_string()
-                            }
-                        )?
-                    }
-                    T::parser(arg).parse_stream(parsable_state).into()
-                })
+        spaced((
+            crate::lsp::position(),
+            TypeId::parser(()),
+            crate::lsp::position(),
+        ))
+        .then(move |(start, type_id, id_end): (_, TypeId, _)| {
+            let loc = loc.clone();
+            combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                if type_id != T::get_type_id_static() {
+                    let ctx = &*parsable_state.state.ctx;
+                    input_err!(
+                        loc.clone(),
+                        TypedHandleErr {
+                            expected: T::get_type_id_static().disp(ctx).to_string(),
+                            provided: type_id.disp(ctx).to_string()
+                        }
+                    )?
+                }
+                let res = T::parser(arg).parse_stream(parsable_state).into_result();
+                if let Ok((ty, _)) = &res {
+                    let ty: TypeHandle = (*ty).into();
+                    let end = combine::Positioned::position(parsable_state);
+                    crate::lsp::record(&mut parsable_state.state, || crate::lsp::Event::Type {
+                        ty,
+                        start,
+                        id_end,
+                        end,
+                    });
+                }
+                res
             })
-            .parse_stream(state_stream)
-            .into_result()
+        })
+        .parse_stream(state_stream)
+        .into_result()
     }
 }
 

@@ -306,13 +306,21 @@ pub fn zero_or_more_parser<Input: Stream<Token = char>, Output>(
 /// the SSA operands of an [Operation]. If the SSA value hasn't been defined yet,
 /// a [forward reference](crate::builtin::ops::ForwardRefOp) is returned.
 pub fn ssa_opd_parse<'a>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseResult<'a, Value> {
+    let start = crate::combine::Positioned::position(state_stream);
     Identifier::parser(())
         .parse_stream(state_stream)
         .map(|opd| {
-            state_stream
+            let value = state_stream
                 .state
                 .name_tracker
-                .ssa_use(state_stream.state.ctx, &opd)
+                .ssa_use(state_stream.state.ctx, &opd);
+            let end = crate::combine::Positioned::position(state_stream);
+            crate::lsp::record(&mut state_stream.state, || crate::lsp::Event::OperandUse {
+                value,
+                start,
+                end,
+            });
+            value
         })
         .into()
 }
@@ -331,14 +339,20 @@ pub fn block_opd_parse<'a>(
     state_stream: &mut StateStream<'a>,
     _arg: (),
 ) -> ParseResult<'a, Ptr<BasicBlock>> {
+    let start = crate::combine::Positioned::position(state_stream);
     token('^')
         .with(Identifier::parser(()))
         .parse_stream(state_stream)
         .map(|opd| {
-            state_stream
+            let block = state_stream
                 .state
                 .name_tracker
-                .block_use(state_stream.state.ctx, &opd)
+                .block_use(state_stream.state.ctx, &opd);
+            let end = crate::combine::Positioned::position(state_stream);
+            crate::lsp::record(&mut state_stream.state, || {
+                crate::lsp::Event::SuccessorUse { block, start, end }
+            });
+            block
         })
         .into()
 }
@@ -358,16 +372,39 @@ pub fn process_parsed_ssa_defs(
     op: Ptr<Operation>,
 ) -> Result<()> {
     let ctx = &mut state_stream.state.ctx;
-    assert!(
-        results.len() == op.deref(ctx).get_num_results(),
-        "Error processing parsed SSA definitions. Result count mismatch"
-    );
+    let num_results = op.deref(ctx).get_num_results();
+    if results.len() != num_results {
+        // pliron-lsp: report a user error instead of panicking.
+        let loc = results
+            .first()
+            .map(|(_, loc)| loc.clone())
+            .unwrap_or_else(|| op.deref(ctx).loc().clone());
+        return crate::input_err!(
+            loc,
+            "{} result name(s) given, but this operation has {} result(s)",
+            results.len(),
+            num_results
+        );
+    }
 
     let name_tracker = &mut state_stream.state.name_tracker;
     for (idx, name_loc) in results.iter().enumerate() {
         let res = op.deref(ctx).get_result(idx);
         name_tracker.ssa_def(ctx, name_loc, res)?;
         set_operation_result_name(ctx, op, idx, Some(name_loc.0.clone()));
+        if let (Some(r), crate::location::Location::SrcPos { pos, .. }) =
+            (name_tracker.recorder.as_deref_mut(), &name_loc.1)
+        {
+            let mut end = *pos;
+            end.column += alloc::string::ToString::to_string(&name_loc.0)
+                .chars()
+                .count() as i32;
+            r.push(crate::lsp::Event::ResultDef {
+                value: res,
+                start: *pos,
+                end,
+            });
+        }
     }
     Ok(())
 }

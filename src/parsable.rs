@@ -399,6 +399,8 @@ impl LabelRef {
 pub(crate) struct NameTracker {
     ssa_name_scope: Vec<IMap<Identifier, Value>>,
     block_label_scope: Vec<IMap<Identifier, LabelRef>>,
+    /// Parse event recorder (pliron-lsp instrumentation), see [crate::lsp].
+    pub(crate) recorder: Option<Box<crate::lsp::Recorder>>,
 }
 
 #[derive(Error, Debug)]
@@ -453,6 +455,9 @@ impl NameTracker {
                         Operation::get_op::<ForwardRefOp>(op, ctx).map(|op| op.get_result(ctx));
                     if let Some(fref) = fref_opt {
                         // If there's already a def and its a forward ref, replace that.
+                        if let Some(r) = self.recorder.as_deref_mut() {
+                            r.forward_value_resolved(fref, def);
+                        }
                         fref.replace_some_uses_with(ctx, |_, _| true, &def);
                         Operation::erase(op, ctx);
                         occ.insert(def);
@@ -513,6 +518,9 @@ impl NameTracker {
         match scope.entry(id.0.clone()) {
             Entry::Occupied(mut occ) => match occ.get_mut() {
                 LabelRef::ForwardRef(fref) => {
+                    if let Some(r) = self.recorder.as_deref_mut() {
+                        r.forward_block_resolved(*fref, block);
+                    }
                     fref.retarget_some_preds_to(ctx, |_, _| true, block);
                     BasicBlock::erase(*fref, ctx);
                     occ.insert(LabelRef::Defined(block));
@@ -569,6 +577,23 @@ impl NameTracker {
                 if let DefiningEntity::Op(op) = value.defining_entity()
                     && Operation::is_op::<ForwardRefOp>(op, ctx)
                 {
+                    if let Some(r) = self.recorder.as_deref_mut()
+                        && r.recover
+                    {
+                        // Report at every use; placeholders for results of
+                        // failed operations are not errors.
+                        if !r.placeholders.contains(&value) {
+                            let msg = crate::lsp::unresolved_message(&id, false);
+                            let uses = r.uses_of_value(value);
+                            for pos in uses {
+                                r.errors.push(crate::lsp::RecordedError {
+                                    pos,
+                                    message: msg.clone(),
+                                });
+                            }
+                        }
+                        continue;
+                    }
                     input_err!(loc.clone(), UnresolvedReference(id.clone()))?
                 }
             }
@@ -581,7 +606,20 @@ impl NameTracker {
 
         // Check if there are any unresolved forward label references.
         for (id, op) in label_scope {
-            if matches!(op, LabelRef::ForwardRef(_)) {
+            if let LabelRef::ForwardRef(fref) = op {
+                if let Some(r) = self.recorder.as_deref_mut()
+                    && r.recover
+                {
+                    let msg = crate::lsp::unresolved_message(&id, true);
+                    let uses = r.uses_of_block(fref);
+                    for pos in uses {
+                        r.errors.push(crate::lsp::RecordedError {
+                            pos,
+                            message: msg.clone(),
+                        });
+                    }
+                    continue;
+                }
                 input_err!(loc.clone(), UnresolvedReference(id.clone()))?
             }
         }
