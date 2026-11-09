@@ -873,14 +873,23 @@ impl Parsable for Operation {
             .source()
             .expect("Location from Parsable must be Location::SrcPos");
 
+        let start = combine::Positioned::position(state_stream);
         let results_opid = spaces()
             .with(combine::optional(attempt(
                 list_parser(',', (location(), Identifier::parser(()))).skip(spaced(token('='))),
             )))
-            .and(spaced(OpId::parser(())));
+            .and(
+                spaces()
+                    .with((
+                        crate::lsp::position(),
+                        OpId::parser(()),
+                        crate::lsp::position(),
+                    ))
+                    .skip(spaces()),
+            );
 
         results_opid
-            .then(|(results_opt, opid)| {
+            .then(|(results_opt, (opid_start, opid, opid_end))| {
                 let loc = loc.clone();
                 let results: Vec<_> = results_opt
                     .unwrap_or(vec![])
@@ -894,19 +903,45 @@ impl Parsable for Operation {
                         .dialects
                         .get(&opid.dialect)
                         .expect("Dialect name parsed but dialect isn't registered");
-                    let Some(opid_parser) = dialect.ops.get(&opid) else {
-                        input_err!(loc.clone(), "Unregistered Op {}", opid.disp(state.ctx))?
+                    let Some(opid_parser) = dialect.ops.get(&opid).copied() else {
+                        if let Some(r) = crate::lsp::recorder(&mut parsable_state.state) {
+                            r.failed_results = Some(results.clone());
+                        }
+                        input_err!(
+                            loc.clone(),
+                            "Unregistered Op {}",
+                            opid.disp(parsable_state.state.ctx)
+                        )?
                     };
                     let op = opid_parser(parsable_state, results.clone())
                         .map(|(op, c)| (op.get_operation(), c));
 
-                    if let Ok((op, _)) = op {
-                        // Set the location of the operation to be from where we just parsed it.
-                        // If it has a different one specified as part of its outlined information,
-                        // that will be overwritten with later.
-                        op.deref_mut(parsable_state.state.ctx).set_loc(loc.clone());
-                        // If there's an outline index, post-parse it.
-                        postparse_outline(parsable_state, op)?;
+                    match &op {
+                        Ok((op, _)) => {
+                            let op = *op;
+                            // Set the location of the operation to be from where we just parsed it.
+                            // If it has a different one specified as part of its outlined information,
+                            // that will be overwritten with later.
+                            op.deref_mut(parsable_state.state.ctx).set_loc(loc.clone());
+                            // pliron-lsp: record the operation's span.
+                            let end = combine::Positioned::position(parsable_state);
+                            crate::lsp::record(&mut parsable_state.state, || {
+                                crate::lsp::Event::Op {
+                                    op,
+                                    start,
+                                    opid_start,
+                                    opid_end,
+                                    end,
+                                }
+                            });
+                            // If there's an outline index, post-parse it.
+                            postparse_outline(parsable_state, op)?;
+                        }
+                        Err(_) => {
+                            if let Some(r) = crate::lsp::recorder(&mut parsable_state.state) {
+                                r.failed_results = Some(results.clone());
+                            }
+                        }
                     }
 
                     if arg.look_for_outlined_attrs {

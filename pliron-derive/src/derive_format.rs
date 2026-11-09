@@ -746,7 +746,7 @@ trait ParsableBuilder<State: Default> {
     fn build_lit(_input: &FmtInput, lit: &str, _state: &mut State) -> TokenStream {
         let trimmed_lit = lit.trim();
         quote! {
-            ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#trimmed_lit))
+            ::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#trimmed_lit))
             .parse_stream(state_stream)
             .into_result()?;
         }
@@ -983,7 +983,7 @@ trait ParsableBuilder<State: Default> {
             };
             let labelled_parser = if let Some(label) = &label {
                 quote! {
-                    (::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#label)))
+                    (::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#label)))
                         .skip(::pliron::combine::parser::char::char(':').skip(::pliron::combine::parser::char::spaces())))
                         .with(#value_parser)
                 }
@@ -993,8 +993,8 @@ trait ParsableBuilder<State: Default> {
             let delimited_labelled_parser = if let Some((open, close)) = &delimiters {
                 quote! {
                     ::pliron::combine::parser::sequence::between(
-                        ::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#open))),
-                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#close)),
+                        ::pliron::combine::attempt(::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#open))),
+                        ::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#close)),
                         #labelled_parser
                     )
                 }
@@ -1505,7 +1505,7 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             };
             let labelled_parser = if let Some(label) = &label_opt {
                 quote! {
-                (::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#label))
+                (::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#label))
                     .skip(::pliron::combine::parser::char::char(':').skip(::pliron::combine::parser::char::spaces()))).with(#attr_parser)
                 }
             } else {
@@ -1514,8 +1514,8 @@ impl ParsableBuilder<OpParserState> for DeriveOpParsable {
             let delimited_labelled_parser = if let Some((open, close)) = &delimiters_opt {
                 quote! {
                     ::pliron::combine::parser::sequence::between(
-                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#open)),
-                        ::pliron::irfmt::parsers::spaced(::pliron::combine::parser::char::string(#close)),
+                        ::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#open)),
+                        ::pliron::irfmt::parsers::spaced(::pliron::lsp::keyword(#close)),
                         #labelled_parser
                     )
                 }

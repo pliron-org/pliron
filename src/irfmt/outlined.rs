@@ -425,8 +425,11 @@ pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
 
     for ((outindex_loc, outindex), (loc_opt, named_attrs)) in loc_and_outline_entries {
         // Check if this index refers to an operation or a block.
+        let keep_parsed_locations = crate::lsp::keep_parsed_locations(&state_stream.state);
         if let Some(opr) = parse_state.outindex_op_map.remove(&outindex) {
-            if let Some(loc) = loc_opt {
+            if let Some(loc) = loc_opt
+                && !keep_parsed_locations
+            {
                 opr.deref_mut(state_stream.state.ctx).set_loc(loc);
             }
             for (name, attr_or_ref) in named_attrs {
@@ -454,7 +457,9 @@ pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
                 }
             }
         } else if let Some(block) = parse_state.outindex_block_map.remove(&outindex) {
-            if let Some(loc) = loc_opt {
+            if let Some(loc) = loc_opt
+                && !keep_parsed_locations
+            {
                 block.deref_mut(state_stream.state.ctx).set_loc(loc);
             }
             for (name, attr_or_ref) in named_attrs {

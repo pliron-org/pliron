@@ -103,10 +103,26 @@ impl<'b> Parsable for AttributeDictKeyVal<'b> {
         state_stream: &mut StateStream<'a>,
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
-        (Identifier::parser(()), spaced(token(':')), attr_parser())
-            .map(|(key, _, val)| (key, val))
+        let start = combine::Positioned::position(state_stream);
+        let res = (
+            Identifier::parser(()),
+            crate::lsp::position(),
+            spaced(token(':')),
+            attr_parser(),
+        )
+            .map(|(key, end, _, val)| ((key, val), end))
             .parse_stream(state_stream)
-            .into_result()
+            .into_result();
+        match res {
+            Ok(((kv, end), c)) => {
+                crate::lsp::record(&mut state_stream.state, || crate::lsp::Event::AttrKey {
+                    start,
+                    end,
+                });
+                Ok((kv, c))
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -366,27 +382,41 @@ impl Parsable for AttrObj {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        let attr_id_parser = spaced(AttrId::parser(()));
+        let attr_id_parser = spaced((
+            crate::lsp::position(),
+            AttrId::parser(()),
+            crate::lsp::position(),
+        ));
 
-        let mut attr_parser = attr_id_parser.then(move |attr_id: AttrId| {
-            let loc = loc.clone();
-            combine::parser(move |parsable_state: &mut StateStream<'a>| {
-                let state = &parsable_state.state;
-                let dialect = state
-                    .ctx
-                    .dialects
-                    .get(&attr_id.dialect)
-                    .expect("Dialect name parsed but dialect isn't registered");
-                let Some(attr_parser) = dialect.attributes.get(&attr_id) else {
-                    input_err!(
-                        loc.clone(),
-                        "Unregistered attribute {}",
-                        attr_id.disp(state.ctx)
-                    )?
-                };
-                attr_parser(parsable_state, &())
-            })
-        });
+        let mut attr_parser =
+            attr_id_parser.then(move |(start, attr_id, id_end): (_, AttrId, _)| {
+                let loc = loc.clone();
+                combine::parser(move |parsable_state: &mut StateStream<'a>| {
+                    let state = &parsable_state.state;
+                    let dialect = state
+                        .ctx
+                        .dialects
+                        .get(&attr_id.dialect)
+                        .expect("Dialect name parsed but dialect isn't registered");
+                    let Some(attr_parser) = dialect.attributes.get(&attr_id).copied() else {
+                        input_err!(
+                            loc.clone(),
+                            "Unregistered attribute {}",
+                            attr_id.disp(state.ctx)
+                        )?
+                    };
+                    let res = attr_parser(parsable_state, &());
+                    if res.is_ok() {
+                        let end = combine::Positioned::position(parsable_state);
+                        crate::lsp::record(&mut parsable_state.state, || crate::lsp::Event::Attr {
+                            start,
+                            id_end,
+                            end,
+                        });
+                    }
+                    res
+                })
+            });
 
         attr_parser.parse_stream(state_stream).into_result()
     }

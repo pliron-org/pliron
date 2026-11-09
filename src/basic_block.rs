@@ -520,8 +520,14 @@ impl Parsable for BasicBlock {
         // after consuming the label+args are reported as committed errors.
         // Format: ^label(args) [optional_attrs] [!N]:
         let outline_loc = state_stream.loc();
-        let (label, args, attrs_opt, outindex_opt) = (
-            spaced(token('^').with(Identifier::parser(()))),
+        let ((label_start, label, label_end), args, attrs_opt, outindex_opt) = (
+            spaces()
+                .with((
+                    crate::lsp::position(),
+                    token('^').with(Identifier::parser(())),
+                    crate::lsp::position(),
+                ))
+                .skip(spaces()),
             spaced(delimited_list_parser('(', ')', ',', block_arg)),
             spaced(optional(AttributeDict::parser(()))),
             spaces().with(optional(token('!').with(usize::parser(())))),
@@ -545,8 +551,23 @@ impl Parsable for BasicBlock {
             block.deref_mut(state_stream.state.ctx).attributes = attrs;
         }
 
+        crate::lsp::record(&mut state_stream.state, || crate::lsp::Event::BlockLabel {
+            block,
+            start: label_start,
+            end: label_end,
+        });
+
         for (arg_idx, (arg_loc, name)) in arg_names.into_iter().enumerate() {
             let def: Value = block.deref(state_stream.state.ctx).args[arg_idx].as_value(block);
+            if let crate::location::Location::SrcPos { pos, .. } = &arg_loc {
+                let (start, mut end) = (*pos, *pos);
+                end.column += alloc::string::ToString::to_string(&name).chars().count() as i32;
+                crate::lsp::record(&mut state_stream.state, || crate::lsp::Event::BlockArgDef {
+                    value: def,
+                    start,
+                    end,
+                });
+            }
             state_stream.state.name_tracker.ssa_def(
                 state_stream.state.ctx,
                 &(name.clone(), arg_loc),
@@ -566,21 +587,94 @@ impl Parsable for BasicBlock {
             .block_def(state_stream.state.ctx, &(label, loc), block)?;
 
         // Parse the ops in the block
-        let ops: Vec<_> = spaces()
-            .with(sep_by::<Vec<_>, _, _, _>(
-                Operation::parser(OperationParserConfig {
-                    look_for_outlined_attrs: false,
-                })
-                .skip(spaces()),
-                token(';').skip(spaces()),
-            ))
-            .parse_stream(state_stream)
-            .into_result()?
-            .0;
+        let ops: Vec<_> = if crate::lsp::recovering(&state_stream.state) {
+            parse_ops_recovering(state_stream)
+        } else {
+            spaces()
+                .with(sep_by::<Vec<_>, _, _, _>(
+                    Operation::parser(OperationParserConfig {
+                        look_for_outlined_attrs: false,
+                    })
+                    .skip(spaces()),
+                    token(';').skip(spaces()),
+                ))
+                .parse_stream(state_stream)
+                .into_result()?
+                .0
+        };
         for op in ops {
             op.insert_at_back(block, state_stream.state.ctx);
         }
 
         Ok(block).into_parse_result()
     }
+}
+
+/// pliron-lsp: parse the operations of a block, recovering from errors.
+fn parse_ops_recovering(state_stream: &mut parsable::StateStream<'_>) -> Vec<Ptr<Operation>> {
+    use crate::combine::Positioned;
+    use crate::lsp::{
+        Sync, at_line_start, peek_char, record_error, recover_from, skip_spaces, skip_to_sync,
+    };
+
+    let mut ops = Vec::new();
+    skip_spaces(state_stream);
+    loop {
+        match peek_char(state_stream) {
+            None | Some('}') | Some('^') => break,
+            _ => {}
+        }
+        let res = Operation::parser(OperationParserConfig {
+            look_for_outlined_attrs: false,
+        })
+        .parse_stream(state_stream)
+        .into_result();
+        match recover_from(state_stream, res, true) {
+            Ok(op) => {
+                ops.push(op);
+                skip_spaces(state_stream);
+                let crossed = at_line_start(state_stream);
+                let pos = state_stream.position();
+                match peek_char(state_stream) {
+                    Some(';') => {
+                        let _ = crate::combine::StreamOnce::uncons(state_stream);
+                        skip_spaces(state_stream);
+                        let pos = state_stream.position();
+                        if matches!(peek_char(state_stream), None | Some('}') | Some('^')) {
+                            record_error(
+                                state_stream,
+                                pos,
+                                "expected an operation after `;` (`;` only separates operations)"
+                                    .into(),
+                            );
+                            break;
+                        }
+                    }
+                    None | Some('}') | Some('^') => break,
+                    Some(_) if crossed => {
+                        record_error(state_stream, pos, "expected `;` between operations".into());
+                    }
+                    Some(_) => {
+                        record_error(state_stream, pos, "unexpected input after operation".into());
+                        match skip_to_sync(state_stream, false, true) {
+                            Sync::Semicolon | Sync::NewOp => {
+                                skip_spaces(state_stream);
+                            }
+                            Sync::BlockHeader | Sync::CloseBrace | Sync::Eof => break,
+                        }
+                    }
+                }
+            }
+            Err(sync) => {
+                crate::lsp::define_placeholders(state_stream);
+                match sync {
+                    Sync::Semicolon | Sync::NewOp => {
+                        skip_spaces(state_stream);
+                    }
+                    Sync::BlockHeader | Sync::CloseBrace | Sync::Eof => break,
+                }
+            }
+        }
+    }
+    ops
 }
