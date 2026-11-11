@@ -9,7 +9,7 @@ use crate::{
     arg_err,
     attribute::AttrObj,
     basic_block::BasicBlock,
-    builtin::given_names::set_operation_result_name,
+    builtin::{given_names::set_operation_result_name, op_interfaces::NResultsVerifyErr},
     combine::{
         Parser, Stream, any, between, many, many1, none_of, optional,
         parser::char::{digit, hex_digit, spaces},
@@ -17,6 +17,7 @@ use crate::{
     },
     context::Ptr,
     identifier::Identifier,
+    input_err,
     location::Location,
     operation::Operation,
     parsable::{
@@ -306,15 +307,15 @@ pub fn zero_or_more_parser<Input: Stream<Token = char>, Output>(
 /// the SSA operands of an [Operation]. If the SSA value hasn't been defined yet,
 /// a [forward reference](crate::builtin::ops::ForwardRefOp) is returned.
 pub fn ssa_opd_parse<'a>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseResult<'a, Value> {
-    Identifier::parser(())
+    let loc = state_stream.loc();
+    let (opd, commit) = Identifier::parser(())
         .parse_stream(state_stream)
-        .map(|opd| {
-            state_stream
-                .state
-                .name_tracker
-                .ssa_use(state_stream.state.ctx, &opd)
-        })
-        .into()
+        .into_result()?;
+    let value = state_stream
+        .state
+        .name_tracker
+        .ssa_use(state_stream.state.ctx, &(opd, loc))?;
+    Ok((value, commit))
 }
 
 /// A parser to parse an identifier into an SSA [Value]. Typically called to parse
@@ -331,16 +332,16 @@ pub fn block_opd_parse<'a>(
     state_stream: &mut StateStream<'a>,
     _arg: (),
 ) -> ParseResult<'a, Ptr<BasicBlock>> {
-    token('^')
+    let loc = state_stream.loc();
+    let (opd, commit) = token('^')
         .with(Identifier::parser(()))
         .parse_stream(state_stream)
-        .map(|opd| {
-            state_stream
-                .state
-                .name_tracker
-                .block_use(state_stream.state.ctx, &opd)
-        })
-        .into()
+        .into_result()?;
+    let block = state_stream
+        .state
+        .name_tracker
+        .block_use(state_stream.state.ctx, &(opd, loc))?;
+    Ok((block, commit))
 }
 
 /// A parser to parse a block label into a [`Ptr<BasicBlock>`]. Typically called to parse
@@ -357,11 +358,14 @@ pub fn process_parsed_ssa_defs(
     results: &[(Identifier, Location)],
     op: Ptr<Operation>,
 ) -> Result<()> {
+    let loc = results
+        .first()
+        .map_or_else(|| state_stream.loc(), |(_, loc)| loc.clone());
     let ctx = &mut state_stream.state.ctx;
-    assert!(
-        results.len() == op.deref(ctx).get_num_results(),
-        "Error processing parsed SSA definitions. Result count mismatch"
-    );
+    let num_results = op.deref(ctx).get_num_results();
+    if results.len() != num_results {
+        return input_err!(loc, NResultsVerifyErr(num_results, results.len()));
+    }
 
     let name_tracker = &mut state_stream.state.name_tracker;
     for (idx, name_loc) in results.iter().enumerate() {

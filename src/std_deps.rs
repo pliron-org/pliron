@@ -207,23 +207,14 @@ mod r#impl {
     }
 
     pub mod utf8_chars {
-        use core::fmt;
-
-        #[derive(Debug)]
-        pub struct Utf8CharsError;
-
-        impl fmt::Display for Utf8CharsError {
-            fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-                f.write_str("utf8-chars is unavailable without the `std` feature")
-            }
-        }
+        use super::io;
 
         pub trait BufReadCharsExt {
-            fn read_char(&mut self) -> Result<Option<char>, Utf8CharsError>;
+            fn read_char(&mut self) -> Result<Option<char>, io::Error>;
         }
 
-        impl<R> BufReadCharsExt for super::io::BufReader<R> {
-            fn read_char(&mut self) -> Result<Option<char>, Utf8CharsError> {
+        impl<R> BufReadCharsExt for io::BufReader<R> {
+            fn read_char(&mut self) -> Result<Option<char>, io::Error> {
                 Ok(None)
             }
         }

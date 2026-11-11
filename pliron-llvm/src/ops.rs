@@ -1488,6 +1488,10 @@ pub enum GetElementPtrOpErr {
     IndicesAttrErr,
     #[error("The indices on this GEP are invalid for its source element type")]
     IndicesErr,
+    #[error("GetElementPtrOp has a missing or incorrect source element type attribute")]
+    SrcElemTypeAttrErr,
+    #[error("GEP index refers to invalid operand index {0}")]
+    OperandIdxErr(usize),
 }
 
 /// Equivalent to LLVM's GetElementPtr.
@@ -1527,9 +1531,22 @@ impl PointerTypeResult for GetElementPtrOp {
 impl Verify for GetElementPtrOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
         let loc = self.loc(ctx);
-        // Ensure that we have the indices as an attribute.
-        if self.get_attr_llvm_gep_indices(ctx).is_none() {
-            verify_err!(loc, GetElementPtrOpErr::IndicesAttrErr)?
+        // Ensure that we have the indices and the source element type as attributes.
+        let Some(indices) = self.get_attr_llvm_gep_indices(ctx) else {
+            return verify_err!(loc, GetElementPtrOpErr::IndicesAttrErr);
+        };
+        if self.get_attr_llvm_gep_src_elem_type(ctx).is_none() {
+            return verify_err!(loc, GetElementPtrOpErr::SrcElemTypeAttrErr);
+        }
+
+        let num_opds = self.get_operation().deref(ctx).get_num_operands();
+        for index in indices.0.iter() {
+            // Operand 0 is the base pointer. Index operands must come after it.
+            if let GepIndexAttr::OperandIdx(i) = index
+                && (*i == 0 || *i >= num_opds)
+            {
+                return verify_err!(loc, GetElementPtrOpErr::OperandIdxErr(*i));
+            }
         }
 
         if let Err(e @ Error { .. }) =
@@ -4687,7 +4704,15 @@ impl Parsable for FuncOp {
 pub struct FuncOpTypeErr;
 
 impl Verify for FuncOp {
-    fn verify(&self, _ctx: &Context) -> Result<()> {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let is_func_type = self.get_attr_llvm_func_type(ctx).is_some_and(|ty_attr| {
+            TypedAttrInterface::get_type(&*ty_attr, ctx)
+                .deref(ctx)
+                .is::<FuncType>()
+        });
+        if !is_func_type {
+            return verify_err!(self.loc(ctx), FuncOpTypeErr);
+        }
         Ok(())
     }
 }
