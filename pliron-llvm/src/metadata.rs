@@ -154,7 +154,7 @@ impl Parsable for MdOperandAttr {
     ) -> ParseResult<'a, Self::Parsed> {
         choice((
             attempt(
-                pliron::combine::parser::char::string("null")
+                pliron::irfmt::parsers::keyword("null")
                     .skip(not_followed_by(pliron::combine::parser::char::alpha_num())),
             )
             .map(|_| MdOperandAttr::Null),
@@ -242,7 +242,7 @@ impl Parsable for MdNodeAttr {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         pliron::combine::optional(attempt(
-            pliron::combine::parser::char::string("distinct").skip(spaces()),
+            pliron::irfmt::parsers::keyword("distinct").skip(spaces()),
         ))
         .and(token('!').with(between(
             token('{').skip(spaces()),

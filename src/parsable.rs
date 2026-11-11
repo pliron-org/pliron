@@ -18,7 +18,6 @@ use crate::{
         Parser, Positioned, StreamOnce, choice,
         easy::{self, Errors, ParseError},
         error::{StdParseResult2, Tracked},
-        parser::char::string,
         stream::{
             self, IteratorStream, buffered,
             position::{self, SourcePosition},
@@ -28,10 +27,11 @@ use crate::{
     context::{Context, Ptr},
     identifier::Identifier,
     input_err, input_error,
-    irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
+    irfmt::parsers::{hex_int_parser, int_parser, keyword, quoted_string_parser},
     location::{Location, Source},
     op::op_impls,
     operation::Operation,
+    region::Region,
     result::{self, Result},
     std_deps::{
         fs::File,
@@ -39,6 +39,7 @@ use crate::{
         path::{Path, PathBuf},
         utf8_chars::BufReadCharsExt,
     },
+    r#type::TypeHandle,
     utils::table::{
         HMap,
         itable::{Entry, IMap},
@@ -58,6 +59,8 @@ pub struct State<'a> {
     pub src: Source,
     /// Aribtrary state data that different parsers may want to use.
     pub aux_data: HMap<Identifier, Box<dyn Any>>,
+    /// Listens to [ParseEvent]s sent by [notify](State::notify).
+    pub listener: Option<Box<dyn ParseListener + 'a>>,
 }
 
 impl<'a> State<'a> {
@@ -68,8 +71,97 @@ impl<'a> State<'a> {
             name_tracker: NameTracker::default(),
             src,
             aux_data: HMap::default(),
+            listener: None,
         }
     }
+
+    /// Send `event()` to [listener](State::listener).
+    pub fn notify(&mut self, event: impl FnOnce() -> ParseEvent) {
+        if let Some(listener) = &mut self.listener {
+            listener.event(self.ctx, event());
+        }
+    }
+}
+
+/// Range of source text `[start, end)`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub start: SourcePosition,
+    pub end: SourcePosition,
+}
+
+/// Parse events for [ParseListener].
+///
+/// - An event is sent when the parse of its entity succeeds.
+/// - Because a parser can backtrack, a listener can get more than one event
+///   for the same text, and events for text that is not part of the final IR.
+/// - The `span` of an entity can include the white space after it.
+#[derive(Debug)]
+pub enum ParseEvent {
+    /// An [Operation].
+    Op {
+        op: Ptr<Operation>,
+        span: Span,
+        /// Span of the [OpId](crate::op::OpId).
+        id_span: Span,
+    },
+    /// A type.
+    Type {
+        ty: TypeHandle,
+        span: Span,
+        /// Span of the [TypeId](crate::type::TypeId).
+        id_span: Span,
+    },
+    /// An attribute.
+    Attr {
+        span: Span,
+        /// Span of the [AttrId](crate::attribute::AttrId).
+        id_span: Span,
+    },
+    /// [AttributeDict](crate::attribute::AttributeDict) key.
+    AttrKey(Span),
+    /// A literal parsed by [keyword].
+    Keyword(Span),
+    /// A [Region], from its `{` up to its `}` (included).
+    Region { region: Ptr<Region>, span: Span },
+    /// Definition of an SSA name: an operation result or a block argument.
+    ValueDef {
+        value: Value,
+        name: (Identifier, Location),
+        /// A forward reference replaced by `value`. Because it is already erased,
+        /// use it only to match earlier [ValueUse](ParseEvent::ValueUse) events.
+        replaced: Option<Value>,
+    },
+    /// Use of an SSA name.
+    ValueUse {
+        /// Value of `name`. If `name` is not defined yet, this value is a
+        /// [forward reference](ForwardRefOp) to a later [ValueDef](ParseEvent::ValueDef) of `name`.
+        value: Value,
+        name: (Identifier, Location),
+    },
+    /// Definition of a block label.
+    BlockDef {
+        block: Ptr<BasicBlock>,
+        /// Label, with its location at the `^`.
+        name: (Identifier, Location),
+        /// A forward reference replaced by `block`. Because it is already erased,
+        /// use it only to match earlier [BlockUse](ParseEvent::BlockUse) events.
+        replaced: Option<Ptr<BasicBlock>>,
+    },
+    /// Use of a block label.
+    BlockUse {
+        /// Block of `name`. If `name` is not defined yet, this block is a forward
+        /// reference to a later [BlockDef](ParseEvent::BlockDef) of `name`.
+        block: Ptr<BasicBlock>,
+        /// Label, with its location at the `^`.
+        name: (Identifier, Location),
+    },
+}
+
+/// Listens to [ParseEvent]s during parsing, when set in [State::listener].
+pub trait ParseListener {
+    /// Callback for every parse [`event`](ParseEvent).
+    fn event(&mut self, ctx: &Context, event: ParseEvent);
 }
 
 /// A wrapper around any [char] [Iterator] object.
@@ -445,7 +537,7 @@ pub(crate) struct NameTracker {
 
 #[derive(Error, Debug)]
 #[error("Identifier {0} was not resolved to any definition in the scope")]
-pub struct UnresolvedReference(Identifier);
+pub struct UnresolvedReference(pub Identifier);
 
 #[derive(Error, Debug)]
 pub enum ParserNameTrackerError {
@@ -493,12 +585,13 @@ impl NameTracker {
 
     /// Register an SSA definition. If `id` is already associated with a
     /// [forward reference][ForwardRefOp], update and replace all uses with `def`.
+    /// Return the replaced forward reference.
     pub(crate) fn ssa_def(
         &mut self,
         ctx: &mut Context,
         id: &(Identifier, Location),
         def: Value,
-    ) -> Result<()> {
+    ) -> Result<Option<Value>> {
         let scope = innermost_scope(&mut self.ssa_name_scope, id)?;
 
         match scope.entry(id.0.clone()) {
@@ -511,6 +604,7 @@ impl NameTracker {
                         fref.replace_some_uses_with(ctx, |_, _| true, &def);
                         Operation::erase(op, ctx);
                         occ.insert(def);
+                        return Ok(Some(fref));
                     } else {
                         // There's another def and it isn't a forward ref.
                         input_err!(
@@ -531,7 +625,7 @@ impl NameTracker {
                 vac.insert(def);
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// A [BasicBlock] use is seen. Get the actual block it refers to.
@@ -556,19 +650,22 @@ impl NameTracker {
 
     /// A [BasicBlock] def is seen. If refs was seen earlier,
     /// they are all updated now to refer to the provided block instead.
+    /// Return the replaced forward reference.
     pub(crate) fn block_def(
         &mut self,
         ctx: &mut Context,
         id: &(Identifier, Location),
         block: Ptr<BasicBlock>,
-    ) -> Result<()> {
+    ) -> Result<Option<Ptr<BasicBlock>>> {
         let scope = innermost_scope(&mut self.block_label_scope, id)?;
         match scope.entry(id.0.clone()) {
             Entry::Occupied(mut occ) => match occ.get_mut() {
                 LabelRef::ForwardRef(fref) => {
+                    let fref = *fref;
                     fref.retarget_some_preds_to(ctx, |_, _| true, block);
-                    BasicBlock::erase(*fref, ctx);
+                    BasicBlock::erase(fref, ctx);
                     occ.insert(LabelRef::Defined(block));
+                    return Ok(Some(fref));
                 }
                 LabelRef::Defined(_) => input_err!(
                     id.1.clone(),
@@ -579,7 +676,7 @@ impl NameTracker {
                 vac.insert(LabelRef::Defined(block));
             }
         }
-        Ok(())
+        Ok(None)
     }
 
     /// Enter a new region.
@@ -759,8 +856,10 @@ impl Parsable for bool {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         // Choose b/w true/false
-        let mut bool_parser =
-            choice((string("true").map(|_| true), string("false").map(|_| false)));
+        let mut bool_parser = choice((
+            keyword("true").map(|_| true),
+            keyword("false").map(|_| false),
+        ));
 
         bool_parser.parse_stream(state_stream).into()
     }

@@ -17,10 +17,7 @@ use pliron_derive::{CloneIntoContext, StableHash};
 use crate::{
     attribute::AttrObj,
     combine::{
-        Parser, between, optional,
-        parser::char::{spaces, string},
-        stream::position::SourcePosition,
-        token,
+        Parser, between, optional, parser::char::spaces, stream::position::SourcePosition, token,
     },
     context::{Context, Ptr},
     graph::{
@@ -32,7 +29,7 @@ use crate::{
         CloneIntoContext as CloneIntoContextTrait, StableHash as StableHashTrait,
     },
     irfmt::{
-        parsers::{delimited_list_parser, quoted_string_parser, spaced},
+        parsers::{delimited_list_parser, keyword, quoted_string_parser, spaced},
         printers::{list_with_sep, quoted},
     },
     operation::Operation,
@@ -94,7 +91,7 @@ impl Parsable for Source {
 
         let mut parser = quoted_string_parser()
             .map(Source::Filename)
-            .or(string("<in-memory>").map(|_| Source::InMemory));
+            .or(keyword("<in-memory>").map(|_| Source::InMemory));
 
         parser
             .parse_stream(state_stream)
@@ -276,9 +273,9 @@ impl Parsable for SourcePosition {
         _arg: Self::Arg,
     ) -> crate::parsable::ParseResult<'a, Self::Parsed> {
         (
-            string("line").skip(spaced(token(':'))),
+            keyword("line").skip(spaced(token(':'))),
             i32::parser(()).skip(spaced(token(','))),
-            string("column").skip(spaced(token(':'))),
+            keyword("column").skip(spaced(token(':'))),
             i32::parser(()),
         )
             .parse_stream(state_stream)
@@ -304,7 +301,7 @@ impl Parsable for Location {
         )
             .map(|(src, pos)| Location::SrcPos { src, pos });
 
-        let fused_parser = string("fused").skip(spaces()).with(
+        let fused_parser = keyword("fused").skip(spaces()).with(
             (
                 optional(between(token('<'), token('>'), spaced(AttrObj::parser(())))),
                 delimited_list_parser('[', ']', ',', Location::parser(())),
@@ -316,9 +313,9 @@ impl Parsable for Location {
         );
 
         let named_parser = (
-            string("name").skip(spaced(token(':'))),
+            keyword("name").skip(spaced(token(':'))),
             quoted_string_parser().skip(spaced(token(','))),
-            string("loc").skip(spaced(token(':'))),
+            keyword("loc").skip(spaced(token(':'))),
             between(token('('), token(')'), Location::parser(())),
         )
             .map(|(_, name, _, child_loc)| Location::Named {
@@ -326,12 +323,12 @@ impl Parsable for Location {
                 child_loc: Box::new(child_loc),
             });
 
-        let callsite_parser = string("callsite")
+        let callsite_parser = keyword("callsite")
             .with(between(
                 spaced(token('(')),
                 spaced(token(')')),
                 (
-                    Location::parser(()).skip(spaced(string("at"))),
+                    Location::parser(()).skip(spaced(keyword("at"))),
                     Location::parser(()),
                 ),
             ))

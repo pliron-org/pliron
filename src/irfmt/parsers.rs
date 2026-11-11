@@ -12,8 +12,10 @@ use crate::{
     builtin::{given_names::set_operation_result_name, op_interfaces::NResultsVerifyErr},
     combine::{
         Parser, Stream, any, between, many, many1, none_of, optional,
-        parser::char::{digit, hex_digit, spaces},
-        sep_by, token,
+        parser::char::{digit, hex_digit, spaces, string},
+        position, sep_by,
+        stream::position::SourcePosition,
+        token,
     },
     context::Ptr,
     identifier::Identifier,
@@ -21,7 +23,8 @@ use crate::{
     location::Location,
     operation::Operation,
     parsable::{
-        IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation, parser_combinator,
+        IntoParseResult, Parsable, ParseEvent, ParseResult, Span, StateStream, StreamLocation,
+        parser_combinator,
     },
     printable::ListSeparator,
     result::Result,
@@ -54,6 +57,21 @@ pub fn spaced<Input: Stream<Token = char>, Output>(
     parser: impl Parser<Input, Output = Output>,
 ) -> impl Parser<Input, Output = Output> {
     combine::between(spaces(), spaces(), parser)
+}
+
+/// A parser to get the output of `parser` with its [Span].
+pub fn spanned<Input: Stream<Token = char, Position = SourcePosition>, Output>(
+    parser: impl Parser<Input, Output = Output>,
+) -> impl Parser<Input, Output = (Output, Span)> {
+    (position(), parser, position()).map(|(start, output, end)| (output, Span { start, end }))
+}
+
+/// A parser to parse the literal `lit` and send a [Keyword](ParseEvent::Keyword) event.
+pub fn keyword<'a>(lit: &'static str) -> impl Parser<StateStream<'a>, Output = &'static str> + 'a {
+    spanned(string(lit)).map_input(|(lit, span), state_stream: &mut StateStream<'a>| {
+        state_stream.state.notify(|| ParseEvent::Keyword(span));
+        lit
+    })
 }
 
 /// A parser that returns the current [Location] and does nothing else
@@ -311,10 +329,14 @@ pub fn ssa_opd_parse<'a>(state_stream: &mut StateStream<'a>, _arg: ()) -> ParseR
     let (opd, commit) = Identifier::parser(())
         .parse_stream(state_stream)
         .into_result()?;
+    let name = (opd, loc);
     let value = state_stream
         .state
         .name_tracker
-        .ssa_use(state_stream.state.ctx, &(opd, loc))?;
+        .ssa_use(state_stream.state.ctx, &name)?;
+    state_stream
+        .state
+        .notify(|| ParseEvent::ValueUse { value, name });
     Ok((value, commit))
 }
 
@@ -337,10 +359,14 @@ pub fn block_opd_parse<'a>(
         .with(Identifier::parser(()))
         .parse_stream(state_stream)
         .into_result()?;
+    let name = (opd, loc);
     let block = state_stream
         .state
         .name_tracker
-        .block_use(state_stream.state.ctx, &(opd, loc))?;
+        .block_use(state_stream.state.ctx, &name)?;
+    state_stream
+        .state
+        .notify(|| ParseEvent::BlockUse { block, name });
     Ok((block, commit))
 }
 
@@ -361,17 +387,21 @@ pub fn process_parsed_ssa_defs(
     let loc = results
         .first()
         .map_or_else(|| state_stream.loc(), |(_, loc)| loc.clone());
-    let ctx = &mut state_stream.state.ctx;
-    let num_results = op.deref(ctx).get_num_results();
+    let state = &mut state_stream.state;
+    let num_results = op.deref(state.ctx).get_num_results();
     if results.len() != num_results {
         return input_err!(loc, NResultsVerifyErr(num_results, results.len()));
     }
 
-    let name_tracker = &mut state_stream.state.name_tracker;
     for (idx, name_loc) in results.iter().enumerate() {
-        let res = op.deref(ctx).get_result(idx);
-        name_tracker.ssa_def(ctx, name_loc, res)?;
-        set_operation_result_name(ctx, op, idx, Some(name_loc.0.clone()));
+        let res = op.deref(state.ctx).get_result(idx);
+        let replaced = state.name_tracker.ssa_def(state.ctx, name_loc, res)?;
+        set_operation_result_name(state.ctx, op, idx, Some(name_loc.0.clone()));
+        state.notify(|| ParseEvent::ValueDef {
+            value: res,
+            name: name_loc.clone(),
+            replaced,
+        });
     }
     Ok(())
 }

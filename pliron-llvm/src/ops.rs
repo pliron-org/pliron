@@ -799,14 +799,13 @@ impl Parsable for CondBrOp {
         }
 
         // Parse the condition operand.
-        let r#if = irfmt::parsers::spaced::<StateStream, _>(combine::parser::char::string("if"));
+        let r#if = irfmt::parsers::spaced::<StateStream, _>(irfmt::parsers::keyword("if"));
 
         let condition = ssa_opd_parser();
 
         let true_operands = delimited_list_parser('(', ')', ',', ssa_opd_parser());
 
-        let r_else =
-            irfmt::parsers::spaced::<StateStream, _>(combine::parser::char::string("else"));
+        let r_else = irfmt::parsers::spaced::<StateStream, _>(irfmt::parsers::keyword("else"));
 
         let false_operands = delimited_list_parser('(', ')', ',', ssa_opd_parser());
 
