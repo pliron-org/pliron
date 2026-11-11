@@ -3,11 +3,12 @@
 
 //! IR objects that can be parsed from their text representation.
 
-use alloc::{boxed::Box, string::String, vec, vec::Vec};
-use core::any::Any;
+use alloc::{boxed::Box, rc::Rc, string::String, vec, vec::Vec};
+use core::{any::Any, cell::RefCell};
 use thiserror::Error;
 
 use crate::{
+    arg_error_noloc,
     basic_block::BasicBlock,
     builtin::{
         op_interfaces::{IsolatedFromAboveInterface, OneResultInterface},
@@ -26,13 +27,18 @@ use crate::{
     },
     context::{Context, Ptr},
     identifier::Identifier,
-    input_err,
+    input_err, input_error,
     irfmt::parsers::{hex_int_parser, int_parser, quoted_string_parser},
     location::{Location, Source},
     op::op_impls,
     operation::Operation,
     result::{self, Result},
-    std_deps::{fs::File, io::BufReader, path::Path, utf8_chars::BufReadCharsExt},
+    std_deps::{
+        fs::File,
+        io::{self, BufReader},
+        path::{Path, PathBuf},
+        utf8_chars::BufReadCharsExt,
+    },
     utils::table::{
         HMap,
         itable::{Entry, IMap},
@@ -301,38 +307,65 @@ pub fn parse_from_file<'a, P: Parser<StateStream<'a>>>(
     let source = Source::new_from_file(ctx, path);
 
     // An owned iterator over the file's chars, to please the borrow checker.
-    struct FileChars<'a> {
+    struct FileChars {
+        /// Reader of the input file.
         reader: BufReader<File>,
-        path: &'a Path,
+        /// Position of the next char to read.
+        pos: SourcePosition,
+        /// First read error and its position, shared with the caller.
+        read_err: Rc<RefCell<Option<(io::Error, SourcePosition)>>>,
     }
 
-    impl Iterator for FileChars<'_> {
+    impl Iterator for FileChars {
         type Item = char;
 
+        /// Get the next char.
+        /// End the iteration and set `read_err` when a read fails.
         fn next(&mut self) -> Option<char> {
-            self.reader
-                .read_char()
-                .inspect_err(|e| {
-                    log::error!(
-                        "Error reading chars from file {}: {}",
-                        self.path.display(),
-                        e
-                    )
-                })
-                .unwrap()
+            if self.read_err.borrow().is_some() {
+                return None;
+            }
+            match self.reader.read_char() {
+                Ok(c) => {
+                    if let Some(c) = c {
+                        position::Positioner::update(&mut self.pos, &c);
+                    }
+                    c
+                }
+                Err(err) => {
+                    *self.read_err.borrow_mut() = Some((err, self.pos));
+                    None
+                }
+            }
         }
     }
 
-    // Parse the plir file and verify it.
-    let plir_file = File::open(path).unwrap();
+    let plir_file = File::open(path).map_err(|err| {
+        arg_error_noloc!(ParseFileError::Open {
+            path: PathBuf::from(path),
+            err
+        })
+    })?;
+    let read_err = Rc::new(RefCell::new(None));
     let chars_iter = FileChars {
         reader: BufReader::new(plir_file),
-        path,
+        pos: SourcePosition::default(),
+        read_err: read_err.clone(),
     };
 
     let state_stream = state_stream_from_iterator(chars_iter, State::new(ctx, source));
 
-    match parser.parse(state_stream) {
+    let parse_res = parser.parse(state_stream);
+    if let Some((err, pos)) = read_err.borrow_mut().take() {
+        return input_err!(
+            Location::SrcPos { src: source, pos },
+            ParseFileError::Read {
+                path: PathBuf::from(path),
+                err
+            }
+        );
+    }
+    match parse_res {
         Ok((parsed_res, _)) => Ok(parsed_res),
         Err(err) => {
             let loc = Location::SrcPos {
@@ -342,6 +375,15 @@ pub fn parse_from_file<'a, P: Parser<StateStream<'a>>>(
             input_err!(loc, err)
         }
     }
+}
+
+/// Error produced when accessing the input file in [parse_from_file].
+#[derive(Error, Debug)]
+pub enum ParseFileError {
+    #[error("Cannot open file {}: {}", .path.display(), .err)]
+    Open { path: PathBuf, err: io::Error },
+    #[error("Cannot read file {}: {}", .path.display(), .err)]
+    Read { path: PathBuf, err: io::Error },
 }
 
 /// Convert [Result] into [StdParseResult2].
@@ -411,24 +453,40 @@ pub enum ParserNameTrackerError {
     MultipleDefinitions(Identifier),
     #[error("Regions in a top-level operation must be IsolatedFromAbove")]
     TopLevelOpRegionNotIsolatedFromAbove,
+    #[error("SSA name or block label {0} is not inside a region")]
+    OutsideRegion(Identifier),
+}
+
+/// Get the innermost scope in `scopes`, or an error if `id` is outside all regions.
+fn innermost_scope<'s, T>(
+    scopes: &'s mut [IMap<Identifier, T>],
+    id: &(Identifier, Location),
+) -> Result<&'s mut IMap<Identifier, T>> {
+    scopes.last_mut().ok_or_else(|| {
+        input_error!(
+            id.1.clone(),
+            ParserNameTrackerError::OutsideRegion(id.0.clone())
+        )
+    })
 }
 
 impl NameTracker {
     /// An SSA use is seen. Get its [definition value][Value]
     /// or return a [forward reference][ForwardRefOp] that will
     /// be updated when the actual definition is seen.
-    pub(crate) fn ssa_use(&mut self, ctx: &mut Context, id: &Identifier) -> Value {
-        let scope = self
-            .ssa_name_scope
-            .last_mut()
-            .expect("NameTracker doesn't have an active scope.");
-        match scope.entry(id.clone()) {
-            Entry::Occupied(occ) => *occ.get(),
+    pub(crate) fn ssa_use(
+        &mut self,
+        ctx: &mut Context,
+        id: &(Identifier, Location),
+    ) -> Result<Value> {
+        let scope = innermost_scope(&mut self.ssa_name_scope, id)?;
+        match scope.entry(id.0.clone()) {
+            Entry::Occupied(occ) => Ok(*occ.get()),
             Entry::Vacant(vac) => {
                 // Insert a forward reference.
                 let forward_def = ForwardRefOp::new(ctx).get_result(ctx);
                 vac.insert(forward_def);
-                forward_def
+                Ok(forward_def)
             }
         }
     }
@@ -441,10 +499,7 @@ impl NameTracker {
         id: &(Identifier, Location),
         def: Value,
     ) -> Result<()> {
-        let scope = self
-            .ssa_name_scope
-            .last_mut()
-            .expect("NameTracker doesn't have an active scope.");
+        let scope = innermost_scope(&mut self.ssa_name_scope, id)?;
 
         match scope.entry(id.0.clone()) {
             Entry::Occupied(mut occ) => match occ.get_mut().defining_entity() {
@@ -482,18 +537,19 @@ impl NameTracker {
     /// A [BasicBlock] use is seen. Get the actual block it refers to.
     /// If the block wasn't seen yet, create one now. When exiting the scope,
     /// if the block ends up not being seen, an undefined reference error is returned.
-    pub(crate) fn block_use(&mut self, ctx: &mut Context, id: &Identifier) -> Ptr<BasicBlock> {
-        let scope = self
-            .block_label_scope
-            .last_mut()
-            .expect("NameTracker doesn't have an active scope.");
-        match scope.entry(id.clone()) {
-            Entry::Occupied(occ) => occ.get().get_label(),
+    pub(crate) fn block_use(
+        &mut self,
+        ctx: &mut Context,
+        id: &(Identifier, Location),
+    ) -> Result<Ptr<BasicBlock>> {
+        let scope = innermost_scope(&mut self.block_label_scope, id)?;
+        match scope.entry(id.0.clone()) {
+            Entry::Occupied(occ) => Ok(occ.get().get_label()),
             Entry::Vacant(vac) => {
                 // Insert a forward reference.
-                let block_forward = BasicBlock::new(ctx, Some(id.clone()), vec![]);
+                let block_forward = BasicBlock::new(ctx, Some(id.0.clone()), vec![]);
                 vac.insert(LabelRef::ForwardRef(block_forward));
-                block_forward
+                Ok(block_forward)
             }
         }
     }
@@ -506,10 +562,7 @@ impl NameTracker {
         id: &(Identifier, Location),
         block: Ptr<BasicBlock>,
     ) -> Result<()> {
-        let scope = self
-            .block_label_scope
-            .last_mut()
-            .expect("NameTracker doesn't have an active scope.");
+        let scope = innermost_scope(&mut self.block_label_scope, id)?;
         match scope.entry(id.0.clone()) {
             Entry::Occupied(mut occ) => match occ.get_mut() {
                 LabelRef::ForwardRef(fref) => {

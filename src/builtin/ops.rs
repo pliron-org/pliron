@@ -280,10 +280,13 @@ pub struct FuncOpTypeErr;
 
 impl Verify for FuncOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
-        let op = &*self.get_operation().deref(ctx);
-        let ty = self.get_type(ctx);
-        if !(ty.deref(ctx).is::<FunctionType>()) {
-            return verify_err!(op.loc(), FuncOpTypeErr);
+        let is_fn_type = self.get_attr_builtin_func_type(ctx).is_some_and(|ty_attr| {
+            TypedAttrInterface::get_type(&*ty_attr, ctx)
+                .deref(ctx)
+                .is::<FunctionType>()
+        });
+        if !is_fn_type {
+            return verify_err!(self.loc(ctx), FuncOpTypeErr);
         }
         Ok(())
     }

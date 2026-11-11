@@ -27,7 +27,7 @@ use pliron::{
     linked_list::ContainsLinkedList,
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
-    parsable::parse_from_str,
+    parsable::{Parsable, parse_from_str},
     printable::Printable,
     result::Result,
     r#type::TypeHandle,
@@ -1127,6 +1127,33 @@ fn parse_err_unresolved_def() {
         Identifier c0_op_2_0_res0 was not resolved to any definition in the scope
     "#]];
     expect_parse_error(input_multiple_defs, expected_err);
+
+    expect_parse_error(
+        "test.return c0",
+        expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 13
+            SSA name or block label c0 is not inside a region
+        "#]],
+    );
+
+    expect_parse_error(
+        "c0 = test.constant builtin.integer <0: si64>",
+        expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 1, column: 1
+            SSA name or block label c0 is not inside a region
+        "#]],
+    );
+
+    let ctx = &mut Context::new();
+    let err = parse_from_str(BasicBlock::parser(()), ctx, "^bb0():").unwrap_err();
+    expect![[r#"
+        Compilation error: invalid input program.
+        Parse error at line: 1, column: 1
+        SSA name or block label bb0 is not inside a region
+    "#]]
+    .assert_eq(&err.to_string());
 }
 
 #[test]
