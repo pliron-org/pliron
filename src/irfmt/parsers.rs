@@ -66,10 +66,10 @@ pub fn spanned<Input: Stream<Token = char, Position = SourcePosition>, Output>(
     (position(), parser, position()).map(|(start, output, end)| (output, Span { start, end }))
 }
 
-/// A parser to parse the literal `lit` and send a [Keyword](ParseEvent::Keyword) event.
-pub fn keyword<'a>(lit: &'static str) -> impl Parser<StateStream<'a>, Output = &'static str> + 'a {
+/// A parser to parse the literal `lit` and send a [Literal](ParseEvent::Literal) event.
+pub fn literal<'a>(lit: &'static str) -> impl Parser<StateStream<'a>, Output = &'static str> + 'a {
     spanned(string(lit)).map_input(|(lit, span), state_stream: &mut StateStream<'a>| {
-        state_stream.state.notify(|| ParseEvent::Keyword(span));
+        state_stream.state.notify(|| ParseEvent::Literal(span));
         lit
     })
 }

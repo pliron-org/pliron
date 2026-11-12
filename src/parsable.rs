@@ -27,7 +27,7 @@ use crate::{
     context::{Context, Ptr},
     identifier::Identifier,
     input_err, input_error,
-    irfmt::parsers::{hex_int_parser, int_parser, keyword, quoted_string_parser},
+    irfmt::parsers::{hex_int_parser, int_parser, literal, quoted_string_parser},
     location::{Location, Source},
     op::op_impls,
     operation::Operation,
@@ -86,7 +86,9 @@ impl<'a> State<'a> {
 /// Range of source text `[start, end)`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Span {
+    // The span's (inclusive) start.
     pub start: SourcePosition,
+    // The span's (exclusive) end.
     pub end: SourcePosition,
 }
 
@@ -120,8 +122,8 @@ pub enum ParseEvent {
     },
     /// [AttributeDict](crate::attribute::AttributeDict) key.
     AttrKey(Span),
-    /// A literal parsed by [keyword].
-    Keyword(Span),
+    /// A literal parsed by [literal].
+    Literal(Span),
     /// A [Region], from its `{` up to its `}` (included).
     Region { region: Ptr<Region>, span: Span },
     /// Definition of an SSA name: an operation result or a block argument.
@@ -857,8 +859,8 @@ impl Parsable for bool {
     ) -> ParseResult<'a, Self::Parsed> {
         // Choose b/w true/false
         let mut bool_parser = choice((
-            keyword("true").map(|_| true),
-            keyword("false").map(|_| false),
+            literal("true").map(|_| true),
+            literal("false").map(|_| false),
         ));
 
         bool_parser.parse_stream(state_stream).into()

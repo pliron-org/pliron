@@ -1268,7 +1268,7 @@ impl ParseListener for EventLog<'_> {
                 format!("Attr {:?} id {:?}", self.text(span), self.text(id_span))
             }
             ParseEvent::AttrKey(span) => format!("AttrKey {:?}", self.text(span)),
-            ParseEvent::Keyword(span) => format!("Keyword {:?}", self.text(span)),
+            ParseEvent::Literal(span) => format!("Literal {:?}", self.text(span)),
             ParseEvent::Region { span, .. } => {
                 format!(
                     "Region from {} to {}",
@@ -1321,22 +1321,22 @@ fn parse_listener_events() {
 
     expect![[r#"
         BlockDef entry at 3:9
-        Keyword "<"
-        Keyword "("
-        Keyword ")"
-        Keyword "->"
-        Keyword "("
+        Literal "<"
+        Literal "("
+        Literal ")"
+        Literal "->"
+        Literal "("
         Type "builtin.integer si64" id "builtin.integer" builtin.integer si64
-        Keyword ")"
-        Keyword ">"
+        Literal ")"
+        Literal ">"
         Type "builtin.function <() -> (builtin.integer si64)> " id "builtin.function" builtin.function <() -> (builtin.integer si64)>
         BlockDef bb0 at 5:9
         BlockUse exit at 6:29
-        Keyword "("
-        Keyword ")"
-        Keyword "->"
-        Keyword "("
-        Keyword ")"
+        Literal "("
+        Literal ")"
+        Literal "->"
+        Literal "("
+        Literal ")"
         Op test.branch from 6:13 to 7:9
         Type "builtin.integer si64" id "builtin.integer" builtin.integer si64
         AttrKey "block_test_attr"
