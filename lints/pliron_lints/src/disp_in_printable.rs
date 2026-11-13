@@ -4,8 +4,7 @@ use clippy_utils::source::snippet_with_applicability;
 use rustc_errors::Applicability;
 use rustc_hir::def::DefKind;
 use rustc_hir::{Expr, ExprKind, PatKind};
-use rustc_lint::{LateContext, LateLintPass, LintContext};
-use rustc_session::{declare_lint, declare_lint_pass};
+use rustc_lint::{LateContext, LateLintPass, LintContext, declare_lint, declare_lint_pass};
 use rustc_span::Ident;
 
 declare_lint! {

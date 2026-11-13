@@ -1094,7 +1094,7 @@ impl ToLLVMValue for InlineAsmOp {
         let (arg_opds, result_val) = {
             let op = self.get_operation().deref(ctx);
             let n = op.get_num_operands();
-            let args: Vec<Value> = (0..n).map(|i| op.get_operand(i)).collect();
+            let args: Vec<Value> = Vec::from_fn(n, |i| op.get_operand(i));
             (args, op.get_result(0))
         };
         let args: Vec<LLVMValue> = arg_opds

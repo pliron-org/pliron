@@ -10,11 +10,11 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "21baba9c10c5d179915cae82e6247bc2337872fb" }
-dylint_linting = "6.3"
+clippy_utils = { git = "https://github.com/rust-lang/rust-clippy", rev = "8bfc820881b2cc555cea5383071971bc14e523e5" }
+dylint_linting = "6.4"
 
 [dev-dependencies]
-dylint_testing = "6.3"
+dylint_testing = "6.4"
 hashbrown = "0.17"
 pliron = { path = "../.." }
 

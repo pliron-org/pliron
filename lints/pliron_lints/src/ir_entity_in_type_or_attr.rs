@@ -5,9 +5,8 @@ use clippy_utils::diagnostics::span_lint_and_then;
 use rustc_data_structures::fx::FxHashSet;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Item, ItemKind, VariantData};
-use rustc_lint::{LateContext, LateLintPass};
+use rustc_lint::{LateContext, LateLintPass, declare_lint, declare_lint_pass};
 use rustc_middle::ty::{self, Ty, Unnormalized};
-use rustc_session::{declare_lint, declare_lint_pass};
 use rustc_span::sym;
 use rustc_trait_selection::traits::supertrait_def_ids;
 

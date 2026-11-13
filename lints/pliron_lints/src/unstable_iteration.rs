@@ -2,9 +2,8 @@ use crate::utils::def_path_is;
 use clippy_utils::diagnostics::span_lint_and_help;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{Expr, ExprKind};
-use rustc_lint::{LateContext, LateLintPass, LintContext};
+use rustc_lint::{LateContext, LateLintPass, LintContext, declare_lint, declare_lint_pass};
 use rustc_middle::ty;
-use rustc_session::{declare_lint, declare_lint_pass};
 
 /// Definition paths of the hash tables with an iteration order that is not specified.
 const UNSTABLE_TABLE_PATHS: [[&str; 5]; 2] = [

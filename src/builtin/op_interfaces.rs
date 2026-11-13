@@ -619,7 +619,8 @@ pub trait RegionBranchOpInterface {
 
 dict_key!(
     /// Key for the `operand_segment_sizes` attribute.
-    ATTR_KEY_OPERAND_SEGMENT_SIZES, "builtin_operand_segment_sizes"
+    ATTR_KEY_OPERAND_SEGMENT_SIZES,
+    "builtin_operand_segment_sizes"
 );
 
 #[derive(Error, Debug)]
@@ -1038,7 +1039,8 @@ pub trait NoTerminatorInterface: SingleBlockRegionInterface {
 
 dict_key!(
     /// Key for symbol name attribute when the operation defines a symbol.
-    ATTR_KEY_SYM_NAME, "builtin_sym_name"
+    ATTR_KEY_SYM_NAME,
+    "builtin_sym_name"
 );
 
 #[derive(Error, Debug)]
