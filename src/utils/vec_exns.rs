@@ -21,9 +21,6 @@ pub trait VecExtns<T> {
     where
         T: PartialEq;
 
-    /// Create and initialize a new vector.
-    fn new_init<U: FnMut(usize) -> T>(size: usize, initf: U) -> Self;
-
     /// Grow the vector to the new size, initializing new elements with `initf`.
     fn grow_to(&mut self, new_size: usize, initf: impl FnMut(usize) -> T);
 }
@@ -47,14 +44,6 @@ impl<T> VecExtns<T> for Vec<T> {
         self.iter()
             .position(|e| *e == t)
             .unwrap_or_else(|| self.push_back(t))
-    }
-
-    fn new_init<U: FnMut(usize) -> T>(size: usize, mut initf: U) -> Self {
-        let mut v = Vec::<T>::with_capacity(size);
-        for i in 0..size {
-            v.push(initf(i));
-        }
-        v
     }
 
     fn grow_to(&mut self, new_size: usize, mut initf: impl FnMut(usize) -> T) {
@@ -87,14 +76,6 @@ impl<A: Array> VecExtns<A::Item> for SmallVec<A> {
         self.iter()
             .position(|e| *e == t)
             .unwrap_or_else(|| self.push_back(t))
-    }
-
-    fn new_init<U: FnMut(usize) -> A::Item>(size: usize, mut initf: U) -> Self {
-        let mut v = SmallVec::<A>::with_capacity(size);
-        for i in 0..size {
-            v.push(initf(i));
-        }
-        v
     }
 
     fn grow_to(&mut self, new_size: usize, mut initf: impl FnMut(usize) -> A::Item) {

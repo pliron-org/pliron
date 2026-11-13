@@ -213,7 +213,7 @@ impl Operation {
             .map(|def| Operand::new(ctx, *def, newop))
             .collect();
         newop.deref_mut(ctx).successors = successors;
-        newop.deref_mut(ctx).regions = Vec::new_init(num_regions, |_| Region::new(ctx, newop));
+        newop.deref_mut(ctx).regions = Vec::from_fn(num_regions, |_| Region::new(ctx, newop));
 
         newop
     }

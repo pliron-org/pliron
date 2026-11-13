@@ -1418,7 +1418,7 @@ mod tests {
         let left = append_block(ctx, &func);
         let right = append_block(ctx, &func);
         let merge = append_block(ctx, &func);
-        let extras: Vec<_> = (0..32).map(|_| append_block(ctx, &func)).collect();
+        let extras: Vec<_> = Vec::from_fn(32, |_| append_block(ctx, &func));
 
         let (_def_op, val) = insert_def(ctx, left);
         // Local use in `left` — SSA dominance is satisfied (def dominates its own block).
