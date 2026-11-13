@@ -159,7 +159,18 @@ mod r#impl {
     pub mod io {
         pub use super::fs::File;
 
-        pub type Error = core::convert::Infallible;
+        /// An error type for I/O errors that can never happen.
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+        pub enum Error {}
+
+        impl core::fmt::Display for Error {
+            fn fmt(&self, _f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+                match *self {}
+            }
+        }
+
+        impl core::error::Error for Error {}
+
         pub struct BufReader<R>(core::marker::PhantomData<R>);
 
         impl<R> BufReader<R> {

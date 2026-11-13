@@ -59,4 +59,5 @@ jobs:
       run: cargo test
 
     - name: Lint the workspace
-      run: DYLINT_RUSTFLAGS="-D warnings" cargo dylint --all -- --workspace --all-targets
+      # TODO: Remove this when we upgrade to nightly-2026-10-03 or later.
+      run: DYLINT_RUSTFLAGS='-D warnings --check-cfg=cfg(target_os,values("hyperlight"))' cargo dylint --all -- --workspace --all-targets

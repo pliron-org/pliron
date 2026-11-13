@@ -2,8 +2,7 @@ use crate::utils::def_path_is;
 use clippy_utils::diagnostics::span_lint_and_help;
 use rustc_hir::def_id::DefId;
 use rustc_hir::{AmbigArg, Ty, TyKind};
-use rustc_lint::{LateContext, LateLintPass, LintContext};
-use rustc_session::{declare_lint, declare_lint_pass};
+use rustc_lint::{LateContext, LateLintPass, LintContext, declare_lint, declare_lint_pass};
 use rustc_span::sym;
 
 /// Definition path of the module that wraps `hashbrown`.

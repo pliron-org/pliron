@@ -44,7 +44,6 @@ hi_sparse_bitset.workspace = true
 slotmap.workspace = true
 once_vec.workspace = true
 downcast-rs.workspace = true
-regex.workspace = true
 dyn-clone.workspace = true
 utf8-chars = { workspace = true, optional = true }
 
@@ -93,7 +92,6 @@ utf8-chars = "3.0.7"
 slotmap = "1.1.1"
 once_vec = "0.4.0"
 downcast-rs = "2.0.2"
-regex = "1.13.1"
 dyn-clone = "1.0.20"
 
 [[example]]

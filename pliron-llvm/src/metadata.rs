@@ -97,17 +97,20 @@ fn write_md_quoted(f: &mut core::fmt::Formatter<'_>, s: &str) -> core::fmt::Resu
 
 dict_key!(
     /// The module level [MdTableAttr] holding every metadata node's definition.
-    ATTR_KEY_MD_TABLE, "llvm_metadata_defs"
+    ATTR_KEY_MD_TABLE,
+    "llvm_metadata_defs"
 );
 
 dict_key!(
     /// The module level [NamedMdAttr], LLVM's named metadata.
-    ATTR_KEY_NAMED_MD, "llvm_named_metadata"
+    ATTR_KEY_NAMED_MD,
+    "llvm_named_metadata"
 );
 
 dict_key!(
     /// The [MdAttachmentsAttr] on an [Operation].
-    ATTR_KEY_MD_ATTACHMENTS, "llvm_metadata"
+    ATTR_KEY_MD_ATTACHMENTS,
+    "llvm_metadata"
 );
 
 /// An operand of a metadata node ([MdNodeAttr]).

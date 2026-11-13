@@ -10,8 +10,7 @@ use rustc_data_structures::fx::FxHashSet;
 use rustc_errors::{Applicability, Diag};
 use rustc_hir::def::Res;
 use rustc_hir::{Expr, ExprKind, MatchSource, Node, QPath};
-use rustc_lint::{LateContext, LateLintPass, LintContext};
-use rustc_session::{declare_lint, impl_lint_pass};
+use rustc_lint::{LateContext, LateLintPass, LintContext, declare_lint, impl_lint_pass};
 use rustc_span::edition::Edition;
 use rustc_span::{Span, Symbol, SyntaxContext};
 use std::ops::ControlFlow;
@@ -132,7 +131,7 @@ impl<'tcx> LateLintPass<'tcx> for IrRefInScrutinee {
 /// Add the help or suggestion that fixes the lint to `diag`.
 fn add_fix<'tcx>(
     cx: &LateContext<'tcx>,
-    diag: &mut Diag<'_, ()>,
+    diag: &mut Diag<'_>,
     construct_expr: &'tcx Expr<'tcx>,
     construct: &str,
     scrutinee: &'tcx Expr<'tcx>,
@@ -318,7 +317,7 @@ fn binding_name(call: &Expr<'_>, construct: &str) -> String {
         return "value".to_string();
     };
     let name = segment.ident.as_str();
-    let name = name.strip_prefix("get_").unwrap_or(name);
+    let name = name.trim_prefix("get_");
     if name == "iter" && construct == "for" {
         "items".to_string()
     } else if Symbol::intern(name).is_reserved(|| Edition::Edition2024) {
