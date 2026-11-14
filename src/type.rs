@@ -40,14 +40,16 @@
 
 use crate::{
     arg_err_noloc,
-    combine::{Parser, parser},
+    combine::{Parser, Positioned, parser},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
     dialect::{Dialect, DialectName},
     identifier::Identifier,
     impl_printable_for_display, input_err,
-    irfmt::parsers::spaced,
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation},
+    irfmt::parsers::{spaced, spanned},
+    parsable::{
+        IntoParseResult, Parsable, ParseEvent, ParseResult, Span, StateStream, StreamLocation,
+    },
     printable::{self, Printable},
     result::{Error, Result},
     std_deps::sync::LazyLock,
@@ -386,9 +388,9 @@ impl Parsable for TypeHandle {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        let type_id_parser = spaced(TypeId::parser(()));
+        let type_id_parser = spaced(spanned(TypeId::parser(())));
 
-        let mut type_parser = type_id_parser.then(move |type_id: TypeId| {
+        let mut type_parser = type_id_parser.then(move |(type_id, id_span): (TypeId, _)| {
             // This clone is to satify the borrow checker.
             let loc = loc.clone();
             combine::parser(move |parsable_state: &mut StateStream<'a>| {
@@ -401,7 +403,19 @@ impl Parsable for TypeHandle {
                 let Some(type_parser) = dialect.types.get(&type_id) else {
                     input_err!(loc.clone(), "Unregistered type {}", type_id.disp(state.ctx))?
                 };
-                type_parser(parsable_state, &())
+                let res = type_parser(parsable_state, &());
+                if let Ok((ty, _)) = res {
+                    let end = parsable_state.position();
+                    parsable_state.state.notify(|| ParseEvent::Type {
+                        ty,
+                        span: Span {
+                            start: id_span.start,
+                            end,
+                        },
+                        id_span,
+                    });
+                }
+                res
             })
         });
 
@@ -512,8 +526,8 @@ impl<T: Type + Parsable<Arg = (), Parsed = TypedHandle<T>>> Parsable for TypedHa
         arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        spaced(TypeId::parser(()))
-            .then(move |type_id| {
+        spaced(spanned(TypeId::parser(())))
+            .then(move |(type_id, id_span)| {
                 let loc = loc.clone();
                 combine::parser(move |parsable_state: &mut StateStream<'a>| {
                     if type_id != T::get_type_id_static() {
@@ -526,7 +540,19 @@ impl<T: Type + Parsable<Arg = (), Parsed = TypedHandle<T>>> Parsable for TypedHa
                             }
                         )?
                     }
-                    T::parser(arg).parse_stream(parsable_state).into()
+                    let res = T::parser(arg).parse_stream(parsable_state).into_result();
+                    if let Ok((ty, _)) = res {
+                        let end = parsable_state.position();
+                        parsable_state.state.notify(|| ParseEvent::Type {
+                            ty: ty.into(),
+                            span: Span {
+                                start: id_span.start,
+                                end,
+                            },
+                            id_span,
+                        });
+                    }
+                    res
                 })
             })
             .parse_stream(state_stream)

@@ -7,13 +7,13 @@ use alloc::vec::Vec;
 use crate::{
     basic_block::BasicBlock,
     builtin::op_interfaces::RegionKindInterface,
-    combine::{Parser, parser::char::spaces, token},
+    combine::{Parser, Positioned, parser::char::spaces, token},
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
     linked_list::{ContainsLinkedList, private},
     op::op_cast,
     operation::Operation,
-    parsable::{self, IntoParseResult, Parsable, ParseResult, StreamLocation},
+    parsable::{self, IntoParseResult, Parsable, ParseEvent, ParseResult, Span, StreamLocation},
     printable::{self, ListSeparator, Printable, fmt_indented_newline, fmt_iter},
     result::Result,
 };
@@ -209,6 +209,7 @@ impl Parsable for Region {
         parent_op: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
+        let start = state_stream.position();
         state_stream
             .state
             .name_tracker
@@ -230,7 +231,7 @@ impl Parsable for Region {
             })
         });
 
-        let result = region_parser.parse_stream(state_stream);
+        let result = region_parser.parse_stream(state_stream).into_result();
 
         // If the parsing failed, there may be unresolved references,
         // and `exit_region` will flag those, thus masking the real error.
@@ -241,7 +242,7 @@ impl Parsable for Region {
                     .state
                     .name_tracker
                     .exit_region(state_stream.state.ctx, parent_op, loc);
-            return result.into();
+            return result;
         }
 
         state_stream
@@ -249,6 +250,14 @@ impl Parsable for Region {
             .name_tracker
             .exit_region(state_stream.state.ctx, parent_op, loc)?;
 
-        result.into()
+        if let Ok((region, _)) = result {
+            let end = state_stream.position();
+            state_stream.state.notify(|| ParseEvent::Region {
+                region,
+                span: Span { start, end },
+            });
+        }
+
+        result
     }
 }

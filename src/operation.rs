@@ -13,7 +13,7 @@ use crate::{
     attribute::{AttributeDict, verify_attr},
     basic_block::{BasicBlock, BasicBlockVerifyErr},
     builtin::{given_names, op_interfaces::IsTerminatorInterface},
-    combine::{Parser, attempt, parser::char::spaces, token},
+    combine::{Parser, Positioned, attempt, parser::char::spaces, position, token},
     common_traits::{Named, RcShare, Verify},
     context::{Arena, Context, Ptr, private::ArenaObj},
     graph::{
@@ -28,12 +28,12 @@ use crate::{
     input_err,
     irfmt::{
         outlined::{self, parse_outlines, postparse_outline},
-        parsers::{list_parser, location, spaced},
+        parsers::{list_parser, location, spaced, spanned},
     },
     linked_list::{LinkedList, private},
     location::Location,
     op::{ConcreteOpInfo, Op, OpId, OpObj, UncheckedOpToken, op_impls},
-    parsable::{self, Parsable, ParseResult, StateStream, StreamLocation},
+    parsable::{self, Parsable, ParseEvent, ParseResult, Span, StateStream, StreamLocation},
     printable::{self, Printable},
     region::Region,
     result::Result,
@@ -873,14 +873,16 @@ impl Parsable for Operation {
             .source()
             .expect("Location from Parsable must be Location::SrcPos");
 
-        let results_opid = spaces()
-            .with(combine::optional(attempt(
+        let results_opid = spaces().with((
+            position(),
+            combine::optional(attempt(
                 list_parser(',', (location(), Identifier::parser(()))).skip(spaced(token('='))),
-            )))
-            .and(spaced(OpId::parser(())));
+            )),
+            spaced(spanned(OpId::parser(()))),
+        ));
 
         results_opid
-            .then(|(results_opt, opid)| {
+            .then(|(start, results_opt, (opid, opid_span))| {
                 let loc = loc.clone();
                 let results: Vec<_> = results_opt
                     .unwrap_or(vec![])
@@ -900,6 +902,7 @@ impl Parsable for Operation {
                     let op = opid_parser(parsable_state, results.clone())
                         .map(|(op, c)| (op.get_operation(), c));
 
+                    let end = parsable_state.position();
                     if let Ok((op, _)) = op {
                         // Set the location of the operation to be from where we just parsed it.
                         // If it has a different one specified as part of its outlined information,
@@ -912,6 +915,14 @@ impl Parsable for Operation {
                     if arg.look_for_outlined_attrs {
                         // If we are looking for outlined attributes, parse them now.
                         parse_outlines(parsable_state)?;
+                    }
+
+                    if let Ok((op, _)) = op {
+                        parsable_state.state.notify(|| ParseEvent::Op {
+                            op,
+                            span: Span { start, end },
+                            id_span: opid_span,
+                        });
                     }
 
                     op

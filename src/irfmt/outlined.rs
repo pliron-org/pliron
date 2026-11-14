@@ -27,7 +27,7 @@ use crate::{
     },
 };
 
-use super::parsers::{delimited_list_parser, location, spaced, zero_or_more_parser};
+use super::parsers::{delimited_list_parser, literal, location, spaced, zero_or_more_parser};
 
 /// An item (operation or block) that has something to record in the outlined section.
 enum OutlinedItem {
@@ -59,7 +59,7 @@ pub fn outlined_marker_or<'a, P>(
 where
     P: Parser<StateStream<'a>>,
 {
-    combine::attempt(spaces().with(combine::parser::char::string(OUTLINED_ATTR_MARKER)))
+    combine::attempt(spaces().with(literal(OUTLINED_ATTR_MARKER)))
         .map(|_| None)
         .or(parser.map(Some))
 }
@@ -378,7 +378,7 @@ pub(crate) fn parse_outlines(state_stream: &mut StateStream) -> Result<()> {
 
     let start_loc = state_stream.loc();
     let (mut entries, _): (Vec<((Location, usize), OutlineEntry)>, _) =
-        spaced(combine::parser::char::string("outlined_attributes:"))
+        spaced(literal("outlined_attributes:"))
             .with(zero_or_more_parser(outline_entry_parser))
             .parse_stream(state_stream)
             .into_result()

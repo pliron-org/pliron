@@ -14,6 +14,7 @@ use pliron::{
         },
         types::{IntegerType, Signedness},
     },
+    combine::{Parser, stream::position::SourcePosition},
     context::{Context, Ptr},
     derive::pliron_op,
     dict_key,
@@ -23,11 +24,16 @@ use pliron::{
         interruptible::{self, walk_advance, walk_break},
     },
     ident,
+    identifier::Identifier,
     irfmt::{parsers::spaced, printers::printable_from_fn},
     linked_list::ContainsLinkedList,
+    location::{Location, Source},
     op::{Op, verify_op},
     operation::{DefUseVerifyErr, Operation, verify_operation},
-    parsable::{Parsable, parse_from_str},
+    parsable::{
+        Parsable, ParseEvent, ParseListener, Span, State, parse_from_str,
+        state_stream_from_iterator,
+    },
     printable::Printable,
     result::Result,
     r#type::TypeHandle,
@@ -1196,6 +1202,160 @@ fn parse_err_block_args() {
     "#]];
 
     expect_parse_error(input_label_colon_missing, expected_err);
+}
+
+/// [ParseListener] that logs each event with the source text that the event refers to.
+struct EventLog<'l> {
+    input: &'l str,
+    log: &'l mut Vec<String>,
+}
+
+impl EventLog<'_> {
+    fn pos(pos: SourcePosition) -> String {
+        format!("{}:{}", pos.line, pos.column)
+    }
+
+    fn text(&self, span: Span) -> &str {
+        let offset = |pos: SourcePosition| {
+            let line_start: usize = self
+                .input
+                .split_inclusive('\n')
+                .take(pos.line as usize - 1)
+                .map(str::len)
+                .sum();
+            line_start + pos.column as usize - 1
+        };
+        &self.input[offset(span.start)..offset(span.end)]
+    }
+
+    fn name(name: &(Identifier, Location)) -> String {
+        let Location::SrcPos { pos, .. } = name.1 else {
+            panic!("Parsed name must have a source position");
+        };
+        format!("{} at {}", name.0, Self::pos(pos))
+    }
+
+    fn replaced<T>(replaced: Option<T>) -> &'static str {
+        if replaced.is_some() {
+            ", replaces forward reference"
+        } else {
+            ""
+        }
+    }
+}
+
+impl ParseListener for EventLog<'_> {
+    fn event(&mut self, ctx: &Context, event: ParseEvent) {
+        let entry = match event {
+            ParseEvent::Op { op, span, id_span } => {
+                assert_eq!(self.text(id_span), Operation::get_opid(op, ctx).to_string());
+                format!(
+                    "Op {} from {} to {}",
+                    self.text(id_span),
+                    Self::pos(span.start),
+                    Self::pos(span.end)
+                )
+            }
+            ParseEvent::Type { ty, span, id_span } => {
+                format!(
+                    "Type {:?} id {:?} {}",
+                    self.text(span),
+                    self.text(id_span),
+                    ty.disp(ctx)
+                )
+            }
+            ParseEvent::Attr { span, id_span } => {
+                format!("Attr {:?} id {:?}", self.text(span), self.text(id_span))
+            }
+            ParseEvent::AttrKey(span) => format!("AttrKey {:?}", self.text(span)),
+            ParseEvent::Literal(span) => format!("Literal {:?}", self.text(span)),
+            ParseEvent::Region { span, .. } => {
+                format!(
+                    "Region from {} to {}",
+                    Self::pos(span.start),
+                    Self::pos(span.end)
+                )
+            }
+            ParseEvent::ValueDef { name, replaced, .. } => {
+                format!("ValueDef {}{}", Self::name(&name), Self::replaced(replaced))
+            }
+            ParseEvent::ValueUse { name, .. } => format!("ValueUse {}", Self::name(&name)),
+            ParseEvent::BlockDef { name, replaced, .. } => {
+                format!("BlockDef {}{}", Self::name(&name), Self::replaced(replaced))
+            }
+            ParseEvent::BlockUse { name, .. } => format!("BlockUse {}", Self::name(&name)),
+        };
+        self.log.push(entry);
+    }
+}
+
+/// Check that a [ParseListener] gets an event, with the correct span,
+/// for each parsed entity, and for each forward reference that a definition replaces.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn parse_listener_events() {
+    let input = r#"
+    builtin.module @bar {
+        ^entry():
+        builtin.func @foo: builtin.function <() -> (builtin.integer si64)> {
+        ^bb0():
+            test.branch () [^exit] []: <() -> ()>
+        ^exit(a: builtin.integer si64) [block_test_attr: builtin.string "x"]:
+            test.return c0
+        ^later():
+            c0 = test.constant builtin.integer <0: si64>;
+            test.return a
+        }
+    }"#;
+
+    let ctx = &mut Context::new();
+    let mut log = vec![];
+    let mut state = State::new(ctx, Source::InMemory);
+    state.listener = Some(Box::new(EventLog {
+        input,
+        log: &mut log,
+    }));
+    Operation::top_level_parser()
+        .parse(state_stream_from_iterator(input.chars(), state))
+        .unwrap();
+
+    expect![[r#"
+        BlockDef entry at 3:9
+        Literal "<"
+        Literal "("
+        Literal ")"
+        Literal "->"
+        Literal "("
+        Type "builtin.integer si64" id "builtin.integer" builtin.integer si64
+        Literal ")"
+        Literal ">"
+        Type "builtin.function <() -> (builtin.integer si64)> " id "builtin.function" builtin.function <() -> (builtin.integer si64)>
+        BlockDef bb0 at 5:9
+        BlockUse exit at 6:29
+        Literal "("
+        Literal ")"
+        Literal "->"
+        Literal "("
+        Literal ")"
+        Op test.branch from 6:13 to 7:9
+        Type "builtin.integer si64" id "builtin.integer" builtin.integer si64
+        AttrKey "block_test_attr"
+        Attr "builtin.string \"x\"" id "builtin.string"
+        ValueDef a at 7:15
+        BlockDef exit at 7:9, replaces forward reference
+        ValueUse c0 at 8:25
+        Op test.return from 8:13 to 8:27
+        BlockDef later at 9:9
+        Attr "builtin.integer <0: si64>" id "builtin.integer"
+        ValueDef c0 at 10:13, replaces forward reference
+        Op test.constant from 10:13 to 10:57
+        ValueUse a at 11:25
+        Op test.return from 11:13 to 11:26
+        Region from 4:76 to 12:10
+        Op builtin.func from 4:9 to 13:5
+        Region from 2:25 to 13:6
+        Op builtin.module from 2:5 to 13:6"#]]
+    .assert_eq(&log.join("\n"));
 }
 
 #[test]
