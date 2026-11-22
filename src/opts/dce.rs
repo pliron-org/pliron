@@ -255,6 +255,7 @@ fn note_erased_ops(
             }
             RecorderEvent::UnlinkedBlock(_, _)
             | RecorderEvent::InsertedOperation(_)
+            | RecorderEvent::ModifiedOperation(_)
             | RecorderEvent::InsertedBlock(_)
             | RecorderEvent::ReplacedValueUses { .. }
             | RecorderEvent::ValueTypeChanged { .. }

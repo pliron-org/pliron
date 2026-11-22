@@ -896,6 +896,7 @@ fn note_erased_ops(recorder: &mut Recorder, erased: &mut HSet<Ptr<Operation>>) {
                 panic!("mem2reg rewrite (promotion) call backs must not alter control flow");
             }
             RecorderEvent::InsertedOperation(_)
+            | RecorderEvent::ModifiedOperation(_)
             | RecorderEvent::InsertedBlock(_)
             | RecorderEvent::ReplacedValueUses { .. }
             | RecorderEvent::ValueTypeChanged { .. }

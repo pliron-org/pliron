@@ -383,6 +383,7 @@ pub fn apply_dialect_conversion<C: DialectConversion>(
                     }
                     RecorderEvent::InsertedOperation(_) => {}
                     RecorderEvent::ErasedOperation(_)
+                    | RecorderEvent::ModifiedOperation(_)
                     | RecorderEvent::InsertedBlock(_)
                     | RecorderEvent::ErasedBlock(_)
                     | RecorderEvent::ErasedRegion(_)

@@ -28,6 +28,8 @@ pub trait InsertionListener: Default {
 pub trait RewriteListener: InsertionListener {
     /// Notify that an operation is about to be erased.
     fn notify_operation_erasure(&mut self, ctx: &Context, op: Ptr<Operation>);
+    /// Notify that an operation was modified in place.
+    fn notify_operation_modified(&mut self, ctx: &Context, op: Ptr<Operation>);
     /// Notify that all uses of a value are about to be replaced.
     fn notify_value_use_replacement(&mut self, ctx: &Context, old_value: Value, new_value: Value);
     /// Notify that a value type changed.
@@ -57,6 +59,7 @@ impl InsertionListener for DummyListener {
 }
 impl RewriteListener for DummyListener {
     fn notify_operation_erasure(&mut self, _ctx: &Context, _op: Ptr<Operation>) {}
+    fn notify_operation_modified(&mut self, _ctx: &Context, _op: Ptr<Operation>) {}
     fn notify_value_use_replacement(
         &mut self,
         _ctx: &Context,
@@ -84,6 +87,7 @@ pub enum RecorderEvent {
     InsertedOperation(Ptr<Operation>),
     InsertedBlock(Ptr<BasicBlock>),
     ErasedOperation(Ptr<Operation>),
+    ModifiedOperation(Ptr<Operation>),
     ReplacedValueUses {
         old_value: Value,
         old_type: TypeHandle,
@@ -120,6 +124,10 @@ impl InsertionListener for Recorder {
 impl RewriteListener for Recorder {
     fn notify_operation_erasure(&mut self, _ctx: &Context, op: Ptr<Operation>) {
         self.events.push(RecorderEvent::ErasedOperation(op));
+    }
+
+    fn notify_operation_modified(&mut self, _ctx: &Context, op: Ptr<Operation>) {
+        self.events.push(RecorderEvent::ModifiedOperation(op));
     }
 
     fn notify_value_use_replacement(&mut self, ctx: &Context, old_value: Value, new_value: Value) {

@@ -950,9 +950,9 @@ fn sccp_materializes_multiple_constant_block_args() -> Result<()> {
             llvm.cond_br if cond_v0 ^bb1_block3v1(a0_v1, b0_v2) else ^bb1_block3v1(a1_v3, b1_v4) !5
 
           ^bb1_block3v1(x_v5: builtin.integer i64, y_v6: builtin.integer i64) !6:
-            y_v8 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64 !7;
-            x_v7 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !8;
-            llvm.return x_v7 !9
+            v8 = builtin.constant <builtin.integer <5: i64>> : builtin.integer i64;
+            x_v7 = builtin.constant <builtin.integer <3: i64>> : builtin.integer i64 !7;
+            llvm.return x_v7 !8
         }"#]]
     .assert_eq(&after);
     Ok(())
