@@ -126,7 +126,7 @@ impl ToLLVMDialect for BuiltinFuncOp {
         let func_name = self.get_symbol_name(ctx);
 
         // Get the function type from builtin.func
-        let builtin_func_type = self.get_type(ctx);
+        let builtin_func_type = self.get_type(ctx).to_handle();
         let llvm_func_type = type_cast::<dyn ToLLVMType>(&*builtin_func_type.deref(ctx))
             .ok_or_else(|| {
                 input_error_noloc!("builtin.func type does not implement ToLLVMType interface")
