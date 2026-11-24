@@ -910,14 +910,12 @@ impl Parsable for Operation {
                         op.deref_mut(parsable_state.state.ctx).set_loc(loc.clone());
                         // If there's an outline index, post-parse it.
                         postparse_outline(parsable_state, op)?;
-                    }
 
-                    if arg.look_for_outlined_attrs {
-                        // If we are looking for outlined attributes, parse them now.
-                        parse_outlines(parsable_state)?;
-                    }
+                        if arg.look_for_outlined_attrs {
+                            // If we are looking for outlined attributes, parse them now.
+                            parse_outlines(parsable_state)?;
+                        }
 
-                    if let Ok((op, _)) = op {
                         parsable_state.state.notify(|| ParseEvent::Op {
                             op,
                             span: Span { start, end },

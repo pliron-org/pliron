@@ -13,7 +13,7 @@ use crate::{
     linked_list::{ContainsLinkedList, private},
     op::op_cast,
     operation::Operation,
-    parsable::{self, IntoParseResult, Parsable, ParseEvent, ParseResult, Span, StreamLocation},
+    parsable::{self, IntoParseResult, Parsable, ParseEvent, ParseResult, Span},
     printable::{self, ListSeparator, Printable, fmt_indented_newline, fmt_iter},
     result::Result,
 };
@@ -208,7 +208,6 @@ impl Parsable for Region {
         state_stream: &mut parsable::StateStream<'a>,
         parent_op: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
-        let loc = state_stream.loc();
         let start = state_stream.position();
         state_stream
             .state
@@ -237,18 +236,17 @@ impl Parsable for Region {
         // and `exit_region` will flag those, thus masking the real error.
         // So we ignore any errors from `exit_region` itself.
         if result.is_err() {
-            let _ =
-                state_stream
-                    .state
-                    .name_tracker
-                    .exit_region(state_stream.state.ctx, parent_op, loc);
+            let _ = state_stream
+                .state
+                .name_tracker
+                .exit_region(state_stream.state.ctx, parent_op);
             return result;
         }
 
         state_stream
             .state
             .name_tracker
-            .exit_region(state_stream.state.ctx, parent_op, loc)?;
+            .exit_region(state_stream.state.ctx, parent_op)?;
 
         if let Ok((region, _)) = result {
             let end = state_stream.position();

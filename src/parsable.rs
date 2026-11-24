@@ -29,7 +29,7 @@ use crate::{
     input_err, input_error,
     irfmt::parsers::{hex_int_parser, int_parser, literal, quoted_string_parser},
     location::{Location, Source},
-    op::op_impls,
+    op::{Op, op_impls},
     operation::Operation,
     region::Region,
     result::{self, Result},
@@ -578,7 +578,12 @@ impl NameTracker {
             Entry::Occupied(occ) => Ok(*occ.get()),
             Entry::Vacant(vac) => {
                 // Insert a forward reference.
-                let forward_def = ForwardRefOp::new(ctx).get_result(ctx);
+                let forward_op = ForwardRefOp::new(ctx);
+                forward_op
+                    .get_operation()
+                    .deref_mut(ctx)
+                    .set_loc(id.1.clone());
+                let forward_def = forward_op.get_result(ctx);
                 vac.insert(forward_def);
                 Ok(forward_def)
             }
@@ -644,6 +649,7 @@ impl NameTracker {
             Entry::Vacant(vac) => {
                 // Insert a forward reference.
                 let block_forward = BasicBlock::new(ctx, Some(id.0.clone()), vec![]);
+                block_forward.deref_mut(ctx).set_loc(id.1.clone());
                 vac.insert(LabelRef::ForwardRef(block_forward));
                 Ok(block_forward)
             }
@@ -703,12 +709,7 @@ impl NameTracker {
     /// Exit a region.
     /// - If the parent op is [IsolatedFromAboveInterface], then the top SSA name scope is popped.
     /// - The top block label scope is popped.
-    pub(crate) fn exit_region(
-        &mut self,
-        ctx: &Context,
-        parent_op: Ptr<Operation>,
-        loc: Location,
-    ) -> Result<()> {
+    pub(crate) fn exit_region(&mut self, ctx: &Context, parent_op: Ptr<Operation>) -> Result<()> {
         if op_impls::<dyn IsolatedFromAboveInterface>(
             Operation::get_op_dyn(parent_op, ctx).as_ref(),
         ) {
@@ -721,7 +722,7 @@ impl NameTracker {
                 if let DefiningEntity::Op(op) = value.defining_entity()
                     && Operation::is_op::<ForwardRefOp>(op, ctx)
                 {
-                    input_err!(loc.clone(), UnresolvedReference(id.clone()))?
+                    input_err!(op.deref(ctx).loc().clone(), UnresolvedReference(id.clone()))?
                 }
             }
         }
@@ -732,9 +733,12 @@ impl NameTracker {
             .expect("Exiting an isolated-from-above region which wasn't entered into.");
 
         // Check if there are any unresolved forward label references.
-        for (id, op) in label_scope {
-            if matches!(op, LabelRef::ForwardRef(_)) {
-                input_err!(loc.clone(), UnresolvedReference(id.clone()))?
+        for (id, label) in label_scope {
+            if let LabelRef::ForwardRef(fref) = label {
+                input_err!(
+                    fref.deref(ctx).loc().clone(),
+                    UnresolvedReference(id.clone())
+                )?
             }
         }
 

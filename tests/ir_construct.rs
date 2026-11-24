@@ -1129,10 +1129,26 @@ fn parse_err_unresolved_def() {
 
     let expected_err = expect![[r#"
         Compilation error: invalid input program.
-        Parse error at line: 4, column: 80
+        Parse error at line: 6, column: 29
         Identifier c0_op_2_0_res0 was not resolved to any definition in the scope
     "#]];
     expect_parse_error(input_multiple_defs, expected_err);
+
+    expect_parse_error(
+        r#"
+        builtin.module @bar {
+        ^block_0_0():
+            builtin.func @foo: builtin.function <() -> ()> {
+            ^entry_block_1_0():
+                test.branch () [^missing] []: <() -> ()>
+            }
+        }"#,
+        expect![[r#"
+            Compilation error: invalid input program.
+            Parse error at line: 6, column: 33
+            Identifier missing was not resolved to any definition in the scope
+        "#]],
+    );
 
     expect_parse_error(
         "test.return c0",
