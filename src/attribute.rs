@@ -41,7 +41,7 @@
 
 use crate::{
     builtin::attr_interfaces::{OutlinedAttr, TypedAttrInterface},
-    combine::{Parser, parser, token},
+    combine::{Parser, Positioned, parser, token},
     common_traits::Verify,
     context::{Context, collect_deduped_interface_verifiers},
     dialect::{Dialect, DialectName},
@@ -49,10 +49,12 @@ use crate::{
     identifier::Identifier,
     impl_printable_for_display, input_err, input_error,
     irfmt::{
-        parsers::{attr_parser, delimited_list_parser, spaced},
+        parsers::{attr_parser, delimited_list_parser, spaced, spanned},
         printers::iter_with_sep,
     },
-    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation},
+    parsable::{
+        IntoParseResult, Parsable, ParseEvent, ParseResult, Span, StateStream, StreamLocation,
+    },
     printable::{self, Printable},
     result::Result,
     std_deps::sync::LazyLock,
@@ -103,7 +105,13 @@ impl<'b> Parsable for AttributeDictKeyVal<'b> {
         state_stream: &mut StateStream<'a>,
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
-        (Identifier::parser(()), spaced(token(':')), attr_parser())
+        let key_parser = spanned(Identifier::parser(())).map_input(
+            |(key, key_span), state_stream: &mut StateStream<'a>| {
+                state_stream.state.notify(|| ParseEvent::AttrKey(key_span));
+                key
+            },
+        );
+        (key_parser, spaced(token(':')), attr_parser())
             .map(|(key, _, val)| (key, val))
             .parse_stream(state_stream)
             .into_result()
@@ -366,9 +374,9 @@ impl Parsable for AttrObj {
         _arg: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
         let loc = state_stream.loc();
-        let attr_id_parser = spaced(AttrId::parser(()));
+        let attr_id_parser = spaced(spanned(AttrId::parser(())));
 
-        let mut attr_parser = attr_id_parser.then(move |attr_id: AttrId| {
+        let mut attr_parser = attr_id_parser.then(move |(attr_id, id_span): (AttrId, _)| {
             let loc = loc.clone();
             combine::parser(move |parsable_state: &mut StateStream<'a>| {
                 let state = &parsable_state.state;
@@ -384,7 +392,18 @@ impl Parsable for AttrObj {
                         attr_id.disp(state.ctx)
                     )?
                 };
-                attr_parser(parsable_state, &())
+                let res = attr_parser(parsable_state, &());
+                if res.is_ok() {
+                    let end = parsable_state.position();
+                    parsable_state.state.notify(|| ParseEvent::Attr {
+                        span: Span {
+                            start: id_span.start,
+                            end,
+                        },
+                        id_span,
+                    });
+                }
+                res
             })
         });
 

@@ -29,7 +29,7 @@ use crate::{
     location::Location,
     op::op_impls,
     operation::{DefUseVerifyErr, OpDbg, Operation, OperationParserConfig},
-    parsable::{self, IntoParseResult, Parsable, ParseResult, StreamLocation},
+    parsable::{self, IntoParseResult, Parsable, ParseEvent, ParseResult, StreamLocation},
     printable::{self, ListSeparator, Printable, indented_nl},
     region::Region,
     result::Result,
@@ -520,8 +520,8 @@ impl Parsable for BasicBlock {
         // after consuming the label+args are reported as committed errors.
         // Format: ^label(args) [optional_attrs] [!N]:
         let outline_loc = state_stream.loc();
-        let (label, args, attrs_opt, outindex_opt) = (
-            spaced(token('^').with(Identifier::parser(()))),
+        let ((label_loc, label), args, attrs_opt, outindex_opt) = (
+            spaced((location(), token('^').with(Identifier::parser(())))),
             spaced(delimited_list_parser('(', ')', ',', block_arg)),
             spaced(optional(AttributeDict::parser(()))),
             spaces().with(optional(token('!').with(usize::parser(())))),
@@ -547,12 +547,23 @@ impl Parsable for BasicBlock {
 
         for (arg_idx, (arg_loc, name)) in arg_names.into_iter().enumerate() {
             let def: Value = block.deref(state_stream.state.ctx).args[arg_idx].as_value(block);
-            state_stream.state.name_tracker.ssa_def(
+            let name = (name, arg_loc);
+            let replaced =
+                state_stream
+                    .state
+                    .name_tracker
+                    .ssa_def(state_stream.state.ctx, &name, def)?;
+            given_names::set_block_arg_name(
                 state_stream.state.ctx,
-                &(name.clone(), arg_loc),
-                def,
-            )?;
-            given_names::set_block_arg_name(state_stream.state.ctx, block, arg_idx, Some(name));
+                block,
+                arg_idx,
+                Some(name.0.clone()),
+            );
+            state_stream.state.notify(|| ParseEvent::ValueDef {
+                value: def,
+                name,
+                replaced,
+            });
         }
 
         // Register in outline parse state if !N was found.
@@ -560,10 +571,17 @@ impl Parsable for BasicBlock {
             register_block_for_outline(state_stream, outindex, block, outline_loc)?;
         }
 
-        state_stream
-            .state
-            .name_tracker
-            .block_def(state_stream.state.ctx, &(label, loc), block)?;
+        let name = (label, label_loc);
+        let replaced =
+            state_stream
+                .state
+                .name_tracker
+                .block_def(state_stream.state.ctx, &name, block)?;
+        state_stream.state.notify(|| ParseEvent::BlockDef {
+            block,
+            name,
+            replaced,
+        });
 
         // Parse the ops in the block
         let ops: Vec<_> = spaces()
