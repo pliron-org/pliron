@@ -193,10 +193,9 @@ impl FuncOp {
     }
 
     /// Get the function signature (type).
-    pub fn get_type(&self, ctx: &Context) -> TypeHandle {
-        attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_builtin_func_type(ctx).unwrap())
-            .unwrap()
-            .get_type(ctx)
+    pub fn get_type(&self, ctx: &Context) -> TypedHandle<FunctionType> {
+        TypedHandle::from_handle(Typed::get_type(self, ctx), ctx)
+            .expect("builtin.func must have a function type")
     }
 
     /// Get the entry block of this function.
@@ -207,7 +206,8 @@ impl FuncOp {
 
 impl Typed for FuncOp {
     fn get_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_type(ctx)
+        let ty_attr = self.get_attr_builtin_func_type(ctx).unwrap();
+        TypedAttrInterface::get_type(&*ty_attr, ctx)
     }
 }
 

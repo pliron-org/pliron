@@ -4586,10 +4586,8 @@ impl FuncOp {
 
     /// Get the function signature (type).
     pub fn get_type(&self, ctx: &Context) -> TypedHandle<FuncType> {
-        let ty = attr_cast::<dyn TypedAttrInterface>(&*self.get_attr_llvm_func_type(ctx).unwrap())
-            .unwrap()
-            .get_type(ctx);
-        TypedHandle::from_handle(ty, ctx).unwrap()
+        TypedHandle::from_handle(pliron::r#type::Typed::get_type(self, ctx), ctx)
+            .expect("llvm.func must have a function type")
     }
 
     /// Get the entry block (if it exists) of this function.
@@ -4622,7 +4620,8 @@ impl FuncOp {
 
 impl pliron::r#type::Typed for FuncOp {
     fn get_type(&self, ctx: &Context) -> TypeHandle {
-        self.get_type(ctx).into()
+        let ty_attr = self.get_attr_llvm_func_type(ctx).unwrap();
+        TypedAttrInterface::get_type(&*ty_attr, ctx)
     }
 }
 
