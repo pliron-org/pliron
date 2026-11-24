@@ -7,13 +7,13 @@ use alloc::vec::Vec;
 use crate::{
     basic_block::BasicBlock,
     builtin::op_interfaces::RegionKindInterface,
-    combine::{Parser, parser::char::spaces, token},
+    combine::{Parser, Positioned, parser::char::spaces, token},
     common_traits::Verify,
     context::{Context, Ptr, private::ArenaObj},
     linked_list::{ContainsLinkedList, private},
     op::op_cast,
     operation::Operation,
-    parsable::{self, IntoParseResult, Parsable, ParseResult, StreamLocation},
+    parsable::{self, IntoParseResult, Parsable, ParseEvent, ParseResult, Span},
     printable::{self, ListSeparator, Printable, fmt_indented_newline, fmt_iter},
     result::Result,
 };
@@ -208,7 +208,7 @@ impl Parsable for Region {
         state_stream: &mut parsable::StateStream<'a>,
         parent_op: Self::Arg,
     ) -> ParseResult<'a, Self::Parsed> {
-        let loc = state_stream.loc();
+        let start = state_stream.position();
         state_stream
             .state
             .name_tracker
@@ -230,25 +230,32 @@ impl Parsable for Region {
             })
         });
 
-        let result = region_parser.parse_stream(state_stream);
+        let result = region_parser.parse_stream(state_stream).into_result();
 
         // If the parsing failed, there may be unresolved references,
         // and `exit_region` will flag those, thus masking the real error.
         // So we ignore any errors from `exit_region` itself.
         if result.is_err() {
-            let _ =
-                state_stream
-                    .state
-                    .name_tracker
-                    .exit_region(state_stream.state.ctx, parent_op, loc);
-            return result.into();
+            let _ = state_stream
+                .state
+                .name_tracker
+                .exit_region(state_stream.state.ctx, parent_op);
+            return result;
         }
 
         state_stream
             .state
             .name_tracker
-            .exit_region(state_stream.state.ctx, parent_op, loc)?;
+            .exit_region(state_stream.state.ctx, parent_op)?;
 
-        result.into()
+        if let Ok((region, _)) = result {
+            let end = state_stream.position();
+            state_stream.state.notify(|| ParseEvent::Region {
+                region,
+                span: Span { start, end },
+            });
+        }
+
+        result
     }
 }
