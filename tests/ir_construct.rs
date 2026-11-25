@@ -1067,6 +1067,91 @@ fn parse_function_with_attrs() -> Result<()> {
     Ok(())
 }
 
+// Check that printing / parsing for function related builtin ops.
+#[test]
+#[cfg_attr(target_family = "wasm", wasm_bindgen_test)]
+fn func_ops_roundtrip() -> Result<()> {
+    let input = r#"
+        builtin.module @m {
+        ^block_0_0():
+            builtin.func @id: builtin.function <(builtin.integer si64) -> (builtin.integer si64)> {
+            ^entry_block_1_0(a: builtin.integer si64):
+                builtin.return a
+            };
+            builtin.func @sink: builtin.function <(builtin.integer si64) -> ()> {
+            ^entry_block_2_0(a: builtin.integer si64):
+                builtin.return
+            };
+            builtin.func @main: builtin.function <() -> (builtin.integer si64, builtin.integer si64)> {
+            ^entry_block_3_0():
+                c = builtin.constant <builtin.integer <0: si64>> : builtin.integer si64;
+                r = builtin.call @id (c) : (builtin.integer si64) -> (builtin.integer si64);
+                builtin.call @sink (r) : (builtin.integer si64) -> ();
+                f = builtin.func_constant @id : builtin.function <(builtin.integer si64) -> (builtin.integer si64)>;
+                s = builtin.indirect_call f (r) : (builtin.integer si64) -> (builtin.integer si64);
+                builtin.return r, s
+            }
+        }"#;
+
+    let ctx = &mut Context::new();
+    let op = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap();
+    verify_operation(op, ctx)?;
+    erase_given_names(ctx, op);
+    let printed = format!("{}", op.disp(ctx));
+    expect![[r#"
+        builtin.module @m 
+        {
+          ^block1v1() !0:
+            builtin.func @id: builtin.function <(builtin.integer si64) -> (builtin.integer si64)> 
+            {
+              ^block2v1(v0: builtin.integer si64) !1:
+                builtin.return v0 !2
+            } !3;
+            builtin.func @sink: builtin.function <(builtin.integer si64) -> ()> 
+            {
+              ^block3v1(v1: builtin.integer si64) !4:
+                builtin.return  !5
+            } !6;
+            builtin.func @main: builtin.function <() -> (builtin.integer si64, builtin.integer si64)> 
+            {
+              ^block4v1() !7:
+                v2 = builtin.constant <builtin.integer <0: si64>> : builtin.integer si64 !8;
+                v3 = builtin.call @id (v2) : (builtin.integer si64) -> (builtin.integer si64) !9;
+                builtin.call @sink (v3) : (builtin.integer si64) -> () !10;
+                v4 = builtin.func_constant @id : builtin.function <(builtin.integer si64) -> (builtin.integer si64)> !11;
+                v5 = builtin.indirect_call v4 (v3) : (builtin.integer si64) -> (builtin.integer si64) !12;
+                builtin.return v3, v5 !13
+            } !14
+        } !15
+
+        outlined_attributes:
+        !0 = @[<in-memory>: line: 3, column: 9], []
+        !1 = @[<in-memory>: line: 5, column: 13], []
+        !2 = @[<in-memory>: line: 6, column: 17], []
+        !3 = @[<in-memory>: line: 4, column: 13], []
+        !4 = @[<in-memory>: line: 9, column: 13], []
+        !5 = @[<in-memory>: line: 10, column: 17], []
+        !6 = @[<in-memory>: line: 8, column: 13], []
+        !7 = @[<in-memory>: line: 13, column: 13], []
+        !8 = @[<in-memory>: line: 14, column: 17], []
+        !9 = @[<in-memory>: line: 15, column: 17], []
+        !10 = @[<in-memory>: line: 16, column: 17], []
+        !11 = @[<in-memory>: line: 17, column: 17], []
+        !12 = @[<in-memory>: line: 18, column: 17], []
+        !13 = @[<in-memory>: line: 19, column: 17], []
+        !14 = @[<in-memory>: line: 12, column: 13], []
+        !15 = @[<in-memory>: line: 2, column: 9], []
+    "#]]
+    .assert_eq(&printed);
+
+    let ctx = &mut Context::new();
+    let reparsed = parse_from_str(spaced(Operation::top_level_parser()), ctx, &printed).unwrap();
+    verify_operation(reparsed, ctx)?;
+    erase_given_names(ctx, reparsed);
+    assert_eq!(printed, format!("{}", reparsed.disp(ctx)));
+    Ok(())
+}
+
 fn expect_parse_error(input: &str, expected_err: Expect) {
     let ctx = &mut Context::new();
     let actual_err = parse_from_str(spaced(Operation::top_level_parser()), ctx, input).unwrap_err();

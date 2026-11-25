@@ -5,6 +5,9 @@
 
 use alloc::vec::Vec;
 use smallvec::{Array, SmallVec};
+use thiserror::Error;
+
+use crate::{arg_err, location::Location, result::Result};
 
 /// This trait provides additionaly functionality for Rust vectors
 pub trait VecExtns<T> {
@@ -89,9 +92,17 @@ impl<A: Array> VecExtns<A::Item> for SmallVec<A> {
     }
 }
 
+/// Lengths mismatch error.
+#[derive(Error, Debug)]
+#[error("Expected {expected} item(s), but found {found}")]
+pub struct LengthMismatchErr {
+    pub expected: usize,
+    pub found: usize,
+}
+
 /// This trait provides additional functionality for Rust iterators.
 pub trait IterExtns: Iterator {
-    /// Collect the items into `C`, skipping items equal to one already collected.
+    /// Collect the items into `C`, skipping items equal to an already collected one.
     fn collect_unique<C>(self) -> C
     where
         Self: Sized,
@@ -103,6 +114,39 @@ pub trait IterExtns: Iterator {
             collected.push_unique(item);
         }
         collected
+    }
+
+    /// Call `f(idx, self_item, other_item)` on paired items of `self` and `other`.
+    ///
+    /// An error from `f` or an [iterator length mismatch](LengthMismatchErr)
+    /// terminates the iteration.
+    fn try_for_each_zip<J: IntoIterator>(
+        self,
+        other: J,
+        err_loc: Location,
+        mut f: impl FnMut(usize, Self::Item, J::Item) -> Result<()>,
+    ) -> Result<()>
+    where
+        Self: Sized,
+    {
+        let (mut left, mut right) = (self, other.into_iter());
+        let mut idx = 0;
+        loop {
+            match (left.next(), right.next()) {
+                (None, None) => return Ok(()),
+                (Some(l), Some(r)) => f(idx, l, r)?,
+                (l, r) => {
+                    return arg_err!(
+                        err_loc,
+                        LengthMismatchErr {
+                            expected: idx + usize::from(r.is_some()) + right.count(),
+                            found: idx + usize::from(l.is_some()) + left.count(),
+                        }
+                    );
+                }
+            }
+            idx += 1;
+        }
     }
 }
 

@@ -12,7 +12,10 @@ use pliron::{
     opts::constants::ConstFoldInterface,
 };
 
-use crate::{builtin::ops::ConstantOp, opts::dce::SideEffects};
+use crate::{
+    builtin::ops::{ConstantOp, FuncConstantOp, ReturnOp},
+    opts::dce::SideEffects,
+};
 
 #[op_interface_impl]
 impl ConstFoldInterface for ConstantOp {
@@ -38,6 +41,21 @@ impl ConstFoldInterface for ConstantOp {
 
 #[op_interface_impl]
 impl SideEffects for ConstantOp {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+}
+
+#[op_interface_impl]
+impl SideEffects for FuncConstantOp {
+    fn has_self_side_effects(&self, _ctx: &Context) -> bool {
+        false
+    }
+}
+
+/// A return transfers control, but has no side effects of its own.
+#[op_interface_impl]
+impl SideEffects for ReturnOp {
     fn has_self_side_effects(&self, _ctx: &Context) -> bool {
         false
     }
