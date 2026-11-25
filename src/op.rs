@@ -482,12 +482,7 @@ pub fn canonical_syntax_parse<'a, T: Op>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
 ) -> ParseResult<'a, OpObj> {
-    canonical_syntax_parse_impl(
-        state_stream,
-        results,
-        T::get_concrete_op_info,
-        T::wrap_operation,
-    )
+    canonical_syntax_parse_impl(state_stream, results, T::get_concrete_op_info)
 }
 
 /// We keep the non-generic impl of [canonical_syntax_parse] separate to reduce code bloat
@@ -496,7 +491,6 @@ fn canonical_syntax_parse_impl<'a>(
     state_stream: &mut StateStream<'a>,
     results: Vec<(Identifier, Location)>,
     concrete_op: fn() -> ConcreteOpInfo,
-    wrap_op: fn(Ptr<Operation>, UncheckedOpToken) -> OpObj,
 ) -> ParseResult<'a, OpObj> {
     // Results and opid have already been parsed. Continue after that.
     let mut without_regions = delimited_list_parser('(', ')', ',', ssa_opd_parser())
@@ -553,7 +547,7 @@ fn canonical_syntax_parse_impl<'a>(
     zero_or_more_parser(Region::parser(op))
         .parse_stream(state_stream)
         .into_result()?;
-    Ok(wrap_op(op, UncheckedOpToken::new())).into_parse_result()
+    Ok(Operation::get_op_dyn(op, state_stream.state.ctx)).into_parse_result()
 }
 
 /// Parser for an [Op] in canonical syntax.
