@@ -5,10 +5,7 @@
 
 use crate::{
     basic_block::BasicBlock,
-    builtin::{
-        attributes::{OperandSegmentSizesAttr, TypeAttr},
-        type_interfaces::FunctionTypeInterface,
-    },
+    builtin::{attributes::OperandSegmentSizesAttr, type_interfaces::FunctionTypeInterface},
     context::{Context, Ptr},
     dict_key,
     graph::walkers::interruptible::{WalkResult, walk_advance, walk_break},
@@ -19,13 +16,13 @@ use crate::{
     operation::{OpDbg, Operation},
     printable::{self, Printable},
     region::Region,
-    result::{AnyError, Result},
+    result::{self, AnyError, ErrorKind, Result},
     symbol_table::{SymbolTableCollection, walk_symbol_table},
-    r#type::{Type, TypeHandle, TypeInterfaceMarker, Typed, type_impls},
+    r#type::{Type, TypeHandle, TypeInterfaceHandle, TypeInterfaceMarker, Typed, type_impls},
     utils::{
         const_bound_n::LessThanN,
         table::{HMap, HSet},
-        vec_exns::IterExtns,
+        vec_exns::{IterExtns, LengthMismatchErr},
     },
     value::{DefiningEntity, Use, Value},
     verify_err, verify_error,
@@ -53,15 +50,46 @@ pub trait IsTerminatorInterface {
 }
 
 #[derive(Error, Debug)]
-pub enum BranchOpInterfaceVerifyErr {
-    #[error("Branch Op is passing {provided} arguments, but target block expects {expected}")]
-    SuccessorOperandsMismatch { provided: usize, expected: usize },
-    #[error("Forwarded operand at {idx} is of type {forwarded}, but should've been {expected}")]
-    SuccessorOperandTypeMismatch {
-        idx: usize,
-        forwarded: String,
-        expected: String,
-    },
+#[error("Expected value {idx} to be of type {expected}, but found {found}")]
+pub struct TypeMismatchVerifyErr {
+    pub idx: usize,
+    pub expected: String,
+    pub found: String,
+}
+
+/// Verify that the types of `values` are `expected`.
+pub fn verify_types_match(
+    ctx: &Context,
+    err_loc: Location,
+    values: impl IntoIterator<Item = Value>,
+    expected: impl IntoIterator<Item = TypeHandle>,
+) -> Result<()> {
+    values
+        .into_iter()
+        .try_for_each_zip(expected, err_loc.clone(), |idx, value, expected_ty| {
+            let found_ty = value.get_type(ctx);
+            if found_ty != expected_ty {
+                return verify_err!(
+                    err_loc.clone(),
+                    TypeMismatchVerifyErr {
+                        idx,
+                        expected: expected_ty.disp(ctx).to_string(),
+                        found: found_ty.disp(ctx).to_string(),
+                    }
+                );
+            }
+            Ok(())
+        })
+        .map_err(|err| {
+            if err.err.is::<LengthMismatchErr>() {
+                result::Error {
+                    kind: ErrorKind::VerificationFailed,
+                    ..err
+                }
+            } else {
+                err
+            }
+        })
 }
 
 /// This [terminator](IsTerminatorInterface) [Op] branches to
@@ -140,30 +168,12 @@ pub trait BranchOpInterface: IsTerminatorInterface {
         // Verify that the values passed to a target block
         // matches the arguments of that block.
         for (succ_idx, succ) in op.get_operation().deref(ctx).successors().enumerate() {
-            let succ = &*succ.deref(ctx);
-            let operands = self_op.successor_operands(ctx, succ_idx);
-            if succ.get_num_arguments() != operands.len() {
-                return verify_err!(
-                    op.loc(ctx),
-                    BranchOpInterfaceVerifyErr::SuccessorOperandsMismatch {
-                        provided: operands.len(),
-                        expected: succ.get_num_arguments()
-                    }
-                );
-            }
-            for (idx, operand) in operands.iter().enumerate() {
-                let block_arg = succ.get_argument(idx);
-                if operand.get_type(ctx) != block_arg.get_type(ctx) {
-                    return verify_err!(
-                        op.loc(ctx),
-                        BranchOpInterfaceVerifyErr::SuccessorOperandTypeMismatch {
-                            idx,
-                            forwarded: operand.get_type(ctx).disp(ctx).to_string(),
-                            expected: block_arg.get_type(ctx).disp(ctx).to_string(),
-                        }
-                    );
-                }
-            }
+            verify_types_match(
+                ctx,
+                op.loc(ctx),
+                self_op.successor_operands(ctx, succ_idx),
+                succ.deref(ctx).arguments().map(|arg| arg.get_type(ctx)),
+            )?;
         }
         Ok(())
     }
@@ -1184,6 +1194,58 @@ pub trait SymbolUserOpInterface {
     }
 }
 
+/// Errors from verifying symbol uses in call-like ops.
+#[derive(Error, Debug)]
+pub enum FuncSymbolUseVerifyErr {
+    #[error("Symbol {0} not found")]
+    SymbolNotFound(String),
+    #[error("Symbol {0} does not refer to a {1}")]
+    NotFunc(String, String),
+    #[error("Function {name} has type {expected}, but it is used as {found}")]
+    FuncTypeMismatch {
+        name: String,
+        expected: String,
+        found: String,
+    },
+}
+
+/// Verify that `name` refers to an `F : used_as_ty`.
+pub fn verify_func_symbol_use<F: Op + Typed>(
+    ctx: &Context,
+    user: &dyn Op,
+    symbol_tables: &mut SymbolTableCollection,
+    name: &Identifier,
+    used_as_ty: TypeHandle,
+) -> Result<()> {
+    let loc = user.loc(ctx);
+    let Some(symbol) =
+        symbol_tables.lookup_symbol_in_nearest_table(ctx, user.get_operation(), name)
+    else {
+        return verify_err!(
+            loc,
+            FuncSymbolUseVerifyErr::SymbolNotFound(name.to_string())
+        );
+    };
+    let Some(func_op) = (&*symbol as &dyn Op).downcast_ref::<F>() else {
+        return verify_err!(
+            loc,
+            FuncSymbolUseVerifyErr::NotFunc(name.to_string(), F::get_opid_static().to_string())
+        );
+    };
+    let func_ty = Typed::get_type(func_op, ctx);
+    if func_ty != used_as_ty {
+        return verify_err!(
+            loc,
+            FuncSymbolUseVerifyErr::FuncTypeMismatch {
+                name: name.to_string(),
+                expected: func_ty.disp(ctx).to_string(),
+                found: used_as_ty.disp(ctx).to_string(),
+            }
+        );
+    }
+    Ok(())
+}
+
 #[derive(Error, Debug)]
 #[error("Expected {0} result(s), but found {1} results")]
 pub struct NResultsVerifyErr(pub usize, pub usize);
@@ -2119,37 +2181,13 @@ pub enum CallOpCallable {
     Indirect(Value),
 }
 
-#[derive(Error, Debug)]
-pub enum CallOpInterfaceErr {
-    #[error("Callee type attribute not found")]
-    CalleeTypeAttrNotFoundErr,
-    #[error("Callee type attribute must impl FunctionTypeInterface")]
-    CalleeTypeAttrIncorrectTypeErr,
-}
-
-dict_key!(ATTR_KEY_CALLEE_TYPE, "builtin_callee_type");
-
 /// A call-like op: Transfers control from one function to another.
-/// See MLIR's [CallOpInterface](https://mlir.llvm.org/docs/Interfaces/#callinterfaces).
-///
-/// ### Attribute(s):
-///
-/// | Name | Static Name Identifier | Type |
-/// |------|------------------------| -----|
-/// | builtin_callee_type | [ATTR_KEY_CALLEE_TYPE] | [TypeAttr] |
 #[op_interface]
 pub trait CallOpInterface {
-    fn verify(op: &dyn Op, ctx: &Context) -> Result<()>
+    fn verify(_op: &dyn Op, _ctx: &Context) -> Result<()>
     where
         Self: Sized,
     {
-        let op = op.get_operation().deref(ctx);
-        let Some(callee_type_attr) = op.attributes.get::<TypeAttr>(&ATTR_KEY_CALLEE_TYPE) else {
-            return verify_err!(op.loc(), CallOpInterfaceErr::CalleeTypeAttrNotFoundErr);
-        };
-        if !type_impls::<dyn FunctionTypeInterface>(&*callee_type_attr.get_type(ctx).deref(ctx)) {
-            return verify_err!(op.loc(), CallOpInterfaceErr::CalleeTypeAttrIncorrectTypeErr);
-        }
         Ok(())
     }
 
@@ -2170,23 +2208,7 @@ pub trait CallOpInterface {
     }
 
     /// Type of the callee
-    fn callee_type(&self, ctx: &Context) -> TypeHandle {
-        let self_op = self.get_operation().deref(ctx);
-        self_op
-            .attributes
-            .get::<TypeAttr>(&ATTR_KEY_CALLEE_TYPE)
-            .unwrap()
-            .get_type(ctx)
-    }
-
-    /// Set callee type
-    fn set_callee_type(&self, ctx: &mut Context, callee_ty: TypeHandle) {
-        let mut self_op = self.get_operation().deref_mut(ctx);
-        let ty_attr = TypeAttr::new(callee_ty);
-        self_op
-            .attributes
-            .set(ATTR_KEY_CALLEE_TYPE.clone(), ty_attr);
-    }
+    fn callee_type(&self, ctx: &Context) -> TypeInterfaceHandle<dyn FunctionTypeInterface>;
 }
 
 #[cfg(test)]

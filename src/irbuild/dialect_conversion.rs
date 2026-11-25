@@ -117,12 +117,14 @@ pub trait DialectConversion {
     /// Should this operation be converted?
     fn can_convert_op(&self, ctx: &Context, op: Ptr<Operation>) -> bool;
 
-    /// Should this type be converted?
+    /// Should a value's type `ty` be converted?
     fn can_convert_type(&self, _ctx: &Context, _ty: TypeHandle) -> bool {
         false
     }
 
-    /// Convert the type and return the converted type.
+    /// Convert a value's type `ty` and return the converted type.
+    ///
+    /// Called only when [Self::can_convert_type] returns true for `ty`.
     fn convert_type(&mut self, _ctx: &mut Context, ty: TypeHandle) -> Result<TypeHandle> {
         Ok(ty)
     }

@@ -5,10 +5,12 @@
 
 use super::{
     attr_interfaces::TypedAttrInterface,
-    attributes::TypeAttr,
+    attributes::{IdentifierAttr, TypeAttr},
     op_interfaces::{
-        self, IsolatedFromAboveInterface, NOpdsInterface, OneRegionInterface, OneResultInterface,
-        SingleBlockRegionInterface, SymbolOpInterface, SymbolTableInterface,
+        self, AtLeastNOpdsInterface, CallOpCallable, CallOpInterface, IsTerminatorInterface,
+        IsolatedFromAboveInterface, NOpdsInterface, OneRegionInterface, OneResultInterface,
+        SingleBlockRegionInterface, SymbolOpInterface, SymbolTableInterface, SymbolUserOpInterface,
+        verify_func_symbol_use, verify_types_match,
     },
     types::{FunctionType, UnitType},
 };
@@ -30,18 +32,25 @@ use crate::{
     identifier::Identifier,
     input_err,
     irfmt::{
-        parsers::{spaced, type_parser},
-        printers::op::{region, symb_op_header, typed_symb_op_header},
+        parsers::{
+            delimited_list_parser, process_parsed_ssa_defs, spaced, ssa_opd_parser, type_parser,
+        },
+        printers::{
+            list_with_sep,
+            op::{region, symb_op_header, typed_symb_op_header},
+        },
     },
     linked_list::ContainsLinkedList,
     location::Location,
     op::{Op, OpObj},
     operation::Operation,
-    parsable::{Parsable, ParseResult, StateStream, StreamLocation},
-    printable::{self, Printable, indented_nl},
+    parsable::{IntoParseResult, Parsable, ParseResult, StateStream, StreamLocation},
+    printable::{self, ListSeparator, Printable, indented_nl},
     region::Region,
     result::Result,
-    r#type::{TypeHandle, Typed, TypedHandle},
+    symbol_table::SymbolTableCollection,
+    r#type::{TypeHandle, TypeInterfaceHandle, TypeSig, Typed, TypedHandle},
+    value::Value,
     verify_err,
 };
 use alloc::{
@@ -50,13 +59,12 @@ use alloc::{
     vec,
     vec::Vec,
 };
-use core::cell::Ref;
+use core::{cell::Ref, ops::Range};
 use pliron::derive::{op_interface_impl, pliron_op};
 use thiserror::Error;
 
 /// Represents a module, a top level container operation.
 ///
-/// See MLIR's [builtin.module](https://mlir.llvm.org/docs/Dialects/Builtin/#builtinmodule-mlirmoduleop).
 /// It contains a single [Graph](super::op_interfaces::RegionKind::Graph)
 /// region containing a single block which can contain any operations and
 /// does not have a terminator.
@@ -158,7 +166,6 @@ impl ModuleOp {
 }
 
 /// An operation with a name containing a single SSA control-flow-graph region.
-/// See MLIR's [func.func](https://mlir.llvm.org/docs/Dialects/Func/#funcfunc-mlirfuncfuncop).
 #[pliron_op(
     name = "builtin.func",
     interfaces = [
@@ -288,7 +295,388 @@ impl Verify for FuncOp {
         if !is_fn_type {
             return verify_err!(self.loc(ctx), FuncOpTypeErr);
         }
+        let Some(entry) = self.get_region(ctx).deref(ctx).get_head() else {
+            return Ok(());
+        };
+        verify_types_match(
+            ctx,
+            self.loc(ctx),
+            entry.deref(ctx).arguments(),
+            self.get_type(ctx).deref(ctx).arg_types(),
+        )
+    }
+}
+
+/// Terminates function execution and returns the function's results.
+///
+/// ### Operands
+///
+/// | operand | description |
+/// |-----|-------|
+/// | `operands` | return values, one per result of the parent function |
+#[pliron_op(
+    name = "builtin.return",
+    format = "operands(CharSpace(`,`))",
+    interfaces = [IsTerminatorInterface, NResultsInterface<0>],
+)]
+pub struct ReturnOp;
+
+impl ReturnOp {
+    /// Create a new [ReturnOp], returning `values`.
+    pub fn new(ctx: &mut Context, values: Vec<Value>) -> Self {
+        Operation::new_op::<Self>(ctx, vec![], values, vec![], 0)
+    }
+}
+
+/// Build [FunctionType] from the argument and result types of `call`.
+fn derived_callee_type(
+    ctx: &Context,
+    call: &dyn CallOpInterface,
+) -> TypeInterfaceHandle<dyn FunctionTypeInterface> {
+    let arg_types = call.args(ctx).iter().map(|arg| arg.get_type(ctx)).collect();
+    let res_types = call.get_operation().deref(ctx).result_types().collect();
+    FunctionType::get(ctx, arg_types, res_types).into()
+}
+
+impl Verify for ReturnOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let Some(func_op) = self
+            .get_operation()
+            .deref(ctx)
+            .get_parent_op(ctx)
+            .and_then(|parent| Operation::get_op::<FuncOp>(parent, ctx))
+        else {
+            // We're not inside a `builtin.func`, so can't verify the operand types.
+            return Ok(());
+        };
+        let Some(func_ty) = func_op
+            .get_attr_builtin_func_type(ctx)
+            .map(|ty_attr| TypedAttrInterface::get_type(&*ty_attr, ctx))
+            .and_then(|ty| TypedHandle::<FunctionType>::from_handle(ty, ctx).ok())
+        else {
+            // Let the function verifier report the missing `FunctionType` on it.
+            return Ok(());
+        };
+        let res_types = func_ty.deref(ctx).res_types();
+        verify_types_match(
+            ctx,
+            self.loc(ctx),
+            self.get_operation().deref(ctx).operands(),
+            res_types,
+        )
+    }
+}
+
+/// Direct call to a [FuncOp].
+///
+/// ### Attributes
+///
+/// | key | value |
+/// |-----|-------|
+/// | `builtin_call_callee` | [IdentifierAttr] naming the callee |
+///
+/// ### Operands
+///
+/// | operand | description |
+/// |-----|-------|
+/// | `args` | one value per argument of the callee |
+///
+/// ### Results
+///
+/// | result | description |
+/// |-----|-------|
+/// | `results` | one value per result of the callee |
+#[pliron_op(
+    name = "builtin.call",
+    format = "`@` attr($builtin_call_callee, $IdentifierAttr) ` (` operands(CharSpace(`,`)) `) : ` typesig",
+    attributes = (builtin_call_callee: IdentifierAttr),
+)]
+pub struct CallOp;
+
+impl CallOp {
+    /// Create a new [CallOp] to call `callee : callee_ty`, passing `args`.
+    pub fn new(
+        ctx: &mut Context,
+        callee: Identifier,
+        callee_ty: TypedHandle<FunctionType>,
+        args: Vec<Value>,
+    ) -> Self {
+        let res_types = callee_ty.deref(ctx).res_types();
+        let op = Operation::new_op::<Self>(ctx, res_types, args, vec![], 0);
+        op.set_attr_builtin_call_callee(ctx, IdentifierAttr::new(callee));
+        op
+    }
+
+    /// Get callee's symbol name.
+    pub fn get_callee_name(&self, ctx: &Context) -> Identifier {
+        self.get_attr_builtin_call_callee(ctx)
+            .expect("builtin.call must have a callee")
+            .clone()
+            .into()
+    }
+}
+
+#[op_interface_impl]
+impl CallOpInterface for CallOp {
+    fn callee(&self, ctx: &Context) -> CallOpCallable {
+        CallOpCallable::Direct(self.get_callee_name(ctx))
+    }
+
+    fn arg_range(&self, ctx: &Context) -> Range<usize> {
+        0..self.get_operation().deref(ctx).get_num_operands()
+    }
+
+    fn callee_type(&self, ctx: &Context) -> TypeInterfaceHandle<dyn FunctionTypeInterface> {
+        derived_callee_type(ctx, self)
+    }
+}
+
+#[op_interface_impl]
+impl SymbolUserOpInterface for CallOp {
+    fn verify_symbol_uses(
+        &self,
+        ctx: &Context,
+        symbol_tables: &mut SymbolTableCollection,
+    ) -> Result<()> {
+        verify_func_symbol_use::<FuncOp>(
+            ctx,
+            self,
+            symbol_tables,
+            &self.get_callee_name(ctx),
+            self.callee_type(ctx).to_handle(),
+        )
+    }
+
+    fn used_symbols(&self, ctx: &Context) -> Vec<Identifier> {
+        vec![self.get_callee_name(ctx)]
+    }
+}
+
+#[derive(Error, Debug)]
+#[error("builtin.call must have a callee symbol")]
+pub struct CallOpNoCalleeErr;
+
+impl Verify for CallOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        if self.get_attr_builtin_call_callee(ctx).is_none() {
+            return verify_err!(self.loc(ctx), CallOpNoCalleeErr);
+        }
         Ok(())
+    }
+}
+
+/// Indirect call to a function value.
+///
+/// A function value typically comes from a [FuncConstantOp].
+///
+/// ### Operands
+///
+/// | operand | description |
+/// |-----|-------|
+/// | `callee` | value of [FunctionType] |
+/// | `args` | one value per argument of the callee |
+///
+/// ### Results
+///
+/// | result | description |
+/// |-----|-------|
+/// | `results` | one value per result of the callee |
+#[pliron_op(
+    name = "builtin.indirect_call",
+    interfaces = [AtLeastNOpdsInterface<1>],
+)]
+pub struct IndirectCallOp;
+
+impl IndirectCallOp {
+    /// Create a new [IndirectCallOp] to call `callee` with `args`.
+    pub fn new(ctx: &mut Context, callee: Value, args: Vec<Value>) -> Self {
+        let callee_ty = TypedHandle::<FunctionType>::from_handle(callee.get_type(ctx), ctx)
+            .expect("callee of builtin.indirect_call must have a function type");
+        Self::new_with_type(ctx, callee, callee_ty, args)
+    }
+
+    fn new_with_type(
+        ctx: &mut Context,
+        callee: Value,
+        callee_ty: TypedHandle<FunctionType>,
+        mut args: Vec<Value>,
+    ) -> Self {
+        let res_types = callee_ty.deref(ctx).res_types();
+        args.insert(0, callee);
+        Operation::new_op::<Self>(ctx, res_types, args, vec![], 0)
+    }
+
+    /// Get the called function value.
+    pub fn get_callee(&self, ctx: &Context) -> Value {
+        self.get_operation().deref(ctx).get_operand(0)
+    }
+}
+
+#[op_interface_impl]
+impl CallOpInterface for IndirectCallOp {
+    fn callee(&self, ctx: &Context) -> CallOpCallable {
+        CallOpCallable::Indirect(self.get_callee(ctx))
+    }
+
+    fn arg_range(&self, ctx: &Context) -> Range<usize> {
+        1..self.get_operation().deref(ctx).get_num_operands()
+    }
+
+    fn callee_type(&self, ctx: &Context) -> TypeInterfaceHandle<dyn FunctionTypeInterface> {
+        derived_callee_type(ctx, self)
+    }
+}
+
+impl Verify for IndirectCallOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        let callee_ty = self.callee_type(ctx);
+        verify_types_match(
+            ctx,
+            self.loc(ctx),
+            [self.get_callee(ctx)],
+            [callee_ty.to_handle()],
+        )
+    }
+}
+
+impl Printable for IndirectCallOp {
+    fn fmt(
+        &self,
+        ctx: &Context,
+        state: &printable::State,
+        f: &mut core::fmt::Formatter<'_>,
+    ) -> core::fmt::Result {
+        let results = self
+            .get_operation()
+            .deref(ctx)
+            .results()
+            .collect::<Vec<_>>();
+        if !results.is_empty() {
+            write!(
+                f,
+                "{} = ",
+                list_with_sep(&results, ListSeparator::CharSpace(',')).print(ctx, state)
+            )?;
+        }
+        let callee_sig = self.callee_type(ctx).deref(ctx).type_sig();
+        write!(
+            f,
+            "{} {} ({}) : {}",
+            self.get_opid(),
+            self.get_callee(ctx).print(ctx, state),
+            list_with_sep(&self.args(ctx), ListSeparator::CharSpace(',')).print(ctx, state),
+            callee_sig.print(ctx, state)
+        )
+    }
+}
+
+impl Parsable for IndirectCallOp {
+    type Arg = Vec<(Identifier, Location)>;
+    type Parsed = OpObj;
+
+    fn parse<'a>(
+        state_stream: &mut StateStream<'a>,
+        results: Self::Arg,
+    ) -> ParseResult<'a, Self::Parsed> {
+        let mut parser = (
+            spaced(ssa_opd_parser()),
+            spaced(delimited_list_parser('(', ')', ',', ssa_opd_parser())),
+            spaced(token(':')).with(TypeSig::parser(())),
+        )
+            .then(move |(callee, args, callee_sig)| {
+                let results = results.clone();
+                combine::parser(move |state_stream: &mut StateStream<'a>| {
+                    let ctx = &mut state_stream.state.ctx;
+                    let callee_ty = FunctionType::get_from_sig(ctx, callee_sig.clone());
+                    let op = IndirectCallOp::new_with_type(ctx, callee, callee_ty, args.clone());
+                    process_parsed_ssa_defs(state_stream, &results, op.get_operation())?;
+                    Ok(OpObj::new(op)).into_parse_result()
+                })
+            });
+        parser.parse_stream(state_stream).into_result()
+    }
+}
+
+/// Build an SSA value referring to a [FuncOp] using its symbol.
+///
+/// ### Attributes
+///
+/// | key | value |
+/// |-----|-------|
+/// | `builtin_func_constant_callee` | [IdentifierAttr] naming the function |
+///
+/// ### Results
+///
+/// | result | description |
+/// |-----|-------|
+/// | `result` | [FunctionType] of the named function |
+#[pliron_op(
+    name = "builtin.func_constant",
+    format = "`@` attr($builtin_func_constant_callee, $IdentifierAttr) ` : ` type($0)",
+    interfaces = [NOpdsInterface<0>, OneResultInterface],
+    attributes = (builtin_func_constant_callee: IdentifierAttr),
+)]
+pub struct FuncConstantOp;
+
+impl FuncConstantOp {
+    /// Create a new [FuncConstantOp] referring to `callee : callee_ty`.
+    pub fn new(
+        ctx: &mut Context,
+        callee: Identifier,
+        callee_ty: TypedHandle<FunctionType>,
+    ) -> Self {
+        let op = Operation::new_op::<Self>(ctx, vec![callee_ty.into()], vec![], vec![], 0);
+        op.set_attr_builtin_func_constant_callee(ctx, IdentifierAttr::new(callee));
+        op
+    }
+
+    /// Get the function's symbol name.
+    pub fn get_callee_name(&self, ctx: &Context) -> Identifier {
+        self.get_attr_builtin_func_constant_callee(ctx)
+            .expect("builtin.func_constant must have a callee")
+            .clone()
+            .into()
+    }
+}
+
+#[derive(Error, Debug)]
+pub enum FuncConstantOpVerifyErr {
+    #[error("builtin.func_constant must have a callee symbol")]
+    NoCallee,
+    #[error("Result of builtin.func_constant must have a function type")]
+    NotFunctionType,
+}
+
+impl Verify for FuncConstantOp {
+    fn verify(&self, ctx: &Context) -> Result<()> {
+        if self.get_attr_builtin_func_constant_callee(ctx).is_none() {
+            return verify_err!(self.loc(ctx), FuncConstantOpVerifyErr::NoCallee);
+        }
+        if !self.result_type(ctx).deref(ctx).is::<FunctionType>() {
+            return verify_err!(self.loc(ctx), FuncConstantOpVerifyErr::NotFunctionType);
+        }
+        Ok(())
+    }
+}
+
+#[op_interface_impl]
+impl SymbolUserOpInterface for FuncConstantOp {
+    fn verify_symbol_uses(
+        &self,
+        ctx: &Context,
+        symbol_tables: &mut SymbolTableCollection,
+    ) -> Result<()> {
+        verify_func_symbol_use::<FuncOp>(
+            ctx,
+            self,
+            symbol_tables,
+            &self.get_callee_name(ctx),
+            self.result_type(ctx),
+        )
+    }
+
+    fn used_symbols(&self, ctx: &Context) -> Vec<Identifier> {
+        vec![self.get_callee_name(ctx)]
     }
 }
 

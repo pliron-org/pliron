@@ -128,20 +128,27 @@ impl FunctionType {
         arguments: Vec<TypeHandle>,
         results: Vec<TypeHandle>,
     ) -> TypedHandle<Self> {
-        FunctionType::instantiate(FunctionType(TypeSig { arguments, results }), ctx)
+        Self::get_from_sig(ctx, TypeSig { arguments, results })
+    }
+
+    /// Get a Function type with signature `sig`.
+    pub fn get_from_sig(ctx: &Context, sig: TypeSig) -> TypedHandle<Self> {
+        FunctionType::instantiate(FunctionType(sig), ctx)
     }
 }
 
 #[type_interface_impl]
 impl FunctionTypeInterface for FunctionType {
-    /// Get a reference to the function input / argument types.
     fn arg_types(&self) -> Vec<TypeHandle> {
         self.0.arguments.clone()
     }
 
-    /// Get a reference to the function result / output types.
     fn res_types(&self) -> Vec<TypeHandle> {
         self.0.results.clone()
+    }
+
+    fn type_sig(&self) -> TypeSig {
+        self.0.clone()
     }
 }
 

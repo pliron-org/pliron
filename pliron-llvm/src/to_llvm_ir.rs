@@ -1387,7 +1387,12 @@ impl ToLLVMValue for CallOp {
             .into_iter()
             .map(|v| convert_value_operand(cctx, ctx, &v))
             .collect::<Result<_>>()?;
-        let ty = convert_type(ctx, llvm_ctx, &mut cctx.types, self.callee_type(ctx))?;
+        let ty = convert_type(
+            ctx,
+            llvm_ctx,
+            &mut cctx.types,
+            self.callee_type(ctx).to_handle(),
+        )?;
         let res = self.get_result(ctx);
         let unique_name;
         let name = if res.get_type(ctx).deref(ctx).is::<VoidType>() {
