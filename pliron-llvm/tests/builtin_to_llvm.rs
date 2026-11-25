@@ -129,3 +129,109 @@ fn builtin_unit_func_converts_to_llvm_void_func() -> Result<()> {
 
     Ok(())
 }
+
+#[test]
+fn builtin_call_and_return_convert_to_llvm() -> Result<()> {
+    let input = r#"
+        builtin.module @m {
+        ^block_0_0():
+          builtin.func @add: builtin.function <(builtin.integer i64, builtin.integer i64) -> (builtin.integer i64)> {
+          ^entry_block_1_0(a: builtin.integer i64, b: builtin.integer i64):
+            sum = llvm.add a, b <{nsw=false,nuw=false}> : builtin.integer i64;
+            builtin.return sum
+          };
+          builtin.func @sink: builtin.function <(builtin.integer i64) -> ()> {
+          ^entry_block_2_0(x: builtin.integer i64):
+            builtin.return
+          };
+          builtin.func @main: builtin.function <(builtin.integer i64) -> (builtin.integer i64)> {
+          ^entry_block_3_0(n: builtin.integer i64):
+            r = builtin.call @add (n, n) : (builtin.integer i64, builtin.integer i64) -> (builtin.integer i64);
+            builtin.call @sink (r) : (builtin.integer i64) -> ();
+            builtin.return r
+          }
+        }
+    "#;
+
+    let after = run_conversion_pipeline(input)?;
+
+    expect![[r#"
+        ; ModuleID = 'm'
+        source_filename = "m"
+
+        define i64 @add(i64 %0, i64 %1) {
+        entry_block_1_0_block2v1:
+          %sum_v2 = add i64 %0, %1
+          ret i64 %sum_v2
+        }
+
+        define void @sink(i64 %0) {
+        entry_block_2_0_block3v1:
+          ret void
+        }
+
+        define i64 @main(i64 %0) {
+        entry_block_3_0_block4v1:
+          %r_v6 = call i64 @add(i64 %0, i64 %0)
+          call void @sink(i64 %r_v6)
+          ret i64 %r_v6
+        }
+    "#]]
+    .assert_eq(&after);
+
+    Ok(())
+}
+
+#[test]
+fn builtin_func_constant_and_indirect_call_convert_to_llvm() -> Result<()> {
+    let input = r#"
+        builtin.module @m {
+        ^block_0_0():
+          builtin.func @inc: builtin.function <(builtin.integer i64) -> (builtin.integer i64)> {
+          ^entry_block_1_0(a: builtin.integer i64):
+            one = builtin.constant <builtin.integer <1: i64>> : builtin.integer i64;
+            sum = llvm.add a, one <{nsw=false,nuw=false}> : builtin.integer i64;
+            builtin.return sum
+          };
+          builtin.func @apply: builtin.function <(builtin.function <(builtin.integer i64) -> (builtin.integer i64)>, builtin.integer i64) -> (builtin.integer i64)> {
+          ^entry_block_2_0(f: builtin.function <(builtin.integer i64) -> (builtin.integer i64)>, x: builtin.integer i64):
+            r = builtin.indirect_call f (x) : (builtin.integer i64) -> (builtin.integer i64);
+            builtin.return r
+          };
+          builtin.func @main: builtin.function <(builtin.integer i64) -> (builtin.integer i64)> {
+          ^entry_block_3_0(n: builtin.integer i64):
+            f = builtin.func_constant @inc : builtin.function <(builtin.integer i64) -> (builtin.integer i64)>;
+            r = builtin.call @apply (f, n) : (builtin.function <(builtin.integer i64) -> (builtin.integer i64)>, builtin.integer i64) -> (builtin.integer i64);
+            builtin.return r
+          }
+        }
+    "#;
+
+    let after = run_conversion_pipeline(input)?;
+
+    expect![[r#"
+        ; ModuleID = 'm'
+        source_filename = "m"
+
+        define i64 @inc(i64 %0) {
+        entry_block_1_0_block2v1:
+          %sum_v2 = add i64 %0, 1
+          ret i64 %sum_v2
+        }
+
+        define i64 @apply(ptr %0, i64 %1) {
+        entry_block_2_0_block3v1:
+          %r_v10 = call i64 %0(i64 %1)
+          ret i64 %r_v10
+        }
+
+        define i64 @main(i64 %0) {
+        entry_block_3_0_block4v1:
+          %r_v12 = call i64 @apply(ptr @inc, i64 %0)
+          ret i64 %r_v12
+        }
+    "#]]
+    .assert_eq(&after);
+
+    Ok(())
+}

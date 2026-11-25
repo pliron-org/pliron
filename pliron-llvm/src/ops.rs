@@ -26,6 +26,7 @@ use pliron::{
             OneOpdInterface, OneResultInterface, OneSuccInterface, OperandSegmentInterface,
             OperandsMNOfType, OptionalOpdInterface, SameOperandsAndResultType, SameOperandsType,
             SameResultsType, SingleBlockRegionInterface, SymbolOpInterface, SymbolUserOpInterface,
+            verify_func_symbol_use, verify_types_match,
         },
         type_interfaces::{FloatTypeInterface, FunctionTypeInterface},
         types::{IntegerType, Signedness},
@@ -54,7 +55,7 @@ use pliron::{
     region::Region,
     result::{Error, ErrorKind, Result},
     symbol_table::SymbolTableCollection,
-    r#type::{TypeHandle, TypedHandle, type_cast},
+    r#type::{TypeHandle, TypeInterfaceHandle, TypedHandle, type_cast},
     utils::{apint::APInt, const_bound_n::I, vec_exns::VecExtns},
     value::Value,
     verify_err, verify_error,
@@ -2124,7 +2125,7 @@ impl InlineAsmOp {
     }
 }
 
-/// Equivalent to LLVM's Store opcode.
+/// Equivalent to LLVM's Call opcode.
 ///
 /// ### Operands
 /// | operand | description |
@@ -2141,6 +2142,7 @@ impl InlineAsmOp {
     interfaces = [OneResultInterface],
     attributes = (
         llvm_call_callee: IdentifierAttr,
+        llvm_call_callee_type: TypeAttr,
         llvm_call_fastmath_flags: FastmathFlagsAttr,
         llvm_call_attrs: LlvmAttributesAttr
     )
@@ -2167,7 +2169,7 @@ impl CallOp {
                 Operation::new_op::<Self>(ctx, vec![res_ty], args, vec![], 0)
             }
         };
-        op.set_callee_type(ctx, callee_ty.into());
+        op.set_attr_llvm_call_callee_type(ctx, TypeAttr::new(callee_ty.into()));
         op
     }
 }
@@ -2176,8 +2178,6 @@ impl CallOp {
 pub enum SymbolUserOpVerifyErr {
     #[error("Symbol {0} not found")]
     SymbolNotFound(String),
-    #[error("Function {0} should have been llvm.func type")]
-    NotLlvmFunc(String),
     #[error("AddressOf Op can only refer to a function or a global variable")]
     AddressOfInvalidReference,
     #[error("Function call has incorrect type: {0}")]
@@ -2192,36 +2192,13 @@ impl SymbolUserOpInterface for CallOp {
         symbol_tables: &mut SymbolTableCollection,
     ) -> Result<()> {
         match self.callee(ctx) {
-            CallOpCallable::Direct(callee_sym) => {
-                let Some(callee) = symbol_tables.lookup_symbol_in_nearest_table(
-                    ctx,
-                    self.get_operation(),
-                    &callee_sym,
-                ) else {
-                    return verify_err!(
-                        self.loc(ctx),
-                        SymbolUserOpVerifyErr::SymbolNotFound(callee_sym.to_string())
-                    );
-                };
-                let Some(func_op) = (&*callee as &dyn Op).downcast_ref::<FuncOp>() else {
-                    return verify_err!(
-                        self.loc(ctx),
-                        SymbolUserOpVerifyErr::NotLlvmFunc(callee_sym.to_string())
-                    );
-                };
-                let func_op_ty = func_op.get_type(ctx);
-
-                if func_op_ty.to_handle() != self.callee_type(ctx) {
-                    return verify_err!(
-                        self.loc(ctx),
-                        SymbolUserOpVerifyErr::FuncTypeErr(format!(
-                            "expected {}, got {}",
-                            func_op_ty.disp(ctx),
-                            self.callee_type(ctx).disp(ctx)
-                        ))
-                    );
-                }
-            }
+            CallOpCallable::Direct(callee_sym) => verify_func_symbol_use::<FuncOp>(
+                ctx,
+                self,
+                symbol_tables,
+                &callee_sym,
+                self.callee_type(ctx).to_handle(),
+            )?,
             CallOpCallable::Indirect(pointer) => {
                 use pliron::r#type::Typed;
                 if !pointer.get_type(ctx).deref(ctx).is::<PointerType>() {
@@ -2266,6 +2243,15 @@ impl CallOpInterface for CallOp {
             1
         };
         skip..self.get_operation().deref(ctx).get_num_operands()
+    }
+
+    fn callee_type(&self, ctx: &Context) -> TypeInterfaceHandle<dyn FunctionTypeInterface> {
+        let callee_ty = self
+            .get_attr_llvm_call_callee_type(ctx)
+            .expect("llvm.call must have a callee type")
+            .get_type(ctx);
+        TypeInterfaceHandle::from_handle(callee_ty, ctx)
+            .expect("llvm.call's callee type must be a function type")
     }
 }
 
@@ -2351,8 +2337,17 @@ impl Parsable for CallOp {
 
 impl Verify for CallOp {
     fn verify(&self, ctx: &Context) -> Result<()> {
+        let Some(callee_ty) = self
+            .get_attr_llvm_call_callee_type(ctx)
+            .map(|ty_attr| pliron::r#type::Typed::get_type(&*ty_attr, ctx))
+        else {
+            return verify_err!(
+                self.loc(ctx),
+                SymbolUserOpVerifyErr::FuncTypeErr("Callee type not found".to_string())
+            );
+        };
         // Check that the argument and result types match the callee type.
-        let callee_ty = &*self.callee_type(ctx).deref(ctx);
+        let callee_ty = &*callee_ty.deref(ctx);
         let Some(callee_ty) = callee_ty.downcast_ref::<FuncType>() else {
             return verify_err!(
                 self.loc(ctx),
@@ -4711,7 +4706,15 @@ impl Verify for FuncOp {
         if !is_func_type {
             return verify_err!(self.loc(ctx), FuncOpTypeErr);
         }
-        Ok(())
+        let Some(entry) = self.get_entry_block(ctx) else {
+            return Ok(());
+        };
+        verify_types_match(
+            ctx,
+            self.loc(ctx),
+            entry.deref(ctx).arguments(),
+            self.get_type(ctx).deref(ctx).arg_types(),
+        )
     }
 }
 
