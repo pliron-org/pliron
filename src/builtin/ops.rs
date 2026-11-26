@@ -65,6 +65,7 @@ use thiserror::Error;
 
 /// Represents a module, a top level container operation.
 ///
+/// See MLIR's [builtin.module](https://mlir.llvm.org/docs/Dialects/Builtin/#builtinmodule-moduleop).
 /// It contains a single [Graph](super::op_interfaces::RegionKind::Graph)
 /// region containing a single block which can contain any operations and
 /// does not have a terminator.
@@ -166,6 +167,8 @@ impl ModuleOp {
 }
 
 /// An operation with a name containing a single SSA control-flow-graph region.
+///
+/// See MLIR's [func.func](https://mlir.llvm.org/docs/Dialects/Func/#funcfunc-funcfuncop).
 #[pliron_op(
     name = "builtin.func",
     interfaces = [
@@ -309,6 +312,8 @@ impl Verify for FuncOp {
 
 /// Terminates function execution and returns the function's results.
 ///
+/// See MLIR's [func.return](https://mlir.llvm.org/docs/Dialects/Func/#funcreturn-funcreturnop).
+///
 /// ### Operands
 ///
 /// | operand | description |
@@ -368,6 +373,8 @@ impl Verify for ReturnOp {
 }
 
 /// Direct call to a [FuncOp].
+///
+/// See MLIR's [func.call](https://mlir.llvm.org/docs/Dialects/Func/#funccall-funccallop).
 ///
 /// ### Attributes
 ///
@@ -466,6 +473,8 @@ impl Verify for CallOp {
 }
 
 /// Indirect call to a function value.
+///
+/// See MLIR's [func.call_indirect](https://mlir.llvm.org/docs/Dialects/Func/#funccall_indirect-funccallindirectop).
 ///
 /// A function value typically comes from a [FuncConstantOp].
 ///
@@ -598,6 +607,8 @@ impl Parsable for IndirectCallOp {
 }
 
 /// Build an SSA value referring to a [FuncOp] using its symbol.
+///
+/// See MLIR's [func.constant](https://mlir.llvm.org/docs/Dialects/Func/#funcconstant-funcconstantop).
 ///
 /// ### Attributes
 ///
