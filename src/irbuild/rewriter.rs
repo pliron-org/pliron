@@ -52,12 +52,14 @@ pub trait Rewriter: Inserter {
     /// Get a mutable reference to the configuration for this rewriter.
     fn get_config_mut(&mut self) -> &mut RewriterConfig;
 
-    /// Replace an [Operation] (and delete it) with another operation.
-    /// Results of the new operation must match the results of the old operation.
+    /// Replace (and erase) `op` with `new_op`.
+    ///
+    /// Results of `new_op` must match the results of `op`.
     fn replace_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>, new_op: Ptr<Operation>);
 
-    /// Replace an [Operation] (and delete it) with a list of values.
-    /// Results of the new operation must match the list of values.
+    /// Replace (and erase) `op` with `new_values`.
+    ///
+    /// `new_values` must match the results of `op`.
     fn replace_operation_with_values(
         &mut self,
         ctx: &mut Context,
@@ -65,34 +67,36 @@ pub trait Rewriter: Inserter {
         new_values: Vec<Value>,
     );
 
-    /// Replace all uses of a [Value] with another value.
+    /// Replace all uses of `old_value` with `new_value`.
     fn replace_value_uses_with(&mut self, ctx: &Context, old_value: Value, new_value: Value);
 
-    /// Erase an [Operation]. The operation must have no uses.
+    /// Erase `op`. It must not have any uses.
     fn erase_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>);
 
-    /// Notify that an [Operation] was modified in place.
+    /// Notify that `op` was modified in place.
     fn notify_operation_modified(&mut self, ctx: &Context, op: Ptr<Operation>);
 
-    /// Erase a [BasicBlock]. The block must have no uses.
+    /// Erase `block`. It must not have any uses.
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>);
 
-    /// Erase a [Region]. Affects the index of all regions after it.
+    /// Erase `region`. The index of all regions after it are affected.
     fn erase_region(&mut self, ctx: &mut Context, region: Ptr<Region>);
 
-    /// Unlink an [Operation] from its current position
+    /// Unlink `op` from its current position.
     fn unlink_operation(&mut self, ctx: &Context, op: Ptr<Operation>);
 
-    /// Unlink a [BasicBlock] from its current position
+    /// Unlink `block` from its current position.
     fn unlink_block(&mut self, ctx: &Context, block: Ptr<BasicBlock>);
 
-    /// Move an [Operation] to a new insertion point.
+    /// Move `op` to `new_point`.
     fn move_operation(&mut self, ctx: &Context, op: Ptr<Operation>, new_point: OpInsertionPoint);
 
-    /// Move a [BasicBlock] to a new insertion point.
+    /// Move `block` to `new_point`.
     fn move_block(&mut self, ctx: &Context, block: Ptr<BasicBlock>, new_point: BlockInsertionPoint);
 
-    /// Split a [BasicBlock] at the given position.
+    /// Split `block` at `position` and return the newly created block.
+    ///
+    /// The caller must insert a terminator as necessary.
     fn split_block(
         &mut self,
         ctx: &mut Context,
@@ -101,9 +105,10 @@ pub trait Rewriter: Inserter {
         new_block_label: Option<Identifier>,
     ) -> Ptr<BasicBlock>;
 
-    /// Inline a [Region] into another [Region] at the given insertion point.
-    /// The source region will be empty after this operation. The caller must
-    /// take care of transferring control flow and arguments as necessary.
+    /// Inline `src_region` at `dest_insertion_point`.
+    ///
+    /// - `src_region` will be empty after this operation.
+    /// - The caller must handle control flow transfers and arguments.
     fn inline_region(
         &mut self,
         ctx: &Context,
@@ -152,7 +157,7 @@ pub trait Rewriter: Inserter {
         self.erase_block(ctx, source);
     }
 
-    /// Change the type of a [Value].
+    /// Change the type of `value` to `new_type`.
     fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: TypeHandle);
 
     /// Has the IR been modified via this rewriter?
@@ -405,6 +410,10 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
         position: OpInsertionPoint,
         new_block_label: Option<Identifier>,
     ) -> Ptr<BasicBlock> {
+        assert!(
+            position.get_insertion_block(ctx) == Some(block),
+            "Split position must be in the block being split."
+        );
         // `create_block` below sets the insert point to the new block, so we save and restore it.
         let mut rewriter = ScopedRewriter::new(self, OpInsertionPoint::Unset);
         let label = new_block_label.or_else(|| {
@@ -423,7 +432,7 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
             OpInsertionPoint::AtBlockEnd(_target_block) => None,
             OpInsertionPoint::BeforeOperation(op) => Some(op),
             OpInsertionPoint::AfterOperation(op) => op.deref(ctx).get_next(),
-            OpInsertionPoint::Unset => panic!("Cannot split block at unset insertion point."),
+            OpInsertionPoint::Unset => unreachable!(),
         };
         let mut current_op_opt = first_op_opt;
         while let Some(current_op) = current_op_opt {
