@@ -111,6 +111,47 @@ pub trait Rewriter: Inserter {
         dest_insertion_point: BlockInsertionPoint,
     );
 
+    /// Move all operations in `source` to `point` and erase `source`.
+    ///
+    /// All uses of `source`'s arguments are replaced with `args`.
+    ///
+    /// - The caller must ensure that the moved operations
+    ///   (including `source`'s terminator) are valid at `point`.
+    /// - `source` must not have any predecessors.
+    fn inline_block(
+        &mut self,
+        ctx: &mut Context,
+        source: Ptr<BasicBlock>,
+        point: OpInsertionPoint,
+        args: &[Value],
+    ) {
+        assert!(
+            !source.has_pred(ctx),
+            "Cannot inline a block that has predecessors"
+        );
+        assert!(
+            point.get_insertion_block(ctx) != Some(source),
+            "Cannot inline a block into itself"
+        );
+        let block_args: Vec<Value> = source.deref(ctx).arguments().collect();
+        assert_eq!(
+            block_args.len(),
+            args.len(),
+            "Number of replacement values must match the number of block arguments"
+        );
+        for (block_arg, arg) in block_args.into_iter().zip(args) {
+            self.replace_value_uses_with(ctx, block_arg, *arg);
+        }
+
+        let ops: Vec<_> = source.deref(ctx).iter(ctx).collect();
+        let mut point = point;
+        for op in ops {
+            self.move_operation(ctx, op, point);
+            point = OpInsertionPoint::AfterOperation(op);
+        }
+        self.erase_block(ctx, source);
+    }
+
     /// Change the type of a [Value].
     fn set_value_type(&mut self, ctx: &Context, value: Value, new_type: TypeHandle);
 

@@ -42,7 +42,7 @@ use crate::{
         listener::Recorder,
         rewriter::{IRRewriter, Rewriter},
     },
-    linked_list::{ContainsLinkedList, LinkedList},
+    linked_list::ContainsLinkedList,
     op::{op_cast, op_impls},
     operation::{OpDbg, Operation},
     opts::{
@@ -178,25 +178,8 @@ fn try_merge_succ(
         succ.label(ctx)
     );
 
-    let formal_args: Vec<Value> = succ.deref(ctx).arguments().collect();
-    assert_eq!(
-        formal_args.len(),
-        actual_args.len(),
-        "branch must forward one operand per successor block argument"
-    );
-    for (formal, actual) in formal_args.iter().zip(actual_args.iter()) {
-        rewriter.replace_value_uses_with(ctx, *formal, *actual);
-    }
-
     rewriter.erase_operation(ctx, pred_terminator);
-    let mut cur = succ.deref(ctx).get_head();
-    while let Some(op) = cur {
-        let next = op.deref(ctx).get_next();
-        rewriter.move_operation(ctx, op, OpInsertionPoint::AtBlockEnd(pred));
-        cur = next;
-    }
-
-    rewriter.erase_block(ctx, succ);
+    rewriter.inline_block(ctx, succ, OpInsertionPoint::AtBlockEnd(pred), &actual_args);
     true
 }
 
