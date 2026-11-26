@@ -6,6 +6,7 @@ use common::ConstantOp;
 use core::panic;
 use expect_test::expect;
 use pliron::{
+    basic_block::BasicBlock,
     builtin::{
         attributes::IntegerAttr,
         op_interfaces::{
@@ -23,16 +24,17 @@ use pliron::{
     identifier::Identifier,
     irbuild::{
         inserter::{BlockInsertionPoint, Inserter, OpInsertionPoint},
+        listener::DummyListener,
         match_rewrite::{
             EnqueueOrder, MatchRewrite, MatchRewriter, RewriterOrder, apply_match_rewrite,
         },
-        rewriter::{Rewriter, ScopedRewriter},
+        rewriter::{IRRewriter, Rewriter, ScopedRewriter},
     },
     op::{Op, verify_op},
     operation::Operation,
     printable::Printable,
     result::Result,
-    r#type::TypeHandle,
+    r#type::{TypeHandle, Typed},
     value::Value,
 };
 mod common;
@@ -252,7 +254,7 @@ pub struct PointerType;
 
 #[pliron_op(
     name = "test.load",
-    format = "$0 ` ` : ` type($0)",
+    format = "$0 ` : ` type($0)",
     interfaces = [OneResultInterface, OneOpdInterface],
     verifier = "succ",
 )]
@@ -336,7 +338,7 @@ fn scoped_rewriter_test() -> Result<()> {
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               ^entry_block2v1():
-                c0_v2 = test.load v1  !0;
+                c0_v2 = test.load v1 : builtin.integer si32 !0;
                 test.return c0_v2
             }
         }"#]].assert_eq(&printed);
@@ -569,6 +571,94 @@ fn inline_region_on_const_zero() -> Result<()> {
             builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
             {
               
+            }
+        }"#]]
+    .assert_eq(&printed);
+
+    Ok(())
+}
+
+/// Check that `inline_block` keeps the order of the inlined operations,
+/// replaces the uses of the block argument, and erases the source block.
+#[test]
+fn inline_block_in_const_ret_func() -> Result<()> {
+    /// Inline a block that loads either its argument (`with_arg`) or a new constant
+    /// into the function of `const_ret_in_mod`, at the point that `get_point` selects.
+    fn inline_block_in_const_ret(
+        get_point: fn(&Context, ConstantOp, ReturnOp) -> OpInsertionPoint,
+        with_arg: bool,
+    ) -> Result<String> {
+        let ctx = &mut Context::new();
+        let (module_op, func_op, const0_op, ret_op) = const_ret_in_mod(ctx)?;
+        let c0 = const0_op.get_result(ctx);
+        let c0_ty = c0.get_type(ctx);
+
+        let arg_tys = if with_arg { vec![c0_ty] } else { vec![] };
+        let source = BasicBlock::new(ctx, Some("source".try_into().unwrap()), arg_tys);
+        source.insert_after(ctx, func_op.get_entry_block(ctx));
+        let const1_op = ConstantOp::new(ctx, 1);
+        const1_op.get_operation().insert_at_back(source, ctx);
+        let (loaded, args) = if with_arg {
+            (source.deref(ctx).get_argument(0), vec![c0])
+        } else {
+            (const1_op.get_result(ctx), vec![])
+        };
+        LoadOp::new(ctx, loaded, c0_ty)
+            .get_operation()
+            .insert_at_back(source, ctx);
+
+        let point = get_point(ctx, const0_op, ret_op);
+        let mut rewriter = IRRewriter::<DummyListener>::default();
+        rewriter.inline_block(ctx, source, point, &args);
+        assert!(rewriter.is_modified());
+
+        verify_op(&module_op, ctx)?;
+        Ok(module_op.disp(ctx).to_string())
+    }
+
+    // Inline `^source(): c1 = test.constant 1; test.load c1` at the start of the block.
+    // The inlined operations must come before `c0`, in their original order.
+    let printed = inline_block_in_const_ret(
+        |ctx, c0, _| {
+            OpInsertionPoint::AtBlockStart(
+                c0.get_operation().deref(ctx).get_parent_block().unwrap(),
+            )
+        },
+        false,
+    )?;
+    expect![[r#"
+        builtin.module @bar 
+        {
+          ^block1v1():
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
+            {
+              ^entry_block2v1():
+                v1 = test.constant builtin.integer <1: si64>;
+                v2 = test.load v1 : builtin.integer si64;
+                c0_v0 = test.constant builtin.integer <0: si64> !0;
+                test.return c0_v0
+            }
+        }"#]]
+    .assert_eq(&printed);
+
+    // Inline `^source(arg): test.constant 1; test.load arg` after `c0`, with `c0` for `arg`.
+    // The inlined operations must come right after `c0`, in their original order,
+    // and `test.load` must load `c0` in place of the block argument.
+    let printed = inline_block_in_const_ret(
+        |_, c0, _| OpInsertionPoint::AfterOperation(c0.get_operation()),
+        true,
+    )?;
+    expect![[r#"
+        builtin.module @bar 
+        {
+          ^block1v1():
+            builtin.func @foo: builtin.function <() -> (builtin.integer si64)> 
+            {
+              ^entry_block2v1():
+                c0_v0 = test.constant builtin.integer <0: si64> !0;
+                v2 = test.constant builtin.integer <1: si64>;
+                v3 = test.load c0_v0 : builtin.integer si64;
+                test.return c0_v0
             }
         }"#]]
     .assert_eq(&printed);
