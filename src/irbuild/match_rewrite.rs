@@ -4,9 +4,10 @@
 //! Utilites for matching operations and rewriting them.
 //! Similar in spirit to MLIR's pattern matching rewrites.
 
-use alloc::collections::VecDeque;
+use alloc::{collections::VecDeque, vec::Vec};
 
 use crate::{
+    basic_block::BasicBlock,
     context::{Context, Ptr},
     graph::walkers::{IRNode, WalkConfig, uninterruptible::immutable::walk_op},
     irbuild::{
@@ -19,6 +20,7 @@ use crate::{
     pass::{AnalysisManager, Pass, PassResult},
     result::Result,
     utils::table::HSet,
+    value::DefiningEntity,
 };
 
 /// A rewriter that uses the [Recorder] listener.
@@ -56,7 +58,13 @@ pub struct RewriterOrder {
 }
 
 /// Collects all operations (recursively) that match a given pattern
-/// and then applies a rewrite to them.
+/// and then applies a rewrite to them. An individual rewrite can trigger
+/// more matches.
+///
+/// Non-rewriter modifications of an operation must be
+/// [reported](Rewriter::notify_operation_modified):
+/// - for the operation to be matched again.
+/// - for the modification to be included in the returned [IRStatus].
 pub fn apply_match_rewrite<M: MatchRewrite>(
     ctx: &mut Context,
     match_rewrite: &mut M,
@@ -86,10 +94,11 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
     walk_op(ctx, &mut state, &order.collect, op, walker_callback);
 
     let mut erased = HSet::<Ptr<Operation>>::default();
+    let mut erased_blocks = HSet::<Ptr<BasicBlock>>::default();
     let mut rewriter = MatchRewriter::default();
     rewriter.set_listener(Recorder::default());
 
-    // Rewrite collected and newly added operations that match.
+    // Rewrite collected and newly added/modified operations that match.
     while !to_rewrite.is_empty() {
         let op = to_rewrite.pop_front().unwrap();
         if erased.contains(&op) {
@@ -98,13 +107,29 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
         rewriter.set_insertion_point(OpInsertionPoint::BeforeOperation(op));
         match_rewrite.rewrite(ctx, &mut rewriter, op)?;
         let listener = rewriter.get_listener_mut();
-        // First process all erased operations to avoid dereferencing them.
+
+        // 1. First process all erased operations and blocks to avoid dereferencing them.
         for event in &listener.events {
-            if let RecorderEvent::ErasedOperation(erased_op) = event {
-                erased.insert(*erased_op);
+            match event {
+                RecorderEvent::ErasedOperation(erased_op) => {
+                    erased.insert(*erased_op);
+                }
+                RecorderEvent::ErasedBlock(erased_block) => {
+                    erased_blocks.insert(*erased_block);
+                }
+                _ => {}
             }
         }
-        // Then process all other events.
+        // Operations to match and enqueue, in the order of the events.
+        let mut candidates = Vec::new();
+        let mut is_candidate = HSet::<Ptr<Operation>>::default();
+        let mut add_candidate = |op: Ptr<Operation>| {
+            if !erased.contains(&op) && is_candidate.insert(op) {
+                candidates.push(op);
+            }
+        };
+
+        // 2. Then process all other events.
         for event in &listener.events {
             match event {
                 RecorderEvent::ErasedOperation(_) => {
@@ -112,23 +137,30 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
                 }
                 RecorderEvent::InsertedOperation(new_op) => {
                     // Check if the newly inserted operation also matches.
-                    if !erased.contains(new_op) && match_rewrite.r#match(ctx, *new_op) {
-                        match order.enque {
-                            EnqueueOrder::EnqueFront => to_rewrite.push_front(*new_op),
-                            EnqueueOrder::EnqueBack => to_rewrite.push_back(*new_op),
+                    add_candidate(*new_op);
+                }
+                RecorderEvent::ModifiedOperation(modified_op) => {
+                    // Check if the modified operation matches now.
+                    add_candidate(*modified_op);
+                }
+                RecorderEvent::ReplacedValueUses { new_value, .. } => {
+                    // A later event may have erased `new_value`.
+                    let is_defined = match new_value.defining_entity() {
+                        DefiningEntity::Op(def_op) => !erased.contains(&def_op),
+                        DefiningEntity::Block(def_block) => !erased_blocks.contains(&def_block),
+                    };
+                    if is_defined {
+                        for r#use in new_value.uses(ctx) {
+                            // The user may have a different operand now. Check if it matches now.
+                            add_candidate(r#use.user_op());
                         }
                     }
-                }
-                RecorderEvent::ReplacedValueUses { .. } => {
-                    // No action needed for value use replacements.
                 }
                 RecorderEvent::InsertedBlock(_) => {
                     // No action needed for block insertions.
                 }
                 RecorderEvent::ErasedBlock(_) => {
-                    // No action needed for block erasures.
-                    // Operations inside the block will have triggered operation erasure events.
-                    // and we only care about operations here.
+                    // Already processed above.
                 }
                 RecorderEvent::ErasedRegion(_) => {
                     // No action needed for region erasures.
@@ -147,6 +179,16 @@ pub fn apply_match_rewrite<M: MatchRewrite>(
             }
         }
         listener.clear();
+
+        // 3. Enqueue matching candidates.
+        for candidate in candidates {
+            if match_rewrite.r#match(ctx, candidate) {
+                match order.enque {
+                    EnqueueOrder::EnqueFront => to_rewrite.push_front(candidate),
+                    EnqueueOrder::EnqueBack => to_rewrite.push_back(candidate),
+                }
+            }
+        }
     }
     Ok(rewriter.is_modified().into())
 }

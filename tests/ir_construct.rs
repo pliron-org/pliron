@@ -1305,7 +1305,7 @@ fn parse_err_block_args() {
     expect_parse_error(input_label_colon_missing, expected_err);
 }
 
-/// [ParseListener] that logs each event with the source text that the event refers to.
+/// [Listens](ParseListener) to and logs [ParseEvent] source text or positions.
 struct EventLog<'l> {
     input: &'l str,
     log: &'l mut Vec<String>,

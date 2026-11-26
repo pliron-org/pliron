@@ -71,6 +71,9 @@ pub trait Rewriter: Inserter {
     /// Erase an [Operation]. The operation must have no uses.
     fn erase_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>);
 
+    /// Notify that an [Operation] was modified in place.
+    fn notify_operation_modified(&mut self, ctx: &Context, op: Ptr<Operation>);
+
     /// Erase a [BasicBlock]. The block must have no uses.
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>);
 
@@ -252,7 +255,7 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
     }
 
     fn replace_value_uses_with(&mut self, ctx: &Context, old_value: Value, new_value: Value) {
-        if old_value == new_value {
+        if old_value == new_value || !old_value.is_used(ctx) {
             return;
         }
         self.get_listener_mut()
@@ -275,6 +278,11 @@ impl<L: RewriteListener> Rewriter for IRRewriter<L> {
         self.get_listener_mut().notify_operation_erasure(ctx, op);
 
         Operation::erase(op, ctx);
+        self.mark_modified();
+    }
+
+    fn notify_operation_modified(&mut self, ctx: &Context, op: Ptr<Operation>) {
+        self.get_listener_mut().notify_operation_modified(ctx, op);
         self.mark_modified();
     }
 
@@ -553,6 +561,10 @@ impl<'a> Rewriter for ScopedRewriter<'a> {
 
     fn erase_operation(&mut self, ctx: &mut Context, op: Ptr<Operation>) {
         self.rewriter.erase_operation(ctx, op)
+    }
+
+    fn notify_operation_modified(&mut self, ctx: &Context, op: Ptr<Operation>) {
+        self.rewriter.notify_operation_modified(ctx, op)
     }
 
     fn erase_block(&mut self, ctx: &mut Context, block: Ptr<BasicBlock>) {

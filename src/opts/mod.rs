@@ -3,6 +3,7 @@
 
 //! Optimizations
 
+pub mod canonicalize;
 pub mod constants;
 pub mod dce;
 pub mod mem2reg;
